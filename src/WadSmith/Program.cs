@@ -38,6 +38,7 @@ internal static class Program
         // Read before the UI thread starts: nothing that touches the disk runs on it.
         var settings = SettingsStore.Load(paths.SettingsFile);
         App.Services = new AppServices(paths, settings, options);
+        App.Services.Sound = (Audio.ISoundPlayer?)Audio.SdlSoundPlayer.TryCreate() ?? new Audio.SilentPlayer();
 
         try
         {

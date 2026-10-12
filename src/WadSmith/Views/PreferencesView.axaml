@@ -26,6 +26,9 @@
                         </StackPanel>
                     </StackPanel>
 
+                    <CheckBox Content="Play an object's sound when pointing at it on the shelf" IsChecked="{Binding ShelfSounds}"
+                              ToolTip.Tip="Pointing at a monster on the Objects shelf plays the sound it makes when it sees you; an item plays its pickup sound. Quietly, and only the last one pointed at." />
+
                     <StackPanel Spacing="2">
                         <CheckBox Content="Use the desktop's own title bar" IsChecked="{Binding UseSystemTitleBar}"
                                   ToolTip.Tip="Your desktop draws the window's title bar and its buttons instead of WadSmith." />

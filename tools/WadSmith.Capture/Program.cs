@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -987,6 +987,34 @@ foreach (var pose in poses)
                 Pump(0.8);
                 Console.WriteLine($"what is this: {editor.Explained?.Heading}");
                 Save("editor-whatisthis-3d");
+                break;
+            }
+
+            if (pose == "sound-check")
+            {
+                // The SDL player end to end, silently: SDL's dummy driver consumes the samples and nothing reaches a speaker.
+                // Refuses to run without the dummy driver and dead sound servers in the environment.
+                if (Environment.GetEnvironmentVariable("SDL_AUDIODRIVER") != "dummy" || Environment.GetEnvironmentVariable("SDL_AUDIO_DRIVER") != "dummy"
+                    || Environment.GetEnvironmentVariable("PULSE_SERVER") is not { Length: > 0 } || Environment.GetEnvironmentVariable("PIPEWIRE_REMOTE") is not { Length: > 0 })
+                {
+                    Console.WriteLine("sound-check refuses: set SDL_AUDIODRIVER=dummy SDL_AUDIO_DRIVER=dummy PULSE_SERVER=unix:/nonexistent PIPEWIRE_REMOTE=/nonexistent");
+                    break;
+                }
+
+                using var player = WadSmith.App.Audio.SdlSoundPlayer.TryCreate();
+                var wav = editor.Session.Resources?.SoundFor(3001);
+                if (player is null || wav is null)
+                {
+                    Console.WriteLine($"sound-check: player {(player is null ? "missing" : "loaded")}, imp sound {(wav is null ? "missing" : "found")}");
+                    break;
+                }
+
+                player.Play(wav);
+                var queued = 0u;
+                for (var i = 0; i < 50 && player.Driver.Length == 0; i++) Thread.Sleep(20);
+                queued = player.QueuedBytes;
+                Thread.Sleep(1500);
+                Console.WriteLine($"sound-check: driver '{player.Driver}', queued {queued} bytes of {WadSmith.App.Audio.SdlSoundPlayer.Samples(wav).Length * 2}, left after 1.5 s {player.QueuedBytes}");
                 break;
             }
 

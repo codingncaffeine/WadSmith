@@ -33,6 +33,9 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
 
     private Editor.App.Vocabulary? _words;
 
+    /// <summary>Plays the editor's sounds. Silent unless the app's own start gives it SDL, so tests and captures never make a sound.</summary>
+    public Audio.ISoundPlayer Sound { get; set; } = new Audio.SilentPlayer();
+
     /// <summary>Cancelled when the application closes, so background work stops.</summary>
     public CancellationToken ShuttingDown => _shutdown.Token;
 
@@ -91,7 +94,11 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
     /// <summary>The games the last scan found, scanning first when none has finished. Call on a worker.</summary>
     public IReadOnlyList<FoundGame> FoundGames() => Games ?? GameLocator.Scan(GameLocator.StandardFolders(Environment.GetEnvironmentVariable).Concat(Settings.Current.GameFolders).Distinct(), cancel: ShuttingDown);
 
-    public void Shutdown() => _shutdown.Cancel();
+    public void Shutdown()
+    {
+        _shutdown.Cancel();
+        Sound.Dispose();
+    }
 
     private static string? EngineDataFinder(AppSettings settings)
     {

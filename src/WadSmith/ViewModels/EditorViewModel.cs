@@ -82,6 +82,10 @@ internal sealed partial class EditorViewModel : ObservableObject
         _mapSeen = (session.MapEntry.Title, session.MapEntry.Music);
         session.MapSettingsChanged += MapSettingsSeen;
         session.GeometryChanged += CameraMoved;
+        _shelfSounds = new LatestOnWorker<byte[]?>(MainViewModel.PostToUi, wav =>
+        {
+            if (wav is not null) _services.Sound.Play(wav);
+        }, "the shelf's sound");
         _profiles = new LatestOnWorker<(EditorSession Session, ElevationProfile Profile)>(MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, Session) || _measure is null) return;
@@ -609,6 +613,16 @@ internal sealed partial class EditorViewModel : ObservableObject
     }
 
     private readonly LatestOnWorker<(EditorSession Session, ElevationProfile Profile)> _profiles;
+
+    private readonly LatestOnWorker<byte[]?> _shelfSounds;
+
+    /// <summary>The pointer came over a shelf tile: an object plays its sound (D33), read from the game on a worker.</summary>
+    internal void PointedAtShelf(ShelfTile tile)
+    {
+        if (!_services.Settings.Current.ShelfSounds || tile.Drop.Thing == 0 || tile.Drop.Prefab is not null || (tile.Drop.From ?? Session.Resources) is not { } resources) return;
+        var type = tile.Drop.Thing;
+        _shelfSounds.Request(() => resources.SoundFor(type));
+    }
     private (MapPoint From, MapPoint To)? _measure;
 
     /// <summary>The floors and ceilings along the line measured last (null when no profile is open).</summary>

@@ -28,9 +28,9 @@ public enum ThingCategory
 
 /// <summary>
 /// An object a map can place, as the engine defines it: its number in maps, its name, the sprite and
-/// frame it shows when it appears, its size, and its kind.
+/// frame it shows when it appears, its size, its kind, and the lump of the sound it is known by (a monster's sight, a pickup's).
 /// </summary>
-public sealed record ThingType(int Number, string ClassName, string Name, string? Sprite, char Frame, double Radius, double Height, double ScaleX, double ScaleY, bool OnCeiling, ThingCategory Category = ThingCategory.Decoration);
+public sealed record ThingType(int Number, string ClassName, string Name, string? Sprite, char Frame, double Radius, double Height, double ScaleX, double ScaleY, bool OnCeiling, ThingCategory Category = ThingCategory.Decoration, string? Sound = null);
 
 /// <summary>
 /// The objects of one game family, read from the engine's own data (gzdoom.pk3): the MAPINFO
@@ -59,6 +59,10 @@ public sealed partial class ThingCatalog
         "chex" => "mapinfo/chex.txt",
         _ => "mapinfo/doomcommon.txt",
     };
+
+    /// <summary>The engine's sound tables for each family, in load order: the common one, then the game's own.</summary>
+    public static IReadOnlyList<string> SoundInfoFor(string family) =>
+        ["sndinfo.txt", $"filter/game-{family switch { "heretic" => "heretic", "hexen" => "hexen", "strife" => "strife", _ => "doomchex" }}/sndinfo.txt"];
 
     /// <summary>The class the engine uses for the player in each family.</summary>
     public static string PlayerClassFor(string family) => family switch
@@ -118,6 +122,7 @@ public sealed partial class ThingCatalog
         }
 
         var strings = LanguageStrings(engine);
+        var sounds = WadSmith.Core.Audio.SoundInfo.Parse(SoundInfoFor(family).Select(Text).OfType<string>());
         var types = new Dictionary<int, ThingType>();
         foreach (var (number, className) in numbers)
         {
@@ -133,7 +138,14 @@ public sealed partial class ThingCatalog
             var declared = classes[className].Name;
             var name = starts.TryGetValue(number, out var start) ? start : NameOf(tag, declared, NamedAncestor(classes, className), strings);
             var category = starts.ContainsKey(number) ? ThingCategory.Start : CategoryOf(classes, className, sprite);
-            types[number] = new ThingType(number, declared, name, sprite, frame, radius, height, scaleX, scaleY, ceiling, category);
+            var sound = category switch
+            {
+                ThingCategory.Monster => Inherited(classes, className, c => c.SeeSound) ?? Inherited(classes, className, c => c.ActiveSound),
+                ThingCategory.Weapon or ThingCategory.Ammo or ThingCategory.Health or ThingCategory.Armor or ThingCategory.Key or ThingCategory.Powerup => Inherited(classes, className, c => c.PickupSound),
+                ThingCategory.Decoration => Inherited(classes, className, c => c.ActiveSound),
+                _ => null,
+            };
+            types[number] = new ThingType(number, declared, name, sprite, frame, radius, height, scaleX, scaleY, ceiling, category, sound is null ? null : sounds.LumpFor(sound));
         }
 
         return new ThingCatalog(types);
@@ -184,6 +196,12 @@ public sealed partial class ThingCatalog
         public bool? SpawnCeiling { get; set; }
 
         public string? Tag { get; set; }
+
+        public string? SeeSound { get; set; }
+
+        public string? ActiveSound { get; set; }
+
+        public string? PickupSound { get; set; }
 
         /// <summary>State lines in order, with labels as "Label:" entries.</summary>
         public List<string> States { get; } = [];
@@ -462,6 +480,9 @@ public sealed partial class ThingCatalog
                         case "XSCALE": c.ScaleX = Number(value); break;
                         case "YSCALE": c.ScaleY = Number(value); break;
                         case "TAG": c.Tag = value.Trim('"'); break;
+                        case "SEESOUND": c.SeeSound = value.Trim('"'); break;
+                        case "ACTIVESOUND": c.ActiveSound = value.Trim('"'); break;
+                        case "INVENTORY.PICKUPSOUND": c.PickupSound = value.Trim('"'); break;
                     }
                 }
             }

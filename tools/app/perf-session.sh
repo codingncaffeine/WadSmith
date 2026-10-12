@@ -4,6 +4,8 @@
 # frame times. Environment: WADSMITH_NESTED_WORK, WS_CAPTURE (WadSmith.Capture.dll), WS_DOTNET_ROOT,
 # WS_BACKEND (wayland|x11), WS_GAMES (a games folder, optional).
 set -u
+# The app plays shelf sounds through SDL: runs from here never reach a speaker.
+export SDL_AUDIODRIVER=dummy SDL_AUDIO_DRIVER=dummy PULSE_SERVER=unix:/nonexistent/wadsmith PIPEWIRE_REMOTE=/nonexistent/wadsmith
 WORK="${WADSMITH_NESTED_WORK:?}"
 case "${XDG_CONFIG_HOME:-}" in "$WORK"/*) ;; *) echo "perf-session: XDG_CONFIG_HOME is not private, refusing" > "$WORK/session.txt"; exit 99;; esac
 export DOTNET_ROOT="$WS_DOTNET_ROOT" PATH="$WS_DOTNET_ROOT:$PATH"

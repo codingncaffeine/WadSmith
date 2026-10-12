@@ -42,6 +42,9 @@ public sealed class AppSettings
 
     public bool Celebrations { get; set; } = true;
 
+    /// <summary>Whether pointing at an object on the Objects shelf plays its sound (D33).</summary>
+    public bool ShelfSounds { get; set; } = true;
+
     public bool ClassicNames { get; set; }
 
     public bool DoomBuilderKeys { get; set; }

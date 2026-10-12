@@ -16,9 +16,12 @@ public sealed class GameResources
 {
     private static readonly ConcurrentDictionary<(string Engine, string Family), Lazy<ThingCatalog>> Catalogues = new();
     private readonly ConcurrentDictionary<int, RgbaImage?> _sprites = new();
+    private readonly ConcurrentDictionary<int, byte[]?> _sounds = new();
+    private readonly ResourceStack _stack;
 
-    private GameResources(GameDefinition game, IReadOnlyList<string> files, TextureLibrary textures, SpriteIndex sprites, ThingCatalog things, IReadOnlyList<string> music)
+    private GameResources(GameDefinition game, IReadOnlyList<string> files, ResourceStack stack, TextureLibrary textures, SpriteIndex sprites, ThingCatalog things, IReadOnlyList<string> music)
     {
+        _stack = stack;
         Game = game;
         Files = files;
         Textures = textures;
@@ -91,6 +94,29 @@ public sealed class GameResources
     });
 
     /// <summary>
+    /// The sound an object is known by (a monster's sight, a pickup's) as a WAV file, from the game's own Doom-format
+    /// sound lump; null when it has none or holds another format. Reads a lump, so call it off the UI thread.
+    /// </summary>
+    public byte[]? SoundFor(int type) => _sounds.GetOrAdd(type, t =>
+    {
+        if (Things.Find(t)?.Sound is not { } lump || (_stack.Find(lump, ResourceNamespace.Sounds) ?? _stack.Find(lump)) is not { } entry) return null;
+        var data = entry.Read();
+        try
+        {
+            return Core.Audio.AudioFormats.Detect(data) switch
+            {
+                Core.Audio.AudioKind.DmxSound => Core.Audio.AudioFormats.DmxToWav(data),
+                Core.Audio.AudioKind.Wav => data,
+                _ => null,
+            };
+        }
+        catch (Core.CorruptDataException)
+        {
+            return null;
+        }
+    });
+
+    /// <summary>
     /// Opens the game <paramref name="gameId"/> from the games found on this computer, with the
     /// project folder on top. Null when the game is not among them.
     /// </summary>
@@ -112,7 +138,7 @@ public sealed class GameResources
         var things = engineData is null
             ? ThingCatalog.Empty
             : Catalogues.GetOrAdd((engineData, found.Game.Engine), key => new Lazy<ThingCatalog>(() => ThingCatalog.Load(ResourceContainer.Open(key.Engine), key.Family))).Value;
-        return new GameResources(found.Game, files, new TextureLibrary(stack), new SpriteIndex(stack), things, FindMusic(stack));
+        return new GameResources(found.Game, files, stack, new TextureLibrary(stack), new SpriteIndex(stack), things, FindMusic(stack));
     }
 
     private static RgbaImage Mirror(RgbaImage image)

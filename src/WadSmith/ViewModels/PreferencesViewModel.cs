@@ -63,6 +63,17 @@ internal sealed partial class PreferencesViewModel : ObservableObject
         }
     }
 
+    public bool ShelfSounds
+    {
+        get => _services.Settings.Current.ShelfSounds;
+        set
+        {
+            _services.Settings.Current.ShelfSounds = value;
+            _services.Settings.Save();
+            OnPropertyChanged();
+        }
+    }
+
     /// <summary>Raised when the names or the keys change, so an open map shows the change at once.</summary>
     public event Action? VeteranChanged;
 

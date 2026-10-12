@@ -8,6 +8,8 @@
 #
 # Results: WORK_DIR/screen.png, WORK_DIR/exit.txt, WORK_DIR/profile/state/logs/wadsmith.log.
 set -u
+# The app plays shelf sounds through SDL: runs from here never reach a speaker.
+export SDL_AUDIODRIVER=dummy SDL_AUDIO_DRIVER=dummy PULSE_SERVER=unix:/nonexistent/wadsmith PIPEWIRE_REMOTE=/nonexistent/wadsmith
 [ $# -ge 1 ] || { sed -n '2,10p' "$0"; exit 2; }
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(cd "$HERE/../.." && pwd)"
 WORK="$(mkdir -p "$1" && cd "$1" && pwd)"; BACKEND="${2:-wayland}"; GAMES="${3:-}"; OPEN="${4:-}"

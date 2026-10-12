@@ -157,6 +157,11 @@ public partial class EditorView : UserControl
     private void OnPalettePressed(object? sender, PointerPressedEventArgs e) => e.Handled = true;
 
     /// <summary>A shelf picture pressed: it is dragged onto the map (the canvas takes the drop).</summary>
+    private void OnShelfTileEntered(object? sender, PointerEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is ShelfTile tile) (DataContext as EditorViewModel)?.PointedAtShelf(tile);
+    }
+
     private async void OnShelfTilePressed(object? sender, PointerPressedEventArgs e)
     {
         if ((sender as Control)?.DataContext is not ShelfTile tile || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
