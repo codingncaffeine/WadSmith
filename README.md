@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/branding/banner.jpg" alt="WadSmith" width="100%">
+  <img src="assets/branding/banner.png" alt="WadSmith" width="100%">
 </p>
 
 # WadSmith

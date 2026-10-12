@@ -49,6 +49,18 @@
                     </ItemsControl>
                     <Button Classes="metal" Content="Add a folder…" Command="{Binding AddFolderCommand}" HorizontalAlignment="Left"
                             ToolTip.Tip="Tell WadSmith about a folder that holds your games." />
+
+                    <TextBlock Classes="section" Text="ABOUT" Margin="0,12,0,0" />
+                    <StackPanel Orientation="Horizontal" Spacing="18">
+                        <Image Source="/Assets/icon.png" Width="104" Height="104" VerticalAlignment="Top" />
+                        <StackPanel Spacing="6" VerticalAlignment="Center" MaxWidth="400">
+                            <TextBlock Text="{Binding Version}" FontWeight="SemiBold" FontSize="16" />
+                            <TextBlock Classes="secondary" TextWrapping="Wrap" Text="A modern, Linux-native map editor for Doom, Doom II, Heretic, Hexen and Strife, built for GZDoom." />
+                            <TextBlock Classes="secondary" TextWrapping="Wrap" Text="Free software under the GNU General Public License, version 3 or later. Your game files are only ever read." />
+                            <Button Classes="metal" Content="Project page" Click="OnProjectPage" HorizontalAlignment="Left"
+                                    ToolTip.Tip="Opens WadSmith's page on GitHub in your browser." />
+                        </StackPanel>
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
             <Button Grid.Row="2" x:Name="Done" Classes="primary" Content="Done" Command="{Binding CloseCommand}" HorizontalAlignment="Right" Margin="0,18,0,0"

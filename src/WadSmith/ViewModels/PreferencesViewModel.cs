@@ -37,6 +37,9 @@ internal sealed partial class PreferencesViewModel : ObservableObject
     [ObservableProperty]
     private string _tipsNote = "";
 
+    /// <summary>The build, for About: "WadSmith 0.0.1".</summary>
+    public static string Version => $"WadSmith {Core.BuildInfo.Version.Split('+')[0]}";
+
     public bool LargeInterface
     {
         get => _services.Settings.Current.LargeInterface;
