@@ -28,14 +28,14 @@ internal static class PathNamespaces
     /// </summary>
     public static (ResourceNamespace Ns, string Name) Classify(string path)
     {
-        var slash = path.IndexOf('/', StringComparison.Ordinal);
+        var slash = path.IndexOf('/', StringComparison.Ordinal); // archive path
         var ns = ResourceNamespace.Global;
         if (slash >= 0)
         {
             ns = TopLevel.TryGetValue(path[..slash], out var known) ? known : ResourceNamespace.Other;
         }
 
-        var file = path[(path.LastIndexOf('/') + 1)..];
+        var file = path[(path.LastIndexOf('/') + 1)..]; // archive path
         var dot = file.IndexOf('.', StringComparison.Ordinal);
         var name = dot > 0 ? file[..dot] : file;
         return (ns, name);

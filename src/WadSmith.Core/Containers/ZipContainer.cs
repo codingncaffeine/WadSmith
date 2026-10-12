@@ -28,7 +28,7 @@ public sealed class ZipContainer : ResourceContainer
         foreach (var z in _archive.Entries)
         {
             var full = z.FullName.Replace('\\', '/');
-            if (full.EndsWith('/')) continue;
+            if (full.EndsWith('/')) continue; // archive path
             var (ns, name) = PathNamespaces.Classify(full);
             var zipEntry = z;
             _entries.Add(new ResourceEntry(this, index++, name, full, ns, z.Length, isMarker: false, () => ReadEntry(zipEntry)));
@@ -72,7 +72,7 @@ public sealed class FolderContainer : ResourceContainer
         Path = System.IO.Path.GetFullPath(root);
         var files = Directory.EnumerateFiles(Path, "*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.Hidden })
             .Select(f => System.IO.Path.GetRelativePath(Path, f).Replace('\\', '/'))
-            .Where(f => !f.Split('/').Any(part => part.StartsWith('.')))
+            .Where(f => !f.Split('/').Any(part => part.StartsWith('.'))) // archive path
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToList();
 

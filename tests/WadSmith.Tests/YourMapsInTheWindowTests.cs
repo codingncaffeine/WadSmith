@@ -61,7 +61,7 @@ public sealed class YourMapsInTheWindowTests
             "Your maps · 1: My map; others 0",
             "Your maps · 1: Cave; others 0; sidecar Cave",
             "Your maps · 2: Cave copy, Cave; others 0",
-            "Your maps · 1: Cave; others 0; in Deleted 2; note Cave copy moved to " + Path.Combine(App.App.Services!.Paths.Projects, Project.DeletedFolderName) + "/Cave copy",
-        ], seen.Select((s, i) => i == 4 ? s[..s.IndexOf("/Cave copy", StringComparison.Ordinal)] + "/Cave copy" : s));
+            "Your maps · 1: Cave; others 0; in Deleted 2; note Cave copy moved to " + Path.Combine(App.App.Services!.Paths.Projects, Project.DeletedFolderName, "Cave copy"),
+        ], seen.Select((s, i) => i == 4 ? s[..(s.IndexOf(Path.DirectorySeparatorChar + "Cave copy", StringComparison.Ordinal) + "Cave copy".Length + 1)] : s));
     }
 }

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Lands the local commits on main only after CI has run them on Linux AND Windows: the commits go to the `gate` branch
+# first, this waits for that run, and main moves when it is green. A red run prints the failed tests and leaves main
+# as it was, so main is never red and a Windows-only failure is fixed before it lands. The content and identity scans
+# run first. Start it in the background after tools/gate.sh has passed and keep working.
+#   tools/push.sh
+set -uo pipefail
+cd "$(dirname "$0")/.."
+mkdir -p scratch/gate
+sha=$(git rev-parse HEAD)
+short=${sha:0:7}
+
+echo "── scans"
+tools/precommit-scan.sh --all > scratch/gate/scan.log 2>&1 || { tail -20 scratch/gate/scan.log; echo "PUSH REFUSED: the content scan"; exit 1; }
+tools/identity-audit.sh > scratch/gate/identity.log 2>&1 || { tail -20 scratch/gate/identity.log; echo "PUSH REFUSED: the identity audit"; exit 1; }
+
+echo "── gate branch: $short"
+git push -q --force origin "$sha:refs/heads/gate" || { echo "PUSH FAILED: the gate branch"; exit 1; }
+
+echo "── CI on gate: Linux and Windows"
+run=""
+for _ in $(seq 1 40); do
+    run=$(gh run list --branch gate --commit "$sha" --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null)
+    [ -n "$run" ] && break
+    sleep 15
+done
+[ -n "$run" ] || { echo "PUSH FAILED: no CI run appeared for $short on gate"; exit 1; }
+
+if gh run watch "$run" --exit-status --interval 30 > "scratch/gate/ci-$short.log" 2>&1; then
+    git push -q origin "$sha:main" || { echo "PUSH FAILED: main"; exit 1; }
+    echo "PUSHED $short to main: CI run $run green on Linux and Windows"
+else
+    echo "CI FAILED on gate for $short (run $run); main unchanged."
+    gh run view "$run" --json jobs --jq '.jobs[] | "  \(.name): \(.conclusion)"'
+    gh run view "$run" --log-failed 2>/dev/null | grep -E "\[FAIL\]|^\s+Failed |Assert|Expected:|Actual:" | sed 's/^[^\t]*\t[^\t]*\t//' | cut -c1-200 | sort -u | head -30
+    exit 1
+fi

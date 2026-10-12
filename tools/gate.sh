@@ -4,7 +4,8 @@
 #   - on two CPUs (the CI runners have two to four; this machine's thirty-two hide the interleavings they see),
 #   - with no system GZDoom (CI has none; the free game data in scratch/ci-games stands in, as CI's does),
 #   - warnings as errors.
-# Every run must pass. A failed run prints its failed tests; the logs are in scratch/gate/.
+# Every run must pass. A failed run prints its failed tests; the logs are in scratch/gate/. This machine is Linux:
+# what only Windows sees (paths, timing) is caught by tools/push.sh, which runs CI on both before main moves.
 #   tools/gate.sh [N]
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -15,6 +16,9 @@ empty="$PWD/scratch/empty"
 [ -d "$games" ] || { echo "gate: $games is missing (the free game data CI tests with)"; exit 2; }
 command -v taskset > /dev/null && command -v unshare > /dev/null || { echo "gate: needs taskset and unshare"; exit 2; }
 mkdir -p "$empty" scratch/gate
+
+echo "── paths that would break the Windows job"
+tools/windows-paths.sh || { echo "GATE FAILED: Windows paths"; exit 1; }
 
 echo "── build, warnings as errors"
 if ! dotnet build WadSmith.slnx -c Release -warnaserror --nologo -v q > scratch/gate/build.log 2>&1; then

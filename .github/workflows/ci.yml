@@ -1,11 +1,12 @@
 name: CI
 
-# Every push to main and every pull request: build the whole solution on Linux and on Windows
+# Every push to main or to the gate branch (tools/push.sh lands a batch on main only after this
+# has run it there) and every pull request: build the whole solution on Linux and on Windows
 # with warnings as errors, and run the unit tests. Tests that need commercial game data run
 # locally only; CI uses the free Freedoom data.
 on:
   push:
-    branches: [main]
+    branches: [main, gate]
   pull_request:
   workflow_dispatch:
 

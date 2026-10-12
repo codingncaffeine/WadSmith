@@ -140,11 +140,22 @@ public static partial class GameLocator
                 if (!inSearch || !line.StartsWith("Path=", StringComparison.OrdinalIgnoreCase)) continue;
                 var value = line[5..].Trim();
                 if (value is "." or "$PROGDIR" or "") continue;
-                value = value.Replace("$HOME", home, StringComparison.Ordinal).Replace("$DOOMWADDIR", environment("DOOMWADDIR") ?? "", StringComparison.Ordinal);
+                value = Expand(Expand(value, "$HOME", home), "$DOOMWADDIR", environment("DOOMWADDIR"));
                 if (value.Contains('$') || !Path.IsPathRooted(value)) continue;
                 yield return value;
             }
         }
+    }
+
+    /// <summary>
+    /// An ini entry beginning with <paramref name="variable"/> ("$HOME/mywads") as a path under <paramref name="with"/>, written the way
+    /// this system writes paths; the entry as it was when it does not begin so, or the variable has no value.
+    /// </summary>
+    private static string Expand(string value, string variable, string? with)
+    {
+        if (with is null || !value.StartsWith(variable, StringComparison.Ordinal)) return value;
+        var rest = value[variable.Length..].TrimStart('/', '\\');
+        return rest.Length == 0 ? with : Path.Combine(with, rest.Replace('/', Path.DirectorySeparatorChar));
     }
 
     /// <summary>
@@ -318,7 +329,7 @@ public static partial class GameLocator
             progress?.Report($"Looking inside {Path.GetFileName(archive)}…");
             var record = new ArchiveRecord { Length = info.Length, Written = info.LastWriteTimeUtc };
             using var zip = ZipFile.OpenRead(archive);
-            var entryNames = zip.Entries.Where(e => !e.FullName.EndsWith('/')).Select(e => PathNamespaces.Classify(e.FullName.Replace('\\', '/')).Name).ToList();
+            var entryNames = zip.Entries.Where(e => !e.FullName.EndsWith('/')).Select(e => PathNamespaces.Classify(e.FullName.Replace('\\', '/')).Name).ToList(); // archive path
             if (GameCatalog.Identify(entryNames) is { } packed)
             {
                 games.Add(new FoundGame(packed, archive, info.Length));

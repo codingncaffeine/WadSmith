@@ -105,7 +105,7 @@ internal sealed partial class ProjectChoice(WelcomeViewModel owner, Project.Foun
 /// <summary>A recently opened project.</summary>
 internal sealed record RecentProject(string Folder)
 {
-    public string Name => Path.GetFileName(Folder.TrimEnd('/'));
+    public string Name => Path.GetFileName(Folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 }
 
 /// <summary>

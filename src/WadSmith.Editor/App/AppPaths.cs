@@ -49,7 +49,7 @@ public sealed record AppPaths(string Config, string Data, string State, string C
                     var t = line.Trim();
                     if (!t.StartsWith("XDG_DOCUMENTS_DIR=", StringComparison.Ordinal)) continue;
                     var value = t["XDG_DOCUMENTS_DIR=".Length..].Trim('"').Replace("$HOME", home, StringComparison.Ordinal);
-                    if (Path.IsPathRooted(value) && value.TrimEnd('/') != home.TrimEnd('/')) return value;
+                    if (Path.IsPathRooted(value) && value.TrimEnd('/', '\\') != home.TrimEnd('/', '\\')) return value;
                 }
             }
         }
