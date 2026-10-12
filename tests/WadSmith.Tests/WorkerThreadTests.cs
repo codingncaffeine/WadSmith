@@ -34,7 +34,7 @@ public sealed class WorkerThreadTests
     }
 
     [Fact]
-    public void ABurstOfWorkersBuildsOffThePoolAndTheNewestRequestWins()
+    public void ABurstOfWorkersBuildsOffThePoolAndEachEndsOnItsNewestRequest()
     {
         using var _ = StarvedPool();
         var published = new List<(int Worker, int Value, bool Pool)>();
@@ -42,10 +42,11 @@ public sealed class WorkerThreadTests
         var workers = Enumerable.Range(0, 24).Select(i => new LatestOnWorker<(int, bool)>(a => a(), r =>
         {
             lock (published) published.Add((i, r.Item1, r.Item2));
-            done.Signal();
+            if (r.Item1 == i) done.Signal();
         }, $"worker {i}")).ToList();
 
-        // Each worker gets two requests at once: only the last need be built.
+        // Each worker gets two requests at once. The first may be built if the worker starts before the second arrives
+        // (that is allowed); what must hold is that each worker ends on its newest request, with at most that one before it.
         foreach (var (w, i) in workers.Select((w, i) => (w, i)))
         {
             w.Request(() => (-1, Thread.CurrentThread.IsThreadPoolThread));
@@ -53,12 +54,18 @@ public sealed class WorkerThreadTests
         }
 
         var started = DateTime.UtcNow;
-        Assert.True(done.Wait(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken), $"only {published.Count} of 24 workers published in 3 s with the pool starved");
+        Assert.True(done.Wait(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken), $"only {published.Count(p => p.Value == p.Worker)} of 24 workers built their newest request in 3 s with the pool starved");
         var took = DateTime.UtcNow - started;
         Assert.True(took < TimeSpan.FromSeconds(2), $"24 builds took {took.TotalMilliseconds:0} ms");
-        Assert.All(published, p => Assert.False(p.Pool, $"worker {p.Worker} built on a pool thread"));
-        Assert.Equal(Enumerable.Range(0, 24), published.Select(p => p.Value).Order());
-        Assert.DoesNotContain(published, p => p.Value == -1);
+        lock (published)
+        {
+            Assert.All(published, p => Assert.False(p.Pool, $"worker {p.Worker} built on a pool thread"));
+            foreach (var g in published.GroupBy(p => p.Worker))
+            {
+                var values = g.Select(p => p.Value).ToList();
+                Assert.True(values.SequenceEqual([g.Key]) || values.SequenceEqual([-1, g.Key]), $"worker {g.Key} published {string.Join(", ", values)}");
+            }
+        }
     }
 
     [Fact]
