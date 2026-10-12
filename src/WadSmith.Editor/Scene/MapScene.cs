@@ -273,16 +273,26 @@ public sealed class MapScene
             var floor = Batch(sector.FloorTexture, IsSky(sector.FloorTexture) ? SurfaceKind.Sky : SurfaceKind.Floor);
             var ceiling = Batch(sector.CeilingTexture, IsSky(sector.CeilingTexture) ? SurfaceKind.Sky : SurfaceKind.Ceiling);
             var owner = sector.Element;
+
+            // Flats line up with the map's grid (texture x is map x, texture y minus map y), turned, moved and scaled by the
+            // area's own fields as GZDoom does.
+            var (onFloor, onCeiling) = (FlatTransform.Of(sector.Extra, false), FlatTransform.Of(sector.Extra, true));
             for (var i = 0; i < triangles.Count; i += 3)
             {
                 floor.Owners.Add(owner);
                 ceiling.Owners.Add(owner);
-
-                // Flats line up with the map's grid: texture x is map x, texture y is minus map y.
-                foreach (var p in (MapPoint[])[triangles[i], triangles[i + 1], triangles[i + 2]]) floor.Add(p.X, p.Y, sector.FloorHeight, p.X, -p.Y, light);
+                foreach (var p in (MapPoint[])[triangles[i], triangles[i + 1], triangles[i + 2]])
+                {
+                    var (u, v) = onFloor.Texel(p.X, p.Y);
+                    floor.Add(p.X, p.Y, sector.FloorHeight, u, v, light);
+                }
 
                 // Ceilings face down: the same triangles the other way round.
-                foreach (var p in (MapPoint[])[triangles[i + 2], triangles[i + 1], triangles[i]]) ceiling.Add(p.X, p.Y, sector.CeilingHeight, p.X, -p.Y, light);
+                foreach (var p in (MapPoint[])[triangles[i + 2], triangles[i + 1], triangles[i]])
+                {
+                    var (u, v) = onCeiling.Texel(p.X, p.Y);
+                    ceiling.Add(p.X, p.Y, sector.CeilingHeight, u, v, light);
+                }
             }
         }
 

@@ -29,7 +29,7 @@ internal enum AreaDetail
 }
 
 /// <summary>One group of areas painted alike: a texture at a brightness, or a solid colour.</summary>
-internal sealed record AreaStyle(FlatPicture? Flat, byte Light, SKColor Solid);
+internal sealed record AreaStyle(FlatPicture? Flat, byte Light, SKColor Solid, WadSmith.Editor.Scene.FlatTransform? Transform = null);
 
 /// <summary>
 /// The map's picture for the render thread, built on a worker from one <see cref="MapGeometry"/> and
@@ -155,16 +155,17 @@ internal sealed class CanvasSnapshot
         }
         else
         {
-            var index = new Dictionary<(string Flat, int Light), int>();
+            var index = new Dictionary<(string Flat, int Light, WadSmith.Editor.Scene.FlatTransform Transform), int>();
             for (var i = 0; i < sectors.Count; i++)
             {
                 var sector = f.Sectors[sectors[i]];
                 var name = mode == MapViewMode.Ceilings ? sector.CeilingTexture : sector.FloorTexture;
                 var light = Math.Clamp(sector.Light, 0, 255);
-                if (!index.TryGetValue((name, light), out var g))
+                var transform = WadSmith.Editor.Scene.FlatTransform.Of(sector.Extra, mode == MapViewMode.Ceilings);
+                if (!index.TryGetValue((name, light, transform), out var g))
                 {
-                    g = index[(name, light)] = styles.Count;
-                    styles.Add(new AreaStyle(look.Flat(name), Shown(light), new SKColor(0x2A, 0x2A, 0x2E)));
+                    g = index[(name, light, transform)] = styles.Count;
+                    styles.Add(new AreaStyle(look.Flat(name), Shown(light), new SKColor(0x2A, 0x2A, 0x2E), transform));
                 }
 
                 groupOf[i] = g;
@@ -188,6 +189,14 @@ internal sealed class CanvasSnapshot
             return (x0, y0, x1, y1);
         }, (i, path) => AddLoops(path, geometry.LoopsAt(sectors[i])));
         return (areas, [.. styles]);
+    }
+
+    /// <summary>Texture to map for an area's texture fields: the inverse of <see cref="WadSmith.Editor.Scene.FlatTransform.Texel"/>.</summary>
+    internal static SKMatrix ToMap(WadSmith.Editor.Scene.FlatTransform t)
+    {
+        if (t.IsPlain) return SKMatrix.CreateScale(1, -1);
+        var toTexel = SKMatrix.Concat(SKMatrix.CreateScale((float)t.XScale, (float)t.YScale), SKMatrix.Concat(SKMatrix.CreateTranslation((float)t.XPan, (float)t.YPan), SKMatrix.Concat(SKMatrix.CreateRotation((float)(-t.Rotation * Math.PI / 180)), SKMatrix.CreateScale(1, -1))));
+        return toTexel.TryInvert(out var back) ? back : SKMatrix.CreateScale(1, -1);
     }
 
     /// <summary>
@@ -214,10 +223,11 @@ internal sealed class CanvasSnapshot
         {
             var sampling = detail == AreaDetail.Sharp || level > 0 ? new SKSamplingOptions(SKFilterMode.Nearest) : new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
 
-            // Floors line up with the map's grid as in the game: texture x is map x, texture y is minus map y.
+            // Floors line up with the map's grid as in the game (texture x is map x, texture y minus map y), turned, moved and
+            // scaled by the area's own fields: the shader takes texture to map, the way back of the texel a map point shows.
             var image = flat.Level(level);
             var stretch = flat.Image.Width / (float)image.Width;
-            paint.Shader = image.ToShader(SKShaderTileMode.Repeat, SKShaderTileMode.Repeat, sampling, SKMatrix.CreateScale(stretch, -stretch));
+            paint.Shader = image.ToShader(SKShaderTileMode.Repeat, SKShaderTileMode.Repeat, sampling, SKMatrix.Concat(ToMap(style.Transform ?? WadSmith.Editor.Scene.FlatTransform.Plain), SKMatrix.CreateScale(stretch, stretch)));
             paint.ColorFilter = SKColorFilter.CreateBlendMode(new SKColor(style.Light, style.Light, style.Light), SKBlendMode.Modulate);
         }
         else

@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -349,6 +349,70 @@ foreach (var pose in poses)
             var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
             view.FitMap();
             if (pose == "editor-zoomed") view.ZoomBy(3.5);
+            if (pose == "editor-flatcal")
+            {
+                // WadSmith's 3D view of the floor-texture maps (WS_FLATCAL: plain, turn30, pan, turnpan, scale .wad and GZDoom's
+                // view.png of each), from where GZDoom stood (600 above the middle, looking down), and how far apart they are.
+                var folder = Environment.GetEnvironmentVariable("WS_FLATCAL") ?? throw new InvalidOperationException("Set WS_FLATCAL.");
+                var resources = editor.Session.Resources;
+                WadSmith.Editor.Scene.MapScene Scene(string name)
+                {
+                    var lumps = WadSmith.Core.Maps.MapLocator.Find(WadSmith.Core.Containers.WadContainer.Open(Path.Combine(folder, name + ".wad"))).First();
+                    var calMap = WadSmith.Editor.Model.EditorMap.FromModel(WadSmith.Core.Maps.MapConversion.Read(lumps, "doom"));
+                    return WadSmith.Editor.Scene.MapScene.Build(WadSmith.Editor.Geometry.MapGeometry.Build(calMap.Frame), n => resources?.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, WadSmith.App.ThreeD.SpriteShapes.For(resources));
+                }
+
+                double Difference(byte[] png, string name)
+                {
+                    using var ours = SkiaSharp.SKBitmap.Decode(png);
+                    using var theirs = SkiaSharp.SKBitmap.Decode(Path.Combine(folder, name, "view.png"));
+                    double total = 0;
+                    var count = 0;
+                    for (var y = 190; y < 430; y += 2)
+                    {
+                        for (var x = 385; x < 640; x += 2)
+                        {
+                            var (a, b) = (ours.GetPixel(x, y), theirs.GetPixel(x, y));
+                            total += (Math.Abs(a.Red - b.Red) + Math.Abs(a.Green - b.Green) + Math.Abs(a.Blue - b.Blue)) / 3.0;
+                            count++;
+                        }
+                    }
+
+                    return total / count;
+                }
+
+                // GZDoom's eye stands 41 above where it put the player (600); its picture's field of view is found on the plain floor.
+                var plain = Scene("plain");
+                var (bestFov, bestDiff) = (74.0, double.MaxValue);
+                for (var fov = 80.0; fov <= 86.0; fov += 0.25)
+                {
+                    var d = Difference(WadSmith.App.ThreeD.Offscreen3D.RenderPng(plain, resources, new WadSmith.App.ThreeD.Camera3D(0, 0, 641, 90, -89.9, fov), 1024, 640, inside: true), "plain");
+                    if (d < bestDiff) (bestFov, bestDiff) = (fov, d);
+                }
+
+                Console.WriteLine($"flatcal field of view {bestFov:0.00}: plain floor differs {bestDiff:0.0} per channel");
+                foreach (var name in new[] { "plain", "turn30", "pan", "turnpan", "scale" })
+                {
+                    var png = WadSmith.App.ThreeD.Offscreen3D.RenderPng(Scene(name), resources, new WadSmith.App.ThreeD.Camera3D(0, 0, 641, 90, -89.9, bestFov), 1024, 640, inside: true);
+                    File.WriteAllBytes(Path.Combine(output, $"ours-{name}.png"), png);
+                    Console.WriteLine($"flatcal {name}: mean difference {Difference(png, name):0.0} per channel over the floor");
+                }
+
+                // Controls: the plain floor held against GZDoom's turned, moved and scaled ones must differ (the measure can see it).
+                var ourPlain = WadSmith.App.ThreeD.Offscreen3D.RenderPng(plain, resources, new WadSmith.App.ThreeD.Camera3D(0, 0, 641, 90, -89.9, bestFov), 1024, 640, inside: true);
+                foreach (var other in new[] { "turn30", "pan", "scale" }) Console.WriteLine($"flatcal control, plain against {other}: {Difference(ourPlain, other):0.0} per channel");
+
+                // The plan too: the starter room's floor turned 30 through the Inspector.
+                editor.Session.Selection.Set(editor.Session.Map.Sectors[0]);
+                Pump(0.4);
+                editor.Inspector.Rows.OfType<NumberRow>().Single(r => r.Label == "Floor texture turn (°)").Value = 30;
+                Pump(1.5);
+                Console.WriteLine($"flatcal plan: floor fields {string.Join(", ", editor.Session.Map.Sectors[0].Extra.Select(kv => $"{kv.Key}={kv.Value.ToUdmf()}"))}");
+                Save("editor-flatcal-plan");
+
+                break;
+            }
+
             if (pose == "editor-groups")
             {
                 // A room east of the starter room, named Courtyard in the Inspector and locked; a click on it picks nothing; a

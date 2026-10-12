@@ -548,6 +548,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new NumberRow("Brightness", "0 is dark, 255 full light (lightlevel). Doom's rooms are usually around 160.", () => s.Light, v => Set(s, "Change brightness", e => e.Light, (e, x) => e.Light = x, (int)v), 16, 0, 255));
         Rows.Add(new TextRow("Floor texture", "The picture on the floor (texturefloor).", () => s.FloorTexture, v => Set(s, "Change floor texture", e => e.FloorTexture, (e, x) => e.FloorTexture = x, v)));
         Rows.Add(new TextRow("Ceiling texture", "The picture on the ceiling (textureceiling).", () => s.CeilingTexture, v => Set(s, "Change ceiling texture", e => e.CeilingTexture, (e, x) => e.CeilingTexture = x, v)));
+        AddFlatPlacement(s, ceiling: false);
+        AddFlatPlacement(s, ceiling: true);
         Rows.Add(new FlagRow("Counts as a secret", "Finding this area counts toward the secrets at the end of the map (sector type 1024).", () => (s.Special & 1024) != 0, on => Set(s, on ? "Make a secret" : "Unmake a secret", e => e.Special, (e, x) => e.Special = x, on ? s.Special | 1024 : s.Special & ~1024)));
         Rows.Add(new InfoRow("Effect", "What the area does to the player or its light (sector type).", () => (s.Special & ~1024) == 0 ? "None" : (s.Special & ~1024).ToString(CultureInfo.InvariantCulture)));
         Rows.Add(new NumberRow("Tag", "A number that links a switch or trigger to this area (sector tag, id).", () => s.Tag, v => Set(s, "Change tag", e => e.Tag, (e, x) => e.Tag = x, (int)v), 1, 0, 65535));
@@ -697,6 +699,32 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new HeadingRow("GROUP"));
         Rows.Add(new TextRow("Group", "A name for these rooms and things together (\"Courtyard\"): with nothing selected, the Inspector lists the map's groups to select or lock. Leave it empty to take them out of their group.", () => members.Select(Grouping.GroupOf).Distinct().Count() == 1 ? Grouping.GroupOf(members[0]) ?? "" : "", name => _session.NameGroup(members, name), texture: false));
         Rows.Add(new ActionRow(members.Count == 1 ? "Lock it" : "Lock them", "Locks the selection against changes: it can no longer be selected or dragged, nor reshaped by its neighbours. Unlock it with nothing selected, under Groups.", () => _session.LockMembers(members)));
+    }
+
+    /// <summary>
+    /// How a floor's or ceiling's texture lies on it (GZDoom's panning, rotation and scale fields): turned, shifted, sized.
+    /// A value back at its default takes the field away.
+    /// </summary>
+    private void AddFlatPlacement(Sector s, bool ceiling)
+    {
+        var part = ceiling ? "ceiling" : "floor";
+        var where = ceiling ? "Ceiling" : "Floor";
+        FlatTransform Now() => FlatTransform.Of(s, ceiling);
+        void Field(string name, double value, double plain) => _session.History.Record($"Change the {part} texture", e => e.Field(s, name + part, Math.Abs(value - plain) < 1e-9 ? (Core.Maps.Udmf.UdmfValue?)null : Core.Maps.Udmf.UdmfValue.Float(value)));
+        Rows.Add(new HeadingRow(ceiling ? "CEILING TEXTURE" : "FLOOR TEXTURE"));
+        Rows.Add(new NumberRow($"{where} texture turn (°)", $"Turns the {part}'s texture, clockwise as seen from above (rotation{part}).", () => (decimal)Now().Rotation, v => Field("rotation", (double)v, 0), 15, -360, 360));
+        Rows.Add(new NumberRow($"{where} texture shift ↔", $"Moves the {part}'s texture west (more) or east (less) under the room, in texture pixels (xpanning{part}).", () => (decimal)Now().XPan, v => Field("xpanning", (double)v, 0), 8));
+        Rows.Add(new NumberRow($"{where} texture shift ↕", $"Moves the {part}'s texture north (more) or south (less), in texture pixels (ypanning{part}).", () => (decimal)Now().YPan, v => Field("ypanning", (double)v, 0), 8));
+        Rows.Add(new NumberRow($"{where} texture size (%)", $"How big the {part}'s texture is drawn: 200 is twice as big, 50 half (x/yscale{part}).", () => (decimal)Math.Round(100 / Now().XScale), v =>
+        {
+            if (v <= 0) return;
+            var scale = 100 / (double)v;
+            _session.History.Record($"Change the {part} texture", e =>
+            {
+                e.Field(s, "xscale" + part, Math.Abs(scale - 1) < 1e-9 ? (Core.Maps.Udmf.UdmfValue?)null : Core.Maps.Udmf.UdmfValue.Float(scale));
+                e.Field(s, "yscale" + part, Math.Abs(scale - 1) < 1e-9 ? (Core.Maps.Udmf.UdmfValue?)null : Core.Maps.Udmf.UdmfValue.Float(scale));
+            });
+        }, 25, 1, 6400));
     }
 
     private decimal _curveReach = 64;
