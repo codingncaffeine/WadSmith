@@ -81,4 +81,70 @@ public sealed class SessionTests
         Assert.Single(Directory.GetFiles(folder, "*.wad"));
         Assert.Single(Directory.GetFiles(folder, "*.png"));
     }
+
+    [Fact]
+    public void TurningAndMirroringTheSelectionAreOneStepEachAndWaitForAChangeMadeMeanwhile()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var ui = new FakeUi();
+        using var session = EditorSession.Open(project, "MAP01", ui.Post);
+        session.DrawRoom([new(512, 0), new(512, 128), new(768, 128), new(768, 0)]);
+        var room = Assert.Single(session.Selection.Items.OfType<Sector>());
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        (double, double, double, double) Bounds()
+        {
+            var points = session.Map.Lines.Where(l => l.OnMap && (l.Front.Sector == room || l.Back?.Sector == room)).SelectMany(l => new[] { l.Start, l.End }).ToList();
+            return (points.Min(v => v.X), points.Min(v => v.Y), points.Max(v => v.X), points.Max(v => v.Y));
+        }
+
+        // A change made while what turns is gathered: the turn is gathered again and lands once, after it.
+        session.TurnSelection(90);
+        session.History.Run(Floor(room, 24));
+        ui.PumpUntil(() => session.History.UndoLabel == "Turn", TimeSpan.FromSeconds(10));
+        Assert.Equal((576.0, -64.0, 704.0, 192.0), Bounds());
+        Assert.Equal(24, room.FloorHeight);
+        DrawingTests.AssertSound(session.Map);
+        Assert.Same(room, Assert.Single(session.Selection.Items));
+
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        session.FlipSelection(leftToRight: true);
+        ui.PumpUntil(() => session.History.UndoLabel == "Mirror", TimeSpan.FromSeconds(10));
+        Assert.Equal((576.0, -64.0, 704.0, 192.0), Bounds());
+        DrawingTests.AssertSound(session.Map);
+
+        session.History.Undo();
+        session.History.Undo();
+        Assert.Equal((512.0, 0.0, 768.0, 128.0), Bounds());
+        Assert.Equal(24, room.FloorHeight);
+    }
+
+    [Fact]
+    public void TheInspectorTurnsARoomButNotAThingOnItsOwn()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var ui = new FakeUi();
+        using var session = EditorSession.Open(project, "MAP01", ui.Post);
+        var inspector = new WadSmith.App.ViewModels.InspectorViewModel(session);
+        session.Selection.Set(session.Map.Things[0]);
+        Assert.DoesNotContain(inspector.Rows, r => r.Label == "Turn left 90°");
+
+        var start = session.Map.Things[0];
+        var angle = start.Angle;
+        session.Selection.Set(session.Map.Sectors[0]);
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Turn left 90°").Command.Execute(null);
+        ui.PumpUntil(() => session.History.UndoLabel == "Turn", TimeSpan.FromSeconds(10));
+        Assert.Equal((angle + 90) % 360, start.Angle);
+
+        // A typed angle turns it once; the field is ready for the next turn.
+        var typed = inspector.Rows.OfType<WadSmith.App.ViewModels.NumberRow>().Single(r => r.Label == "Turn by (°)");
+        typed.Value = 90;
+        ui.PumpUntil(() => start.Angle == (angle + 180) % 360, TimeSpan.FromSeconds(10));
+        Assert.Equal(0, typed.Value);
+        DrawingTests.AssertSound(session.Map);
+    }
 }

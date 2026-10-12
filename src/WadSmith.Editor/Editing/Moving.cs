@@ -12,7 +12,7 @@ namespace WadSmith.Editor.Editing;
 /// </summary>
 public sealed class MoveSet
 {
-    private MoveSet(MapGeometry geometry, Vertex[] vertices, Thing[] things, Line[] lines, (double X1, double Y1, double X2, double Y2)[] carried, (double MX, double MY, double FX, double FY)[] stretched, (double X, double Y)[] thingSpots)
+    private MoveSet(MapGeometry geometry, Vertex[] vertices, Thing[] things, Line[] lines, (double X1, double Y1, double X2, double Y2)[] carried, (double MX, double MY, double FX, double FY)[] stretched, (double X, double Y)[] thingSpots, (double X, double Y)[] vertexSpots)
     {
         Geometry = geometry;
         Lines = lines;
@@ -21,13 +21,19 @@ public sealed class MoveSet
         Carried = carried;
         Stretched = stretched;
         ThingSpots = thingSpots;
+        var xs = vertexSpots.Select(v => v.X).Concat(thingSpots.Select(t => t.X)).ToList();
+        var ys = vertexSpots.Select(v => v.Y).Concat(thingSpots.Select(t => t.Y)).ToList();
+        if (xs.Count > 0) Box = (xs.Min(), ys.Min(), xs.Max(), ys.Max());
     }
+
+    /// <summary>The most corners and objects moved live under the pointer (and joined when let go); a larger set moves when let go.</summary>
+    public const int LiveLimit = 4096;
 
     /// <summary>
     /// A set of corners and walls just put on the map (a paste), to join to what was there with
     /// <see cref="Joining.AfterMove"/>; <paramref name="before"/> shows the map as it was before.
     /// </summary>
-    public static MoveSet Of(MapGeometry before, IReadOnlyList<Vertex> vertices, IReadOnlyList<Line> lines) => new(before, [.. vertices], [], [.. lines], [], [], []);
+    public static MoveSet Of(MapGeometry before, IReadOnlyList<Vertex> vertices, IReadOnlyList<Line> lines) => new(before, [.. vertices], [], [.. lines], [], [], [], [.. vertices.Select(v => (v.X, v.Y))]);
 
     /// <summary>The shapes the set was gathered from (the map as it was before the move).</summary>
     public MapGeometry Geometry { get; }
@@ -49,6 +55,12 @@ public sealed class MoveSet
     public IReadOnlyList<(double X, double Y)> ThingSpots { get; }
 
     public int Count => Vertices.Count + Things.Count;
+
+    /// <summary>The box round where the corners and objects stood when gathered (null when nothing moves).</summary>
+    public (double MinX, double MinY, double MaxX, double MaxY)? Box { get; }
+
+    /// <summary>The middle of <see cref="Box"/>.</summary>
+    public MapPoint Middle => Box is { } b ? new MapPoint((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2) : default;
 
     public bool IsEmpty => Count == 0;
 
@@ -162,7 +174,8 @@ public sealed class MoveSet
             [.. touched],
             [.. carried],
             [.. stretched],
-            [.. thingList.Select(t => (t.X, t.Y))]);
+            [.. thingList.Select(t => (t.X, t.Y))],
+            [.. moving.Order().Select(i => (f.Vertices[i].X, f.Vertices[i].Y))]);
 
         int SectorOf(int side) => side >= 0 && side < f.Sides.Count ? f.Sides[side].Sector : -1;
     }

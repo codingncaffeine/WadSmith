@@ -95,7 +95,37 @@ internal sealed class MapCanvas : Control
     private MapPoint? _mergeAt;
 
     /// <summary>Moves of up to this many corners and objects change the map as the pointer goes; bigger ones when let go.</summary>
-    private const int LiveMoveLimit = 4096;
+    private const int LiveMoveLimit = MoveSet.LiveLimit;
+
+    /// <summary>The handles round the selection: four corners and four sides resize it, the knob above turns it.</summary>
+    private enum Grip
+    {
+        None,
+        Turn,
+        North,
+        South,
+        East,
+        West,
+        NorthEast,
+        NorthWest,
+        SouthEast,
+        SouthWest,
+    }
+
+    /// <summary>How far outside the selection the handles sit (pixels), so they never cover its corners.</summary>
+    private const double GripPad = 10;
+
+    /// <summary>How far above the handles' box the turning knob sits (pixels).</summary>
+    private const double KnobRise = 26;
+
+    // A turn or resize under way (a gesture like a move): the handle held, the box it started from, where it was pressed.
+    private Grip _grip;
+    private (double MinX, double MinY, double MaxX, double MaxY) _gripBox;
+    private MapPoint _gripFrom;
+    private bool _fromMiddle;
+    private Placement _placement = Placement.Identity;
+    private TransformEdit? _transformEdit;
+    private bool _overGrip;
 
     static MapCanvas()
     {
@@ -129,7 +159,8 @@ internal sealed class MapCanvas : Control
 
             // The point that snaps: the moving corner nearest the grab, else the nearest object.
             _anchor = Nearest(r.Set.Vertices.Select(v => new MapPoint(v.X, v.Y))) ?? Nearest(r.Set.Things.Select(t => new MapPoint(t.X, t.Y)));
-            Follow(_lastPointer, _free);
+            if (_grip != Grip.None) Shape(_lastPointer, _free, _fromMiddle);
+            else Follow(_lastPointer, _free);
             if (_endWhenGathered) EndMove(keep: true);
         }, "what a drag moves");
         _boxes = new(ViewModels.MainViewModel.PostToUi, r =>
@@ -174,6 +205,9 @@ internal sealed class MapCanvas : Control
 
     /// <summary>Raised while the selection is being moved, with what moves and how far (null when the move ends).</summary>
     public event Action<(int Corners, int Things, double Dx, double Dy)?>? Moving;
+
+    /// <summary>Raised with a sentence while the selection is turned or resized with its handles (null when it ends).</summary>
+    public event Action<string?>? Placing;
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -321,7 +355,7 @@ internal sealed class MapCanvas : Control
         if (_moveGesture != 0)
         {
             preview = new DrawPreview(null, null, null, _free ? 0 : GridStep());
-            if (_moveSet is { } set) move = new MovePreview(set, _offset.X, _offset.Y, _mergeAt);
+            if (_moveSet is { } set) move = new MovePreview(set, _offset.X, _offset.Y, _mergeAt, _grip != Grip.None ? _placement : null);
         }
 
         context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview, move));
@@ -333,6 +367,7 @@ internal sealed class MapCanvas : Control
         }
 
         if (_drawFrom is { } a && _drawTo is { } b && (a.X != b.X || a.Y != b.Y)) DrawSize(context, a, b);
+        DrawGrips(context);
     }
 
     /// <summary>The room's size beside it, in map units, so rooms can be drawn to measure.</summary>
@@ -463,15 +498,30 @@ internal sealed class MapCanvas : Control
         if (_moveGesture == 0 || Session is not { } session) return;
         if (_moveSet is { IsEmpty: false } set)
         {
-            if (set.Count <= LiveMoveLimit && (_moveEdit is not null || _offset != (0, 0))) Commit(session, set);
-            Moving?.Invoke((set.Vertices.Count, set.Things.Count, _offset.X, _offset.Y));
+            if (set.Count <= LiveMoveLimit && (Committed || Changed)) Commit(session, set);
+            if (_grip == Grip.None) Moving?.Invoke((set.Vertices.Count, set.Things.Count, _offset.X, _offset.Y));
+            else Placing?.Invoke(DescribePlacing());
         }
 
         InvalidateVisual();
     }
 
+    /// <summary>Whether the gesture has put anything on the map yet.</summary>
+    private bool Committed => _grip == Grip.None ? _moveEdit is not null : _transformEdit is not null;
+
+    /// <summary>Whether the pointer has taken the selection anywhere yet.</summary>
+    private bool Changed => _grip == Grip.None ? _offset != (0, 0) : _placement != Placement.Identity;
+
     private void Commit(EditorSession session, MoveSet set)
     {
+        if (_grip != Grip.None)
+        {
+            var turn = _transformEdit is null ? new TransformEdit(set, _placement) : _transformEdit.To(_placement);
+            _transformEdit ??= turn;
+            session.History.Run(turn, _moveGesture);
+            return;
+        }
+
         var edit = _moveEdit is null ? new MoveEdit(set, _offset.X, _offset.Y) : _moveEdit.To(_offset.X, _offset.Y);
         _moveEdit ??= edit;
         session.History.Run(edit, _moveGesture);
@@ -490,10 +540,10 @@ internal sealed class MapCanvas : Control
         }
 
         _endWhenGathered = false;
-        if (keep && _moveSet is { IsEmpty: false } set && (_moveEdit is not null || _offset != (0, 0)))
+        if (keep && _moveSet is { IsEmpty: false } set && (Committed || Changed))
         {
             Commit(session, set);
-            if (_offset == (0, 0)) session.History.Discard(_moveGesture);
+            if (!Changed) session.History.Discard(_moveGesture);
             else if (set.Count <= LiveMoveLimit) session.FinishMove(set, _moveGesture);
         }
         else
@@ -507,11 +557,179 @@ internal sealed class MapCanvas : Control
         _mergeAt = null;
         _moving = new HashSet<Vertex>(ReferenceEqualityComparer.Instance);
         Cursor = Cursor.Default;
-        Moving?.Invoke(null);
+        if (_grip != Grip.None) Placing?.Invoke(null);
+        else Moving?.Invoke(null);
+        _grip = Grip.None;
+        _transformEdit = null;
+        _placement = Placement.Identity;
         InvalidateVisual();
     }
 
     private void CancelMove() => EndMove(keep: false);
+
+    /// <summary>The handles' places on the control, from the selection's box (empty when the selection has none).</summary>
+    private List<(Grip Grip, Point At)> Grips()
+    {
+        var grips = new List<(Grip, Point)>();
+        if (Tool != EditorTool.Select || _moveGesture != 0 || _selection is not { HasHandles: true, Box: { } b }) return grips;
+        var (a, c) = (ToScreen(new MapPoint(b.MinX, b.MaxY)), ToScreen(new MapPoint(b.MaxX, b.MinY)));
+        var (left, top, right, bottom) = (a.X - GripPad, a.Y - GripPad, c.X + GripPad, c.Y + GripPad);
+        var (mx, my) = ((left + right) / 2, (top + bottom) / 2);
+        grips.Add((Grip.Turn, new Point(mx, top - KnobRise)));
+        grips.Add((Grip.NorthWest, new Point(left, top)));
+        grips.Add((Grip.NorthEast, new Point(right, top)));
+        grips.Add((Grip.SouthEast, new Point(right, bottom)));
+        grips.Add((Grip.SouthWest, new Point(left, bottom)));
+
+        // Side handles only where there is room for them between the corners.
+        if (right - left >= 48)
+        {
+            grips.Add((Grip.North, new Point(mx, top)));
+            grips.Add((Grip.South, new Point(mx, bottom)));
+        }
+
+        if (bottom - top >= 48)
+        {
+            grips.Add((Grip.East, new Point(right, my)));
+            grips.Add((Grip.West, new Point(left, my)));
+        }
+
+        return grips;
+    }
+
+    private Grip GripAt(Point p)
+    {
+        foreach (var (grip, at) in Grips())
+        {
+            if (Math.Abs(p.X - at.X) <= 7 && Math.Abs(p.Y - at.Y) <= 7) return grip;
+        }
+
+        return Grip.None;
+    }
+
+    private static Cursor GripCursor(Grip grip) => new(grip switch
+    {
+        Grip.Turn => StandardCursorType.Hand,
+        Grip.North => StandardCursorType.TopSide,
+        Grip.South => StandardCursorType.BottomSide,
+        Grip.East => StandardCursorType.RightSide,
+        Grip.West => StandardCursorType.LeftSide,
+        Grip.NorthEast => StandardCursorType.TopRightCorner,
+        Grip.NorthWest => StandardCursorType.TopLeftCorner,
+        Grip.SouthEast => StandardCursorType.BottomRightCorner,
+        _ => StandardCursorType.BottomLeftCorner,
+    });
+
+    /// <summary>Starts turning or resizing the selection with a handle: what moves is gathered on a worker, as for a move.</summary>
+    private void BeginShape(Grip grip, Point at)
+    {
+        if (Session is not { } session || _selection?.Box is not { } box) return;
+        BeginMove(at);
+        _grip = grip;
+        _gripBox = box;
+        _gripFrom = ToMap(at);
+        _placement = Placement.Identity;
+        _transformEdit = null;
+        Cursor = GripCursor(grip);
+    }
+
+    /// <summary>
+    /// The placement for the pointer at <paramref name="p"/>: the knob turns round the middle in steps of 15°;
+    /// a corner or side handle resizes from the opposite one (from the middle with Ctrl), the handle landing on
+    /// the grid, and mirrors when dragged past it. Shift turns and resizes freely.
+    /// </summary>
+    private void Shape(Point p, bool free, bool fromMiddle)
+    {
+        _free = free;
+        _fromMiddle = fromMiddle;
+        _lastPointer = p;
+        var m = ToMap(p);
+        var b = _gripBox;
+        var middle = new MapPoint((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2);
+        if (_grip == Grip.Turn)
+        {
+            var pivot = new MapPoint(Math.Round(middle.X), Math.Round(middle.Y));
+            var degrees = (Math.Atan2(m.Y - pivot.Y, m.X - pivot.X) - Math.Atan2(_gripFrom.Y - pivot.Y, _gripFrom.X - pivot.X)) * 180 / Math.PI;
+            degrees = Math.IEEERemainder(degrees, 360);
+            if (!free) degrees = Math.Round(degrees / 15) * 15;
+            _placement = Placement.Turn(degrees, pivot);
+        }
+        else
+        {
+            var (east, west, north, south) = (_grip is Grip.East or Grip.NorthEast or Grip.SouthEast, _grip is Grip.West or Grip.NorthWest or Grip.SouthWest, _grip is Grip.North or Grip.NorthEast or Grip.NorthWest, _grip is Grip.South or Grip.SouthEast or Grip.SouthWest);
+            var held = new MapPoint(east ? b.MaxX : west ? b.MinX : middle.X, north ? b.MaxY : south ? b.MinY : middle.Y);
+            var still = fromMiddle ? middle : new MapPoint(east ? b.MinX : west ? b.MaxX : middle.X, north ? b.MinY : south ? b.MaxY : middle.Y);
+
+            // The handle sits off the box: keep the pointer's distance from the box's own corner or side.
+            var target = new MapPoint(m.X - (_gripFrom.X - held.X), m.Y - (_gripFrom.Y - held.Y));
+            if (!free)
+            {
+                var step = GridStep();
+                target = new MapPoint(Math.Round(target.X / step) * step, Math.Round(target.Y / step) * step);
+            }
+
+            var sx = (east || west) && Math.Abs(held.X - still.X) > 1e-9 ? (target.X - still.X) / (held.X - still.X) : 1;
+            var sy = (north || south) && Math.Abs(held.Y - still.Y) > 1e-9 ? (target.Y - still.Y) / (held.Y - still.Y) : 1;
+            if (Math.Abs(sx) < 1e-3 || Math.Abs(sy) < 1e-3) return;
+            _placement = Placement.Size(sx, sy, still);
+        }
+
+        ApplyMove();
+    }
+
+    /// <summary>The status strip's sentence for a turn or resize under way.</summary>
+    private string DescribePlacing()
+    {
+        var p = _placement;
+        var b = _gripBox;
+        if (_grip == Grip.Turn)
+        {
+            var degrees = Math.Atan2(p.C, p.A) * 180 / Math.PI;
+            var way = degrees > 0 ? "to the left" : degrees < 0 ? "to the right" : "";
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Turning {Math.Abs(degrees):0.#}° {way} · Shift turns freely, Esc puts it back");
+        }
+
+        var (w, h) = ((b.MaxX - b.MinX) * Math.Abs(p.A), (b.MaxY - b.MinY) * Math.Abs(p.D));
+        var mirrored = p.A < 0 && p.D < 0 ? ", turned round" : p.A < 0 ? ", mirrored left to right" : p.D < 0 ? ", mirrored top to bottom" : "";
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Resizing to {w:0.#} × {h:0.#} ({Math.Abs(p.A) * 100:0.#} % × {Math.Abs(p.D) * 100:0.#} %){mirrored} · Ctrl resizes from the middle, Shift freely, Esc puts it back");
+    }
+
+    /// <summary>The handles round the selection, or the box being turned or resized (screen pixels).</summary>
+    private void DrawGrips(DrawingContext context)
+    {
+        var accent = new SolidColorBrush(Color.FromRgb(0xE0, 0x58, 0x2A));
+        var dashed = new Pen(accent, 1, new DashStyle([4, 3], 0));
+        if (_grip != Grip.None && _moveGesture != 0)
+        {
+            // The box as it will land: turned or resized with the selection.
+            var b = _gripBox;
+            var corners = new[] { (b.MinX, b.MinY), (b.MaxX, b.MinY), (b.MaxX, b.MaxY), (b.MinX, b.MaxY) }.Select(c => ToScreen(_placement.Apply(c.Item1, c.Item2))).ToArray();
+            var outline = new StreamGeometry();
+            using (var g = outline.Open())
+            {
+                g.BeginFigure(corners[0], false);
+                foreach (var c in corners.Skip(1)) g.LineTo(c);
+                g.EndFigure(true);
+            }
+
+            context.DrawGeometry(null, dashed, outline);
+            return;
+        }
+
+        var grips = Grips();
+        if (grips.Count == 0) return;
+        var (nw, se) = (grips.First(g => g.Grip == Grip.NorthWest).At, grips.First(g => g.Grip == Grip.SouthEast).At);
+        context.DrawRectangle(dashed, new Rect(nw, se));
+        var knob = grips[0].At;
+        context.DrawLine(new Pen(accent, 1), new Point(knob.X, knob.Y + 5), new Point(knob.X, nw.Y));
+        var face = new SolidColorBrush(Color.FromRgb(0x14, 0x10, 0x10));
+        var edge = new Pen(accent, 1.5);
+        foreach (var (grip, at) in grips)
+        {
+            if (grip == Grip.Turn) context.DrawEllipse(face, edge, at, 5, 5);
+            else context.DrawRectangle(face, edge, new Rect(at.X - 4, at.Y - 4, 8, 8));
+        }
+    }
 
     private void CancelDrawing()
     {
@@ -644,6 +862,15 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (props.IsLeftButtonPressed && Session is not null && GripAt(e.GetPosition(this)) is var grip and not Grip.None)
+        {
+            _pressAt = e.GetPosition(this);
+            BeginShape(grip, e.GetPosition(this));
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            return;
+        }
+
         if (props.IsLeftButtonPressed && Session is not null)
         {
             var hit = HitTest(e.GetPosition(this));
@@ -734,7 +961,9 @@ internal sealed class MapCanvas : Control
         var free = (e.KeyModifiers & KeyModifiers.Shift) != 0;
         if (_moveGesture != 0)
         {
-            if (!_endWhenGathered) Follow(p, free);
+            if (_endWhenGathered) return;
+            if (_grip != Grip.None) Shape(p, free, (e.KeyModifiers & KeyModifiers.Control) != 0);
+            else Follow(p, free);
             return;
         }
 
@@ -752,9 +981,18 @@ internal sealed class MapCanvas : Control
             return;
         }
 
-        var hit = Tool == EditorTool.Door ? WallAt(p) : HitTest(p);
-        if (!ReferenceEquals(hit, _hover))
+        if (GripAt(p) is var over and not Grip.None)
         {
+            _overGrip = true;
+            Cursor = GripCursor(over);
+            HoverChanged?.Invoke(null, ToMap(p));
+            return;
+        }
+
+        var hit = Tool == EditorTool.Door ? WallAt(p) : HitTest(p);
+        if (!ReferenceEquals(hit, _hover) || _overGrip)
+        {
+            _overGrip = false;
             _hover = hit;
             _hoverOutline = hit is null || Session is null ? null : SelectionOverlay.Take([hit], Session.Geometry, _look);
             Cursor = hit is not null && Session?.Selection.Contains(hit) == true ? new Cursor(StandardCursorType.SizeAll) : Cursor.Default;
@@ -783,6 +1021,14 @@ internal sealed class MapCanvas : Control
             var geometry = boxed.Geometry;
             var add = _boxAdd;
             _boxes.Request(() => (boxed, add, BoxSelection.Pick(geometry, Math.Min(c0.X, c1.X), Math.Min(c0.Y, c1.Y), Math.Max(c0.X, c1.X), Math.Max(c0.Y, c1.Y))));
+            return;
+        }
+
+        if (_grip != Grip.None && _moveGesture != 0 && e.InitialPressMouseButton == MouseButton.Left)
+        {
+            _pressAt = null;
+            e.Pointer.Capture(null);
+            EndMove(keep: true);
             return;
         }
 
@@ -913,6 +1159,23 @@ internal sealed class MapCanvas : Control
                 break;
             case Key.S when e.KeyModifiers == KeyModifiers.None:
                 Tool = EditorTool.Stairs;
+                e.Handled = true;
+                break;
+            // Turning and mirroring the selection (on the plan only, so typing a capital in a field never does it).
+            case Key.OemOpenBrackets when e.KeyModifiers == KeyModifiers.Control && _moveGesture == 0:
+                Session?.TurnSelection(90);
+                e.Handled = true;
+                break;
+            case Key.OemCloseBrackets when e.KeyModifiers == KeyModifiers.Control && _moveGesture == 0:
+                Session?.TurnSelection(-90);
+                e.Handled = true;
+                break;
+            case Key.H when e.KeyModifiers == KeyModifiers.Shift && _moveGesture == 0:
+                Session?.FlipSelection(leftToRight: true);
+                e.Handled = true;
+                break;
+            case Key.V when e.KeyModifiers == KeyModifiers.Shift && _moveGesture == 0:
+                Session?.FlipSelection(leftToRight: false);
                 e.Handled = true;
                 break;
             case Key.OemPlus or Key.Add:

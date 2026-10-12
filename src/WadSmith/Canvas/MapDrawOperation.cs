@@ -26,6 +26,12 @@ internal sealed class SelectionOverlay
 
     public List<SKPath> Areas { get; } = [];
 
+    /// <summary>The box round everything selected, in map units (null when nothing is on the map).</summary>
+    public (double MinX, double MinY, double MaxX, double MaxY)? Box { get; private set; }
+
+    /// <summary>Whether the selection turns and resizes with handles: any wall, face or room, or more than one corner or object.</summary>
+    public bool HasHandles => Box is not null && (Lines.Count + Faces.Count + Areas.Count > 0 || Points.Count + Things.Count > 1);
+
     public static SelectionOverlay Take(IReadOnlyList<Element> items, MapGeometry geometry, MapLook look)
     {
         var o = new SelectionOverlay();
@@ -74,6 +80,24 @@ internal sealed class SelectionOverlay
             }
         }
 
+        var (x0, y0, x1, y1) = (double.MaxValue, double.MaxValue, double.MinValue, double.MinValue);
+        void Add(double x, double y) => (x0, y0, x1, y1) = (Math.Min(x0, x), Math.Min(y0, y), Math.Max(x1, x), Math.Max(y1, y));
+        foreach (var (ax, ay, bx, by) in o.Lines.Concat(o.Faces))
+        {
+            Add(ax, ay);
+            Add(bx, by);
+        }
+
+        foreach (var (x, y) in o.Points) Add(x, y);
+        foreach (var (x, y, _) in o.Things) Add(x, y);
+        foreach (var path in o.Areas)
+        {
+            var b = path.Bounds;
+            Add(b.Left, b.Top);
+            Add(b.Right, b.Bottom);
+        }
+
+        if (x0 <= x1) o.Box = (x0, y0, x1, y1);
         return o;
     }
 }
@@ -84,8 +108,11 @@ internal sealed class SelectionOverlay
 /// </summary>
 internal sealed record DrawPreview(MapPoint? From, MapPoint? To, MapPoint? Snap, double Step, IReadOnlyList<MapPoint>? Corners = null);
 
-/// <summary>What is being moved and by how much: its walls and objects drawn at their new place while the map catches up.</summary>
-internal sealed record MovePreview(WadSmith.Editor.Editing.MoveSet Set, double Dx, double Dy, MapPoint? MergeAt);
+/// <summary>
+/// What is being moved and by how much (or turned, resized or mirrored: <paramref name="Placement"/>): its
+/// walls and objects drawn at their new place while the map catches up.
+/// </summary>
+internal sealed record MovePreview(WadSmith.Editor.Editing.MoveSet Set, double Dx, double Dy, MapPoint? MergeAt, WadSmith.Editor.Editing.Placement? Placement = null);
 
 /// <summary>Draws the map on the render thread through a Skia lease.</summary>
 internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null) : ICustomDrawOperation
@@ -195,10 +222,16 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
     private static void DrawMove(SKCanvas canvas, MovePreview move, float px)
     {
         using var stroke = new SKPaint { Style = SKPaintStyle.Stroke, Color = Accent, StrokeWidth = 2.4f * px, IsAntialias = true, StrokeCap = SKStrokeCap.Round };
-        var (dx, dy) = ((float)move.Dx, (float)move.Dy);
-        foreach (var (x1, y1, x2, y2) in move.Set.Carried) canvas.DrawLine((float)x1 + dx, (float)y1 + dy, (float)x2 + dx, (float)y2 + dy, stroke);
-        foreach (var (mx, my, fx, fy) in move.Set.Stretched) canvas.DrawLine((float)mx + dx, (float)my + dy, (float)fx, (float)fy, stroke);
-        foreach (var (x, y) in move.Set.ThingSpots) canvas.DrawCircle((float)x + dx, (float)y + dy, 10 * px, stroke);
+        var p = move.Placement ?? WadSmith.Editor.Editing.Placement.Identity with { Tx = move.Dx, Ty = move.Dy };
+        SKPoint At(double x, double y)
+        {
+            var q = p.Apply(x, y);
+            return new SKPoint((float)q.X, (float)q.Y);
+        }
+
+        foreach (var (x1, y1, x2, y2) in move.Set.Carried) canvas.DrawLine(At(x1, y1), At(x2, y2), stroke);
+        foreach (var (mx, my, fx, fy) in move.Set.Stretched) canvas.DrawLine(At(mx, my), new SKPoint((float)fx, (float)fy), stroke);
+        foreach (var (x, y) in move.Set.ThingSpots) canvas.DrawCircle(At(x, y), 10 * px, stroke);
 
         // The corner the grabbed one will become when let go.
         if (move.MergeAt is { } m)

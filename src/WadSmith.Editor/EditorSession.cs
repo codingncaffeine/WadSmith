@@ -36,6 +36,7 @@ public sealed class EditorSession : IDisposable
     private readonly Timer _timer;
     private readonly SemaphoreSlim _writer = new(1, 1);
     private readonly LatestOnWorker<MapGeometry> _shapes;
+    private readonly LatestOnWorker<(long Version, MoveSet Set, Func<MoveSet, Placement?> Make)> _placings;
     private MapGeometry _geometry;
     private long _savedVersion;
     private Task _lastSave = Task.CompletedTask;
@@ -69,6 +70,21 @@ public sealed class EditorSession : IDisposable
                 then();
             }
         }, "the map's shapes");
+        _placings = new(onUiThread, r =>
+        {
+            if (_disposed) return;
+            if (r.Version != Map.Version)
+            {
+                // The map changed while what moves was gathered: gather again from the selection as it is now.
+                TransformSelection(r.Make);
+                return;
+            }
+
+            if (r.Set.IsEmpty || r.Make(r.Set) is not { } placement || placement.Flattens || placement == Placement.Identity) return;
+            var gesture = History.NewGesture();
+            History.Run(new TransformEdit(r.Set, placement), gesture);
+            if (r.Set.Count <= MoveSet.LiveLimit) FinishMove(r.Set, gesture);
+        }, "what a turn moves");
         map.Changed += _ =>
         {
             State = SaveState.Pending;
@@ -385,6 +401,35 @@ public sealed class EditorSession : IDisposable
     }
 
     /// <summary>
+    /// Turns, resizes or mirrors the selection as one undo step: what moves is gathered on a worker (the
+    /// selection can be the whole map), placed as <paramref name="make"/> says (it is given what moves, to turn
+    /// round its middle), joined to the map, and stays selected.
+    /// </summary>
+    public void TransformSelection(Func<MoveSet, Placement?> make)
+    {
+        if (Selection.IsEmpty) return;
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => TransformSelection(make);
+            return;
+        }
+
+        var geometry = _geometry;
+        var seeds = MoveSet.Seeds.Of(Selection.Items);
+        var version = Map.Version;
+        _placings.Request(() => (version, MoveSet.Gather(geometry, seeds), make));
+    }
+
+    /// <summary>Turns the selection by <paramref name="degrees"/> counterclockwise round its middle (kept to whole units, so a quarter turn keeps corners on the grid).</summary>
+    public void TurnSelection(double degrees) => TransformSelection(set => Placement.Turn(degrees, new MapPoint(Math.Round(set.Middle.X), Math.Round(set.Middle.Y))));
+
+    /// <summary>Mirrors the selection in place: left to right, or top to bottom.</summary>
+    public void FlipSelection(bool leftToRight) => TransformSelection(set => Placement.Size(leftToRight ? -1 : 1, leftToRight ? 1 : -1, set.Middle));
+
+    /// <summary>Resizes the selection round its middle by <paramref name="factor"/> both ways.</summary>
+    public void ResizeSelection(double factor) => TransformSelection(set => Placement.Size(factor, factor, set.Middle));
+
+    /// <summary>
     /// Ends a drag that moved <paramref name="set"/>: joins what landed on the rest of the map (corners
     /// merged, walls split and shared), in the same undo step as the move, and says so when walls were
     /// left crossing.
@@ -402,7 +447,7 @@ public sealed class EditorSession : IDisposable
         }
 
         Selection.Prune();
-        if (crossings > 0) Notice?.Invoke($"This move left {crossings} wall{(crossings == 1 ? "" : "s")} crossing another, which the game draws wrongly. Move them apart, or press Ctrl+Z to take the move back.");
+        if (crossings > 0) Notice?.Invoke($"This left {crossings} wall{(crossings == 1 ? "" : "s")} crossing another, which the game draws wrongly. Move them apart, or press Ctrl+Z to take it back.");
     }
 
     /// <summary>The last save's failure, in a sentence.</summary>

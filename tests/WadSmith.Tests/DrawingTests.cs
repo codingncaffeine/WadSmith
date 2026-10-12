@@ -39,7 +39,8 @@ public sealed class DrawingTests(ITestOutputHelper output)
     /// The rules every drawn map keeps: walls have length and faces of their own, no two walls share both
     /// corners or cross, no corner sits in the middle of a wall, every area is closed (as many of its walls
     /// arrive at each corner as leave it), every area on the map has walls, two-sided means two faces,
-    /// and the frame kept up edit by edit matches one built from scratch.
+    /// every wall has its front's area on its right and its back's on its left, and the frame kept up edit
+    /// by edit matches one built from scratch.
     /// </summary>
     internal static void AssertSound(EditorMap map)
     {
@@ -86,6 +87,15 @@ public sealed class DrawingTests(ITestOutputHelper output)
         var used = lines.SelectMany(l => new[] { l.Front.Sector, l.Back?.Sector }).OfType<Sector>().ToHashSet();
         Assert.All(map.Sectors.Where(s => s.OnMap), s => Assert.Contains(s, used));
         Assert.All(used, s => Assert.True(s.OnMap, "a face belongs to an area off the map"));
+        var shapes = MapGeometry.Build(map.Frame);
+        foreach (var l in lines)
+        {
+            var (dx, dy) = ((l.End.X - l.Start.X) / l.Length, (l.End.Y - l.Start.Y) / l.Length);
+            var (mx, my) = ((l.Start.X + l.End.X) / 2, (l.Start.Y + l.End.Y) / 2);
+            Assert.True(ReferenceEquals(l.Front.Sector, shapes.SectorAt(new MapPoint(mx + dy / 8, my - dx / 8))), $"the wall at ({mx}, {my}) has its front's area on its left");
+            if (l.Back is { } back) Assert.True(ReferenceEquals(back.Sector, shapes.SectorAt(new MapPoint(mx - dy / 8, my + dx / 8))), $"the wall at ({mx}, {my}) has its back's area on its right");
+        }
+
         Assert.Equal(Udmf(map.FrameFromScratch().ToModel()), Udmf(map.ToModel()));
     }
 

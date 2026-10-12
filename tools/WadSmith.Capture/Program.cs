@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,12 +361,12 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
                 // one inside it.
-                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs";
+                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn";
                 view.ZoomBy(wide ? 0.3 : 0.45);
                 if (wide) view.PanBy(-90, 0);
                 Pump(0.3);
@@ -459,6 +459,61 @@ foreach (var pose in poses)
                     editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
                     Pump(1.5);
                     Save("editor-make-stairs");
+                    break;
+                }
+
+                if (pose == "editor-turn")
+                {
+                    // A room east of the starter room, selected; its turning knob dragged a quarter turn to the left
+                    // round its middle (captured halfway), its north-east handle dragged 64 east, then Shift+H.
+                    Drag((512, -64), (768, 64), null);
+                    window.KeyPress(Avalonia.Input.Key.V, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.V, "v");
+                    window.MouseDown(At(640, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(640, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.6);
+                    var room = editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().Single();
+                    string Box()
+                    {
+                        var b = editor.Session.Geometry.WallBoundsAt(room.Slot);
+                        return b is { } x ? $"({x.MinX:0},{x.MinY:0})-({x.MaxX:0},{x.MaxY:0})" : "?";
+                    }
+
+                    Avalonia.Point OnWindow(Avalonia.Point p) => view.TranslatePoint(p, window)!.Value;
+                    void Hold(Avalonia.Point from, Func<double, Avalonia.Point> path, string? midShot)
+                    {
+                        window.MouseMove(OnWindow(from), Avalonia.Input.RawInputModifiers.None);
+                        Pump(0.1);
+                        window.MouseDown(OnWindow(from), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                        for (var k = 1; k <= 12; k++)
+                        {
+                            window.MouseMove(OnWindow(path(k / 12.0)), Avalonia.Input.RawInputModifiers.LeftMouseButton);
+                            Pump(0.03);
+                            if (k == 6 && midShot is not null) Save(midShot);
+                        }
+
+                        window.MouseUp(OnWindow(path(1)), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                        Pump(1.0);
+                    }
+
+                    // The knob sits above the middle of the handles' box (10 pixels outside the room, 26 above that).
+                    var (nw, se) = (view.ToScreen(new WadSmith.Editor.Geometry.MapPoint(512, 64)), view.ToScreen(new WadSmith.Editor.Geometry.MapPoint(768, -64)));
+                    var pivot = view.ToScreen(new WadSmith.Editor.Geometry.MapPoint(640, 0));
+                    var knob = new Avalonia.Point((nw.X + se.X) / 2, nw.Y - 10 - 26);
+                    var r = pivot.Y - knob.Y;
+                    Hold(knob, t => new Avalonia.Point(pivot.X + r * Math.Cos(Math.PI / 2 + t * Math.PI / 2), pivot.Y - r * Math.Sin(Math.PI / 2 + t * Math.PI / 2)), "editor-turning");
+                    Console.WriteLine($"turn knob: room {Box()}, undo '{editor.Session.History.UndoLabel}', status '{editor.Status}'");
+
+                    var (ne, unit) = (view.ToScreen(new WadSmith.Editor.Geometry.MapPoint(704, 128)), view.ToScreen(new WadSmith.Editor.Geometry.MapPoint(1, 0)).X - view.ToScreen(new WadSmith.Editor.Geometry.MapPoint(0, 0)).X);
+                    var grip = new Avalonia.Point(ne.X + 10, ne.Y - 10);
+                    Hold(grip, t => new Avalonia.Point(grip.X + t * 64 * unit, grip.Y), "editor-resizing");
+                    Console.WriteLine($"turn resize: room {Box()}, undo '{editor.Session.History.UndoLabel}'");
+
+                    window.KeyPress(Avalonia.Input.Key.H, Avalonia.Input.RawInputModifiers.Shift, Avalonia.Input.PhysicalKey.H, "H");
+                    Pump(1.0);
+                    var wrong = editor.Session.Map.Lines.Count(l => l.OnMap && !ReferenceEquals(editor.Session.Geometry.SectorAt(new WadSmith.Editor.Geometry.MapPoint((l.Start.X + l.End.X) / 2 + (l.End.Y - l.Start.Y) / l.Length / 8, (l.Start.Y + l.End.Y) / 2 - (l.End.X - l.Start.X) / l.Length / 8)), l.Front.Sector));
+                    Console.WriteLine($"turn mirror: room {Box()}, undo '{editor.Session.History.UndoLabel}', walls facing away from their room: {wrong}; {editor.Problems.Summary}");
+                    Report("turned");
+                    Save("editor-turn");
                     break;
                 }
 

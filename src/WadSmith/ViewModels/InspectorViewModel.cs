@@ -283,6 +283,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             var kinds = items.Select(Name).Distinct().ToList();
             Heading = kinds.Count == 1 ? $"{items.Count} {kinds[0].ToLowerInvariant()}s selected" : $"{items.Count} things selected";
             Summary = string.Join(", ", items.GroupBy(i => Name(i)).Select(g => $"{g.Count()} {g.Key.ToLowerInvariant()}{(g.Count() > 1 ? "s" : "")}"));
+            AddShaping();
             Rows.Add(new ActionRow("Delete them", "Deletes everything selected so the map stays whole (Delete).", _session.DeleteSelection));
             return;
         }
@@ -392,6 +393,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 break;
         }
 
+        if (items[0] is Sector or Line) AddShaping();
+
         // Last: deleting it, in words that say what happens to the rest (Delete does the same).
         var (verb, tip) = items[0] switch
         {
@@ -402,6 +405,18 @@ internal sealed partial class InspectorViewModel : ObservableObject
             _ => ((string?)null, ""),
         };
         if (verb is not null) Rows.Add(new ActionRow(verb, tip, _session.DeleteSelection));
+    }
+
+    /// <summary>Turning, resizing and mirroring the selection; the handles round it on the map do the same by dragging.</summary>
+    private void AddShaping()
+    {
+        Rows.Add(new HeadingRow("TURN AND MIRROR"));
+        Rows.Add(new NumberRow("Turn by (°)", "Turns the selection round its middle, counterclockwise; a negative angle turns it clockwise. The knob above it on the map turns it by dragging.", () => 0, a => _session.TurnSelection((double)a), 15, -360, 360));
+        Rows.Add(new NumberRow("Resize (%)", "Resizes the selection round its middle; the handles round it on the map resize it by dragging, from the opposite side (Ctrl: from the middle).", () => 100, p => _session.ResizeSelection((double)p / 100), 25, 1, 1000));
+        Rows.Add(new ActionRow("Turn left 90°", "A quarter turn counterclockwise round its middle (Ctrl+[).", () => _session.TurnSelection(90)));
+        Rows.Add(new ActionRow("Turn right 90°", "A quarter turn clockwise round its middle (Ctrl+]).", () => _session.TurnSelection(-90)));
+        Rows.Add(new ActionRow("Mirror left to right", "Flips it in place, east to west (Shift+H). Walls keep facing their rooms, and things turn to face what they faced.", () => _session.FlipSelection(leftToRight: true)));
+        Rows.Add(new ActionRow("Mirror top to bottom", "Flips it in place, north to south (Shift+V). Walls keep facing their rooms, and things turn to face what they faced.", () => _session.FlipSelection(leftToRight: false)));
     }
 
     private static string Name(Element e) => e switch
