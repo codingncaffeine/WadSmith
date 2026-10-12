@@ -295,6 +295,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             Rows.Add(new ActionRow("Save as a prefab", "Keeps a copy of the selected rooms and things in this project, under Objects, Prefabs, to drag onto any of its maps.", _session.SavePrefab));
             if (items.All(i => i is Sector)) Rows.Add(new ActionRow("Join them into one room", "The rooms become the first one you selected: the walls between them go, and its floor, ceiling and light hold for all of it (J).", _session.JoinRooms));
             AddShaping();
+            if (items.OfType<Thing>().Where(t => t.OnMap).ToList() is { Count: >= 2 } things) AddArranging(things);
             Rows.Add(new ActionRow("Delete them", "Deletes everything selected so the map stays whole (Delete).", _session.DeleteSelection));
             return;
         }
@@ -640,6 +641,44 @@ internal sealed partial class InspectorViewModel : ObservableObject
         };
         var none = s.Targets.Count == 0 && Switches.NamesAreas(s.Wall.Special) ? string.Create(CultureInfo.InvariantCulture, $" No area has tag {s.Wall.Args[0]}, so it does nothing.") : "";
         return $"{char.ToUpperInvariant(s.Does[0])}{s.Does[1..]}{what} when the player uses it{(s.Repeats ? ", again and again" : ", once")}.{none}";
+    }
+
+    private int _gridColumns;
+    private decimal _gridSpacing = 64;
+
+    /// <summary>Lining up, spacing out and arranging the selected objects in a ring or a grid (rooms stay where they are).</summary>
+    private void AddArranging(List<Thing> things)
+    {
+        void Do(string label, Action<StructureEdit> arrange) => _session.History.Record(label, arrange);
+        Rows.Add(new HeadingRow("ARRANGE THE OBJECTS"));
+        string[] lines = ["Choose a line…", "The leftmost", "A line down the middle", "The rightmost", "The lowest", "A line across the middle", "The highest"];
+        Rows.Add(new ChoiceRow("Line them up on", "Moves the selected objects onto one line: through the one farthest left, right, down or up, or through the middle between them.", lines, () => 0, i =>
+        {
+            if (i > 0) Do("Line up objects", e => Arranging.Line(e, things, (LineUp)(i - 1)));
+        }));
+        if (things.Count >= 3)
+        {
+            Rows.Add(new ActionRow("Space them evenly, left to right", "Spreads them evenly between the two farthest apart, side to side, in the order they stand.", () => Do("Space objects evenly", e => Arranging.Spread(e, things, across: true))));
+            Rows.Add(new ActionRow("Space them evenly, bottom to top", "Spreads them evenly between the two farthest apart, up and down the map, in the order they stand.", () => Do("Space objects evenly", e => Arranging.Spread(e, things, across: false))));
+        }
+
+        Rows.Add(new ActionRow("Arrange in a ring, facing in", "Puts them evenly round a ring about their middle, each facing the middle: eight imps closing in.", () => Do("Arrange in a ring", e => Arranging.Ring(e, things, Arranging.Spread(things).Centre, Arranging.RingReach(things), RingFacing.Inward))));
+        Rows.Add(new ActionRow("Arrange in a ring, facing out", "Puts them evenly round a ring about their middle, each facing away from it.", () => Do("Arrange in a ring", e => Arranging.Ring(e, things, Arranging.Spread(things).Centre, Arranging.RingReach(things), RingFacing.Outward))));
+        Rows.Add(new NumberRow("Ring reach", "How far the farthest is from their middle; a new reach rings them all round their middle that far out.", () => (decimal)Math.Round(Arranging.Spread(things).Radius), v => Do("Change the ring", e => Arranging.Ring(e, things, Arranging.Spread(things).Centre, (double)v, RingFacing.AsTheyWere)), 16, 0, 8192));
+
+        _gridColumns = (int)Math.Ceiling(Math.Sqrt(things.Count));
+        void Grid() => Do("Arrange in a grid", e => Arranging.Grid(e, things, _gridColumns, (double)_gridSpacing));
+        Rows.Add(new ActionRow("Arrange in a grid", "Puts them in rows from the top left of where they are, in reading order.", Grid));
+        Rows.Add(new NumberRow("Grid columns", "How many stand in each row of the grid.", () => _gridColumns, v =>
+        {
+            _gridColumns = (int)v;
+            Grid();
+        }, 1, 1, 64));
+        Rows.Add(new NumberRow("Grid spacing", "How far apart they stand in the grid: the player is 32 across, most monsters 40 to 64.", () => _gridSpacing, v =>
+        {
+            _gridSpacing = v;
+            Grid();
+        }, 8, 16, 1024));
     }
 
     private void AddStairs(Sector step)

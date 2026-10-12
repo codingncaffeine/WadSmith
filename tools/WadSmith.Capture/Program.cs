@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -349,6 +349,59 @@ foreach (var pose in poses)
             var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
             view.FitMap();
             if (pose == "editor-zoomed") view.ZoomBy(3.5);
+            if (pose == "editor-arrange")
+            {
+                // Eight imps dropped about the starter room, all selected, "Arrange in a ring, facing in"; then one turned by
+                // dragging its facing knob with the pointer (one undo step).
+                var session = editor.Session;
+                var rng = new Random(7);
+                for (var i = 0; i < 8; i++) session.PlaceThing(3001, new WadSmith.Editor.Geometry.MapPoint(rng.Next(-200, 200), rng.Next(-200, 200)));
+                Pump(0.5);
+                var imps = session.Map.Things.Where(t => t.OnMap && t.Type == 3001).ToList();
+                session.Selection.Set([.. imps]);
+                Pump(0.5);
+                Console.WriteLine($"arrange: '{editor.Inspector.Heading}'; rows {string.Join(" | ", editor.Inspector.Rows.SkipWhile(r => r.Label != "ARRANGE THE OBJECTS").Select(r => r.Label))}");
+                editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Arrange in a ring, facing in").Command.Execute(null);
+                Pump(1.0);
+                Console.WriteLine($"arrange ring: {string.Join(" ", imps.Select(t => $"({t.X:0},{t.Y:0} {t.Angle}°)"))}; undo '{session.History.UndoLabel}'");
+                Save("editor-arrange-ring");
+
+                var one = imps[0];
+                session.Selection.Set(one);
+                var plan = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
+                plan.FitTo([one]);
+                plan.ZoomBy(0.5);
+                Pump(0.6);
+                Avalonia.Point Screen(double x, double y) => plan.TranslatePoint(plan.ToScreen(new WadSmith.Editor.Geometry.MapPoint(x, y)), window)!.Value;
+                var centre = Screen(one.X, one.Y);
+                var ringPx = Math.Max(3, (session.Resources?.Things.Find(3001)?.Radius ?? 20) * (Screen(one.X + 1, one.Y).X - centre.X));
+                var a = one.Angle * Math.PI / 180;
+                var knob = new Avalonia.Point(centre.X + Math.Cos(a) * (ringPx * 1.35 + 14), centre.Y - Math.Sin(a) * (ringPx * 1.35 + 14));
+                var before = session.History.UndoLabel;
+                window.MouseMove(knob, Avalonia.Input.RawInputModifiers.None);
+                Pump(0.3);
+                Console.WriteLine($"arrange knob hover: status '{editor.Status}'");
+                window.MouseDown(knob, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                for (var k = 1; k <= 12; k++)
+                {
+                    var t = a - Math.PI / 2 * k / 12;
+                    window.MouseMove(new Avalonia.Point(centre.X + Math.Cos(t) * 80, centre.Y - Math.Sin(t) * 80), Avalonia.Input.RawInputModifiers.LeftMouseButton);
+                    Pump(0.03);
+                }
+
+                Console.WriteLine($"arrange turning: status '{editor.Status}'");
+                Save("editor-arrange-turning");
+                window.MouseUp(new Avalonia.Point(centre.X + Math.Cos(a - Math.PI / 2) * 80, centre.Y - Math.Sin(a - Math.PI / 2) * 80), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                Pump(0.5);
+                session.History.Undo();
+                Console.WriteLine($"arrange turned: facing after one undo {one.Angle}° (undo label was '{before}' before the drag)");
+                session.History.Redo();
+                Pump(0.5);
+                Console.WriteLine($"arrange turned: facing {one.Angle}°");
+                Save("editor-arrange");
+                break;
+            }
+
             if (pose == "editor-borrow")
             {
                 // The Textures shelf's "From your other games", and Heretic's GRSKULL1 dropped on the starter room's north wall:

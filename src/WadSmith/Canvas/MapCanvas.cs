@@ -152,6 +152,11 @@ internal sealed class MapCanvas : Control
     private TransformEdit? _transformEdit;
     private bool _overGrip;
 
+    /// <summary>An object being turned by its facing knob, the gesture its turns merge into, and whether the pointer is over the knob.</summary>
+    private Thing? _turning;
+    private long _turnGesture;
+    private bool _overKnob;
+
     // The line measured (and shown in the profile), and whether it is being dragged.
     private MapPoint? _measureFrom;
     private MapPoint? _measureTo;
@@ -352,7 +357,8 @@ internal sealed class MapCanvas : Control
     {
         _ghostPointer = pointer;
         (MapPoint, WadSmith.Editor.Checks.GhostFit)? ghost = null;
-        if (ShowFit && pointer is { } p && Session is { } session && _moveGesture == 0)
+        // Not while the pointer is busy dragging something (a move, a turn, a box).
+        if (ShowFit && pointer is { } p && Session is { } session && _moveGesture == 0 && _turning is null && _boxFrom is null)
         {
             var at = ToMap(p);
             if (WadSmith.Editor.Checks.Fit.At(session.Geometry, at) is { Inside: true } fit) ghost = (at, fit);
@@ -465,6 +471,16 @@ internal sealed class MapCanvas : Control
 
         var fit = ShowFit ? new FitOverlay(_fitMarks, _ghost?.At, _ghost?.Fit.Fits ?? false) : null;
         context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview, move, fit));
+        // The selected object's facing knob, at the tip of its arrow.
+        if (FacingKnob() is { } knob)
+        {
+            var accent = new SolidColorBrush(Color.FromRgb(0xE0, 0x58, 0x2A));
+            var pen = new Pen(accent, 1.6);
+            var facing = knob.Thing.Angle * Math.PI / 180;
+            context.DrawLine(pen, new Point(knob.Centre.X + Math.Cos(facing) * knob.Ring, knob.Centre.Y - Math.Sin(facing) * knob.Ring), knob.Knob);
+            context.DrawEllipse(accent, new Pen(Brushes.White, 1.2), knob.Knob, 5, 5);
+        }
+
         if (_boxFrom is { } b0 && _boxTo is { } b1)
         {
             var box = new Rect(b0, b1).Normalize();
@@ -762,6 +778,19 @@ internal sealed class MapCanvas : Control
 
         return grips;
     }
+
+    /// <summary>The one object selected (Select tool) and the knob at the tip of its facing arrow, in pixels: dragging it turns the object.</summary>
+    private (Thing Thing, Point Centre, Point Knob, double Ring)? FacingKnob()
+    {
+        if (Tool != EditorTool.Select || Session is not { } s || s.Selection.Count != 1 || s.Selection.Items[0] is not Thing { OnMap: true } t) return null;
+        var centre = ToScreen(new MapPoint(t.X, t.Y));
+        var ring = Math.Max(3, _look.Radius(t.Type) * _zoom);
+        var a = t.Angle * Math.PI / 180;
+        var reach = ring * 1.35 + 14;
+        return (t, centre, new Point(centre.X + Math.Cos(a) * reach, centre.Y - Math.Sin(a) * reach), ring);
+    }
+
+    private bool OnKnob(Point p) => FacingKnob() is { } k && Math.Abs(p.X - k.Knob.X) <= 8 && Math.Abs(p.Y - k.Knob.Y) <= 8;
 
     private Grip GripAt(Point p)
     {
@@ -1114,6 +1143,15 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (props.IsLeftButtonPressed && OnKnob(e.GetPosition(this)) && FacingKnob() is { } knob)
+        {
+            _turning = knob.Thing;
+            _turnGesture = History.NewGesture();
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            return;
+        }
+
         if (props.IsLeftButtonPressed && Session is not null && GripAt(e.GetPosition(this)) is var grip and not Grip.None)
         {
             _pressAt = e.GetPosition(this);
@@ -1178,6 +1216,33 @@ internal sealed class MapCanvas : Control
         }
 
         UpdateGhost(p);
+
+        // Turning an object by its facing knob: to the eight directions, or freely with Shift.
+        if (_turning is { } turning && Session is { } turner)
+        {
+            var c = ToScreen(new MapPoint(turning.X, turning.Y));
+            var freely = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+            var step = freely ? 1 : 45;
+            var degrees = Math.Atan2(c.Y - p.Y, p.X - c.X) * 180 / Math.PI;
+            var angle = (((int)Math.Round(degrees / step) * step) % 360 + 360) % 360;
+            if (angle != turning.Angle) turner.History.Run(new SetProperty<Thing, int>(turning, "Turn thing", t => t.Angle, (t, v) => t.Angle = v, angle), _turnGesture);
+            Placing?.Invoke(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Facing {angle}°{(freely ? ", turning freely" : " · it snaps to the eight directions; Shift turns it freely")}"));
+            InvalidateVisual();
+            return;
+        }
+
+        if (_moveGesture == 0 && _boxFrom is null && _pressed is null)
+        {
+            var onKnob = OnKnob(p);
+            if (onKnob != _overKnob)
+            {
+                _overKnob = onKnob;
+                Cursor = onKnob ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
+                Placing?.Invoke(onKnob ? "Drag the knob to turn it to face another way." : null);
+            }
+
+            if (onKnob) return;
+        }
 
         if (Tool == EditorTool.Measure && _measuring && _measureFrom is { } start)
         {
@@ -1281,6 +1346,14 @@ internal sealed class MapCanvas : Control
         {
             _panFrom = null;
             e.Pointer.Capture(null);
+            return;
+        }
+
+        if (_turning is not null)
+        {
+            _turning = null;
+            e.Pointer.Capture(null);
+            Placing?.Invoke(null);
             return;
         }
 
