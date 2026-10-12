@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -1015,6 +1015,30 @@ foreach (var pose in poses)
                 queued = player.QueuedBytes;
                 Thread.Sleep(1500);
                 Console.WriteLine($"sound-check: driver '{player.Driver}', queued {queued} bytes of {WadSmith.App.Audio.SdlSoundPlayer.Samples(wav).Length * 2}, left after 1.5 s {player.QueuedBytes}");
+                break;
+            }
+
+            if (pose == "editor-landmark")
+            {
+                // See it in a real map (D28): the Door tool's "See one" button, the game's own map opened at a door, an edit
+                // refused there, and back to the map it came from.
+                editor.Tool = WadSmith.App.Canvas.EditorTool.Door;
+                Pump(0.5);
+                Console.WriteLine($"landmark: button '{editor.SeeOne?.Title}'");
+                Save("editor-landmark-button");
+                editor.SeeOne!.Open.Execute(null);
+                for (var i = 0; i < 300 && vm.Page == editor; i++) Pump(0.05);
+                Pump(2.0);
+                var peek = (WadSmith.App.ViewModels.EditorViewModel)vm.Page!;
+                Console.WriteLine($"landmark: {peek.Peek?.Heading} · {peek.Peek?.Landmark.Kind} at {peek.Peek?.Landmark.X}, {peek.Peek?.Landmark.Y}; selected {peek.Session.Selection.Items.FirstOrDefault()?.GetType().Name}; read-only {peek.Session.History.ReadOnly}");
+                Save("editor-landmark-peek");
+                peek.Session.Paint("BROWN1", peek.Peek!.Landmark.At, 8, ceiling: false);
+                Pump(0.3);
+                Console.WriteLine($"landmark: after an edit, undo {peek.Session.History.CanUndo}; status '{peek.Status}'");
+                peek.BackFromPeekCommand.Execute(null);
+                Pump(1.0);
+                Console.WriteLine($"landmark: back on {((WadSmith.App.ViewModels.EditorViewModel)vm.Page!).Session.Project.Info.Name}, same editor {ReferenceEquals(vm.Page, editor)}");
+                Save("editor-landmark-back");
                 break;
             }
 

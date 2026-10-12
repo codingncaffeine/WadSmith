@@ -134,6 +134,12 @@ public sealed class EditorSession : IDisposable
     /// </summary>
     public void ChangeMapSettings(Func<ProjectMap, ProjectMap> change)
     {
+        if (History.ReadOnly)
+        {
+            Tell(ReadOnlyNotice);
+            return;
+        }
+
         var entry = change(MapEntry) with { Slot = MapEntry.Slot, File = MapEntry.File };
         if (entry == MapEntry) return;
         MapEntry = entry;
@@ -399,6 +405,9 @@ public sealed class EditorSession : IDisposable
 
     /// <summary>Says something in the status strip, for the views (a drag refused, …).</summary>
     public void Tell(string sentence) => Notice?.Invoke(sentence);
+
+    /// <summary>What a refused change says on a map opened to learn from (D28).</summary>
+    public const string ReadOnlyNotice = "This is the game's own map, open to learn from: nothing in it changes. Remix it to make your own copy.";
 
     /// <summary>Puts the selected rooms and objects in the group <paramref name="name"/>, one undo step.</summary>
     public void GroupSelection(string name)

@@ -50,7 +50,7 @@
                         ToolTip.Tip="Back to the start screen. Your changes are already kept." />
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0" VerticalAlignment="Center" Spacing="6">
                     <Image Source="/Assets/icon.png" Width="24" Height="24" />
-                    <TextBlock Text="{Binding ProjectName}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding ProjectName}" FontWeight="SemiBold" VerticalAlignment="Center" MaxWidth="220" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ProjectName}" />
                     <TextBlock Text="·" Classes="secondary" VerticalAlignment="Center" />
                     <TextBlock Text="{Binding MapName}" Classes="secondary" VerticalAlignment="Center" />
                 </StackPanel>
@@ -136,6 +136,11 @@
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
+                    <!-- See it in a real map (D28): what the open tool makes, in a game's own map. -->
+                    <!-- On a canvas, so its width never widens the tool column. -->
+                    <Canvas Height="34" Margin="0,10,0,0" IsVisible="{Binding SeeOne, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <Button Classes="metal" Content="{Binding SeeOne.Title}" Command="{Binding SeeOne.Open}" ToolTip.Tip="{Binding SeeOne.Tip}" />
+                    </Canvas>
                 </StackPanel>
 
                 <!-- Heights legend: the colour ramp with the lowest and highest floor. -->
@@ -205,12 +210,29 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
+                        <Button Classes="metal" Content="{Binding SeeOne.Title}" Command="{Binding SeeOne.Open}" ToolTip.Tip="{Binding SeeOne.Tip}"
+                                IsVisible="{Binding SeeOne, Converter={x:Static ObjectConverters.IsNotNull}}" />
                         <Button Classes="metal" Content="Skip this step" Command="{Binding SkipCommand}" IsVisible="{Binding !Finished}"
                                 ToolTip.Tip="Goes on to the next step without this one. Your map stays as it is." />
                         <Button Classes="metal" Content="Stop the guide" Command="{Binding StopCommand}" IsVisible="{Binding !Finished}"
                                 ToolTip.Tip="Ends the guide; your map stays as it is. The Guide button at the bottom right starts it again." />
                         <Button Classes="primary" Content="Keep going" Command="{Binding StopCommand}" IsVisible="{Binding Finished}"
                                 ToolTip.Tip="Closes the guide. Your map is yours to change." />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            <!-- A game's own map opened to learn from (D28): what it shows, the way back, and Remix. -->
+            <Border Grid.ColumnSpan="3" IsVisible="{Binding Peek, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="110,12,12,0" Padding="16,12" MaxWidth="560"
+                    CornerRadius="6" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1">
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="section" Text="LEARNING FROM A REAL MAP · READ ONLY" />
+                    <TextBlock Text="{Binding Peek.Heading}" FontWeight="SemiBold" FontSize="16" />
+                    <TextBlock Text="{Binding Peek.Says}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                        <Button Classes="primary" Content="Back to your map" Command="{Binding BackFromPeekCommand}"
+                                ToolTip.Tip="Closes this map and goes back to yours, as you left it." />
+                        <Button Classes="metal" Content="Remix this map" Command="{Binding RemixPeekCommand}"
+                                ToolTip.Tip="Makes your own copy of this map to change, as Remix on the start screen does. Your map is kept as it is." />
                     </StackPanel>
                 </StackPanel>
             </Border>

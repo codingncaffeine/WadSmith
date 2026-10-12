@@ -3,11 +3,13 @@ using System.Globalization;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using WadSmith.Core.Games;
 using WadSmith.Editor;
 using WadSmith.Editor.App;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
+using WadSmith.Editor.Smart;
 
 namespace WadSmith.App.ViewModels;
 
@@ -122,6 +124,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             _notice = text;
             UpdateStatus();
         };
+        session.History.Refused += _ => Hint(EditorSession.ReadOnlyNotice);
         UpdateHeights();
         UpdateSaveText();
         UpdateStatus();
@@ -408,6 +411,11 @@ internal sealed partial class EditorViewModel : ObservableObject
         }
 
         list.AddRange(GuideCommands());
+        foreach (var kind in Landmarks.Kinds)
+        {
+            var named = kind switch { "stairs" => "stairs", "exit" => "an exit", _ => "a " + kind };
+            list.Add(new($"Show me {named} in a real map", "Guide", "", $"example|see one|learn|how is it made|{kind}", () => ShowMeOneCommand.Execute(kind), () => ExampleOf(kind) is not null));
+        }
 
         list.Add(new("Preferences", "WadSmith", K("Ctrl+,", "F5"), "settings|options|tips|larger text|classic names|keys", () => OpenPreferencesCommand.Execute(null)));
         list.Add(new("Back to the start screen", "WadSmith", "", "close|other map|home", () => CloseCommand.Execute(null)));
@@ -478,6 +486,71 @@ internal sealed partial class EditorViewModel : ObservableObject
     }
 
 
+    /// <summary>A game's own map opened to learn from (D28): what it shows and the way back; null for the user's own maps.</summary>
+    public PeekInfo? Peek { get; init; }
+
+    /// <summary>A spot the views show when they first lay out (a landmark) instead of the whole map; taken by the view.</summary>
+    public (MapPoint At, double Span)? PendingPlace { get; set; }
+
+    [RelayCommand]
+    private void BackFromPeek() => _main.BackFromPeek(this);
+
+    [RelayCommand]
+    private Task RemixPeekAsync() => _main.RemixPeekAsync(this);
+
+    /// <summary>
+    /// The games to show an example from, best first: this map's game, then the others of its family (a Heretic map shows
+    /// Heretic), then the rest found on this computer.
+    /// </summary>
+    private IEnumerable<FoundGame> ExampleGames()
+    {
+        var games = _services.Games ?? [];
+        var own = Peek?.Game.Game ?? games.FirstOrDefault(g => g.Game.Id == Session.Project.Info.Game)?.Game;
+        return games.Where(g => !g.Game.Id.EndsWith("-shareware", StringComparison.Ordinal))
+            .OrderBy(g => g.Game.Id == own?.Id ? 0 : g.Game.Engine == own?.Engine ? 1 : 2);
+    }
+
+    /// <summary>The landmark of <paramref name="kind"/> to show, and the game it is read from; null when no game here has one.</summary>
+    internal (Landmark Landmark, FoundGame Game)? ExampleOf(string kind)
+    {
+        foreach (var game in ExampleGames())
+        {
+            if (Landmarks.For(kind, [game.Game.Id]) is { } landmark) return (landmark, game);
+        }
+
+        return null;
+    }
+
+    /// <summary>"See it in a real map" (D28): opens a game's own map at a spot that shows <paramref name="kind"/>, read-only.</summary>
+    [RelayCommand]
+    private async Task ShowMeOneAsync(string kind)
+    {
+        if (ExampleOf(kind) is not { } found)
+        {
+            Hint($"None of the games found here has a {kind} in the landmark index.");
+            return;
+        }
+
+        await _main.PeekAsync(found.Landmark, found.Game, Peek?.Back ?? this).ConfigureAwait(true);
+    }
+
+    /// <summary>The landmark kind the open tool makes, for its "See one" button; null for tools that make none.</summary>
+    private string? ToolKind => Tool switch
+    {
+        Canvas.EditorTool.Door => "door",
+        Canvas.EditorTool.Window => "window",
+        Canvas.EditorTool.Teleport => "teleporter",
+        Canvas.EditorTool.Stairs => "stairs",
+        _ => null,
+    };
+
+    private GuideLink? SeeOneOf(string kind) => ExampleOf(kind) is { } found
+        ? new GuideLink($"See one in {found.Game.Game.Title}", $"Opens {found.Game.Game.Title} {found.Landmark.Map} at a {kind}, to look at how it is made. Nothing there changes; a button brings you back.", new RelayCommand(() => ShowMeOneCommand.Execute(kind)))
+        : null;
+
+    /// <summary>The button under the tools that shows what the open tool makes in a real map ("See one in Doom II"); null hides it.</summary>
+    public GuideLink? SeeOne => ToolKind is { } kind ? SeeOneOf(kind) : null;
+
     /// <summary>The Guide chapter running now; null when none is.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Marks))]
@@ -503,7 +576,7 @@ internal sealed partial class EditorViewModel : ObservableObject
     {
         var wanted = GuideBook.Chapter(chapter);
         if (Guide?.Chapter == wanted) return;
-        var guide = new GuideViewModel(Session, wanted, Keyed, Standing, () => Guide = null, id => StartGuide(id));
+        var guide = new GuideViewModel(Session, wanted, Keyed, Standing, () => Guide = null, id => StartGuide(id), SeeOneOf);
         guide.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(GuideViewModel.Target) && ReferenceEquals(Guide, guide)) OnPropertyChanged(nameof(Marks));
@@ -589,7 +662,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>What a left drag on the plan does (V selects, R draws rooms).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool), nameof(IsDoorTool), nameof(IsTeleportTool), nameof(IsStairsTool), nameof(IsWindowTool), nameof(IsLightTool), nameof(IsMeasureTool))]
+    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool), nameof(IsDoorTool), nameof(IsTeleportTool), nameof(IsStairsTool), nameof(IsWindowTool), nameof(IsLightTool), nameof(IsMeasureTool), nameof(SeeOne))]
     private Canvas.EditorTool _tool;
 
     public bool IsStairsTool

@@ -73,6 +73,9 @@ internal sealed class View3D : Control
     private string? _message = "Starting the 3D view…";
     private MapScene? _scene;
     private bool _framed;
+
+    // A spot to look at instead of framing the whole map when the first scene arrives (a landmark, D28).
+    private (MapPoint At, double Span)? _focus;
     private double _tx;
     private double _ty;
     private double _tz;
@@ -434,10 +437,24 @@ internal sealed class View3D : Control
         SendCamera();
     }
 
+    /// <summary>Looks at <paramref name="at"/> from far enough to see <paramref name="span"/> round it, now or when the first scene arrives.</summary>
+    internal void LookAround(MapPoint at, double span)
+    {
+        _focus = (at, span);
+        if (_scene is not null) Frame();
+    }
+
     /// <summary>Turns to look at the whole map from above and to the south-west.</summary>
     public void Frame()
     {
         if (_scene is null) return;
+        if (_focus is { } f)
+        {
+            _focus = null;
+            LookAt(f.At, (Session?.Geometry.AreaAt(f.At)?.FloorHeight ?? 0) + 48, f.Span);
+            return;
+        }
+
         var (x0, y0, z0, x1, y1, z1) = _scene.Bounds;
         (_tx, _ty, _tz) = ((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
         _distance = Camera3D.FitDistance(Math.Max(x1 - x0, y1 - y0), Bounds.Width / Math.Max(Bounds.Height, 1));

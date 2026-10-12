@@ -36,6 +36,17 @@ public partial class EditorView : UserControl
                 return ((int)Math.Round(View3D.Bounds.Width * scale), (int)Math.Round(View3D.Bounds.Height * scale));
             };
             vm.Problems.ShowRequested += elements => Canvas.FitTo(elements);
+            if (vm.PendingPlace is { } place)
+            {
+                // After the bindings hand both views the session: a landmark (D28) is shown instead of the whole map.
+                vm.PendingPlace = null;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    Canvas.FitAround(place.At, place.Span);
+                    View3D.LookAround(place.At, place.Span / 2);
+                }, DispatcherPriority.Loaded);
+            }
+
             vm.PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName == nameof(EditorViewModel.Layout)) ApplyLayout(vm.Layout, focus: true);

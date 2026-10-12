@@ -29,9 +29,10 @@ public enum GuideTarget
 public sealed record GuideStep(string Id, string Title, string Text, GuideTarget Target);
 
 /// <summary>
-/// A chapter of the Guide (§3.9): a few hands-on steps on the user's own map, then what to try next on it.
+/// A chapter of the Guide (§3.9): a few hands-on steps on the user's own map, then what to try next on it, and the kind of
+/// landmark (D28) its "See one" opens in a real map.
 /// </summary>
-public sealed record GuideChapter(string Id, string Title, string Summary, IReadOnlyList<GuideStep> Steps, string TryIt);
+public sealed record GuideChapter(string Id, string Title, string Summary, IReadOnlyList<GuideStep> Steps, string TryIt, string? Landmark = null);
 
 /// <summary>
 /// Things that happen outside the map which some steps wait for; the editor reports them, and a step sees those reported
@@ -73,7 +74,7 @@ public static class GuideBook
             new("exit", "Add a way out", "Click a wall on the plan, then press “Make it the exit switch” in the Inspector. Using it in the game ends the map.", GuideTarget.Inspector),
             new("play", "Play it", "Press {label:Play} at the top ({key:Play}). WadSmith checks the map first and offers to fix anything that would spoil it.", GuideTarget.Play),
         ],
-        "Everything in it can be changed, and nothing needs saving. Each chapter below takes a few minutes on this map; Ctrl+K finds anything else."),
+        "Everything in it can be changed, and nothing needs saving. Each chapter below takes a few minutes on this map; Ctrl+K finds anything else.", "door"),
 
         new("rooms", "Rooms and heights", "Draw rooms, then raise and lower their floors and ceilings.",
         [
@@ -82,7 +83,7 @@ public static class GuideBook
             new("ceiling", "Lower a ceiling", "Change {label:Ceiling height} the same way, or hold Ctrl and scroll over a ceiling in the 3D view. The player needs 56 between floor and ceiling to fit.", GuideTarget.Inspector),
             new("heights", "See every height at once", "Press Heights at the top. Each room takes the colour of its floor, blue for low and red for high, so steps and pits stand out.", GuideTarget.Heights),
         ],
-        "Try it on your map: sink a pool a little below the floor, raise a stage at one end of a hall, or give a big room a high ceiling. The player climbs a step of 24 or less without help."),
+        "Try it on your map: sink a pool a little below the floor, raise a stage at one end of a hall, or give a big room a high ceiling. The player climbs a step of 24 or less without help.", "stairs"),
 
         new("doors", "Doors, keys and switches", "Make doors, lock them with keys and open them from switches.",
         [
@@ -91,7 +92,7 @@ public static class GuideBook
             new("key", "Leave the key somewhere", "Open {label:Objects}, find the key of that colour and drag it into a room the player reaches without going through the door.", GuideTarget.Objects),
             new("switch", "Open a door from a switch", "Click a door, press “Add a switch that opens it” in the Inspector, then click a solid wall: part of it becomes the switch.", GuideTarget.Inspector),
         ],
-        "Try it on your map: a red door the player sees early and opens late, or a switch across a room that opens a door behind the player."),
+        "Try it on your map: a red door the player sees early and opens late, or a switch across a room that opens a door behind the player.", "locked door"),
 
         new("lifts", "Lifts and stairs", "Join floors of different heights with lifts and stairs.",
         [
@@ -99,7 +100,7 @@ public static class GuideBook
             new("stairs", "Draw stairs", "Pick {label:Stairs}{or:Stairs tool} and drag from a low floor up to a higher one. WadSmith cuts steps the player can climb.", GuideTarget.StairsTool),
             new("walk", "Walk up them", "Choose Walk over the 3D view and use {move} to climb your stairs as the player does.", GuideTarget.Walk),
         ],
-        "Try it on your map: a lift up to a ledge with something worth having on it, or stairs down into a dark basement."),
+        "Try it on your map: a lift up to a ledge with something worth having on it, or stairs down into a dark basement.", "lift"),
 
         new("textures", "Textures and alignment", "Change how walls, floors and ceilings look, and line their textures up.",
         [
@@ -116,7 +117,7 @@ public static class GuideBook
             new("skill", "Keep it off the easy setting", "Click a monster and switch off {label:Appears on Easy} in the Inspector. Players on the easiest settings will not meet it.", GuideTarget.Inspector),
             new("difficulty", "Choose the difficulty to play", "Press the arrow beside {label:Play} and pick a difficulty. Play uses it from then on.", GuideTarget.Play),
         ],
-        "Try it on your map: more monsters on Hard than on Easy, and health after every big fight."),
+        "Try it on your map: more monsters on Hard than on Easy, and health after every big fight.", "key"),
 
         new("lights", "Lights and atmosphere", "Dim rooms, add lights and colour the air.",
         [
@@ -131,7 +132,7 @@ public static class GuideBook
             new("secret", "Make a secret", "Draw a small room off another one, click it and press “Make it a secret” in the Inspector. Finding it counts toward the secrets at the end of the map.", GuideTarget.Inspector),
             new("hide", "Hide its door", "Put a door into the secret{or:Door tool}, click the secret room and press “Make its door look like the wall”.", GuideTarget.Inspector),
         ],
-        "Try it on your map: a secret behind a wall that looks a little different, with a reward worth the search."),
+        "Try it on your map: a secret behind a wall that looks a little different, with a reward worth the search.", "secret"),
 
         new("settings", "Map settings and music", "Name your map and choose what plays.",
         [
@@ -139,7 +140,7 @@ public static class GuideBook
             new("music", "Choose its music", "Pick a track under {label:Music}.", GuideTarget.Inspector),
             new("play", "Hear it", "Press {label:Play} ({key:Play}). The game shows your name on the automap and plays your music.", GuideTarget.Play),
         ],
-        "Try it on your map: choose the sky under Sky and the map that follows under After the exit."),
+        "Try it on your map: choose the sky under Sky and the map that follows under After the exit.", "exit"),
 
         new("veterans", "For veterans: classic names and keys", "The names and keys of the classic editors, on the same editor.",
         [

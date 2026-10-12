@@ -257,17 +257,19 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task RemixAsync(MapChoice m)
+    private Task RemixAsync(MapChoice m) => RemixMapAsync(m.Tile.Found, m.Tile.Title, m.Slot, m.Title);
+
+    /// <summary>Starts a project from <paramref name="slot"/> of a base game and opens it: the tile's Remix, and Remix on a map opened to learn from.</summary>
+    internal async Task RemixMapAsync(FoundGame found, string gameTitle, string slot, string mapTitle)
     {
-        var t = m.Tile;
         await StartAsync(() =>
         {
-            var folder = UniqueFolder($"{t.Title} {m.Slot} remix");
+            var folder = UniqueFolder($"{gameTitle} {slot} remix");
             var notes = new List<string>();
             var engine = _services.EngineData ?? throw new CorruptDataException("Remixing a classic map needs GZDoom installed: WadSmith reads the engine's own rules for what each line does.");
-            var project = Remix.Create(folder, t.Found.Path, m.Slot, engine, notes, m.Title.Length > 0 ? $"{m.Title} remix" : null);
+            var project = Remix.Create(folder, found.Path, slot, engine, notes, mapTitle.Length > 0 ? $"{mapTitle} remix" : null);
             foreach (var n in notes) Log.Info($"Remix note: {n}");
-            return (project, m.Slot);
+            return (project, slot);
         }).ConfigureAwait(true);
     }
 

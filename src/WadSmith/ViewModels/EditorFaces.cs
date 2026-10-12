@@ -26,3 +26,6 @@ internal sealed record GuideMarks(GuideTarget Target)
 
     public static GuideMarks For(GuideTarget target) => new(target);
 }
+
+/// <summary>A game's own map opened to learn from (D28): its banner, the landmark it was opened at, and the editor to go back to.</summary>
+internal sealed record PeekInfo(string Heading, string Says, Editor.Smart.Landmark Landmark, Core.Games.FoundGame Game, EditorViewModel? Back);

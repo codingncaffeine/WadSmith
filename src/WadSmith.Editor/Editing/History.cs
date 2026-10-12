@@ -56,11 +56,26 @@ public sealed class History(EditorMap map)
     public event Action? Moved;
 
     /// <summary>
+    /// Whether the map may change: false for a game's own map opened to learn from (D28). Every edit goes through
+    /// <see cref="Run"/> or <see cref="Record"/>, so refusing there keeps the whole map as it is.
+    /// </summary>
+    public bool ReadOnly { get; set; }
+
+    /// <summary>Raised with an edit's label when it was refused because the map is read-only.</summary>
+    public event Action<string>? Refused;
+
+    /// <summary>
     /// Applies an edit and records it. Pass the same non-zero <paramref name="gesture"/> for every
     /// edit of one drag so they become one step.
     /// </summary>
     public void Run(IEdit edit, long gesture = 0)
     {
+        if (ReadOnly)
+        {
+            Refused?.Invoke(edit.Label);
+            return;
+        }
+
         edit.Do(Map);
         _redo.Clear();
         var touched = edit.Touched;
@@ -85,6 +100,12 @@ public sealed class History(EditorMap map)
     public StructureEdit Record(string label, Action<StructureEdit> build, long gesture = 0)
     {
         var edit = new StructureEdit(Map, label);
+        if (ReadOnly)
+        {
+            Refused?.Invoke(label);
+            return edit;
+        }
+
         try
         {
             build(edit);

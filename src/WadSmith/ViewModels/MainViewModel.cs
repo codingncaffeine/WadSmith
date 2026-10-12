@@ -1,8 +1,12 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using WadSmith.Core;
+using WadSmith.Core.Games;
 using WadSmith.Core.Projects;
 using WadSmith.Editor;
 using WadSmith.Editor.App;
+using WadSmith.Editor.Model;
+using WadSmith.Editor.Smart;
 
 namespace WadSmith.App.ViewModels;
 
@@ -75,6 +79,91 @@ internal sealed partial class MainViewModel : ObservableObject
         Title = $"{session.Project.Info.Name} · WadSmith";
         Remember(session.Project.Folder);
         Log.Info($"Opened {session.Project.Folder} map {session.Slot}");
+    }
+
+    /// <summary>
+    /// Opens a game's own map to learn from at a landmark (D28): a throwaway copy in the cache, read-only, centred on the
+    /// spot with the feature selected, and a way back to <paramref name="back"/> (kept open as it is).
+    /// </summary>
+    public async Task PeekAsync(Landmark landmark, FoundGame game, EditorViewModel? back)
+    {
+        if (Services.EngineData is not { } engine)
+        {
+            back?.Hint("Opening the game's own maps needs GZDoom installed: WadSmith reads the engine's own rules for what each line does.");
+            return;
+        }
+
+        var folder = Path.Combine(Services.Paths.Cache, "peek", $"{game.Game.Id}-{landmark.Map}");
+        EditorSession session;
+        try
+        {
+            session = await Task.Run(() =>
+            {
+                // The copy from the last look at this map is replaced: it never holds anything of the user's.
+                if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+                var project = Remix.Create(folder, game.Path, landmark.Map, engine, [], game.Game.Title);
+                return EditorSession.Open(project, landmark.Map, HooksFor(Services.ResourcesFor(project), engine), "Opened to learn from");
+            }).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is CorruptDataException or IOException or UnauthorizedAccessException or KeyNotFoundException)
+        {
+            back?.Hint($"{game.Game.Title} {landmark.Map} could not be opened: {ex.Message}");
+            Log.Warn(ex.Message);
+            return;
+        }
+
+        session.History.ReadOnly = true;
+        var editor = new EditorViewModel(Services, session, this)
+        {
+            Peek = new PeekInfo($"{game.Game.Title} · {landmark.Map}", landmark.Says, landmark, game, back),
+            PendingPlace = (landmark.At, 640),
+        };
+        if (LandmarkElement(session, landmark) is { } feature) session.Selection.Set(feature);
+        // A look from inside another look replaces it.
+        if (Page is EditorViewModel { Peek: not null } leaving) leaving.Session.Dispose();
+        Page = editor;
+        Title = $"{game.Game.Title} {landmark.Map} · WadSmith";
+        Log.Info($"Opened {game.Game.Title} {landmark.Map} to learn from: {landmark.Kind}");
+    }
+
+    /// <summary>What a landmark points at, for selecting it: the area there, or the wall or object of its kind nearest the spot.</summary>
+    private static Element? LandmarkElement(EditorSession session, Landmark landmark)
+    {
+        var g = session.Geometry;
+        if (landmark.Kind is "switch" or "teleporter" or "exit") return g.LineNear(landmark.At, Landmarks.Near);
+        if (landmark.Kind == "key") return g.ThingNear(landmark.At, Landmarks.Near);
+        return g.SectorAt(landmark.At);
+    }
+
+    /// <summary>Leaves a map opened to learn from: back to the map it was opened from, or the start screen.</summary>
+    public void BackFromPeek(EditorViewModel peek)
+    {
+        peek.Session.Dispose();
+        if (peek.Peek?.Back is { } back)
+        {
+            Page = back;
+            Title = $"{back.Session.Project.Info.Name} · WadSmith";
+            return;
+        }
+
+        Page = Welcome;
+        Title = "WadSmith";
+    }
+
+    /// <summary>Makes the user's own copy of a map opened to learn from, as Remix on the start screen does; the map they came from is kept and closed first.</summary>
+    public async Task RemixPeekAsync(EditorViewModel peek)
+    {
+        if (peek.Peek is not { } info) return;
+        peek.Session.Dispose();
+        if (info.Back is { } back)
+        {
+            await back.Session.FlushAsync().ConfigureAwait(true);
+            back.Session.Dispose();
+        }
+
+        Page = Welcome;
+        Title = "WadSmith";
+        await Welcome.RemixMapAsync(info.Game, info.Game.Game.Title, info.Landmark.Map, "").ConfigureAwait(true);
     }
 
     /// <summary>Back to the welcome screen, after the open map's changes reach the disk.</summary>

@@ -85,6 +85,9 @@ internal sealed class MapCanvas : Control
     private double _cy;
     private double _zoom = 0.5;
     private bool _fitted;
+
+    // A spot to show instead of the whole map when the plan first fits (a landmark, D28): where, and how much round it.
+    private (MapPoint At, double Span)? _focus;
     private Point? _panFrom;
     private bool _spaceDown;
     private Element? _hover;
@@ -347,6 +350,7 @@ internal sealed class MapCanvas : Control
         _hoverOutline = null;
         _fitMarks = null;
         _fitted = false;
+        _focus = null;
         if (change.NewValue is EditorSession s)
         {
             _look = new MapLook(s.Resources);
@@ -459,9 +463,18 @@ internal sealed class MapCanvas : Control
         InvalidateVisual();
     }
 
+    /// <summary>Centres on <paramref name="at"/> with <paramref name="span"/> map units round it showing; waits for the first layout when the plan has none yet.</summary>
+    public void FitAround(MapPoint at, double span)
+    {
+        _focus = (at, span);
+        _fitted = false;
+        InvalidateVisual();
+    }
+
     /// <summary>Centres the map and zooms so all of it shows.</summary>
     public void FitMap()
     {
+        _focus = null;
         ComputeFit();
         InvalidateVisual();
     }
@@ -470,6 +483,14 @@ internal sealed class MapCanvas : Control
     private void ComputeFit()
     {
         if (Session is null || Bounds.Width < 1) return;
+        if (_focus is { } f)
+        {
+            _zoom = Math.Min((Bounds.Width - ToolsRoom - 48) / f.Span, (Bounds.Height - 48) / f.Span);
+            (_cx, _cy) = (f.At.X - ToolsRoom / 2 / _zoom, f.At.Y);
+            _fitted = true;
+            return;
+        }
+
         var (minX, minY, maxX, maxY) = Session.Geometry.Extent();
         _zoom = Math.Min((Bounds.Width - ToolsRoom - 48) / Math.Max(maxX - minX, 64), (Bounds.Height - 48) / Math.Max(maxY - minY, 64));
         _cx = (minX + maxX) / 2 - ToolsRoom / 2 / _zoom;

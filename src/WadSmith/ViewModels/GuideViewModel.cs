@@ -32,9 +32,9 @@ internal sealed partial class GuideViewModel : ObservableObject
     /// <summary>
     /// Runs <paramref name="chapter"/> on the session's map. <paramref name="standing"/> says what holds in the editor now, such as
     /// classic names switched on, which a step sees as having happened; <paramref name="open"/> opens a chapter by id for the
-    /// finished card's links.
+    /// finished card's links; <paramref name="seeOne"/> makes the link to the chapter's landmark in a real map (D28).
     /// </summary>
-    public GuideViewModel(EditorSession session, GuideChapter chapter, Func<string, string> keyed, Func<IEnumerable<string>> standing, Action stopped, Action<string> open)
+    public GuideViewModel(EditorSession session, GuideChapter chapter, Func<string, string> keyed, Func<IEnumerable<string>> standing, Action stopped, Action<string> open, Func<string, GuideLink?> seeOne)
     {
         _session = session;
         Chapter = chapter;
@@ -45,10 +45,14 @@ internal sealed partial class GuideViewModel : ObservableObject
         _checks = new(MainViewModel.PostToUi, Arrived, "the Guide's checks");
         var next = chapter.Id == GuideBook.FirstMap ? GuideBook.AfterFirstMap : GuideBook.After(chapter) is { } after ? [after] : [];
         Next = [.. next.Select(c => new GuideLink(chapter.Id == GuideBook.FirstMap ? c.Title : "Next: " + c.Title, c.Summary, new RelayCommand(() => open(c.Id))))];
+        SeeOne = chapter.Landmark is { } kind ? seeOne(kind) : null;
         Begin(0);
     }
 
     public GuideChapter Chapter { get; }
+
+    /// <summary>The chapter's feature in a real map ("See one in Doom II", D28); null when the chapter has none or no game here shows one.</summary>
+    public GuideLink? SeeOne { get; }
 
     /// <summary>The chapters the finished card offers.</summary>
     public IReadOnlyList<GuideLink> Next { get; }
