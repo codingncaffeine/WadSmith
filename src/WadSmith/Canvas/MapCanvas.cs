@@ -1275,6 +1275,10 @@ internal sealed class MapCanvas : Control
                 Tool = EditorTool.Window;
                 e.Handled = true;
                 break;
+            case Key.J when e.KeyModifiers == KeyModifiers.None && _moveGesture == 0:
+                Session?.JoinRooms();
+                e.Handled = true;
+                break;
             // Turning and mirroring the selection (on the plan only, so typing a capital in a field never does it).
             case Key.OemOpenBrackets when e.KeyModifiers == KeyModifiers.Control && _moveGesture == 0:
                 Session?.TurnSelection(90);

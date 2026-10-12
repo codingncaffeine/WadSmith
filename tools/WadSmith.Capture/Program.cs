@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,12 +361,12 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
                 // one inside it.
-                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch";
+                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms";
                 view.ZoomBy(wide ? 0.3 : 0.45);
                 if (wide) view.PanBy(-90, 0);
                 Pump(0.3);
@@ -459,6 +459,37 @@ foreach (var pose in poses)
                     editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
                     Pump(1.5);
                     Save("editor-make-stairs");
+                    break;
+                }
+
+                if (pose == "editor-rooms")
+                {
+                    // A room east of the starter room sharing its wall; V, a click on each with Shift, J: one room.
+                    // Then a small room drawn inside it, and the Inspector's "Make it a pool".
+                    Drag((256, -256), (512, 256), null);
+                    window.KeyPress(Avalonia.Input.Key.V, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.V, "v");
+                    window.MouseDown(At(-128, 64), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(-128, 64), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseDown(At(384, 64), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.Shift);
+                    window.MouseUp(At(384, 64), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.Shift);
+                    Pump(0.6);
+                    Console.WriteLine($"rooms selected: heading '{editor.Inspector.Heading}', rows {string.Join(" | ", editor.Inspector.Rows.Select(r => r.Label).Take(2))}");
+                    window.KeyPress(Avalonia.Input.Key.J, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.J, "j");
+                    Pump(1.0);
+                    Report("joined");
+                    window.KeyPress(Avalonia.Input.Key.R, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.R, "r");
+                    Drag((64, -128), (320, 128), null);
+                    Pump(0.6);
+                    Console.WriteLine($"rooms inside: heading '{editor.Inspector.Heading}', island rows {string.Join(" | ", editor.Inspector.Rows.Where(r => r.Label.StartsWith("Make it a p", StringComparison.Ordinal)).Select(r => r.Label))}");
+                    editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Make it a pool").Command.Execute(null);
+                    Pump(1.0);
+                    var pool = editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().SingleOrDefault();
+                    Console.WriteLine($"rooms pool: floor {pool?.FloorHeight} {pool?.FloorTexture}, undo '{editor.Session.History.UndoLabel}'");
+                    Report("pool");
+                    Save("editor-rooms");
+                    var session = editor.Session;
+                    var scene = WadSmith.Editor.Scene.MapScene.Build(session.Geometry, n => session.Resources?.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, WadSmith.App.ThreeD.SpriteShapes.For(session.Resources));
+                    File.WriteAllBytes(Path.Combine(output, "editor-rooms-3d.png"), WadSmith.App.ThreeD.Offscreen3D.RenderPng(scene, session.Resources, new WadSmith.App.ThreeD.Camera3D(-200, 0, 80, 0, -12), 960, 600, inside: true));
                     break;
                 }
 

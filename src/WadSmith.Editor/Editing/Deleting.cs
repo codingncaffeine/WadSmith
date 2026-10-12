@@ -119,7 +119,7 @@ public static class Deleting
     /// Makes the two walls at a corner one wall from the far end of the first to the far end of the
     /// second, when they face the same rooms on the same sides; the first wall's settings stay.
     /// </summary>
-    private static bool Straighten(StructureEdit edit, Vertex v, Line a, Line b)
+    internal static bool Straighten(StructureEdit edit, Vertex v, Line a, Line b)
     {
         // Along the chain far(a) → v → far(b): is each wall running that way?
         var aForward = a.End == v;
@@ -152,7 +152,7 @@ public static class Deleting
         edit.Flag(l, "blocking", true);
     }
 
-    private static void RemoveWall(StructureEdit edit, Line l, HashSet<Vertex> loose)
+    internal static void RemoveWall(StructureEdit edit, Line l, HashSet<Vertex> loose)
     {
         if (!l.OnMap) return;
         edit.Remove(l);
@@ -163,7 +163,7 @@ public static class Deleting
     }
 
     /// <summary>The walls with a face in the room, from the shapes (live values decide).</summary>
-    private static List<Line> WallsOf(MapGeometry geometry, Sector room)
+    internal static List<Line> WallsOf(MapGeometry geometry, Sector room)
     {
         if (geometry.WallBoundsAt(room.Slot) is not { } b) return [];
         return [.. geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY).Where(l => l.OnMap && (l.Front.Sector == room || l.Back?.Sector == room))];

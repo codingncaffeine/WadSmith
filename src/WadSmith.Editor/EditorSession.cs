@@ -223,6 +223,70 @@ public sealed class EditorSession : IDisposable
     /// <summary>Raised when <see cref="TeleportPad"/> changes.</summary>
     public event Action? TeleportPadChanged;
 
+    /// <summary>Joins the selected rooms into the first selected, as one undo step (see <see cref="Rooms.Join"/>), and selects it.</summary>
+    public void JoinRooms()
+    {
+        var rooms = Selection.Items.OfType<Sector>().Where(s => s.OnMap).ToList();
+        if (rooms.Count < 2)
+        {
+            Notice?.Invoke("Select two or more rooms to join (Shift adds to the selection).");
+            return;
+        }
+
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = JoinRooms;
+            return;
+        }
+
+        IReadOnlyList<string> said = [];
+        var geometry = _geometry;
+        History.Record("Join rooms", e => said = Rooms.Join(e, geometry, rooms));
+        Selection.Set(rooms[0]);
+        if (said.Count > 0) Notice?.Invoke(string.Join(" ", said));
+    }
+
+    /// <summary>What an island room becomes: a pillar (solid), a pool (lower, with water) or a platform (raised a step).</summary>
+    public enum IslandKind
+    {
+        Pillar,
+        Pool,
+        Platform,
+    }
+
+    /// <summary>Makes a room inside another a pillar, a pool or a platform (see <see cref="Rooms"/>), as one undo step.</summary>
+    public void MakeIsland(Sector room, IslandKind kind)
+    {
+        if (!room.OnMap) return;
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => MakeIsland(room, kind);
+            return;
+        }
+
+        var geometry = _geometry;
+        if (Rooms.Island(geometry, room) is not { } outer)
+        {
+            Notice?.Invoke("Only a room drawn inside another, sharing its walls with that room alone, becomes a pillar, a pool or a platform.");
+            return;
+        }
+
+        var look = Look;
+        switch (kind)
+        {
+            case IslandKind.Pillar:
+                History.Record("Make a pillar", e => Deleting.Delete(e, geometry, [room], look));
+                Selection.Prune();
+                break;
+            case IslandKind.Pool:
+                History.Record("Make a pool", e => Rooms.Pool(e, geometry, room, outer, look));
+                break;
+            default:
+                History.Record("Make a platform", e => Rooms.Platform(e, geometry, room, outer, look));
+                break;
+        }
+    }
+
     /// <summary>The door or lift waiting for its switch (the click on a wall that comes next).</summary>
     public Sector? SwitchTarget
     {

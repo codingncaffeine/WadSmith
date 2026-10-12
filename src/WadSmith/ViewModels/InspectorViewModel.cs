@@ -219,7 +219,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
-        [Sector s] => Doors.Recognise(_session.Geometry, s) is not null ? "door" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : "room",
+        [Sector s] => Doors.Recognise(_session.Geometry, s) is not null ? "door" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room",
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : "thing",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
@@ -286,6 +286,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             var kinds = items.Select(Name).Distinct().ToList();
             Heading = kinds.Count == 1 ? $"{items.Count} {kinds[0].ToLowerInvariant()}s selected" : $"{items.Count} things selected";
             Summary = string.Join(", ", items.GroupBy(i => Name(i)).Select(g => $"{g.Count()} {g.Key.ToLowerInvariant()}{(g.Count() > 1 ? "s" : "")}"));
+            if (items.All(i => i is Sector)) Rows.Add(new ActionRow("Join them into one room", "The rooms become the first one you selected: the walls between them go, and its floor, ceiling and light hold for all of it (J).", _session.JoinRooms));
             AddShaping();
             Rows.Add(new ActionRow("Delete them", "Deletes everything selected so the map stays whole (Delete).", _session.DeleteSelection));
             return;
@@ -332,6 +333,13 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = "Its floor, ceiling and light.";
                 AddSector(s);
                 Rows.Add(new ActionRow("Make it a secret", "Finding it counts toward the secrets at the end of the map, and the walls into it show as solid walls on the in-game map so they do not give it away.", () => _session.MakeSecret(s)));
+                if (Rooms.Island(_session.Geometry, s) is not null)
+                {
+                    Rows.Add(new HeadingRow("INSIDE ANOTHER ROOM"));
+                    Rows.Add(new ActionRow("Make it a pillar", "It becomes solid: its walls turn to face the room round it.", () => _session.MakeIsland(s, EditorSession.IslandKind.Pillar)));
+                    Rows.Add(new ActionRow("Make it a pool", "Its floor goes 16 below the room round it, with the game's water on it.", () => _session.MakeIsland(s, EditorSession.IslandKind.Pool)));
+                    Rows.Add(new ActionRow("Make it a platform", "Its floor rises 24 above the room round it, a step the player takes.", () => _session.MakeIsland(s, EditorSession.IslandKind.Platform)));
+                }
                 Rows.Add(new ActionRow("Make it a lift", "Its floor goes down to the lowest floor beside it when the player uses a wall from below or walks onto it, waits 3 seconds and comes back up (Plat_DownWaitUpStayLip).", () => _session.MakeLift(s)));
                 Rows.Add(new ActionRow("Make it a teleport pad", "Stepping onto this room sends the player to a spot you click next (Teleport, with an arrival spot).", () => TeleportFrom?.Invoke(s)));
                 break;
