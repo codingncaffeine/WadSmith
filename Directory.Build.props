@@ -25,7 +25,7 @@
     <Company>WadSmith</Company>
     <Authors>codingncaffeine</Authors>
     <Copyright>Copyright (C) 2026 WadSmith contributors</Copyright>
-    <VersionPrefix>0.0.1</VersionPrefix>
+    <VersionPrefix>0.0.5</VersionPrefix>
   </PropertyGroup>
 
   <!-- Central package versions: bump here and nowhere else. -->

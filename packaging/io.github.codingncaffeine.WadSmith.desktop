@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=WadSmith
+GenericName=Map Editor
+Comment=Build maps for Doom, Heretic, Hexen and Strife, then play them in GZDoom
+Exec=wadsmith %F
+Icon=wadsmith
+Terminal=false
+Type=Application
+Categories=Game;Development;
+Keywords=doom;gzdoom;map;editor;wad;udmf;level;
+StartupWMClass=wadsmith

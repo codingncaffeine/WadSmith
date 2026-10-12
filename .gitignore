@@ -20,3 +20,6 @@ publish/
 .vs/
 .idea/
 *.swp
+
+# Release artifacts (packaging/build-release.sh)
+/packaging/out/
