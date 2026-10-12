@@ -5,11 +5,32 @@ using WadSmith.Core.Containers;
 
 namespace WadSmith.Core.Games;
 
+/// <summary>What kind of object a type is, for the Objects shelf: from the engine's class tree.</summary>
+public enum ThingCategory
+{
+    Start,
+    Monster,
+    Weapon,
+    Ammo,
+    Health,
+    Armor,
+    Key,
+
+    /// <summary>Other things to pick up: power-ups, backpacks, maps.</summary>
+    Powerup,
+
+    /// <summary>Things that show but do nothing to the player: columns, lamps, bodies, barrels.</summary>
+    Decoration,
+
+    /// <summary>Invisible things that mark a spot: teleport destinations, sound and map spots.</summary>
+    Marker,
+}
+
 /// <summary>
 /// An object a map can place, as the engine defines it: its number in maps, its name, the sprite and
-/// frame it shows when it appears, and its size.
+/// frame it shows when it appears, its size, and its kind.
 /// </summary>
-public sealed record ThingType(int Number, string ClassName, string Name, string? Sprite, char Frame, double Radius, double Height, double ScaleX, double ScaleY, bool OnCeiling);
+public sealed record ThingType(int Number, string ClassName, string Name, string? Sprite, char Frame, double Radius, double Height, double ScaleX, double ScaleY, bool OnCeiling, ThingCategory Category = ThingCategory.Decoration);
 
 /// <summary>
 /// The objects of one game family, read from the engine's own data (gzdoom.pk3): the MAPINFO
@@ -110,15 +131,42 @@ public sealed partial class ThingCatalog
             var tag = Inherited(classes, className, c => c.Tag);
             var (sprite, frame) = SpawnFrame(classes, className);
             var declared = classes[className].Name;
-            var name = starts.TryGetValue(number, out var start) ? start : NameOf(tag, declared, strings);
-            types[number] = new ThingType(number, declared, name, sprite, frame, radius, height, scaleX, scaleY, ceiling);
+            var name = starts.TryGetValue(number, out var start) ? start : NameOf(tag, declared, NamedAncestor(classes, className), strings);
+            var category = starts.ContainsKey(number) ? ThingCategory.Start : CategoryOf(classes, className, sprite);
+            types[number] = new ThingType(number, declared, name, sprite, frame, radius, height, scaleX, scaleY, ceiling, category);
         }
 
         return new ThingCatalog(types);
     }
 
+    /// <summary>The kind of object a class is: the nearest of its ancestors that says, else whether it shows a sprite.</summary>
+    private static ThingCategory CategoryOf(Dictionary<string, ActorClass> classes, string name, string? sprite)
+    {
+        if (Inherited(classes, name, c => c.Monster) == true) return ThingCategory.Monster;
+        for (var c = classes.GetValueOrDefault(name); c is not null; c = c.Parent is null ? null : classes.GetValueOrDefault(c.Parent))
+        {
+            switch (c.Name.ToUpperInvariant())
+            {
+                case "KEY": return ThingCategory.Key;
+                case "WEAPON": return ThingCategory.Weapon;
+                case "AMMO": return ThingCategory.Ammo;
+                case "HEALTH" or "HEALTHPICKUP": return ThingCategory.Health;
+                case "ARMOR" or "BASICARMORPICKUP" or "BASICARMORBONUS" or "HEXENARMOR": return ThingCategory.Armor;
+                case "INVENTORY": return ThingCategory.Powerup;
+            }
+        }
+
+        return sprite is null ? ThingCategory.Marker : ThingCategory.Decoration;
+    }
+
     private sealed class ActorClass
     {
+        /// <summary>Set by the Monster combo flag or +ISMONSTER.</summary>
+        public bool? Monster { get; set; }
+
+        /// <summary>Skip_Super: the class's defaults start from scratch, not from its parent's (its states still come from the parent).</summary>
+        public bool SkipSuper { get; set; }
+
         public required string Name { get; init; }
 
         public string? Parent { get; init; }
@@ -141,10 +189,11 @@ public sealed partial class ThingCatalog
         public List<string> States { get; } = [];
     }
 
+    /// <summary>A default property from the class or the nearest parent that sets it; a class with Skip_Super takes nothing from its parents.</summary>
     private static T? Inherited<T>(Dictionary<string, ActorClass> classes, string name, Func<ActorClass, T?> get)
         where T : struct
     {
-        for (var c = classes.GetValueOrDefault(name); c is not null; c = c.Parent is null ? null : classes.GetValueOrDefault(c.Parent))
+        for (var c = classes.GetValueOrDefault(name); c is not null; c = c.SkipSuper || c.Parent is null ? null : classes.GetValueOrDefault(c.Parent))
         {
             if (get(c) is { } v) return v;
         }
@@ -154,7 +203,7 @@ public sealed partial class ThingCatalog
 
     private static string? Inherited(Dictionary<string, ActorClass> classes, string name, Func<ActorClass, string?> get)
     {
-        for (var c = classes.GetValueOrDefault(name); c is not null; c = c.Parent is null ? null : classes.GetValueOrDefault(c.Parent))
+        for (var c = classes.GetValueOrDefault(name); c is not null; c = c.SkipSuper || c.Parent is null ? null : classes.GetValueOrDefault(c.Parent))
         {
             if (get(c) is { } v) return v;
         }
@@ -166,6 +215,7 @@ public sealed partial class ThingCatalog
     private static (string? Sprite, char Frame) SpawnFrame(Dictionary<string, ActorClass> classes, string name)
     {
         var label = "Spawn";
+        var skip = 0;
         for (var hops = 0; hops < 16; hops++)
         {
             // The nearest class (itself or a parent) that has the label.
@@ -183,6 +233,25 @@ public sealed partial class ThingCatalog
                 var line = owner.States[i];
                 if (line.EndsWith(':')) continue;
                 var words = line.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+
+                // "Goto Death+4": the fifth state after the label. A state line with several frames ("TROO IJKLM") is that many states.
+                if (skip > 0 && !words[0].Equals("Goto", StringComparison.OrdinalIgnoreCase) && words.Length >= 2)
+                {
+                    var count = words[1].Trim('"').Length;
+                    if (skip >= count)
+                    {
+                        skip -= count;
+                        continue;
+                    }
+
+                    var frames0 = words[1].Trim('"').ToUpperInvariant();
+                    var sprite0 = words[0].Trim('"').ToUpperInvariant();
+                    var picked = frames0[skip];
+                    skip = 0;
+                    if (sprite0.Length != 4 || sprite0 is "TNT1" or "####" or "----" || picked is < 'A' or > ']') return (null, 'A');
+                    return (sprite0, picked);
+                }
+
                 if (words[0].Equals("Goto", StringComparison.OrdinalIgnoreCase) && words.Length > 1)
                 {
                     var target = words[1];
@@ -196,7 +265,9 @@ public sealed partial class ThingCatalog
                         name = owner.Name;
                     }
 
-                    label = target.Split('+')[0];
+                    var parts = target.Split('+');
+                    label = parts[0];
+                    skip = parts.Length > 1 && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : 0;
                     break;
                 }
 
@@ -212,25 +283,58 @@ public sealed partial class ThingCatalog
         return (null, 'A');
     }
 
-    private static string NameOf(string? tag, string className, Dictionary<string, string> strings)
+    /// <summary>The nearest class in the chain (itself first) that declares a tag, whatever Skip_Super says: the name it is a variant of.</summary>
+    private static (string Name, string Tag)? NamedAncestor(Dictionary<string, ActorClass> classes, string name)
     {
-        if (tag is not null)
+        for (var c = classes.GetValueOrDefault(name); c is not null; c = c.Parent is null ? null : classes.GetValueOrDefault(c.Parent))
         {
-            var text = tag;
-            for (var i = 0; i < 4 && text.StartsWith('$'); i++)
-            {
-                var key = text.TrimStart('$');
-                if (!strings.TryGetValue(key, out var next)) break;
-                text = next;
-            }
-
-            if (!text.StartsWith('$') && text.Length > 0) return text;
+            if (c.Tag is not null) return (c.Name, c.Tag);
         }
 
-        // No tag: the class name in words ("TallGreenColumn" becomes "Tall green column").
-        var words = CamelWords().Replace(className, " $1").Trim();
-        return words.Length == 0 ? className : char.ToUpperInvariant(words[0]) + words[1..].ToLowerInvariant();
+        return null;
     }
+
+    private static string? Resolve(string tag, Dictionary<string, string> strings)
+    {
+        var text = tag;
+        for (var i = 0; i < 4 && text.StartsWith('$'); i++)
+        {
+            if (!strings.TryGetValue(text.TrimStart('$'), out var next)) break;
+            text = next;
+        }
+
+        return !text.StartsWith('$') && text.Length > 0 ? text : null;
+    }
+
+    private static string NameOf(string? tag, string className, (string Name, string Tag)? named, Dictionary<string, string> strings)
+    {
+        // A variant of a named class (StealthDoomImp of DoomImp's "Imp", DeadZombieMan of "Zombieman") says what it
+        // adds: "Stealth imp", "Dead zombieman".
+        if (named is { } n && !n.Name.Equals(className, StringComparison.OrdinalIgnoreCase) && className.Contains(n.Name, StringComparison.OrdinalIgnoreCase) && Resolve(n.Tag, strings) is { } parentName)
+        {
+            var extra = Words(className.Replace(n.Name, " ", StringComparison.OrdinalIgnoreCase)).Trim();
+            if (extra.Length > 0) return Sentence($"{extra} {parentName.ToLowerInvariant()}");
+        }
+
+        // A name taken over from a differently named parent (StealthBaron from BaronOfHell) would hide which one it
+        // is: its own class name says it ("Stealth baron").
+        var own = named is { } m && m.Name.Equals(className, StringComparison.OrdinalIgnoreCase);
+        if (tag is not null && own && Resolve(tag, strings) is { } text) return text;
+
+        // No tag: the class name in words ("TallGreenColumn" becomes "Tall green column"; "DeadDoomImp" "Dead imp").
+        var words = Words(className);
+        return words.Length == 0 ? className : Sentence(words);
+    }
+
+    /// <summary>A class name in lower-case words, without the "Doom" that only tells same-named classes of other games apart.</summary>
+    private static string Words(string className)
+    {
+        var words = CamelWords().Replace(className, " $1").Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(w => w.ToLowerInvariant()).ToList();
+        if (words.Count > 1) words.Remove("doom");
+        return string.Join(' ', words);
+    }
+
+    private static string Sentence(string words) => words.Length == 0 ? words : char.ToUpperInvariant(words[0]) + words[1..];
 
     /// <summary>English strings by identifier, from language.def (aliases such as "$$CC_IMP") and the language CSV tables.</summary>
     private static Dictionary<string, string> LanguageStrings(ResourceContainer engine)
@@ -338,11 +442,14 @@ public sealed partial class ThingCatalog
                             var on = flag[0] == '+';
                             var name = flag.TrimStart('+', '-');
                             if (name.Equals("SPAWNCEILING", StringComparison.OrdinalIgnoreCase)) c.SpawnCeiling = on;
+                            if (name.Equals("ISMONSTER", StringComparison.OrdinalIgnoreCase)) c.Monster = on;
                         }
 
                         continue;
                     }
 
+                    if (item.Equals("Monster", StringComparison.OrdinalIgnoreCase)) c.Monster = true;
+                    if (item.Equals("Skip_Super", StringComparison.OrdinalIgnoreCase)) c.SkipSuper = true;
                     var space = item.IndexOfAny([' ', '\t']);
                     if (space < 0) continue;
                     var key = item[..space];

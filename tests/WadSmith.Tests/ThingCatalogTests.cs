@@ -15,7 +15,8 @@ public sealed class ThingCatalogTests
     [InlineData("doom", 30, "TallGreenColumn", "Tall green column", "COL1", 'A', 16, 52)]
     [InlineData("heretic", 66, "HereticImp", "Gargoyle", "IMPX", 'A', 16, 36)]
     [InlineData("hexen", 107, "Centaur", "Centaur", "CENT", 'A', 20, 64)]
-    [InlineData("strife", 3002, "AcolyteTan", "Acolyte", "AGRD", 'A', 24, 64)]
+    // The game calls every acolyte "Acolyte"; the shelf tells the tan, red and rust ones apart.
+    [InlineData("strife", 3002, "AcolyteTan", "Tan acolyte", "AGRD", 'A', 24, 64)]
     public void KnownObjectsReadAsTheEngineDefinesThem(string family, int number, string className, string name, string sprite, char frame, double radius, double height)
     {
         var t = ThingCatalog.Load(Engine.Value, family).Find(number);
@@ -40,6 +41,47 @@ public sealed class ThingCatalogTests
         Assert.Equal(className, t.ClassName);
         Assert.Equal(name, t.Name);
         Assert.Equal("PLAY", t.Sprite);
+    }
+
+    [Theory]
+    [InlineData("doom", 3001, ThingCategory.Monster)]
+    [InlineData("doom", 2001, ThingCategory.Weapon)]
+    [InlineData("doom", 2007, ThingCategory.Ammo)]
+    [InlineData("doom", 2011, ThingCategory.Health)]
+    [InlineData("doom", 2013, ThingCategory.Health)]
+    [InlineData("doom", 2018, ThingCategory.Armor)]
+    [InlineData("doom", 13, ThingCategory.Key)]
+    [InlineData("doom", 2024, ThingCategory.Powerup)]
+    [InlineData("doom", 8, ThingCategory.Powerup)]
+    [InlineData("doom", 2035, ThingCategory.Decoration)]
+    [InlineData("doom", 14, ThingCategory.Marker)]
+    [InlineData("doom", 1, ThingCategory.Start)]
+    [InlineData("heretic", 66, ThingCategory.Monster)]
+    [InlineData("hexen", 107, ThingCategory.Monster)]
+    [InlineData("strife", 3002, ThingCategory.Monster)]
+    public void ObjectsAreSortedByKindFromTheEnginesClasses(string family, int number, ThingCategory category)
+    {
+        Assert.Equal(category, ThingCatalog.Load(Engine.Value, family).Find(number)?.Category);
+    }
+
+    [Theory]
+    [InlineData(20, "Dead imp", ThingCategory.Decoration, "TROO", 'M')]
+    [InlineData(18, "Dead zombieman", ThingCategory.Decoration, "POSS", 'L')]
+    [InlineData(9057, "Stealth imp", ThingCategory.Monster, "TROO", 'A')]
+    [InlineData(3001, "Imp", ThingCategory.Monster, "TROO", 'A')]
+    public void DeadAndStealthVariantsAreNamedAndSortedAsWhatTheyAre(int number, string name, ThingCategory category, string sprite, char frame)
+    {
+        var t = ThingCatalog.Load(Engine.Value, "doom").Find(number);
+        Assert.NotNull(t);
+        Assert.Equal((name, category, sprite, frame), (t.Name, t.Category, t.Sprite, t.Frame));
+    }
+
+    [Fact]
+    public void EveryDoomMonsterIsAMonster()
+    {
+        var doom = ThingCatalog.Load(Engine.Value, "doom");
+        int[] monsters = [3004, 9, 65, 3001, 3002, 58, 3006, 3005, 69, 3003, 68, 71, 66, 67, 64, 16, 7, 84, 72];
+        Assert.All(monsters, n => Assert.Equal(ThingCategory.Monster, doom.Find(n)?.Category));
     }
 
     [Fact]
