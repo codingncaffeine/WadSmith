@@ -1,7 +1,10 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WadSmith.Editor;
+using WadSmith.Editor.App;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
 
@@ -26,12 +29,16 @@ internal sealed partial class EditorViewModel : ObservableObject
     private readonly AppServices _services;
     private readonly MainViewModel _main;
     private string _hoverText = "";
+    private bool _goingBack;
 
-    public EditorViewModel(AppServices services, EditorSession session, MainViewModel main)
+    public EditorViewModel(AppServices services, EditorSession session, MainViewModel main, string? message = null, bool showVersions = false)
     {
         _services = services;
         _main = main;
         Session = session;
+        _hoverText = message ?? "";
+        _showVersions = showVersions;
+        if (showVersions) _ = RefreshVersionsAsync();
         Inspector = new InspectorViewModel(session);
         session.History.Moved += OnHistoryMoved;
         session.StateChanged += _ => UpdateSaveText();
@@ -45,6 +52,87 @@ internal sealed partial class EditorViewModel : ObservableObject
     public EditorSession Session { get; }
 
     public InspectorViewModel Inspector { get; }
+
+    /// <summary>The kept copies of the map, newest first, while the Versions panel is open.</summary>
+    public ObservableCollection<VersionItem> Versions { get; } = [];
+
+    /// <summary>Whether the right-hand panel shows the versions instead of the Inspector.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowInspector))]
+    private bool _showVersions;
+
+    public bool ShowInspector
+    {
+        get => !ShowVersions;
+        set
+        {
+            if (value) ShowVersions = false;
+            else OnPropertyChanged();
+        }
+    }
+
+    [ObservableProperty]
+    private string _versionsNote = "";
+
+    partial void OnShowVersionsChanged(bool value)
+    {
+        if (value) _ = RefreshVersionsAsync();
+    }
+
+    private async Task RefreshVersionsAsync()
+    {
+        var project = Session.Project;
+        var slot = Session.Slot;
+        await Session.OpeningVersion.ConfigureAwait(true);
+        var items = await Task.Run(() => MapVersions.List(project, slot).Select(v => new VersionItem(v, Picture(v.Picture), GoBackAsync)).ToList()).ConfigureAwait(true);
+        Versions.Clear();
+        foreach (var item in items) Versions.Add(item);
+        VersionsNote = items.Count == 0
+            ? "No versions yet. WadSmith keeps one each time you open the map and whenever you press Keep a version."
+            : "WadSmith keeps one each time you open the map and whenever you press Keep a version. Going back keeps the map as it is now first, so nothing is lost.";
+    }
+
+    private static Bitmap? Picture(string? path)
+    {
+        if (path is null) return null;
+        try
+        {
+            return new Bitmap(path);
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Makes a kept copy the map again: the map as it is now is kept first, then the copy opens in its place.</summary>
+    private async Task GoBackAsync(VersionItem item)
+    {
+        if (_goingBack) return;
+        _goingBack = true;
+        var project = Session.Project;
+        var slot = Session.Slot;
+        var hooks = Session.Hooks;
+        _hoverText = $"Going back to the version from {item.WhenText}…";
+        UpdateStatus();
+        try
+        {
+            await Session.FlushAsync().ConfigureAwait(true);
+            await Session.SaveVersion($"Before going back to the version from {EditorSession.Describe(item.Version.When)}").ConfigureAwait(true);
+            Session.Dispose();
+            var restored = await Task.Run(() => EditorSession.Restore(project, slot, item.Version, hooks)).ConfigureAwait(true);
+            _main.OpenEditor(restored, $"Went back to the version from {item.WhenText}. The map as it was is kept as a version too.", showVersions: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Core.CorruptDataException)
+        {
+            Log.Warn($"Going back to {item.Version.File} failed: {ex.Message}");
+            await _main.OpenEditorAsync(project, slot).ConfigureAwait(true);
+        }
+        finally
+        {
+            _goingBack = false;
+        }
+    }
 
     public string ProjectName => Session.Project.Info.Name;
 
@@ -178,11 +266,12 @@ internal sealed partial class EditorViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void KeepVersion()
+    private async Task KeepVersionAsync()
     {
-        Session.SaveVersion("Kept by hand");
-        _hoverText = "A copy of the map as it is now was kept in the project's versions.";
+        var kept = await Session.SaveVersion("Kept by hand").ConfigureAwait(true);
+        _hoverText = kept is null ? "The newest version already holds the map as it is now." : "A copy of the map as it is now was kept in the project's versions.";
         UpdateStatus();
+        if (ShowVersions) await RefreshVersionsAsync().ConfigureAwait(true);
     }
 
     [RelayCommand]

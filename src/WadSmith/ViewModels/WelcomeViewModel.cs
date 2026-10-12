@@ -246,7 +246,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
             var session = await Task.Run(() =>
             {
                 var (project, slot) = work();
-                return EditorSession.Open(project, slot, MainViewModel.PostToUi, _services.ResourcesFor(project));
+                return EditorSession.Open(project, slot, MainViewModel.HooksFor(_services.ResourcesFor(project)));
             }).ConfigureAwait(true);
             _main.OpenEditor(session);
         }

@@ -232,7 +232,7 @@ foreach (var pose in poses)
         case "welcome":
             Save("welcome");
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -277,6 +277,22 @@ foreach (var pose in poses)
             var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
             view.FitMap();
             if (pose == "editor-zoomed") view.ZoomBy(3.5);
+            if (pose == "editor-versions")
+            {
+                // Raise the biggest room, keep a version, show the list, then go back to the oldest.
+                var room = editor.Session.Map.Sectors.OrderByDescending(s => s.CeilingHeight - s.FloorHeight).First();
+                editor.Session.History.Run(new WadSmith.Editor.Editing.SetProperty<WadSmith.Editor.Model.Sector, double>(room, "Change floor height", x => x.FloorHeight, (x, v) => x.FloorHeight = v, room.FloorHeight + 64));
+                Wait(editor.KeepVersionCommand.ExecuteAsync(null));
+                editor.ShowVersions = true;
+                for (var i = 0; i < 100 && editor.Versions.Count < 2; i++) Pump(0.05);
+                Save("editor-versions");
+                Wait(editor.Versions[^1].GoBackCommand.ExecuteAsync(null));
+                for (var i = 0; i < 100 && (vm.Page as EditorViewModel)?.Versions.Count < 3; i++) Pump(0.05);
+                Pump(0.5);
+                Save("editor-went-back");
+                break;
+            }
+
             Save(pose);
             break;
         case "perf":

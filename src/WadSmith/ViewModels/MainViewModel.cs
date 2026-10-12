@@ -31,17 +31,24 @@ internal sealed partial class MainViewModel : ObservableObject
     /// <summary>Runs an action on the UI thread (what sessions use to report back).</summary>
     public static void PostToUi(Action action) => Avalonia.Threading.Dispatcher.UIThread.Post(action);
 
+    /// <summary>What a session gets from the app: the dispatcher, the game, and version pictures drawn as the editor shows the map.</summary>
+    public static SessionHooks HooksFor(GameResources? resources)
+    {
+        var look = new Canvas.MapLook(resources);
+        return new SessionHooks(PostToUi, resources, frame => Canvas.MapThumbnail.Render(frame, look, 384, 256));
+    }
+
     /// <summary>Reads a project's map on a worker and opens it in the editor.</summary>
     public async Task OpenEditorAsync(Project project, string slot)
     {
-        var session = await Task.Run(() => EditorSession.Open(project, slot, PostToUi, Services.ResourcesFor(project))).ConfigureAwait(true);
+        var session = await Task.Run(() => EditorSession.Open(project, slot, HooksFor(Services.ResourcesFor(project)))).ConfigureAwait(true);
         OpenEditor(session);
     }
 
     /// <summary>Shows an opened session in the editor; called on the UI thread.</summary>
-    public void OpenEditor(EditorSession session)
+    public void OpenEditor(EditorSession session, string? message = null, bool showVersions = false)
     {
-        var editor = new EditorViewModel(Services, session, this);
+        var editor = new EditorViewModel(Services, session, this, message, showVersions);
         Page = editor;
         Title = $"{session.Project.Info.Name} · WadSmith";
         Remember(session.Project.Folder);

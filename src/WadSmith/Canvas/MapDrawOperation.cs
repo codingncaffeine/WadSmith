@@ -61,17 +61,6 @@ internal sealed class SelectionOverlay
 /// <summary>Draws the map on the render thread through a Skia lease.</summary>
 internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view) : ICustomDrawOperation
 {
-    private static readonly SKColor Background = new(0x0A, 0x07, 0x08);
-    private static readonly SKColor GridMinor = new(0x1C, 0x15, 0x16);
-    private static readonly SKColor GridMajor = new(0x2E, 0x24, 0x25);
-    private static readonly SKColor Accent = new(0xE0, 0x58, 0x2A);
-    private static readonly SKColor Ember = new(0xE0, 0x98, 0x59);
-    private static readonly SKColor PlayerStart = new(0x5F, 0xD3, 0x5F);
-    private static readonly SKColor ThingColour = new(0xC9, 0xC2, 0xBC);
-
-    /// <summary>Above this many walls on screen they are drawn one pixel wide.</summary>
-    internal const int DenseWalls = 20_000;
-
     public Rect Bounds { get; } = bounds;
 
     public bool HitTest(Point p) => Bounds.Contains(p);
@@ -87,12 +76,37 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
         if (context.TryGetFeature<ISkiaSharpApiLeaseFeature>() is not { } feature) return;
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         using var lease = feature.Lease();
-        var canvas = lease.SkCanvas;
         FrameStats.Gpu = lease.GrContext is not null;
+        new MapPainter(snapshot, selection, hover, view).Paint(lease.SkCanvas, lease.GrContext is not null);
+        lease.SkCanvas.Flush();
+        FrameStats.Draw(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+    }
+}
+
+/// <summary>
+/// Paints the map onto any Skia canvas: the window's (through <see cref="MapDrawOperation"/>) or an
+/// offscreen picture such as a version's thumbnail.
+/// </summary>
+internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view)
+{
+    private static readonly SKColor Background = new(0x0A, 0x07, 0x08);
+    private static readonly SKColor GridMinor = new(0x1C, 0x15, 0x16);
+    private static readonly SKColor GridMajor = new(0x2E, 0x24, 0x25);
+    private static readonly SKColor Accent = new(0xE0, 0x58, 0x2A);
+    private static readonly SKColor Ember = new(0xE0, 0x98, 0x59);
+    private static readonly SKColor PlayerStart = new(0x5F, 0xD3, 0x5F);
+    private static readonly SKColor ThingColour = new(0xC9, 0xC2, 0xBC);
+
+    /// <summary>Above this many walls on screen they are drawn one pixel wide.</summary>
+    internal const int DenseWalls = 20_000;
+
+    /// <summary>Paints the view's rectangle; <paramref name="gpu"/> says whether the canvas draws on the GPU.</summary>
+    public void Paint(SKCanvas canvas, bool gpu, bool grid = true)
+    {
         canvas.Save();
-        canvas.ClipRect(new SKRect(0, 0, (float)Bounds.Width, (float)Bounds.Height));
+        canvas.ClipRect(new SKRect(0, 0, (float)view.Width, (float)view.Height));
         canvas.Clear(Background);
-        DrawGrid(canvas);
+        if (grid) DrawGrid(canvas);
 
         if (snapshot is null)
         {
@@ -117,7 +131,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
 
         canvas.Save();
         canvas.Concat(in m);
-        if (snapshot.Areas is { } areas) DrawAreas(canvas, areas, areas.Visible(left, bottom, right, top), dense, lease.GrContext is not null);
+        if (snapshot.Areas is { } areas) DrawAreas(canvas, areas, areas.Visible(left, bottom, right, top), dense, gpu);
         using var paint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeCap = SKStrokeCap.Round };
 
         // Openings first, then steps, then solid walls on top: the automap's order.
@@ -141,8 +155,6 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
 
         DrawPoints(canvas, snapshot);
         canvas.Restore();
-        canvas.Flush();
-        FrameStats.Draw(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
 
     private void DrawGrid(SKCanvas canvas)

@@ -1,5 +1,3 @@
-using WadSmith.Core.Maps;
-using WadSmith.Core.Preview;
 using WadSmith.Core.Projects;
 using WadSmith.Editor.App;
 using WadSmith.Editor.Editing;
@@ -23,6 +21,12 @@ public enum SaveState
 /// that reads all of it (saving, versions, outlines, hit-test grids) works on a worker from the map's
 /// read-only <see cref="EditorMap.Frame"/>, so nothing that grows with the map runs on the UI thread.
 /// </summary>
+/// <summary>What a session needs from the application: how to reach the UI thread, the project's game, and a picture maker for versions.</summary>
+/// <param name="OnUiThread">Runs an action on the UI thread (the app passes its dispatcher).</param>
+/// <param name="Resources">The project's game opened for textures, sprites and object names, when found.</param>
+/// <param name="Picture">Paints a map as PNG for the versions list (on a worker); null for the automap drawing.</param>
+public sealed record SessionHooks(Action<Action> OnUiThread, GameResources? Resources = null, Func<MapFrame, byte[]?>? Picture = null);
+
 public sealed class EditorSession : IDisposable
 {
     public static readonly TimeSpan SaveDelay = TimeSpan.FromMilliseconds(900);
@@ -36,10 +40,15 @@ public sealed class EditorSession : IDisposable
     private Task _lastSave = Task.CompletedTask;
     private bool _disposed;
 
-    private EditorSession(Project project, string slot, EditorMap map, MapGeometry geometry, GameResources? resources, Action<Action> onUiThread)
+    private readonly Func<MapFrame, byte[]?>? _picture;
+
+    private EditorSession(Project project, string slot, EditorMap map, MapGeometry geometry, SessionHooks hooks)
     {
+        var onUiThread = hooks.OnUiThread;
         Project = project;
-        Resources = resources;
+        Resources = hooks.Resources;
+        Hooks = hooks;
+        _picture = hooks.Picture;
         Slot = slot;
         Map = map;
         History = new History(map);
@@ -66,6 +75,12 @@ public sealed class EditorSession : IDisposable
 
     /// <summary>The project's game, opened for its textures, sprites and object names; null when it was not found.</summary>
     public GameResources? Resources { get; }
+
+    /// <summary>What the application gave this session (passed on when the map is reopened).</summary>
+    public SessionHooks Hooks { get; }
+
+    /// <summary>The copy kept when the map opened, being written by a worker (null when it matched the newest copy).</summary>
+    public Task<MapVersion?> OpeningVersion { get; private set; } = Task.FromResult<MapVersion?>(null);
 
     public string Slot { get; }
 
@@ -95,13 +110,19 @@ public sealed class EditorSession : IDisposable
     /// <param name="project">The project.</param>
     /// <param name="slot">The map to open.</param>
     /// <param name="onUiThread">Runs an action on the UI thread (the app passes its dispatcher).</param>
-    /// <param name="resources">The project's game opened for textures, sprites and object names, when found.</param>
     /// <remarks>Reads and indexes the whole map: call it on a worker, then hand the session to the UI thread.</remarks>
-    public static EditorSession Open(Project project, string slot, Action<Action> onUiThread, GameResources? resources = null)
+    public static EditorSession Open(Project project, string slot, Action<Action> onUiThread) => Open(project, slot, new SessionHooks(onUiThread));
+
+    /// <param name="project">The project.</param>
+    /// <param name="slot">The map to open.</param>
+    /// <param name="hooks">How to reach the UI thread, the game, and the version picture maker.</param>
+    /// <param name="reason">Why the copy kept at opening was kept, for the versions list.</param>
+    /// <remarks>Reads and indexes the whole map: call it on a worker, then hand the session to the UI thread.</remarks>
+    public static EditorSession Open(Project project, string slot, SessionHooks hooks, string reason = "Opened")
     {
         var map = EditorMap.FromModel(project.LoadMap(slot));
-        var session = new EditorSession(project, slot, map, MapGeometry.Build(map.Frame), resources, onUiThread);
-        session.SaveVersion("Opened");
+        var session = new EditorSession(project, slot, map, MapGeometry.Build(map.Frame), hooks);
+        session.OpeningVersion = session.SaveVersion(reason);
         return session;
     }
 
@@ -113,32 +134,57 @@ public sealed class EditorSession : IDisposable
     }
 
     /// <summary>
-    /// Keeps a copy of the map as it is now, with a thumbnail, in the project's versions folder
-    /// (<c>.wadsmith/versions/SLOT/</c>). Runs on a worker after a quick capture.
+    /// Keeps a copy of the map as it is now, with a picture, in the project's versions (D24). The copy
+    /// is written by a worker; the task gives the version kept, or null when the newest copy already
+    /// held this map (or the copy could not be written, which is logged).
     /// </summary>
-    public void SaveVersion(string reason)
+    public Task<MapVersion?> SaveVersion(string reason)
     {
         var frame = Map.Frame;
-        var folder = Path.Combine(Project.Folder, ".wadsmith", "versions", Slot);
-        var stamp = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture);
-        _ = Task.Run(() =>
+        var now = DateTimeOffset.Now;
+        return Task.Run(async () =>
         {
-            var model = frame.ToModel();
+            await _writer.WaitAsync().ConfigureAwait(false);
             try
             {
-                Directory.CreateDirectory(folder);
-                var wad = Core.Containers.WadWriter.Write(Core.Containers.WadKind.Pwad,
-                    new[] { (model.Name, (ReadOnlyMemory<byte>)Array.Empty<byte>()) }.Concat(MapConversion.ToUdmfLumps(model).Select(l => (l.Name, (ReadOnlyMemory<byte>)l.Data))));
-                File.WriteAllBytes(Path.Combine(folder, $"{stamp}.wad"), wad);
-                File.WriteAllBytes(Path.Combine(folder, $"{stamp}.png"), Core.Graphics.ImageCodec.EncodePng(MapPreview.Render(model, new MapPreview.Options(256, 8))));
-                File.WriteAllText(Path.Combine(folder, $"{stamp}.txt"), reason);
+                byte[]? picture = null;
+                try
+                {
+                    picture = _picture?.Invoke(frame);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+                {
+                    Log.Warn($"The picture for a version of {Slot} could not be made: {ex.Message}");
+                }
+
+                return MapVersions.Write(Project, Slot, frame.ToModel(), reason, now, picture);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 Log.Warn($"A version of {Slot} could not be kept: {ex.Message}");
+                return null;
+            }
+            finally
+            {
+                _writer.Release();
             }
         });
     }
+
+    /// <summary>
+    /// Makes a kept copy the project's map again and opens it in a new session; the caller has kept the
+    /// map as it was (as a version) and closed this session first. Reads and writes files: call it on a worker.
+    /// </summary>
+    public static EditorSession Restore(Project project, string slot, MapVersion version, SessionHooks hooks)
+    {
+        var model = MapVersions.Load(version);
+        model.Name = slot;
+        project.SaveMap(model);
+        return Open(project, slot, hooks, $"Back to the version from {Describe(version.When)}");
+    }
+
+    /// <summary>A moment as a kept version's reason names it, readable on any later day: "11 Oct, 20:50".</summary>
+    public static string Describe(DateTimeOffset when) => when.LocalDateTime.ToString("d MMM, HH:mm", System.Globalization.CultureInfo.CurrentCulture);
 
     private void CaptureAndSave()
     {
