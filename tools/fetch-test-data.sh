@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Downloads the free data the tests use when no game files are present (CI): Freedoom's two IWADs
-# and GZDoom's own data file (gzdoom.pk3, for its translation tables). Every download is checked
+# and GZDoom's own data files (gzdoom.pk3 for its translation tables, game_support.pk3 for map names). Every download is checked
 # against a pinned SHA-256.
 #
 #   tools/fetch-test-data.sh FOLDER
@@ -21,7 +21,7 @@ fetch https://github.com/freedoom/freedoom/releases/download/v0.13.0/freedoom-0.
 unzip -o -q -j freedoom-0.13.0.zip 'freedoom-0.13.0/freedoom1.wad' 'freedoom-0.13.0/freedoom2.wad'
 
 fetch https://github.com/ZDoom/gzdoom/releases/download/g4.14.2/gzdoom-4-14-2-windows.zip gzdoom-4-14-2-windows.zip 6d01c5bb48610cebfa9dfd0b7705a1e20bfd56032a74484ac256d8c4e3c51bee
-unzip -o -q -j gzdoom-4-14-2-windows.zip gzdoom.pk3
+unzip -o -q -j gzdoom-4-14-2-windows.zip gzdoom.pk3 game_support.pk3
 
 rm -f freedoom-0.13.0.zip gzdoom-4-14-2-windows.zip
 ls -l

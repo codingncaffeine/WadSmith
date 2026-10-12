@@ -96,16 +96,16 @@ public sealed class TranslationTests
     }
 
     [Theory]
-    [InlineData(1, 65, false)]       // blinking light: dLight_Flicker
-    [InlineData(9, 0, true)]         // secret
-    [InlineData(7, 71, false)]       // nukage damage
-    [InlineData(0x80 | 7, 71, true)] // Boom: secret nukage
-    [InlineData(0x20 | 0x80, 0x100, true)] // Boom: 5% damage and secret, no light type
-    public void SectorTypesBecomeGzdoomTypesAndSecretsAField(int classic, int expected, bool secret)
+    [InlineData(1, 65)]                       // blinking light: dLight_Flicker
+    [InlineData(9, 1024)]                     // secret: GZDoom's secret bit
+    [InlineData(7, 71)]                       // nukage damage
+    [InlineData(0x80 | 7, 1024 | 71)]         // Boom: secret nukage
+    [InlineData(0x20 | 0x80, 1024 | 0x100)]   // Boom: 5% damage and secret, no light type
+    public void SectorTypesBecomeGzdoomTypes(int classic, int expected)
     {
         var s = Translate(DoomMap(0, sectorSpecial: (ushort)classic)).Sectors[0];
         Assert.Equal(expected, s.Special);
-        Assert.Equal(secret, s.Extra.TryGet("secret", out var v) && v.AsBool());
+        Assert.False(s.Extra.Contains("secret"));
     }
 
     [Fact]
@@ -145,5 +145,47 @@ public sealed class TranslationTests
         Assert.True(m.Lines[0].Flag("impact") && m.Lines[0].Flag("missilecross"));
         // Unchanged, it writes back its own activation bits.
         Assert.Equal(7 << 10, MapConversion.ToClassic(m, MapFormat.Hexen).Lines[0].Flags & 0x1C00);
+    }
+}
+
+public sealed class ChecksumTests
+{
+    [Fact]
+    public void TheMapChecksumIsTheOneTheEngineUses()
+    {
+        // GZDoom's compatibility tables name this checksum as Doom II MAP14.
+        var wad = WadContainer.Open(GameFiles.Require("DOOM2.WAD"));
+        var map14 = MapLocator.Find(wad).First(m => m.Name == "MAP14");
+        Assert.Equal("5BDA34DA60C0530794CC1EA2DA017976", MapChecksum.Compute(map14));
+    }
+
+    [Fact]
+    public void TheEngineKnowsItsOwnFixesForThatMap()
+    {
+        var compat = EngineCompatibility.Load(new ResourceStack([ResourceContainer.Open(GameFiles.Require("gzdoom.pk3"))]));
+        Assert.True(compat.HasRepairs("5BDA34DA60C0530794CC1EA2DA017976"));
+        Assert.True(compat.HasBehaviourSwitches("5BDA34DA60C0530794CC1EA2DA017976"));
+        Assert.False(compat.HasRepairs("00000000000000000000000000000000"));
+    }
+
+    [Fact]
+    public void StrifeTurnsOnClippedMiddleTexturesForEveryLine()
+    {
+        var engine = new ResourceStack([ResourceContainer.Open(GameFiles.Require("gzdoom.pk3"))]);
+        Assert.Equal(0x00080000, EngineCompatibility.GameDefaultLineFlags(engine, "strife"));
+        Assert.Equal(0, EngineCompatibility.GameDefaultLineFlags(engine, "doom"));
+    }
+}
+
+public sealed class TranslationDetailTests
+{
+    [Fact]
+    public void EverySectorOfAClassicMapLetsThingsRideFallingFloors()
+    {
+        var c = new ClassicMap { Name = "MAP01", Format = MapFormat.Doom };
+        c.Sectors.Add(new ClassicSector(0, 128, "F", "C", 160, 0, 0));
+        var xlat = XlatTranslator.Load(new ResourceStack([ResourceContainer.Open(GameFiles.Require("gzdoom.pk3"))]), "xlat/doom.txt");
+        var s = MapTranslation.ToZDoom(MapConversion.FromClassic(c, "doom"), xlat, []).Sectors[0];
+        Assert.True(s.Extra.TryGet("dropactors", out var v) && v.AsBool());
     }
 }

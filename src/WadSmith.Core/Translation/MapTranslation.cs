@@ -7,7 +7,7 @@ namespace WadSmith.Core.Translation;
 /// <summary>
 /// Turns a classic map (read with <see cref="MapConversion.FromClassic"/>) into GZDoom's own UDMF
 /// namespace, <c>zdoom</c>, giving every line, sector and thing the meaning GZDoom gives it when it
-/// loads the classic map itself. Doom-format maps go through the engine's translator; Hexen-format
+/// loads the classic map itself (checked against the engine: tools/engine). Doom-format maps go through the engine's translator; Hexen-format
 /// maps already use GZDoom's actions and only need their line ids made explicit.
 /// </summary>
 public static class MapTranslation
@@ -23,7 +23,6 @@ public static class MapTranslation
         (0x00800000, "firstsideonly"), (0x01000000, "blockprojectiles"), (0x02000000, "blockuse"),
     ];
 
-    private const int SecretMask = 0x0400;
     private const int MlSpacMask = 0x1C00;
     private const int MlRepeat = 0x0200;
     private const int MlMonstersCanActivate = 0x2000;
@@ -60,12 +59,11 @@ public static class MapTranslation
             {
                 s.Special = TranslateSector(s.Special, xlat!);
 
-                // UDMF states a secret as a field; the engine moves Boom's secret bit there itself.
-                if ((s.Special & SecretMask) != 0)
-                {
-                    s.Special &= ~SecretMask;
-                    s.Extra["secret"] = true;
-                }
+                // Classic maps let things ride a fast-lowering floor down (vanilla behaviour, which the
+                // engine turns on for every sector of a map without BEHAVIOR); UDMF states it per sector.
+                s.Extra["dropactors"] = true;
+                // A secret stays in the type as GZDoom's 1024 bit: its UDMF reader has no sector
+                // "secret" key and turns that bit into the secret flag when the map loads.
             }
         }
         else
@@ -240,7 +238,7 @@ public static class MapTranslation
 
     /// <summary>
     /// Hexen-format lines get their id from certain actions' arguments; UDMF states it directly.
-    /// Line_SetIdentification itself is removed, as the engine removes it.
+    /// Line_SetIdentification itself is removed (its arguments stay), as the engine does.
     /// </summary>
     private static void MakeHexenLineIdExplicit(MapLine l)
     {
@@ -252,8 +250,8 @@ public static class MapTranslation
             case "Line_SetIdentification":
                 id = l.Args[0] + 256 * l.Args[4];
                 moreFlags = l.Args[1] << 16;
+                // The engine removes the action but keeps its arguments.
                 l.Special = 0;
-                Array.Clear(l.Args);
                 break;
             case "TranslucentLine":
                 id = l.Args[0];

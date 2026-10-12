@@ -285,7 +285,7 @@ public static class AssetExtractor
                 return Record(AssetKind.Sounds, path, entry, entry.Name);
             }
 
-            if (audio == AudioKind.None && entry.Namespace is ResourceNamespace.Global or ResourceNamespace.Graphics && (ImageCodec.IsKnownImage(data) || DoomPicture.IsValid(data) || (data.Length == 64000 && entry.Namespace == ResourceNamespace.Global)))
+            if (audio == AudioKind.None && entry.Namespace is ResourceNamespace.Global or ResourceNamespace.Graphics && (ImageCodec.IsKnownImage(data) || DoomPicture.IsValid(data) || (RawPicture.FullscreenWidth(data.Length) > 0 && entry.Namespace == ResourceNamespace.Global)))
             {
                 if (!Want(AssetKind.Graphics)) return null;
                 try

@@ -23,6 +23,28 @@ internal static class GameFiles
         return path;
     }
 
+    /// <summary>Every copy of a file name across the test folders (and their sub-folders, three deep).</summary>
+    public static IReadOnlyList<string> FindAll(string fileName) => AllCopies.Value.GetValueOrDefault(fileName.ToUpperInvariant()) ?? [];
+
+    private static readonly Lazy<Dictionary<string, List<string>>> AllCopies = new(() =>
+    {
+        var map = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var raw = Environment.GetEnvironmentVariable(Variable);
+        if (string.IsNullOrWhiteSpace(raw)) return map;
+        foreach (var folder in raw.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!Directory.Exists(folder)) continue;
+            foreach (var file in Directory.EnumerateFiles(folder, "*", new EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = 3, IgnoreInaccessible = true }))
+            {
+                var key = Path.GetFileName(file).ToUpperInvariant();
+                if (!map.TryGetValue(key, out var list)) map[key] = list = [];
+                list.Add(file);
+            }
+        }
+
+        return map;
+    });
+
     /// <summary>Every WAD found in the test folders.</summary>
     public static IReadOnlyList<string> AllWads => Index.Value.Values.Where(p => p.EndsWith(".wad", StringComparison.OrdinalIgnoreCase)).OrderBy(p => p, StringComparer.Ordinal).ToList();
 

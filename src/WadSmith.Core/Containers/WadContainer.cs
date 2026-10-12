@@ -226,3 +226,32 @@ public static class WadWriter
         return output;
     }
 }
+
+/// <summary>Reads only a WAD's lump names (header and directory), without loading its data.</summary>
+public static class WadDirectory
+{
+    /// <summary>The lump names of the WAD at <paramref name="path"/>, or null when it is not a readable WAD.</summary>
+    public static IReadOnlyList<string>? ReadNames(string path)
+    {
+        try
+        {
+            using var f = File.OpenRead(path);
+            Span<byte> header = stackalloc byte[WadContainer.HeaderSize];
+            if (f.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) < header.Length) return null;
+            if (!header[..4].SequenceEqual("IWAD"u8) && !header[..4].SequenceEqual("PWAD"u8)) return null;
+            var count = BinaryPrimitives.ReadInt32LittleEndian(header[4..]);
+            var dir = BinaryPrimitives.ReadInt32LittleEndian(header[8..]);
+            if (count < 0 || count > 1_000_000 || dir < 0 || (long)dir + (long)count * WadContainer.DirectoryEntrySize > f.Length) return null;
+            var buffer = new byte[count * WadContainer.DirectoryEntrySize];
+            f.Seek(dir, SeekOrigin.Begin);
+            f.ReadExactly(buffer);
+            var names = new string[count];
+            for (var i = 0; i < count; i++) names[i] = LumpName.Read(buffer.AsSpan(i * WadContainer.DirectoryEntrySize + 8, 8));
+            return names;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or EndOfStreamException)
+        {
+            return null;
+        }
+    }
+}

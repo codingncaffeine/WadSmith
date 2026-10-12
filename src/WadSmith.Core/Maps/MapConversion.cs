@@ -431,7 +431,7 @@ public static class MapConversion
             FlagLayouts.Apply(flags, lineLayout, line.Extra);
             if (hexen)
             {
-                foreach (var f in ActivationFields(flags, line.Special)) line.SetFlag(f, true);
+                foreach (var f in ActivationFields(flags)) line.SetFlag(f, true);
 
                 line.Args[0] = l.Arg0;
                 line.Args[1] = l.Arg1;
@@ -551,9 +551,11 @@ public static class MapConversion
 
     private static short ToShort(double v) => (short)Math.Clamp(Math.Truncate(v), short.MinValue, short.MaxValue);
 
-    /// <summary>The trigger fields of a Hexen-format activation; a line with no action gets none for "cross" (the zero default).</summary>
-    private static IEnumerable<string> ActivationFields(int flags, int special) =>
-        FlagLayouts.HexenActivation[(flags >> 10) & 7].Where(f => special != 0 || f != "playercross");
+    /// <summary>
+    /// The trigger fields of a Hexen-format activation. A line with no action keeps its trigger too:
+    /// a script can give it an action later, and it then fires the way its flags say.
+    /// </summary>
+    private static IEnumerable<string> ActivationFields(int flags) => FlagLayouts.HexenActivation[(flags >> 10) & 7];
 
     private static int HexenActivationBits(MapLine l)
     {
@@ -609,7 +611,7 @@ public static class MapConversion
         var hexen = format == MapFormat.Hexen;
         if (hexen)
         {
-            foreach (var f in ActivationFields(flags, l.Special)) probe[f] = true;
+            foreach (var f in ActivationFields(flags)) probe[f] = true;
         }
 
         return OwnedFlags(probe, layout, hexen).SetEquals(OwnedFlags(l.Extra, layout, hexen));

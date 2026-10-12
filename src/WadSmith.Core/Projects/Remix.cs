@@ -12,7 +12,13 @@ namespace WadSmith.Core.Projects;
 /// </summary>
 public static class Remix
 {
-    public static Project Create(string projectFolder, string baseGamePath, string mapName, string engineDataPath, List<string> notes)
+    /// <param name="projectFolder">Where the new project goes; it must not exist yet.</param>
+    /// <param name="baseGamePath">The base game file, only read.</param>
+    /// <param name="mapName">The map's slot, such as MAP01.</param>
+    /// <param name="engineDataPath">The engine's gzdoom.pk3, whose rules translate the map.</param>
+    /// <param name="notes">Gets anything the translation could not carry over.</param>
+    /// <param name="projectName">The name the project is shown by; "SLOT remix" when null.</param>
+    public static Project Create(string projectFolder, string baseGamePath, string mapName, string engineDataPath, List<string> notes, string? projectName = null)
     {
         var baseGame = ResourceContainer.Open(baseGamePath);
         var game = GameCatalog.Identify(baseGame) ?? throw new CorruptDataException($"{baseGame.DisplayName} is not a base game WadSmith recognises.");
@@ -25,7 +31,7 @@ public static class Remix
         var xlat = lumps.Format == MapFormat.Doom ? XlatTranslator.Load(engine, XlatTranslator.PathFor(model.Namespace)) : null;
         var zdoom = MapTranslation.ToZDoom(model, xlat, notes);
 
-        var project = Project.Create(projectFolder, $"{lumps.Name} remix", game.Id);
+        var project = Project.Create(projectFolder, projectName ?? $"{lumps.Name} remix", game.Id);
         project.SaveMap(zdoom, origin: new MapOrigin { Kind = "remix", Game = game.Id, Map = lumps.Name, Checksum = MapChecksum.Compute(lumps) });
         return project;
     }

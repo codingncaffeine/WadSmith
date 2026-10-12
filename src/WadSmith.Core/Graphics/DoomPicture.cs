@@ -192,11 +192,20 @@ public static class RawPicture
         return img;
     }
 
-    /// <summary>A 320×200 full-screen picture stored as raw indices (Heretic's and Hexen's title screens).</summary>
+    /// <summary>The width of a raw full-screen picture of this many bytes: 320 for the classic 320×200 page, 560 for the re-releases' widescreen page; 0 for neither.</summary>
+    public static int FullscreenWidth(int byteCount) => byteCount switch
+    {
+        64000 => 320,
+        112000 => 560,
+        _ => 0,
+    };
+
+    /// <summary>A full-screen picture stored as raw indices, 200 rows high (Heretic's and Hexen's title screens).</summary>
     public static PalettedImage DecodeFullscreen(ReadOnlySpan<byte> data)
     {
-        if (data.Length != 64000) throw new CorruptDataException("A full-screen raw picture is exactly 64000 bytes.");
-        var img = new PalettedImage(320, 200);
+        var width = FullscreenWidth(data.Length);
+        if (width == 0) throw new CorruptDataException("A full-screen raw picture is 64000 bytes (320×200) or 112000 bytes (560×200).");
+        var img = new PalettedImage(width, 200);
         data.CopyTo(img.Indices);
         Array.Fill(img.Opaque, true);
         return img;

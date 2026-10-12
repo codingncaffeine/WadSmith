@@ -29,6 +29,11 @@ public sealed record GameDefinition
 
     /// <summary>False for games WadSmith recognises only to say it cannot edit them.</summary>
     public bool Supported { get; init; } = true;
+
+    /// <summary>An official add-on that loads over this base game (Deathkings over Hexen); null for a base game.</summary>
+    public string? AddOnFor { get; init; }
+
+    public bool IsBaseGame => AddOnFor is null;
 }
 
 /// <summary>The base games from <c>data/games/games.json</c>, and identification by content.</summary>
@@ -41,13 +46,30 @@ public static class GameCatalog
     public static GameDefinition? Get(string id) => All.FirstOrDefault(g => g.Id == id);
 
     /// <summary>
+    /// The lumps every complete base game of an engine family holds: its palette, light tables,
+    /// player sprite and status bar picture. Add-ons that reuse map names (MAP01, E1M1) never carry
+    /// the whole set, so they are not mistaken for a base game.
+    /// </summary>
+    public static IReadOnlyList<string> CoreLumps(string engine) => engine switch
+    {
+        "heretic" => ["PLAYPAL", "COLORMAP", "PLAYA1", "BARBACK"],
+        "hexen" => ["PLAYPAL", "COLORMAP", "PLAYA1", "H2BAR"],
+        "strife" => ["PLAYPAL", "COLORMAP", "PLAYA1", "INVBACK"],
+        "doom64" => [],
+        _ => ["PLAYPAL", "COLORMAP", "PLAYA1", "STBAR"],
+    };
+
+    /// <summary>
     /// The game a container is, judged only by the lumps it holds (never by its file name or its
     /// IWAD/PWAD header, which repackaged copies change). Null when nothing matches.
     /// </summary>
-    public static GameDefinition? Identify(ResourceContainer container)
+    public static GameDefinition? Identify(ResourceContainer container) => Identify(container.Entries.Select(e => e.Name));
+
+    /// <summary>The game a list of lump names belongs to (see <see cref="Identify(ResourceContainer)"/>).</summary>
+    public static GameDefinition? Identify(IEnumerable<string> lumpNames)
     {
-        var names = new HashSet<string>(container.Entries.Select(e => e.Name), LumpName.Comparer);
-        return All.FirstOrDefault(g => g.MustContain.All(names.Contains));
+        var names = new HashSet<string>(lumpNames, LumpName.Comparer);
+        return All.FirstOrDefault(g => g.MustContain.All(names.Contains) && (!g.IsBaseGame || CoreLumps(g.Engine).All(names.Contains)));
     }
 
     internal static IReadOnlyList<GameDefinition> Parse(string json)
@@ -60,6 +82,7 @@ public static class GameCatalog
             if (g.MustContain.Count == 0) throw new InvalidDataException($"games.json: \"{g.Id}\" has no lumps to recognise it by.");
             if (g.MapNamespace is not ("doom" or "heretic" or "hexen" or "strife")) throw new InvalidDataException($"games.json: \"{g.Id}\" has an unknown mapNamespace \"{g.MapNamespace}\".");
             if (g.Supported && g.MapNames is not ("MAPxx" or "ExMy")) throw new InvalidDataException($"games.json: \"{g.Id}\" needs mapNames MAPxx or ExMy.");
+            if (g.AddOnFor is { } baseGame && !seen.Contains(baseGame) && file.Games.All(x => x.Id != baseGame)) throw new InvalidDataException($"games.json: \"{g.Id}\" is an add-on for \"{baseGame}\", which is not listed.");
         }
 
         return file.Games;

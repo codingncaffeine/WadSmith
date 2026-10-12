@@ -36,7 +36,7 @@ public static class PictureLoader
             return (pic.ToRgba(palette), PictureFormat.DoomPicture, pic);
         }
 
-        if (data.Length == 64000)
+        if (RawPicture.FullscreenWidth(data.Length) > 0)
         {
             var raw = RawPicture.DecodeFullscreen(data);
             return (raw.ToRgba(palette), PictureFormat.Fullscreen, raw);

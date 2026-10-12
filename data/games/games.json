@@ -1,5 +1,5 @@
 {
-  "comment": "Base games WadSmith recognises, most specific first: the first entry whose lumps are all present wins. 'engine' is the game family the engine runs; 'mapNamespace' is what a classic-format map's fields mean in that game.",
+  "comment": "Base games WadSmith recognises, most specific first: the first entry whose lumps are all present wins. A base game must also hold its engine family's core resources (see GameCatalog.CoreLumps); an entry with 'addOnFor' is an official add-on that loads over that base game and needs no core. 'engine' is the game family the engine runs; 'mapNamespace' is what a classic-format map's fields mean in that game.",
   "games": [
     { "id": "doom64", "title": "Doom 64", "engine": "doom64", "mapNamespace": "doom", "supported": false, "mustContain": ["MAP01", "SYMBOLS", "MOUNTA"] },
 
@@ -13,12 +13,12 @@
     { "id": "hacx", "title": "Hacx", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01", "HACX-R"] },
     { "id": "harmony", "title": "Harmony", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01", "0HAWK01", "0CARA3", "0NOSE1"] },
 
-    { "id": "strife-veteran", "title": "Strife: Veteran Edition", "engine": "strife", "mapNamespace": "strife", "mapNames": "MAPxx", "mustContain": ["MAP35", "I_RELB", "FXAA_F"] },
+    { "id": "strife-veteran", "title": "Strife: Veteran Edition", "engine": "strife", "mapNamespace": "strife", "mapNames": "MAPxx", "addOnFor": "strife", "mustContain": ["MAP35", "I_RELB", "FXAA_F"] },
     { "id": "strife", "title": "Strife", "engine": "strife", "mapNamespace": "strife", "mapNames": "MAPxx", "mustContain": ["MAP01", "MAP33", "ENDSTRF"] },
     { "id": "strife-teaser", "title": "Strife (teaser)", "engine": "strife", "mapNamespace": "strife", "mapNames": "MAPxx", "mustContain": ["MAP33", "ENDSTRF"] },
 
-    { "id": "hexen-deathkings", "title": "Hexen: Deathkings of the Dark Citadel", "engine": "hexen", "mapNamespace": "hexen", "mapNames": "MAPxx", "mustContain": ["TITLE", "MAP60", "CLUS1MSG"] },
     { "id": "hexen", "title": "Hexen", "engine": "hexen", "mapNamespace": "hexen", "mapNames": "MAPxx", "mustContain": ["TITLE", "MAP01", "MAP40", "WINNOWR"] },
+    { "id": "hexen-deathkings", "title": "Hexen: Deathkings of the Dark Citadel", "engine": "hexen", "mapNamespace": "hexen", "mapNames": "MAPxx", "addOnFor": "hexen", "mustContain": ["TITLE", "MAP60", "CLUS1MSG"] },
     { "id": "hexen-demo", "title": "Hexen (demo)", "engine": "hexen", "mapNamespace": "hexen", "mapNames": "MAPxx", "mustContain": ["TITLE", "MAP01", "WINNOWR"] },
 
     { "id": "blasphemer", "title": "Blasphemer", "engine": "heretic", "mapNamespace": "heretic", "free": true, "mapNames": "ExMy", "mustContain": ["E1M1", "E2M1", "TITLE", "BLASPHEM"] },
