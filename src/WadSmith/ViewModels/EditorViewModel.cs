@@ -80,10 +80,13 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.GeometryChanged += () =>
         {
             if (WhatIsThis) Explain();
+            if (Report is not null) ExplainMapCommand.Execute(null);
         };
         _mapSeen = (session.MapEntry.Title, session.MapEntry.Music);
         session.MapSettingsChanged += MapSettingsSeen;
         session.GeometryChanged += CameraMoved;
+        _reports = new(MainViewModel.PostToUi, ReportArrived, "the map's explanation");
+        Inspector.ExplainMap += () => ExplainMapCommand.Execute(null);
         _shelfSounds = new LatestOnWorker<byte[]?>(MainViewModel.PostToUi, wav =>
         {
             if (wav is not null) _services.Sound.Play(wav);
@@ -398,6 +401,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Textures shelf", "Panels", "", "textures|flats|wall pictures", () => ShowTextures = true),
             new("Objects shelf", "Panels", "", "things|monsters|items|prefabs", () => ShowObjects = true),
             new("Versions", "Panels", "", "history|snapshots|backups", () => ShowVersions = true),
+            new("Explain this map", "Panels", "", "about|summary|statistics|stats|key flow|monster count|what is in it|map analysis", () => ExplainMapCommand.Execute(null)),
             new("Problems", "Panels", K("", "F4"), "errors|map analysis|check|error checker", () => ShowProblems = !ShowProblems),
             new("Keep a version", "Panels", "", "snapshot|save a copy|backup", () => KeepVersionCommand.Execute(null)),
 
@@ -485,6 +489,33 @@ internal sealed partial class EditorViewModel : ObservableObject
             ThreeD: F("3D", "The 3D view alone, from any angle; the same key again goes back to the plan", "Show the 3D view alone"));
     }
 
+
+    /// <summary>"Explain this map" (D32) while it is open: the map's summary and sections; null when closed.</summary>
+    [ObservableProperty]
+    private ReportView? _report;
+
+    private readonly LatestOnWorker<(EditorSession Session, MapReport Report)> _reports;
+
+    /// <summary>Raised to centre both views on a spot with this much round it (a report line's Show).</summary>
+    public event Action<MapPoint, double>? PlaceRequested;
+
+    /// <summary>Explains the map on a worker and opens the card; it follows the map's changes while open.</summary>
+    [RelayCommand]
+    private void ExplainMap()
+    {
+        var (session, frame, resources) = (Session, Session.Geometry.Frame, Session.Resources);
+        _reports.Request(() => (session, MapReporting.Explain(frame, resources)));
+    }
+
+    [RelayCommand]
+    private void CloseReport() => Report = null;
+
+    private void ReportArrived((EditorSession Session, MapReport Report) r)
+    {
+        if (!ReferenceEquals(r.Session, Session)) return;
+        Report = new ReportView(r.Report.Summary, [.. r.Report.Sections.Select(s => new ReportSectionView(s.Heading, [.. s.Lines.Select(l =>
+            new ReportItem(l.Text, l.At is { } at ? new RelayCommand(() => PlaceRequested?.Invoke(at, 640)) : null))]))]);
+    }
 
     /// <summary>A game's own map opened to learn from (D28): what it shows and the way back; null for the user's own maps.</summary>
     public PeekInfo? Peek { get; init; }

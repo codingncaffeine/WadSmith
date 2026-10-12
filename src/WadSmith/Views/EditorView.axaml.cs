@@ -36,6 +36,11 @@ public partial class EditorView : UserControl
                 return ((int)Math.Round(View3D.Bounds.Width * scale), (int)Math.Round(View3D.Bounds.Height * scale));
             };
             vm.Problems.ShowRequested += elements => Canvas.FitTo(elements);
+            vm.PlaceRequested += (at, span) =>
+            {
+                Canvas.FitAround(at, span);
+                View3D.LookAround(at, span / 2);
+            };
             if (vm.PendingPlace is { } place)
             {
                 // After the bindings hand both views the session: a landmark (D28) is shown instead of the whole map.

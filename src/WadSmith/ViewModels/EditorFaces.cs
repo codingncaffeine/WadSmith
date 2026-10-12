@@ -29,3 +29,12 @@ internal sealed record GuideMarks(GuideTarget Target)
 
 /// <summary>A game's own map opened to learn from (D28): its banner, the landmark it was opened at, and the editor to go back to.</summary>
 internal sealed record PeekInfo(string Heading, string Says, Editor.Smart.Landmark Landmark, Core.Games.FoundGame Game, EditorViewModel? Back);
+
+/// <summary>A line of "Explain this map" with its Show button's command (none for a plain fact).</summary>
+internal sealed record ReportItem(string Text, System.Windows.Input.ICommand? Show);
+
+/// <summary>A section of "Explain this map".</summary>
+internal sealed record ReportSectionView(string Heading, IReadOnlyList<ReportItem> Items);
+
+/// <summary>"Explain this map" as the card shows it.</summary>
+internal sealed record ReportView(string Summary, IReadOnlyList<ReportSectionView> Sections);

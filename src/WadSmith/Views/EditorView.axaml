@@ -45,16 +45,19 @@
     <Grid RowDefinitions="50,*,Auto,30">
         <!-- Top bar -->
         <Border Grid.Row="0" Background="{DynamicResource Brush.TopBar}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="10,0">
+            <Grid ColumnDefinitions="Auto,*,Auto" Margin="10,0">
                 <Button Classes="metal" Content="‹ Start" Command="{Binding CloseCommand}" VerticalAlignment="Center"
                         ToolTip.Tip="Back to the start screen. Your changes are already kept." />
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0" VerticalAlignment="Center" Spacing="6">
-                    <Image Source="/Assets/icon.png" Width="24" Height="24" />
-                    <TextBlock Text="{Binding ProjectName}" FontWeight="SemiBold" VerticalAlignment="Center" MaxWidth="220" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ProjectName}" />
-                    <TextBlock Text="·" Classes="secondary" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding MapName}" Classes="secondary" VerticalAlignment="Center" />
-                </StackPanel>
-                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <!-- The project and the map: the one part of the bar that gives way, trimmed, so the controls always fit. -->
+                <Grid Grid.Column="1" ColumnDefinitions="Auto,*" Margin="16,0" VerticalAlignment="Center">
+                    <Image Source="/Assets/icon.png" Width="24" Height="24" Margin="0,0,6,0" />
+                    <TextBlock Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ProjectName}">
+                        <Run Text="{Binding ProjectName}" FontWeight="SemiBold" />
+                        <Run Text=" · " Foreground="{DynamicResource Brush.Text.Secondary}" />
+                        <Run Text="{Binding MapName}" Foreground="{DynamicResource Brush.Text.Secondary}" />
+                    </TextBlock>
+                </Grid>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" Spacing="0" Margin="0,0,10,0">
                         <ToggleButton Classes="segment first" Content="Floors" IsChecked="{Binding IsFloors}"
                                       ToolTip.Tip="Shows each area's floor as it looks in the game, lit by its brightness." />
@@ -220,6 +223,42 @@
                                 ToolTip.Tip="Closes the guide. Your map is yours to change." />
                     </StackPanel>
                 </StackPanel>
+            </Border>
+            <!-- Explain this map (D32): what the map is made of, its keys and what each difficulty holds, each with Show. -->
+            <Border Grid.ColumnSpan="3" IsVisible="{Binding Report, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="12,56,12,12" Padding="16,12" Width="400" MaxHeight="560" CornerRadius="6" Background="{DynamicResource Brush.Surface1}"
+                    BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1">
+                <Grid DataContext="{Binding Report}" x:DataType="vm:ReportView" RowDefinitions="Auto,Auto,*">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="section" Text="THIS MAP" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Classes="metal" Content="Close" Padding="10,1" Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).CloseReportCommand}"
+                                ToolTip.Tip="Closes the explanation. Explain this map in the Inspector, with nothing selected, opens it again." />
+                    </Grid>
+                    <TextBlock Grid.Row="1" Text="{Binding Summary}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" Margin="0,6,0,8" />
+                    <ScrollViewer Grid.Row="2">
+                        <ItemsControl ItemsSource="{Binding Sections}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="vm:ReportSectionView">
+                                    <StackPanel Spacing="4" Margin="0,4,0,8">
+                                        <TextBlock Classes="section" Text="{Binding Heading}" />
+                                        <ItemsControl ItemsSource="{Binding Items}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="vm:ReportItem">
+                                                    <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                                        <Button Grid.Column="1" Classes="metal" Content="Show" Padding="8,1" Margin="8,0,0,0" Command="{Binding Show}"
+                                                                IsVisible="{Binding Show, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                                ToolTip.Tip="Centres the plan and the 3D view on it." />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
             </Border>
             <!-- A game's own map opened to learn from (D28): what it shows, the way back, and Remix. -->
             <Border Grid.ColumnSpan="3" IsVisible="{Binding Peek, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="110,12,12,0" Padding="16,12" MaxWidth="560"

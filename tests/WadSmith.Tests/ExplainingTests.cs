@@ -8,6 +8,7 @@ using WadSmith.Editor.App;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
+using WadSmith.Editor.Smart;
 
 namespace WadSmith.Tests;
 
@@ -162,5 +163,105 @@ public sealed class WhatIsThisInTheWindowTests
             return said;
         });
         Assert.Equal(["no card", "Point at something", "Room", "Point at something", "Room", "no card"], log);
+    }
+}
+
+/// <summary>"Explain this map" (D32): the report counts what the recognisers find, ties keys to their doors, calls out a lock with no key, and counts what each difficulty holds.</summary>
+public sealed class MapReportTests
+{
+    private static EditorMap Built(string script)
+    {
+        var map = EditorMap.FromModel(new MapModel { Name = "MAP01", Namespace = "zdoom" });
+        Assert.All(EditScript.Run(map, script, Look.For("doom"), "doom"), s => Assert.True(s.Done, $"line {s.Line}: {s.Said}"));
+        return map;
+    }
+
+    private static string Text(MapReport r) => r.Summary + "\n" + string.Join("\n", r.Sections.Select(s => s.Heading + ": " + string.Join(" | ", s.Lines.Select(l => l.Text + (l.At is null ? "" : " [show]")))));
+
+    [Fact]
+    public void AKeyWithItsDoorAndALockWithoutAKeyAreBothSaid()
+    {
+        var withKey = Text(MapReporting.Explain(Built("room 0 0 256 256\nroom 256 0 512 256\nstart 128 128\ndoor 256 128\nlock 256 128 red\nkey red 64 64").Frame, ProblemTests.Freedoom.Value));
+        Assert.Contains("opens 1 door. [show]", withKey);
+        Assert.DoesNotContain("the map has none", withKey);
+        var without = Text(MapReporting.Explain(Built("room 0 0 256 256\nroom 256 0 512 256\nstart 128 128\ndoor 256 128\nlock 256 128 red").Frame, ProblemTests.Freedoom.Value));
+        Assert.Contains("A door needs the red key, and the map has none: the player cannot open it. [show]", without);
+        Assert.Contains("1 locked door. [show]", without);
+    }
+
+    [Fact]
+    public void EachDifficultyCountsWhatIsOnIt()
+    {
+        var map = Built("room 0 0 512 256\nstart 128 128\nthing 3001 64 64\nthing 3001 96 64\nthing 2012 300 64\nthing 2001 300 128\nthing 2002 400 128");
+        // A weapon for games with friends only: a player alone never meets it.
+        new History(map).Record("Multiplayer only", e => e.Flag(map.Things.Single(t => t.Type == 2002), "single", false));
+        new History(map).Record("Not on Easy", e => map.Things.Where(t => t.Type == 3001).Take(1).ToList().ForEach(t =>
+        {
+            e.Flag(t, "skill1", false);
+            e.Flag(t, "skill2", false);
+        }));
+        var text = Text(MapReporting.Explain(map.Frame, ProblemTests.Freedoom.Value));
+        Assert.Contains("Easy: 1 monster, 1 weapon, 0 ammunition, 1 health, 0 armour, 0 power-ups.", text);
+        Assert.Contains("Normal: 2 monsters, 1 weapon, 0 ammunition, 1 health, 0 armour, 0 power-ups.", text);
+        Assert.StartsWith("1 room, 2 monsters on Normal, 0 secrets and no exit.", text);
+        Assert.Contains("Player 1 starts here. [show]", text);
+    }
+
+    [Fact]
+    public void AGamesOwnMapIsCountedAsTheRecognisersFindIt()
+    {
+        var engine = GameFiles.Require("gzdoom.pk3");
+        var wad = GameFiles.Require("freedoom2.wad");
+        var map = Landmarks.Read(wad, "MAP01", engine, "doom")!;
+        var report = MapReporting.Explain(map.Frame, ProblemTests.Freedoom.Value);
+        var recognised = Recognition.Find(map, MapGeometry.Build(map.Frame));
+        var text = Text(report);
+        Assert.Contains($"{recognised.ByKind["secrets"].Count} secrets", report.Summary);
+        Assert.Contains($"{map.Sectors.Count(s => s.OnMap)} rooms", report.Summary);
+        Assert.Contains($"{recognised.ByKind["exits"].Count} exit", text);
+    }
+}
+
+/// <summary>Explain this map in the window: the Inspector's button opens the card, Show centres the plan on its spot, Close shuts it.</summary>
+[Collection(TimingCollection.Name)]
+public sealed class ExplainThisMapInTheWindowTests
+{
+    [Fact]
+    public async Task TheInspectorOpensTheCardAndShowCentresThePlan()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var log = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(temp.Path, Path.GetDirectoryName(wad)!);
+            var said = new List<string>();
+            try
+            {
+                var editor = Ui.NewMap(vm);
+                var plan = window.GetVisualDescendants().OfType<App.Canvas.MapCanvas>().First();
+                editor.Session.Selection.Clear();
+                Ui.Pump(0.3);
+                editor.Inspector.Rows.OfType<App.ViewModels.ActionRow>().Single(r => r.Label == "Explain this map").Command.Execute(null);
+                for (var i = 0; i < 100 && editor.Report is null; i++) Ui.Pump(0.02);
+                said.Add(editor.Report?.Summary ?? "no card");
+                var start = editor.Session.Map.Things.Single(t => t.Type == 1);
+                bool Centred() => Math.Abs(plan.ToScreen(new(start.X, start.Y)).Y - plan.Bounds.Height / 2) < 4;
+                plan.FitAround(new(start.X + 4000, start.Y + 4000), 640);
+                Ui.Pump(0.3);
+                said.Add($"moved away, centred {Centred()}");
+                editor.Report!.Sections.Single(s => s.Heading == "WHERE IT STARTS").Items.Single().Show!.Execute(null);
+                Ui.Pump(0.3);
+                said.Add($"after Show, centred {Centred()}");
+                editor.CloseReportCommand.Execute(null);
+                said.Add(editor.Report is null ? "closed" : "open");
+            }
+            finally
+            {
+                window.Close();
+            }
+
+            return said;
+        });
+        Assert.Equal(["1 room, 0 monsters on Normal, 0 secrets and no exit.", "moved away, centred False", "after Show, centred True", "closed"], log);
     }
 }
