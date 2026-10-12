@@ -700,6 +700,16 @@ foreach (var pose in poses)
                     Pump(0.8);
                     Report("triangle");
                     Save("editor-draw-shape");
+
+                    // A line from the starter room's west wall round to its north wall, finished with Enter: the
+                    // corner it cuts off becomes a room of its own.
+                    foreach (var (x, y) in new[] { (-256.0, 64.0), (-64.0, 64.0), (-64.0, 256.0) }) Click(x, y);
+                    window.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Enter, null);
+                    Pump(0.8);
+                    Report("split");
+                    var cut = editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().SingleOrDefault();
+                    Console.WriteLine($"draw split: new room {(cut is null ? "none" : editor.Session.Geometry.WallBoundsAt(cut.Slot) is { } b ? $"({b.MinX:0},{b.MinY:0})-({b.MaxX:0},{b.MaxY:0})" : "?")}, undo '{editor.Session.History.UndoLabel}'; {editor.Problems.Summary}");
+                    Save("editor-split");
                     break;
                 }
 

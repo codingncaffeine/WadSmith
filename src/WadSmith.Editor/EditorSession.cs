@@ -150,6 +150,33 @@ public sealed class EditorSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Finishes corners clicked one by one without closing them on the first: a line from one wall of a room to
+    /// another, inside it, splits the room (see <see cref="Splitting"/>); three or more corners otherwise close
+    /// into a room as <see cref="DrawRoom"/> does. One undo step either way.
+    /// </summary>
+    public void FinishCorners(IReadOnlyList<MapPoint> corners)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => FinishCorners(corners);
+            return;
+        }
+
+        if (corners.Count >= 2 && Splitting.Across(_geometry, corners) is not null)
+        {
+            (IReadOnlyList<Sector> Parts, string? Why) result = ([], null);
+            var geometry = _geometry;
+            History.Record("Split a room", e => result = Splitting.Split(e, geometry, corners));
+            if (result.Parts.Count > 0) Selection.Set([.. result.Parts.Skip(1)]);
+            else if (result.Why is { } why) Notice?.Invoke(why);
+            return;
+        }
+
+        if (corners.Count >= 3) DrawRoom(corners);
+        else Notice?.Invoke("Click three or more corners for a room, or draw a line from one wall of a room to another to split it.");
+    }
+
     /// <summary>The game family of the project ("doom", "heretic", "hexen", "strife").</summary>
     public string Engine => Core.Games.GameCatalog.Get(Project.Info.Game)?.Engine ?? "doom";
 

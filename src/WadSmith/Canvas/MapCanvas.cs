@@ -794,7 +794,7 @@ internal sealed class MapCanvas : Control
     /// <summary>Where the next corner of a shape goes: snapped as usual, and with Shift along a 45° step from the last corner.</summary>
     private MapPoint NextCorner(Point p, bool straight)
     {
-        var at = Snap(p);
+        var at = SnapCorner(p);
         if (!straight || _corners.Count == 0) return at;
         var last = _corners[^1];
         var (dx, dy) = (at.X - last.X, at.Y - last.Y);
@@ -803,10 +803,13 @@ internal sealed class MapCanvas : Control
         return new MapPoint(Math.Round(last.X + Math.Cos(angle) * length), Math.Round(last.Y + Math.Sin(angle) * length));
     }
 
-    /// <summary>Closes the shape drawn corner by corner and draws it as a room.</summary>
-    private void CloseCorners()
+    /// <summary>
+    /// Finishes the corners clicked one by one: closed on the first corner, a room; finished open (Enter, a
+    /// double-click), a line across a room splits it, else the corners close into a room.
+    /// </summary>
+    private void CloseCorners(bool open = false)
     {
-        if (_corners.Count < 3 || Session is not { } session)
+        if (_corners.Count < (open ? 2 : 3) || Session is not { } session)
         {
             return;
         }
@@ -814,9 +817,25 @@ internal sealed class MapCanvas : Control
         MapPoint[] shape = [.. _corners];
         _corners.Clear();
         CornersChanged?.Invoke(null);
-        session.DrawRoom(shape);
+        if (open) session.FinishCorners(shape);
+        else session.DrawRoom(shape);
         _drawnIn = -1;
         InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Where a corner clicked here goes: on a corner within a few pixels, else on the grid, unless a wall within a few
+    /// pixels passes nearer the pointer than the grid point does (a slanted wall): then on the wall.
+    /// </summary>
+    private MapPoint SnapCorner(Point p)
+    {
+        var grid = Snap(p);
+        var m = ToMap(p);
+        if (Session?.Geometry.VertexNear(m, 8 / _zoom) is not null || WallAt(p) is not { } wall) return grid;
+        var on = CornerOn(wall, p);
+        var (dx, dy) = (wall.End.X - wall.Start.X, wall.End.Y - wall.Start.Y);
+        var away = Math.Abs((m.X - wall.Start.X) * dy - (m.Y - wall.Start.Y) * dx) / Math.Max(Math.Sqrt(dx * dx + dy * dy), 1e-9);
+        return away < m.DistanceTo(grid) ? on : grid;
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -925,10 +944,10 @@ internal sealed class MapCanvas : Control
 
         if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Room)
         {
-            // A double-click closes a shape drawn corner by corner.
-            if (e.ClickCount == 2 && _corners.Count >= 3)
+            // A double-click finishes a shape drawn corner by corner (a line across a room splits it).
+            if (e.ClickCount == 2 && _corners.Count >= 2)
             {
-                CloseCorners();
+                CloseCorners(open: true);
                 e.Handled = true;
                 return;
             }
@@ -1170,7 +1189,7 @@ internal sealed class MapCanvas : Control
         // A click (no drag) puts a corner of a shape drawn corner by corner; the first corner again closes it.
         if (!dragged || _corners.Count > 0 || a0 is not { } a || b0 is not { } b || Math.Abs(b.X - a.X) < 1 || Math.Abs(b.Y - a.Y) < 1)
         {
-            var corner = _corners.Count > 0 ? NextCorner(released, (e.KeyModifiers & KeyModifiers.Shift) != 0) : Snap(released);
+            var corner = _corners.Count > 0 ? NextCorner(released, (e.KeyModifiers & KeyModifiers.Shift) != 0) : SnapCorner(released);
             if (_corners.Count >= 3 && corner.DistanceTo(_corners[0]) < 1e-6)
             {
                 CloseCorners();
@@ -1217,8 +1236,8 @@ internal sealed class MapCanvas : Control
                 CancelDrawing();
                 e.Handled = true;
                 break;
-            case Key.Enter when _corners.Count >= 3:
-                CloseCorners();
+            case Key.Enter when _corners.Count >= 2:
+                CloseCorners(open: true);
                 e.Handled = true;
                 break;
             case Key.Back when _corners.Count > 0:
