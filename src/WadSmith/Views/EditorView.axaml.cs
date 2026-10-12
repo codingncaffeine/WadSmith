@@ -29,6 +29,7 @@ public partial class EditorView : UserControl
         Canvas.Placing += text => (DataContext as EditorViewModel)?.Hint(text);
         Canvas.Measured += (from, to) => (DataContext as EditorViewModel)?.Measured(from, to);
         Canvas.DropHint += hint => (DataContext as EditorViewModel)?.Hint(hint);
+        View3D.DropHint += hint => (DataContext as EditorViewModel)?.Hint(hint);
         Canvas.CornersChanged += c => (DataContext as EditorViewModel)?.Corners(c);
         Canvas.GhostChanged += (fit, at) =>
         {

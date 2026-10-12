@@ -26,6 +26,7 @@ internal sealed unsafe class Renderer3D : IDisposable
     private int _height;
     private bool _dirty;
     private (float[] Surfaces, Dictionary<int, float[]> Sprites)? _highlight;
+    private (float[] Surfaces, Dictionary<int, float[]> Sprites)? _hover;
     private (float[]? Quad, bool Fits) _ghost;
     private bool _ghostChanged;
     private volatile bool _stopping;
@@ -61,6 +62,18 @@ internal sealed unsafe class Renderer3D : IDisposable
         lock (_gate)
         {
             _highlight = selection;
+            _dirty = true;
+        }
+
+        _wake.Set();
+    }
+
+    /// <summary>The hovered surface's triangles to tint (from <see cref="MapScene.Surface"/>; empty for none).</summary>
+    public void Hover((float[] Surfaces, Dictionary<int, float[]> Sprites) surface)
+    {
+        lock (_gate)
+        {
+            _hover = surface;
             _dirty = true;
         }
 
@@ -142,6 +155,7 @@ internal sealed unsafe class Renderer3D : IDisposable
                 WriteableBitmap[]? bitmaps;
                 int width, height;
                 (float[] Surfaces, Dictionary<int, float[]> Sprites)? highlight;
+                (float[] Surfaces, Dictionary<int, float[]> Sprites)? hover;
                 (float[]? Quad, bool Fits)? ghost;
                 lock (_gate)
                 {
@@ -151,12 +165,15 @@ internal sealed unsafe class Renderer3D : IDisposable
                     _sceneChanged = false;
                     highlight = _highlight;
                     _highlight = null;
+                    hover = _hover;
+                    _hover = null;
                     ghost = _ghostChanged ? _ghost : null;
                     _ghostChanged = false;
                 }
 
                 if (sceneChanged && scene is not null) renderer.Upload(scene, resources);
                 if (highlight is { } h) renderer.Highlight(h.Surfaces, h.Sprites);
+                if (hover is { } hv) renderer.Hover(hv.Surfaces, hv.Sprites);
                 if (ghost is { } gh) renderer.Ghost(gh.Quad, gh.Fits);
                 if (scene is null || bitmaps is null || width < 1 || height < 1) continue;
 

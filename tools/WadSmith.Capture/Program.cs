@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -516,6 +516,52 @@ foreach (var pose in poses)
                 editor.Inspector.Rows.OfType<FlagRow>().Single(r => r.Label == "Courtyard is hidden").Value = true;
                 Pump(1.5);
                 Save("editor-groups-hidden");
+                break;
+            }
+
+            if (pose == "editor-3d-drop")
+            {
+                // A wall texture dropped on the starter room's north wall in the 3D view, with real drag events over the
+                // view, then an Imp dropped on its floor: the map (both views share it) and the saved file show the same.
+                var session = editor.Session;
+                var view3d = window.GetVisualDescendants().OfType<WadSmith.App.ThreeD.View3D>().First();
+                editor.ShowTextures = true;
+                for (var i = 0; i < 200 && (editor.TextureShelf.Tiles.Count == 0 || view3d.SceneVersion < 0 || !view3d.HasPicture); i++) Pump(0.05);
+                Pump(0.5);
+                Avalonia.Point On(double x, double y, double z) => view3d.TranslatePoint(view3d.ScreenPoint(x, y, z)!.Value, window)!.Value;
+                void DropOn(Avalonia.Point at, WadSmith.App.ViewModels.ShelfDrop drop)
+                {
+                    var data = new Avalonia.Input.DataTransfer();
+                    data.Add(Avalonia.Input.DataTransferItem.Create(WadSmith.App.ViewModels.ShelfDrop.Format, drop));
+                    foreach (var kind in new[] { Avalonia.Input.Raw.RawDragEventType.DragEnter, Avalonia.Input.Raw.RawDragEventType.DragOver })
+                    {
+                        window.DragDrop(at, kind, data, Avalonia.Input.DragDropEffects.Copy, Avalonia.Input.RawInputModifiers.None);
+                        Pump(0.3);
+                    }
+
+                    Console.WriteLine($"3d drag over: '{editor.Status}'; hovered {view3d.Hovered?.Words ?? "nothing"}");
+                    window.DragDrop(at, Avalonia.Input.Raw.RawDragEventType.Drop, data, Avalonia.Input.DragDropEffects.Copy, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.8);
+                }
+
+                var brick = editor.TextureShelf.Tiles.First(t => t.Group == "Walls" && t.Label.StartsWith("BRICK", StringComparison.Ordinal));
+                DropOn(On(0, 256, 64), brick.Drop);
+                var north = session.Map.Lines.Single(l => l.OnMap && l.Start.Y == 256 && l.End.Y == 256);
+                Console.WriteLine($"3d drop wall: north middle {north.Front.Middle} (dropped {brick.Label}); undo '{session.History.UndoLabel}'; selected '{editor.Inspector.Heading}'");
+                Pump(0.5);
+                Save("editor-3d-drop-wall");
+
+                editor.ShowObjects = true;
+                for (var i = 0; i < 200 && editor.ObjectShelf.Tiles.Count == 0; i++) Pump(0.05);
+                var imp = editor.ObjectShelf.Tiles.First(t => t.Label == "Imp");
+                DropOn(On(60, -68, 0), imp.Drop);
+                var placed = session.Map.Things.Where(t => t.OnMap && t.Type == imp.Drop.Thing).ToList();
+                Console.WriteLine($"3d drop thing: {placed.Count} imp(s) at {string.Join(" ", placed.Select(t => $"({t.X},{t.Y})"))}; undo '{session.History.UndoLabel}'");
+                Wait(session.FlushAsync());
+                var saved = session.Project.LoadMap(session.Slot);
+                Console.WriteLine($"3d drop saved: middles {string.Join(",", saved.Sides.Select(s => s.Middle).Distinct())}; things {saved.Things.Count}");
+                Pump(0.5);
+                Save("editor-3d-drop");
                 break;
             }
 

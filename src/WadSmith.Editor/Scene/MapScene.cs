@@ -20,6 +20,45 @@ public enum SurfaceKind
     Sky,
 }
 
+/// <summary>The part of a wall's face a texture sits on: the upper, where the ceiling beyond is lower; the middle; the lower, where the floor beyond is higher.</summary>
+public enum WallPart
+{
+    Top,
+    Middle,
+    Bottom,
+}
+
+/// <summary>What a ray through the 3D view met: a wall's face and its part, a floor or a ceiling (sky or not), or an object.</summary>
+public enum HitKind
+{
+    Wall,
+    Floor,
+    Ceiling,
+    Thing,
+}
+
+/// <summary>
+/// A surface met by a ray through the 3D view (<see cref="MapScene.Hit"/>): the element (a face, an area, an object), which
+/// surface of it, whether it shows the sky, and where along the ray.
+/// </summary>
+public readonly record struct SceneHit(Element Element, HitKind Kind, WallPart Part, bool Sky, double Distance, double X, double Y, double Z)
+{
+    /// <summary>The surface a texture dropped here goes on.</summary>
+    public SurfaceTarget Target => new(Element, Part, Kind == HitKind.Ceiling);
+
+    /// <summary>The surface in words: "the upper part of a wall", "a floor", "an object".</summary>
+    public string Words => Kind switch
+    {
+        HitKind.Wall => Part switch { WallPart.Top => "the upper part of this wall", WallPart.Bottom => "the lower part of this wall", _ => "this wall" },
+        HitKind.Floor => Sky ? "this floor (open sky)" : "this floor",
+        HitKind.Ceiling => Sky ? "this ceiling (open sky)" : "this ceiling",
+        _ => "this object",
+    };
+}
+
+/// <summary>A surface a texture goes on: a face's part, or an area's floor or ceiling.</summary>
+public readonly record struct SurfaceTarget(Element Element, WallPart Part, bool Ceiling);
+
 /// <summary>
 /// Triangles drawn with one picture. Each corner is six numbers: x, y, z in map units (z up), u, v in
 /// texture pixels from the picture's top-left, and the light level (0–255) of the area it belongs to.
@@ -39,6 +78,9 @@ public sealed class SceneBatch(string texture, SurfaceKind kind)
 
     /// <summary>For wall triangles, the wall the face belongs to, in triangle order; empty for floors and ceilings.</summary>
     public List<Line> Walls { get; } = [];
+
+    /// <summary>Which surface each triangle is, in triangle order: a wall's part (<see cref="WallPart"/>), or 0 for a floor and 1 for a ceiling.</summary>
+    public List<byte> Parts { get; } = [];
 
     public int VertexCount => Vertices.Count / Stride;
 
@@ -144,21 +186,28 @@ public sealed class MapScene
     /// the ray (the ones the view draws). Sprites turn to face a camera looking along <paramref name="cameraYaw"/>.
     /// Tests every triangle: call it on a worker.
     /// </summary>
-    public Element? Pick((double X, double Y, double Z) origin, (double X, double Y, double Z) direction, double cameraYaw)
+    public Element? Pick((double X, double Y, double Z) origin, (double X, double Y, double Z) direction, double cameraYaw) => Hit(origin, direction, cameraYaw)?.Element;
+
+    /// <summary>
+    /// What a ray meets first (as <see cref="Pick"/>), with which surface of it and where: a wall's face and its part, a
+    /// floor or ceiling (sky or not), or an object. Tests every triangle: call it on a worker.
+    /// </summary>
+    public SceneHit? Hit((double X, double Y, double Z) origin, (double X, double Y, double Z) direction, double cameraYaw)
     {
-        Element? best = null;
+        SceneHit? best = null;
         var bestT = double.MaxValue;
         foreach (var b in Batches)
         {
             var v = b.Vertices;
             for (var i = 0; i < v.Count; i += SceneBatch.Stride * 3)
             {
-                var t = Hit(origin, direction, (v[i], v[i + 1], v[i + 2]), (v[i + 6], v[i + 7], v[i + 8]), (v[i + 12], v[i + 13], v[i + 14]), facing: true);
-                if (t > 0 && t < bestT)
-                {
-                    bestT = t;
-                    best = b.Owners[i / (SceneBatch.Stride * 3)];
-                }
+                var t = Distance(origin, direction, (v[i], v[i + 1], v[i + 2]), (v[i + 6], v[i + 7], v[i + 8]), (v[i + 12], v[i + 13], v[i + 14]), facing: true);
+                if (t <= 0 || t >= bestT) continue;
+                bestT = t;
+                var tri = i / (SceneBatch.Stride * 3);
+                var part = b.Parts[tri];
+                var kind = b.Kind == SurfaceKind.Wall ? HitKind.Wall : part == 1 ? HitKind.Ceiling : HitKind.Floor;
+                best = new SceneHit(b.Owners[tri], kind, b.Kind == SurfaceKind.Wall ? (WallPart)part : WallPart.Middle, b.Kind == SurfaceKind.Sky, t, origin.X + direction.X * t, origin.Y + direction.Y * t, origin.Z + direction.Z * t);
             }
         }
 
@@ -170,16 +219,45 @@ public sealed class MapScene
             for (var i = 0; i < v.Count; i += SpriteBatch.Stride * 3)
             {
                 (double, double, double) Corner(int k) => (v[k] + ax * v[k + 3], v[k + 1] + ay * v[k + 3], v[k + 2] + v[k + 4]);
-                var t = Hit(origin, direction, Corner(i), Corner(i + SpriteBatch.Stride), Corner(i + 2 * SpriteBatch.Stride), facing: false);
-                if (t > 0 && t < bestT)
-                {
-                    bestT = t;
-                    best = b.Owners[i / (SpriteBatch.Stride * 6)];
-                }
+                var t = Distance(origin, direction, Corner(i), Corner(i + SpriteBatch.Stride), Corner(i + 2 * SpriteBatch.Stride), facing: false);
+                if (t <= 0 || t >= bestT) continue;
+                bestT = t;
+                best = new SceneHit(b.Owners[i / (SpriteBatch.Stride * 6)], HitKind.Thing, WallPart.Middle, false, t, origin.X + direction.X * t, origin.Y + direction.Y * t, origin.Z + direction.Z * t);
             }
         }
 
         return best;
+    }
+
+    /// <summary>The triangles of one surface (the hovered one), in <see cref="Highlight"/>'s layout: a face's part alone, a floor or ceiling alone, an object's sprite.</summary>
+    public (float[] Surfaces, Dictionary<int, float[]> Sprites) Surface(SceneHit hit)
+    {
+        var surfaces = new List<float>();
+        var sprites = new Dictionary<int, float[]>();
+        if (hit.Kind == HitKind.Thing)
+        {
+            foreach (var b in Sprites)
+            {
+                for (var k = 0; k < b.Owners.Count; k++)
+                {
+                    if (ReferenceEquals(b.Owners[k], hit.Element)) sprites[b.Type] = [.. b.Vertices.GetRange(k * SpriteBatch.Stride * 6, SpriteBatch.Stride * 6)];
+                }
+            }
+
+            return ([], sprites);
+        }
+
+        var part = hit.Kind == HitKind.Wall ? (byte)hit.Part : hit.Kind == HitKind.Ceiling ? (byte)1 : (byte)0;
+        foreach (var b in Batches)
+        {
+            if ((b.Kind == SurfaceKind.Wall) != (hit.Kind == HitKind.Wall)) continue;
+            for (var tri = 0; tri < b.Owners.Count; tri++)
+            {
+                if (ReferenceEquals(b.Owners[tri], hit.Element) && b.Parts[tri] == part) surfaces.AddRange(b.Vertices.GetRange(tri * SceneBatch.Stride * 3, SceneBatch.Stride * 3));
+            }
+        }
+
+        return ([.. surfaces], sprites);
     }
 
     /// <summary>
@@ -216,7 +294,7 @@ public sealed class MapScene
     }
 
     /// <summary>Möller–Trumbore: distance along the ray to the triangle, or 0 when missed (or, if <paramref name="facing"/>, seen from behind).</summary>
-    private static double Hit((double X, double Y, double Z) o, (double X, double Y, double Z) d, (double X, double Y, double Z) a, (double X, double Y, double Z) b, (double X, double Y, double Z) c, bool facing)
+    private static double Distance((double X, double Y, double Z) o, (double X, double Y, double Z) d, (double X, double Y, double Z) a, (double X, double Y, double Z) b, (double X, double Y, double Z) c, bool facing)
     {
         var e1 = (X: b.X - a.X, Y: b.Y - a.Y, Z: b.Z - a.Z);
         var e2 = (X: c.X - a.X, Y: c.Y - a.Y, Z: c.Z - a.Z);
@@ -281,6 +359,8 @@ public sealed class MapScene
             {
                 floor.Owners.Add(owner);
                 ceiling.Owners.Add(owner);
+                floor.Parts.Add(0);
+                ceiling.Parts.Add(1);
                 foreach (var p in (MapPoint[])[triangles[i], triangles[i + 1], triangles[i + 2]])
                 {
                     var (u, v) = onFloor.Texel(p.X, p.Y);
@@ -323,7 +403,7 @@ public sealed class MapScene
                     // anchored at the bottom.
                     var h = Height(side.Middle);
                     var top = lowerUnpegged ? here.FloorHeight + h : here.CeilingHeight;
-                    Quad(side.Middle, from, to, here.FloorHeight, here.CeilingHeight, top, side, length, light, line);
+                    Quad(side.Middle, from, to, here.FloorHeight, here.CeilingHeight, top, side, length, light, line, WallPart.Middle);
                     return;
                 }
 
@@ -333,14 +413,14 @@ public sealed class MapScene
                 if (here.CeilingHeight > there.CeilingHeight && !(IsSky(here.CeilingTexture) && IsSky(there.CeilingTexture)))
                 {
                     var top = upperUnpegged ? here.CeilingHeight : there.CeilingHeight + Height(side.Top);
-                    Quad(side.Top, from, to, there.CeilingHeight, here.CeilingHeight, top, side, length, light, line);
+                    Quad(side.Top, from, to, there.CeilingHeight, here.CeilingHeight, top, side, length, light, line, WallPart.Top);
                 }
 
                 // Lower part, where the floor beyond is higher.
                 if (there.FloorHeight > here.FloorHeight)
                 {
                     var top = lowerUnpegged ? here.CeilingHeight : there.FloorHeight;
-                    Quad(side.Bottom, from, to, here.FloorHeight, there.FloorHeight, top, side, length, light, line);
+                    Quad(side.Bottom, from, to, here.FloorHeight, there.FloorHeight, top, side, length, light, line, WallPart.Bottom);
                 }
 
                 // A middle texture on a two-sided wall (a grate, a fence) is drawn once, not repeated up the wall.
@@ -352,7 +432,7 @@ public sealed class MapScene
                     var top = (lowerUnpegged ? bottom + h : ceiling) + side.OffsetY;
                     var z0 = Math.Max(bottom, top - h);
                     var z1 = Math.Min(ceiling, top);
-                    if (z1 > z0) Quad(side.Middle, from, to, z0, z1, top - side.OffsetY, side, length, light, line);
+                    if (z1 > z0) Quad(side.Middle, from, to, z0, z1, top - side.OffsetY, side, length, light, line, WallPart.Middle);
                 }
             }
         }
@@ -388,7 +468,7 @@ public sealed class MapScene
         double Height(string texture) => texture is "-" or "" ? 128 : wallSize(texture)?.Height ?? 128;
 
         // A wall part from z0 to z1 whose texture's top row sits at height top (before the side's offsets).
-        void Quad(string texture, MapPoint from, MapPoint to, double z0, double z1, double top, SideFrame side, double length, int light, Line wall)
+        void Quad(string texture, MapPoint from, MapPoint to, double z0, double z1, double top, SideFrame side, double length, int light, Line wall, WallPart part)
         {
             if (z1 <= z0 || side.Element is not { } face) return;
             var batch = Batch(texture is "" ? "-" : texture, SurfaceKind.Wall);
@@ -396,6 +476,8 @@ public sealed class MapScene
             batch.Owners.Add(face);
             batch.Walls.Add(wall);
             batch.Walls.Add(wall);
+            batch.Parts.Add((byte)part);
+            batch.Parts.Add((byte)part);
             var u0 = side.OffsetX;
             var u1 = side.OffsetX + length;
             double V(double z) => top - z + side.OffsetY;

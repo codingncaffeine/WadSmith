@@ -48,6 +48,8 @@ internal sealed class View3D : Control
     private readonly LatestOnWorker<(EditorSession Session, MapScene Scene)> _scenes;
     private readonly LatestOnWorker<(float[] Surfaces, Dictionary<int, float[]> Sprites)> _tints;
     private readonly LatestOnWorker<(EditorSession Session, Editor.Model.Element? Hit, bool Toggle)> _picks;
+    private readonly LatestOnWorker<(EditorSession Session, MapScene Scene, SceneHit? Hit, ViewModels.ShelfDrop? Drop, bool Apply, bool Shift)> _hovers;
+    private SceneHit? _hover;
     private Point _pressedAt;
     private double _dragged;
     private Renderer3D? _renderer;
@@ -79,6 +81,30 @@ internal sealed class View3D : Control
             RequestTint();
         }, "the 3D scene");
         _tints = new(ViewModels.MainViewModel.PostToUi, t => _renderer?.Highlight(t), "the 3D selection");
+        _hovers = new(ViewModels.MainViewModel.PostToUi, r =>
+        {
+            if (!ReferenceEquals(r.Session, Session) || !ReferenceEquals(r.Scene, _scene)) return;
+            _hover = r.Hit;
+            _renderer?.Hover(r.Hit is { } hit ? r.Scene.Surface(hit) : ([], []));
+            if (r.Drop is not { } drop) return;
+            if (!r.Apply)
+            {
+                DropHint?.Invoke(DropWords(drop, r.Hit));
+                return;
+            }
+
+            DropHint?.Invoke(null);
+            _renderer?.Hover(([], []));
+            Apply(r.Session, drop, r.Hit, r.Shift);
+        }, "the surface under the pointer");
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnDragOver);
+        AddHandler(DragDrop.DropEvent, OnDrop);
+        AddHandler(DragDrop.DragLeaveEvent, (_, _) =>
+        {
+            DropHint?.Invoke(null);
+            ClearHover();
+        });
         _picks = new(ViewModels.MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, Session)) return;
@@ -117,6 +143,103 @@ internal sealed class View3D : Control
 
     /// <summary>Raised when the camera moves: where it stands in Fly and Walk, null while orbiting (the plan shows no marker then).</summary>
     public event Action<Camera3D?>? CameraMoved;
+
+    /// <summary>What letting go of a shelf drag would do here (null to clear), for the status bar.</summary>
+    public event Action<string?>? DropHint;
+
+    /// <summary>The surface under the pointer as last found (a moment behind the pointer), for instruments.</summary>
+    internal SceneHit? Hovered => _hover;
+
+    /// <summary>Where a map point lands on this view, in its own coordinates; null when it is behind the camera.</summary>
+    internal Point? ScreenPoint(double x, double y, double z)
+    {
+        var aspect = Bounds.Width / Math.Max(Bounds.Height, 1);
+        var m = Current.ViewProjection(aspect, flipY: false);
+        var cx = m[0] * x + m[4] * y + m[8] * z + m[12];
+        var cy = m[1] * x + m[5] * y + m[9] * z + m[13];
+        var cw = m[3] * x + m[7] * y + m[11] * z + m[15];
+        if (cw <= 1e-6) return null;
+        return new Point((cx / cw + 1) / 2 * Bounds.Width, (1 - cy / cw) / 2 * Bounds.Height);
+    }
+
+    /// <summary>Asks the worker what is under a point of the view; a shelf drag's payload rides along, applied on the answer when <paramref name="apply"/>.</summary>
+    private void RequestHover(Point at, ViewModels.ShelfDrop? drop = null, bool apply = false, bool shift = false)
+    {
+        if (Session is not { } session || _scene is not { } scene) return;
+        var aspect = Bounds.Width / Math.Max(Bounds.Height, 1);
+        var across = 2 * at.X / Math.Max(Bounds.Width, 1) - 1;
+        var up = 1 - 2 * at.Y / Math.Max(Bounds.Height, 1);
+        var camera = Current;
+        var (origin, direction) = camera.Ray(across, up, aspect);
+        _hovers.Request(() => (session, scene, scene.Hit(origin, direction, camera.Yaw), drop, apply, shift));
+    }
+
+    private void ClearHover()
+    {
+        if (_hover is null) return;
+        _hover = null;
+        _renderer?.Hover(([], []));
+    }
+
+    private static string DropWords(ViewModels.ShelfDrop drop, SceneHit? hit)
+    {
+        if (drop.Prefab is not null) return "Prefabs go on the plan: drop it there.";
+        if (drop.Texture is null) return hit is { Kind: HitKind.Floor } ? $"Let go to place {drop.Label} here." : "Drop the object on a floor.";
+        if (hit is not { Kind: not HitKind.Thing } h) return "Drop it on a wall, a floor or a ceiling.";
+        return $"Let go to put {drop.Label} on {h.Words}." + (drop.From is { } source ? $" It is copied into this project from {source.Game.Title} first." : "");
+    }
+
+    /// <summary>A shelf drop on the surface found under it: the texture on that surface, or the object on that floor.</summary>
+    private static void Apply(EditorSession session, ViewModels.ShelfDrop drop, SceneHit? hit, bool shift)
+    {
+        if (drop.Prefab is not null)
+        {
+            session.Tell("Prefabs go on the plan: drop it there.");
+            return;
+        }
+
+        if (drop.Texture is { } texture)
+        {
+            if (hit is not { Kind: not HitKind.Thing } h)
+            {
+                session.Tell("Drop it on a wall, a floor or a ceiling.");
+                return;
+            }
+
+            if (drop.From is { } from) session.PaintBorrowedSurface(from, texture, drop.Flat, h.Target);
+            else if (session.PaintSurface(h.Target, texture) is { } why) session.Tell(why);
+            return;
+        }
+
+        if (hit is not { Kind: HitKind.Floor } floor)
+        {
+            session.Tell("Drop the object on a floor.");
+            return;
+        }
+
+        const double step = 8;
+        session.PlaceThing(drop.Thing, shift ? new MapPoint(floor.X, floor.Y) : new MapPoint(Math.Round(floor.X / step) * step, Math.Round(floor.Y / step) * step));
+    }
+
+    private void OnDragOver(object? sender, DragEventArgs e)
+    {
+        if (Session is null || e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) is not { } drop)
+        {
+            e.DragEffects = DragDropEffects.None;
+            return;
+        }
+
+        e.DragEffects = DragDropEffects.Copy;
+        RequestHover(e.GetPosition(this), drop);
+    }
+
+    private void OnDrop(object? sender, DragEventArgs e)
+    {
+        if (Session is null || e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) is not { } drop) return;
+        RequestHover(e.GetPosition(this), drop, apply: true, shift: (e.KeyModifiers & KeyModifiers.Shift) != 0);
+        Focus();
+        e.Handled = true;
+    }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
@@ -372,9 +495,16 @@ internal sealed class View3D : Control
         context.DrawText(text, new Point((Bounds.Width - text.Width) / 2, (Bounds.Height - text.Height) / 2));
     }
 
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        if (_dragFrom is null) ClearHover();
+    }
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         Focus();
+        ClearHover();
         var props = e.GetCurrentPoint(this).Properties;
         _dragFrom = e.GetPosition(this);
         _pressedAt = _dragFrom.Value;
@@ -386,7 +516,12 @@ internal sealed class View3D : Control
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
-        if (_dragFrom is not { } from) return;
+        if (_dragFrom is not { } from)
+        {
+            RequestHover(e.GetPosition(this));
+            return;
+        }
+
         var p = e.GetPosition(this);
         var dx = p.X - from.X;
         var dy = p.Y - from.Y;

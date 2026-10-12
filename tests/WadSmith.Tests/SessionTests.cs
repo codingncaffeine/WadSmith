@@ -321,4 +321,29 @@ public sealed class SessionTests
         Assert.False(File.Exists(path));
         Assert.Equal("", Project.Open(project.Folder).Info.Maps.Single().Title);
     }
+
+    /// <summary>A texture dropped on one part of a face in 3D changes that part alone, one undo step, and selects the face.</summary>
+    [Fact]
+    public void PaintingASurfaceChangesThatPartAlone()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(SceneTests.TwoRooms(floor2: 32, ceiling2: 96));
+        var ui = new FakeUi();
+        using var session = EditorSession.Open(project, "MAP01", ui.Post);
+        var shared = session.Map.Lines.Single(l => l.OnMap && l.Back is not null);
+        var face = shared.Front.Sector.FloorHeight == 0 ? shared.Front : shared.Back!;
+        Assert.Null(session.PaintSurface(new Editor.Scene.SurfaceTarget(face, Editor.Scene.WallPart.Bottom, false), "BRICK1"));
+        Assert.Equal(("UPPER", "-", "BRICK1"), (face.Top, face.Middle, face.Bottom));
+        Assert.Equal("Put a texture on a wall", session.History.UndoLabel);
+        Assert.Same(face, session.Selection.Items.Single());
+
+        var room = face.Sector;
+        Assert.Null(session.PaintSurface(new Editor.Scene.SurfaceTarget(room, Editor.Scene.WallPart.Middle, true), "F_SKY1"));
+        Assert.Equal(("FLOOR", "F_SKY1"), (room.FloorTexture, room.CeilingTexture));
+        session.History.Undo();
+        session.History.Undo();
+        Assert.Equal(("LOWER", "CEIL"), (face.Bottom, room.CeilingTexture));
+        Assert.Contains("wall, a floor or a ceiling", session.PaintSurface(new Editor.Scene.SurfaceTarget(session.Map.Vertices[0], Editor.Scene.WallPart.Middle, false), "BRICK1"), StringComparison.Ordinal);
+    }
 }

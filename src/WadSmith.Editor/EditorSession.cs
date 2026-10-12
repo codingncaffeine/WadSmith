@@ -5,6 +5,7 @@ using WadSmith.Editor.App;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
+using WadSmith.Editor.Scene;
 using WadSmith.Editor.Smart;
 
 namespace WadSmith.Editor;
@@ -561,7 +562,13 @@ public sealed class EditorSession : IDisposable
     /// Paints with a picture from another game the user owns (<paramref name="from"/>): copied into the project on a worker the
     /// first time (D43), then put where it was dropped as <see cref="Paint"/> does, saying what was copied.
     /// </summary>
-    public void PaintBorrowed(GameResources from, string name, bool flat, MapPoint at, double radius, bool ceiling)
+    public void PaintBorrowed(GameResources from, string name, bool flat, MapPoint at, double radius, bool ceiling) => Borrow(from, name, flat, chosen => Paint(chosen, at, radius, ceiling));
+
+    /// <summary>A picture from another game the user owns onto one surface of the 3D view (D43): copied into the project first, then put on.</summary>
+    public void PaintBorrowedSurface(GameResources from, string name, bool flat, SurfaceTarget target) => Borrow(from, name, flat, chosen => PaintSurface(target, chosen));
+
+    /// <summary>Copies a picture from another game into the project on a worker, then <paramref name="paint"/>s it (its name here) on the UI thread, saying what happened.</summary>
+    private void Borrow(GameResources from, string name, bool flat, Func<string, string?> paint)
     {
         if (Resources is not { } into)
         {
@@ -585,7 +592,7 @@ public sealed class EditorSession : IDisposable
 
             _onUiThread(() =>
             {
-                if (Paint(chosen, at, radius, ceiling) is { } why)
+                if (paint(chosen) is { } why)
                 {
                     Notice?.Invoke(why);
                     return;
@@ -596,6 +603,43 @@ public sealed class EditorSession : IDisposable
                     : $"{name} was copied from {from.Game.Title} into this project as {chosen}, since this game already has a {name}.");
             });
         });
+    }
+
+    /// <summary>
+    /// Puts a texture on one surface seen in the 3D view: a face's upper, middle or lower part, or an area's floor or
+    /// ceiling (a sky ceiling becomes that texture), one undo step, and selects the face or area. Null when done, else why not.
+    /// </summary>
+    public string? PaintSurface(SurfaceTarget target, string texture)
+    {
+        if (Grouping.Holds(_geometry, target.Element)) return "That is locked: unlock it with nothing selected, under Groups, to change it.";
+        switch (target.Element)
+        {
+            case Side { OnMap: true } face:
+                History.Record("Put a texture on a wall", e =>
+                {
+                    switch (target.Part)
+                    {
+                        case WallPart.Top:
+                            e.Set(face, s => s.Top, (s, v) => s.Top = v, texture);
+                            break;
+                        case WallPart.Bottom:
+                            e.Set(face, s => s.Bottom, (s, v) => s.Bottom = v, texture);
+                            break;
+                        default:
+                            e.Set(face, s => s.Middle, (s, v) => s.Middle = v, texture);
+                            break;
+                    }
+                });
+                Selection.Set(face);
+                return null;
+            case Sector { OnMap: true } area:
+                if (target.Ceiling) History.Record("Put a texture on a ceiling", e => e.Set(area, s => s.CeilingTexture, (s, v) => s.CeilingTexture = v, texture));
+                else History.Record("Put a texture on a floor", e => e.Set(area, s => s.FloorTexture, (s, v) => s.FloorTexture = v, texture));
+                Selection.Set(area);
+                return null;
+            default:
+                return "Drop it on a wall, a floor or a ceiling.";
+        }
     }
 
     public string? Paint(string texture, MapPoint at, double radius, bool ceiling)

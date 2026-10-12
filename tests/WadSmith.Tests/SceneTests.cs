@@ -236,4 +236,43 @@ public sealed class PickTests
         Assert.Equal(6 * SceneBatch.Stride, surfaces.Length);
         Assert.Equal(6 * SpriteBatch.Stride, Assert.Single(sprites).Value.Length);
     }
+
+    /// <summary>A ray through the view names the surface it meets: which face and which part of it, a floor or a ceiling, and where.</summary>
+    [Fact]
+    public void AHitNamesTheSurfaceItsPartAndWhere()
+    {
+        var scene = MapScene.Build(MapGeometry.Build(EditorMap.FromModel(SceneTests.TwoRooms(floor2: 32, ceiling2: 96)).Frame), _ => (64, 128));
+        var walls = scene.Hit((64, 64, 16), (1, 0, 0), 0)!.Value;
+        Assert.Equal(HitKind.Wall, walls.Kind);
+        Assert.Equal(WallPart.Bottom, walls.Part);
+        Assert.Equal(128, walls.X, 3);
+        Assert.Equal(64, walls.Distance, 3);
+        Assert.Equal("LOWER", ((Side)walls.Element).Bottom);
+        Assert.Equal("the lower part of this wall", walls.Words);
+
+        var upper = scene.Hit((64, 64, 110), (1, 0, 0), 0)!.Value;
+        Assert.Equal(WallPart.Top, upper.Part);
+        Assert.Equal("UPPER", ((Side)upper.Element).Top);
+        Assert.Same(walls.Element, upper.Element);
+
+        // Between the two parts the opening lets the ray through to room 2's far wall.
+        var through = scene.Hit((64, 64, 64), (1, 0, 0), 0)!.Value;
+        Assert.Equal(WallPart.Middle, through.Part);
+        Assert.Equal(256, through.X, 3);
+
+        var floor = scene.Hit((64, 64, 64), (0, 0, -1), 0)!.Value;
+        Assert.Equal(HitKind.Floor, floor.Kind);
+        Assert.False(floor.Sky);
+        Assert.Equal((64.0, 64.0, 0.0), (Math.Round(floor.X, 3), Math.Round(floor.Y, 3), Math.Round(floor.Z, 3)));
+        Assert.False(floor.Target.Ceiling);
+        var ceiling = scene.Hit((64, 64, 64), (0, 0, 1), 0)!.Value;
+        Assert.Equal(HitKind.Ceiling, ceiling.Kind);
+        Assert.True(ceiling.Target.Ceiling);
+        Assert.Same(floor.Element, ceiling.Element);
+
+        // The hovered surface's triangles: the lower part alone (two triangles), the floor alone.
+        Assert.Equal(2 * 3 * SceneBatch.Stride, scene.Surface(walls).Surfaces.Length);
+        Assert.Equal(2 * 3 * SceneBatch.Stride, scene.Surface(floor).Surfaces.Length);
+        Assert.Null(scene.Hit((64, 64, 64), (0, 1, 0), 0) is { } north && north.Y > 128 ? north : null);
+    }
 }

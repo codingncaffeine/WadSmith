@@ -144,9 +144,11 @@ internal sealed unsafe class SceneRenderer : IDisposable
     private readonly int _sUseAlpha;
     private readonly int _sTint;
     private (int Vao, int Vbo, int Count) _highlight;
+    private (int Vao, int Vbo, int Count) _hover;
     private (int Vao, int Vbo, int Count) _ghost;
     private bool _ghostFits;
     private readonly List<(int Vao, int Vbo, int Count, int Type)> _highlightSprites = [];
+    private readonly List<(int Vao, int Vbo, int Count, int Type)> _hoverSprites = [];
     private readonly List<(int Vao, int Vbo, int Count, int Type)> _spriteBatches = [];
     private readonly Dictionary<(string Name, SurfaceKind Kind), (int Id, int Width, int Height)> _textures = [];
     private readonly List<(int Vao, int Vbo, int Count, SurfaceKind Kind, string Texture)> _batches = [];
@@ -199,21 +201,26 @@ internal sealed unsafe class SceneRenderer : IDisposable
     }
 
     /// <summary>Replaces the tinted selection: wall and floor triangles in the scene's layout, sprite corners per object type.</summary>
-    public void Highlight(float[] surfaces, Dictionary<int, float[]> sprites)
+    public void Highlight(float[] surfaces, Dictionary<int, float[]> sprites) => Replace(ref _highlight, _highlightSprites, surfaces, sprites);
+
+    /// <summary>Replaces the hovered surface's tint (what a drop or a scroll would change): the same layout as the selection's.</summary>
+    public void Hover(float[] surfaces, Dictionary<int, float[]> sprites) => Replace(ref _hover, _hoverSprites, surfaces, sprites);
+
+    private void Replace(ref (int Vao, int Vbo, int Count) buffer, List<(int Vao, int Vbo, int Count, int Type)> spriteBuffers, float[] surfaces, Dictionary<int, float[]> sprites)
     {
-        Free(ref _highlight);
-        foreach (var h in _highlightSprites)
+        Free(ref buffer);
+        foreach (var h in spriteBuffers)
         {
             var x = (h.Vao, h.Vbo, h.Count);
             Free(ref x);
         }
 
-        _highlightSprites.Clear();
-        if (surfaces.Length > 0) _highlight = Upload(surfaces, SceneBatch.Stride, [3, 2, 1]);
+        spriteBuffers.Clear();
+        if (surfaces.Length > 0) buffer = Upload(surfaces, SceneBatch.Stride, [3, 2, 1]);
         foreach (var (type, data) in sprites)
         {
             var (vao, vbo, count) = Upload(data, SpriteBatch.Stride, [3, 2, 2, 1]);
-            _highlightSprites.Add((vao, vbo, count, type));
+            spriteBuffers.Add((vao, vbo, count, type));
         }
     }
 
@@ -407,32 +414,34 @@ internal sealed unsafe class SceneRenderer : IDisposable
             }
         }
 
-        // The selection, tinted in the accent colour over what was drawn (same triangles, same depth).
-        if (_highlight.Count > 0 || _highlightSprites.Count > 0)
+        // The selection, tinted in the accent colour over what was drawn (same triangles, same depth); then the hovered
+        // surface, lighter, so a drop or a scroll shows what it would change.
+        foreach (var (buffer, spriteBuffers, r, g, b, a) in new[] { (_highlight, _highlightSprites, 0.878f, 0.345f, 0.165f, 0.42f), (_hover, _hoverSprites, 1f, 1f, 1f, 0.2f) })
         {
+            if (buffer.Count == 0 && spriteBuffers.Count == 0) continue;
             _gl.Enable(Gl.Blend);
             _gl.BlendFunc(Gl.SrcAlpha, Gl.OneMinusSrcAlpha);
             _gl.DepthMask(0);
-            if (_highlight.Count > 0)
+            if (buffer.Count > 0)
             {
                 _gl.Enable(Gl.CullFaceMode);
                 _gl.UseProgram(_program);
                 _gl.Uniform1i(_uOverlay, 1);
                 _gl.Uniform1i(_uUseAlpha, 0);
-                _gl.Uniform4f(_uTint, 0.878f, 0.345f, 0.165f, 0.42f);
-                _gl.BindVertexArray(_highlight.Vao);
-                _gl.DrawArrays(Gl.Triangles, 0, _highlight.Count);
+                _gl.Uniform4f(_uTint, r, g, b, a);
+                _gl.BindVertexArray(buffer.Vao);
+                _gl.DrawArrays(Gl.Triangles, 0, buffer.Count);
                 _gl.Uniform1i(_uOverlay, 0);
             }
 
-            if (_highlightSprites.Count > 0)
+            if (spriteBuffers.Count > 0)
             {
                 _gl.Disable(Gl.CullFaceMode);
                 _gl.UseProgram(_sprites);
                 _gl.Uniform1i(_sOverlay, 1);
                 _gl.Uniform1i(_sUseAlpha, 1);
-                _gl.Uniform4f(_sTint, 0.878f, 0.345f, 0.165f, 0.5f);
-                foreach (var (vao, _, count, type) in _highlightSprites)
+                _gl.Uniform4f(_sTint, r, g, b, a + 0.08f);
+                foreach (var (vao, _, count, type) in spriteBuffers)
                 {
                     var (id, w, h) = SpriteTexture(type);
                     if (id == 0) continue;
