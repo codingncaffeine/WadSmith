@@ -47,8 +47,27 @@ public sealed class SceneBatch(string texture, SurfaceKind kind)
     }
 }
 
-/// <summary>An object standing in the 3D view: where its feet are and which way it faces.</summary>
-public readonly record struct SceneThing(Thing Element, float X, float Y, float Z, int Type, int Angle);
+/// <summary>An object standing in the 3D view: where its feet are, which way it faces, and its area's light.</summary>
+public readonly record struct SceneThing(Thing Element, float X, float Y, float Z, int Type, int Angle, int Light);
+
+/// <summary>A sprite's picture as the 3D view needs it: size in pixels, the foot point (Doom's offsets) and its scale.</summary>
+public readonly record struct SpriteShape(int Width, int Height, int OffsetX, int OffsetY, double ScaleX, double ScaleY);
+
+/// <summary>
+/// The objects of one type, drawn with that type's sprite: per corner eight numbers, the foot point
+/// x, y, z, the corner's offset across and up in map units (turned to face the camera when drawn),
+/// u, v in texture pixels, and light.
+/// </summary>
+public sealed class SpriteBatch(int type)
+{
+    public const int Stride = 8;
+
+    public int Type { get; } = type;
+
+    public List<float> Vertices { get; } = [];
+
+    public int VertexCount => Vertices.Count / Stride;
+}
 
 /// <summary>
 /// The map as triangles for the 3D view (D46), built on a worker from one <see cref="MapGeometry"/>:
@@ -58,10 +77,11 @@ public readonly record struct SceneThing(Thing Element, float X, float Y, float 
 /// </summary>
 public sealed class MapScene
 {
-    private MapScene(long version, IReadOnlyList<SceneBatch> batches, IReadOnlyList<SceneThing> things, (double MinX, double MinY, double MinZ, double MaxX, double MaxY, double MaxZ) bounds)
+    private MapScene(long version, IReadOnlyList<SceneBatch> batches, IReadOnlyList<SpriteBatch> sprites, IReadOnlyList<SceneThing> things, (double MinX, double MinY, double MinZ, double MaxX, double MaxY, double MaxZ) bounds)
     {
         Version = version;
         Batches = batches;
+        Sprites = sprites;
         Things = things;
         Bounds = bounds;
     }
@@ -69,6 +89,9 @@ public sealed class MapScene
     public long Version { get; }
 
     public IReadOnlyList<SceneBatch> Batches { get; }
+
+    /// <summary>The objects that show a sprite, one batch per object type.</summary>
+    public IReadOnlyList<SpriteBatch> Sprites { get; }
 
     public IReadOnlyList<SceneThing> Things { get; }
 
@@ -79,7 +102,8 @@ public sealed class MapScene
 
     /// <param name="geometry">The map's shapes.</param>
     /// <param name="wallSize">A wall texture's size in pixels, or null when the game has no such texture.</param>
-    public static MapScene Build(MapGeometry geometry, Func<string, (int Width, int Height)?> wallSize)
+    /// <param name="sprite">An object type's sprite shape, or null when it shows none.</param>
+    public static MapScene Build(MapGeometry geometry, Func<string, (int Width, int Height)?> wallSize, Func<int, SpriteShape?>? sprite = null)
     {
         var f = geometry.Frame;
         var batches = new Dictionary<(string, SurfaceKind), SceneBatch>();
@@ -175,16 +199,38 @@ public sealed class MapScene
         }
 
         var things = new List<SceneThing>();
+        var sprites = new Dictionary<int, SpriteBatch>();
         foreach (var t in f.Things)
         {
             if (t.Element is null) continue;
-            var floor = geometry.SectorAt(new MapPoint(t.X, t.Y)) is { } sector && sector.Slot < f.Sectors.Count ? f.Sectors[sector.Slot].FloorHeight : 0;
-            things.Add(new SceneThing(t.Element, (float)t.X, (float)t.Y, (float)(floor + t.Height), t.Type, t.Angle));
+            var area = geometry.SectorAt(new MapPoint(t.X, t.Y)) is { } sector && sector.Slot < f.Sectors.Count ? f.Sectors[sector.Slot] : (SectorFrame?)null;
+            var z = (area?.FloorHeight ?? 0) + t.Height;
+            var light = Math.Clamp(area?.Light ?? 160, 0, 255);
+            things.Add(new SceneThing(t.Element, (float)t.X, (float)t.Y, (float)z, t.Type, t.Angle, light));
+            if (sprite?.Invoke(t.Type) is not { } shape) continue;
+            if (!sprites.TryGetValue(t.Type, out var batch)) sprites[t.Type] = batch = new SpriteBatch(t.Type);
+
+            // Doom's offsets: the picture's left edge sits OffsetX pixels left of the foot point, its top OffsetY above it.
+            var left = -shape.OffsetX * shape.ScaleX;
+            var right = (shape.Width - shape.OffsetX) * shape.ScaleX;
+            var top = shape.OffsetY * shape.ScaleY;
+            var bottom = (shape.OffsetY - shape.Height) * shape.ScaleY;
+            void Corner(double across, double up, double u, double v)
+            {
+                batch.Vertices.AddRange([(float)t.X, (float)t.Y, (float)z, (float)across, (float)up, (float)u, (float)v, light]);
+            }
+
+            Corner(left, bottom, 0, shape.Height);
+            Corner(right, bottom, shape.Width, shape.Height);
+            Corner(right, top, shape.Width, 0);
+            Corner(left, bottom, 0, shape.Height);
+            Corner(right, top, shape.Width, 0);
+            Corner(left, top, 0, 0);
         }
 
         var (x0, y0, x1, y1) = geometry.Extent();
         if (minZ > maxZ) (minZ, maxZ) = (0, 128);
-        return new MapScene(f.Version, [.. batches.Values.Where(b => b.VertexCount > 0)], things, (x0, y0, minZ, x1, y1, maxZ));
+        return new MapScene(f.Version, [.. batches.Values.Where(b => b.VertexCount > 0)], [.. sprites.Values], things, (x0, y0, minZ, x1, y1, maxZ));
 
         double Height(string texture) => texture is "-" or "" ? 128 : wallSize(texture)?.Height ?? 128;
 

@@ -21,7 +21,7 @@ public sealed class ThreeDTests
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "The 3D view's windowless OpenGL comes to Windows with its own build (Phase 13).");
         var r = Freedoom.Value;
-        var scene = MapScene.Build(MapGeometry.Build(EditorMap.FromModel(model).Frame), n => r.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null);
+        var scene = MapScene.Build(MapGeometry.Build(EditorMap.FromModel(model).Frame), n => r.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, SpriteShapes.For(r));
         return SKBitmap.Decode(Offscreen3D.RenderPng(scene, r, camera, size, size));
     }
 

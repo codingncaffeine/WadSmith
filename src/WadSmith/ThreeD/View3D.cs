@@ -106,7 +106,7 @@ internal sealed class View3D : Control
         if (Session is not { } session || _renderer is null || !IsVisible) return;
         var geometry = session.Geometry;
         var resources = session.Resources;
-        _scenes.Request(() => (session, MapScene.Build(geometry, name => resources?.Textures.GetWall(name) is { } w ? (w.Width, w.Height) : null)));
+        _scenes.Request(() => (session, MapScene.Build(geometry, name => resources?.Textures.GetWall(name) is { } w ? (w.Width, w.Height) : null, SpriteShapes.For(resources))));
     }
 
     /// <summary>New bitmaps of the view's size in device pixels (the render thread draws into them).</summary>

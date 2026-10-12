@@ -108,4 +108,19 @@ public sealed class SceneTests
         // That wall's corners at floor height have v = the texture's height (its bottom row) plus the offset.
         Assert.Contains(corners, c => c[2] == sector.FloorHeight && c[4] == 72 + side.OffsetY);
     }
+
+    [Fact]
+    public void ASpriteStandsOnItsFootPointAsDoomOffsetsSay()
+    {
+        // A 40 by 56 picture whose foot point is 20 pixels from its left edge and 52 below its top.
+        var m = StarterRoom.Create("MAP01", "doom");
+        var scene = MapScene.Build(MapGeometry.Build(EditorMap.FromModel(m).Frame), _ => (64, 128), type => type == 1 ? new SpriteShape(40, 56, 20, 52, 1, 1) : null);
+        var batch = Assert.Single(scene.Sprites);
+        Assert.Equal(6, batch.VertexCount);
+        var corners = Enumerable.Range(0, 6).Select(i => batch.Vertices.Skip(i * SpriteBatch.Stride).Take(SpriteBatch.Stride).ToArray()).ToList();
+        Assert.Equal([-20f, 20f], corners.Select(c => c[3]).Distinct().Order());
+        Assert.Equal([-4f, 52f], corners.Select(c => c[4]).Distinct().Order());
+        Assert.All(corners, c => Assert.Equal(m.Things[0].X, c[0]));
+        Assert.All(corners, c => Assert.Equal(192, c[7]));
+    }
 }

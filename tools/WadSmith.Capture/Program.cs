@@ -336,12 +336,21 @@ foreach (var pose in poses)
             {
                 // The 3D view's picture of the open map, drawn offscreen from above (no window needed).
                 var session = editor.Session;
-                var scene = WadSmith.Editor.Scene.MapScene.Build(session.Geometry, n => session.Resources?.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null);
+                var scene = WadSmith.Editor.Scene.MapScene.Build(session.Geometry, n => session.Resources?.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, WadSmith.App.ThreeD.SpriteShapes.For(session.Resources));
                 var started = System.Diagnostics.Stopwatch.GetTimestamp();
                 var png = WadSmith.App.ThreeD.Offscreen3D.RenderPng(scene, session.Resources, WadSmith.App.ThreeD.Offscreen3D.Overview(scene), 1280, 800);
                 Console.WriteLine($"3d: {scene.Batches.Count} batches, {scene.Batches.Sum(b => b.VertexCount) / 3} triangles, {System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms including start-up");
                 File.WriteAllBytes(Path.Combine(output, "editor-3d.png"), png);
                 Console.WriteLine(Path.Combine(output, "editor-3d.png"));
+
+                // And as the player sees it from the start: eye height 41, facing the start's direction.
+                if (scene.Things.FirstOrDefault(t => t.Type == 1) is { Element: not null } start)
+                {
+                    var eye = new WadSmith.App.ThreeD.Camera3D(start.X, start.Y, start.Z + 41, start.Angle, 0);
+                    File.WriteAllBytes(Path.Combine(output, "editor-3d-start.png"), WadSmith.App.ThreeD.Offscreen3D.RenderPng(scene, session.Resources, eye, 1280, 800, inside: true));
+                    Console.WriteLine(Path.Combine(output, "editor-3d-start.png"));
+                }
+
                 break;
             }
 

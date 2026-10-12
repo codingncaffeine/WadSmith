@@ -32,6 +32,32 @@ internal sealed unsafe class SceneRenderer : IDisposable
         }
         """;
 
+    private const string SpriteVertex = """
+        #version 330 core
+        in vec3 position;
+        in vec2 corner;
+        in vec2 uv;
+        in float light;
+        uniform mat4 viewProjection;
+        uniform vec2 textureSize;
+        uniform vec3 eye;
+        uniform vec2 across;
+        out vec2 vUv;
+        out float vLight;
+        out float vDistance;
+        out vec3 vWorld;
+        void main()
+        {
+            // Turned to face the camera about its upright axis, as Doom draws sprites.
+            vec3 p = position + vec3(across * corner.x, corner.y);
+            gl_Position = viewProjection * vec4(p, 1.0);
+            vUv = uv / textureSize;
+            vLight = light / 255.0;
+            vDistance = distance(p, eye);
+            vWorld = p;
+        }
+        """;
+
     private const string SceneFragment = """
         #version 330 core
         in vec2 vUv;
@@ -73,6 +99,16 @@ internal sealed unsafe class SceneRenderer : IDisposable
     private readonly int _uSky;
     private readonly int _uPicture;
     private readonly int _uFade;
+    private readonly int _sprites;
+    private readonly int _sViewProjection;
+    private readonly int _sTextureSize;
+    private readonly int _sEye;
+    private readonly int _sAcross;
+    private readonly int _sPicture;
+    private readonly int _sFade;
+    private readonly int _sSky;
+    private readonly Dictionary<int, (int Id, int Width, int Height)> _spriteTextures = [];
+    private readonly List<(int Vao, int Vbo, int Count, int Type)> _spriteBatches = [];
     private readonly Dictionary<(string Name, SurfaceKind Kind), (int Id, int Width, int Height)> _textures = [];
     private readonly List<(int Vao, int Vbo, int Count, SurfaceKind Kind, string Texture)> _batches = [];
     private int _framebuffer;
@@ -92,6 +128,14 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _uSky = gl.Uniform(_program, "sky");
         _uPicture = gl.Uniform(_program, "picture");
         _uFade = gl.Uniform(_program, "fade");
+        _sprites = gl.Program(SpriteVertex, SceneFragment, "position", "corner", "uv", "light");
+        _sViewProjection = gl.Uniform(_sprites, "viewProjection");
+        _sTextureSize = gl.Uniform(_sprites, "textureSize");
+        _sEye = gl.Uniform(_sprites, "eye");
+        _sAcross = gl.Uniform(_sprites, "across");
+        _sPicture = gl.Uniform(_sprites, "picture");
+        _sFade = gl.Uniform(_sprites, "fade");
+        _sSky = gl.Uniform(_sprites, "sky");
         RendererName = gl.Text(Gl.Renderer);
     }
 
@@ -129,6 +173,36 @@ internal sealed unsafe class SceneRenderer : IDisposable
             _gl.EnableVertexAttribArray(2);
             _gl.VertexAttribPointer(2, 1, Gl.Float, 0, stride, 5 * sizeof(float));
             _batches.Add((vao, vbo, batch.VertexCount, batch.Kind, batch.Texture));
+        }
+
+        foreach (var b in _spriteBatches)
+        {
+            var vao = b.Vao;
+            var vbo = b.Vbo;
+            _gl.DeleteVertexArrays(1, &vao);
+            _gl.DeleteBuffers(1, &vbo);
+        }
+
+        _spriteBatches.Clear();
+        foreach (var batch in scene.Sprites)
+        {
+            int vao, vbo;
+            _gl.GenVertexArrays(1, &vao);
+            _gl.BindVertexArray(vao);
+            _gl.GenBuffers(1, &vbo);
+            _gl.BindBuffer(Gl.ArrayBuffer, vbo);
+            var data = batch.Vertices.ToArray();
+            fixed (float* p = data) _gl.BufferData(Gl.ArrayBuffer, data.Length * sizeof(float), p, Gl.StaticDraw);
+            const int stride = SpriteBatch.Stride * sizeof(float);
+            _gl.EnableVertexAttribArray(0);
+            _gl.VertexAttribPointer(0, 3, Gl.Float, 0, stride, IntPtr.Zero);
+            _gl.EnableVertexAttribArray(1);
+            _gl.VertexAttribPointer(1, 2, Gl.Float, 0, stride, 3 * sizeof(float));
+            _gl.EnableVertexAttribArray(2);
+            _gl.VertexAttribPointer(2, 2, Gl.Float, 0, stride, 5 * sizeof(float));
+            _gl.EnableVertexAttribArray(3);
+            _gl.VertexAttribPointer(3, 1, Gl.Float, 0, stride, 7 * sizeof(float));
+            _spriteBatches.Add((vao, vbo, batch.VertexCount, batch.Type));
         }
 
         _gl.BindVertexArray(0);
@@ -172,6 +246,29 @@ internal sealed unsafe class SceneRenderer : IDisposable
             _gl.DrawArrays(Gl.Triangles, 0, count);
         }
 
+        // Sprites: both sides drawn (they turn to face the camera), see-through pixels dropped by the shader.
+        if (_spriteBatches.Count > 0)
+        {
+            _gl.Disable(Gl.CullFaceMode);
+            _gl.UseProgram(_sprites);
+            fixed (float* m = matrix) _gl.UniformMatrix4fv(_sViewProjection, 1, 0, m);
+            _gl.Uniform3f(_sEye, (float)camera.X, (float)camera.Y, (float)camera.Z);
+            var yaw = camera.Yaw * Math.PI / 180;
+            _gl.Uniform2f(_sAcross, (float)Math.Sin(yaw), (float)-Math.Cos(yaw));
+            _gl.Uniform1i(_sPicture, 0);
+            _gl.Uniform1f(_sFade, inside ? 1f : 0f);
+            _gl.Uniform1i(_sSky, 0);
+            foreach (var (vao, _, count, type) in _spriteBatches)
+            {
+                var (id, w, h) = SpriteTexture(type);
+                if (id == 0) continue;
+                _gl.BindTexture(Gl.Texture2D, id);
+                _gl.Uniform2f(_sTextureSize, w, h);
+                _gl.BindVertexArray(vao);
+                _gl.DrawArrays(Gl.Triangles, 0, count);
+            }
+        }
+
         _gl.BindVertexArray(0);
         _gl.PixelStorei(Gl.PackAlignment, 4);
         _gl.ReadPixels(0, 0, width, height, Gl.Bgra, Gl.UnsignedByte, target);
@@ -209,6 +306,23 @@ internal sealed unsafe class SceneRenderer : IDisposable
         t = (id, image.Width, image.Height);
         _textures[key] = t;
         return t;
+    }
+
+    private (int Id, int Width, int Height) SpriteTexture(int type)
+    {
+        if (_spriteTextures.TryGetValue(type, out var t)) return t;
+        if (_resources?.SpriteFor(type) is not { } image) return _spriteTextures[type] = (0, 1, 1);
+        int id;
+        _gl.GenTextures(1, &id);
+        _gl.BindTexture(Gl.Texture2D, id);
+        _gl.PixelStorei(Gl.UnpackAlignment, 1);
+        fixed (byte* p = image.Pixels) _gl.TexImage2D(Gl.Texture2D, 0, Gl.Rgba8, image.Width, image.Height, 0, Gl.Rgba, Gl.UnsignedByte, p);
+        _gl.GenerateMipmap(Gl.Texture2D);
+        _gl.TexParameteri(Gl.Texture2D, Gl.TextureMagFilter, Gl.Nearest);
+        _gl.TexParameteri(Gl.Texture2D, Gl.TextureMinFilter, Gl.LinearMipmapLinear);
+        _gl.TexParameteri(Gl.Texture2D, Gl.TextureWrapS, Gl.ClampToEdge);
+        _gl.TexParameteri(Gl.Texture2D, Gl.TextureWrapT, Gl.ClampToEdge);
+        return _spriteTextures[type] = (id, image.Width, image.Height);
     }
 
     /// <summary>The picture for a texture the game does not have: a loud checkerboard, as other editors show.</summary>
@@ -269,6 +383,14 @@ internal sealed unsafe class SceneRenderer : IDisposable
         }
 
         _textures.Clear();
+        foreach (var (id, _, _) in _spriteTextures.Values)
+        {
+            if (id == 0) continue;
+            var t = id;
+            _gl.DeleteTextures(1, &t);
+        }
+
+        _spriteTextures.Clear();
     }
 
     public void Dispose()
