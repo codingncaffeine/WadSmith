@@ -32,8 +32,9 @@ public sealed class TextureLibrary
 {
     private readonly ResourceStack _stack;
     private readonly Palette _palette;
-    private readonly Dictionary<string, TextureInfo> _walls = new(LumpName.Comparer);
-    private readonly Dictionary<string, TextureInfo> _flats = new(LumpName.Comparer);
+    // Concurrent: pictures are drawn on workers while a texture copied into the project is added (Add).
+    private readonly ConcurrentDictionary<string, TextureInfo> _walls = new(LumpName.Comparer);
+    private readonly ConcurrentDictionary<string, TextureInfo> _flats = new(LumpName.Comparer);
     private readonly ConcurrentDictionary<(bool Flat, string Name), RgbaImage?> _cache = new();
     private readonly ConcurrentDictionary<string, RgbaImage?> _patchCache = new(LumpName.Comparer);
 
@@ -46,12 +47,26 @@ public sealed class TextureLibrary
 
     public Palette Palette => _palette;
 
-    public IReadOnlyCollection<TextureInfo> Walls => _walls.Values;
+    public IReadOnlyCollection<TextureInfo> Walls => (IReadOnlyCollection<TextureInfo>)_walls.Values;
 
-    public IReadOnlyCollection<TextureInfo> Flats => _flats.Values;
+    public IReadOnlyCollection<TextureInfo> Flats => (IReadOnlyCollection<TextureInfo>)_flats.Values;
 
     /// <summary>Problems met while reading definitions: unreadable lumps, missing patches, effects not drawn.</summary>
     public List<string> Notes { get; } = [];
+
+    /// <summary>
+    /// Adds one picture file (from the textures/ or flats/ folder of the project) that was written after the library was
+    /// read, such as a texture copied in from another game. Safe while other threads draw.
+    /// </summary>
+    public void Add(ResourceEntry entry)
+    {
+        if (entry.Namespace == ResourceNamespace.Textures) _walls[entry.Name] = SingleInfo(entry, TextureKind.Single);
+        else if (entry.Namespace == ResourceNamespace.Flats) _flats[entry.Name] = SingleInfo(entry, TextureKind.Flat);
+        else throw new ArgumentException($"{entry.FullPath} is not in a textures or flats folder.", nameof(entry));
+    }
+
+    /// <summary>Whether a wall texture or a flat has this name.</summary>
+    public bool Has(string name) => _walls.ContainsKey(name) || _flats.ContainsKey(name);
 
     public TextureInfo? FindWall(string name) => _walls.GetValueOrDefault(name);
 

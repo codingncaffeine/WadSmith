@@ -7,8 +7,11 @@ using WadSmith.Editor;
 
 namespace WadSmith.App.ViewModels;
 
-/// <summary>What a shelf tile carries when dragged onto the map: a texture's name, an object's number, or a prefab.</summary>
-internal sealed record ShelfDrop(string? Texture, int Thing, string Label, WadSmith.Editor.Editing.Prefab? Prefab = null)
+/// <summary>
+/// What a shelf tile carries when dragged onto the map: a texture's name, an object's number, or a prefab; a picture from
+/// another game says which (<paramref name="From"/>) and whether it is a floor.
+/// </summary>
+internal sealed record ShelfDrop(string? Texture, int Thing, string Label, WadSmith.Editor.Editing.Prefab? Prefab = null, GameResources? From = null, bool Flat = false)
 {
     /// <summary>The drag's format: an object handed over within WadSmith.</summary>
     public static readonly Avalonia.Input.DataFormat<ShelfDrop> Format = Avalonia.Input.DataFormat.CreateInProcessFormat<ShelfDrop>("wadsmith-shelf");
@@ -39,14 +42,18 @@ internal sealed class ShelfTile(string label, string tooltip, string group, stri
 internal sealed partial class ShelfViewModel : ObservableObject
 {
     private const int Thumb = 64;
-    private readonly Func<IReadOnlyList<ShelfTile>> _build;
+    private readonly Func<IReadOnlyList<ShelfTile>>[] _stages;
     private IReadOnlyList<ShelfTile> _all = [];
     private bool _started;
+    private int _opened;
 
-    private ShelfViewModel(string empty, IReadOnlyList<string> groups, Func<IReadOnlyList<ShelfTile>> build)
+    /// <param name="empty">What the shelf says before its pictures are ready, or why it has none.</param>
+    /// <param name="groups">The groups to choose from, "All" first.</param>
+    /// <param name="stages">What the shelf holds, in parts made one after another on a worker; each shows as soon as it is ready.</param>
+    private ShelfViewModel(string empty, IReadOnlyList<string> groups, params Func<IReadOnlyList<ShelfTile>>[] stages)
     {
         Groups = groups;
-        _build = build;
+        _stages = stages;
         _note = empty;
     }
 
@@ -78,15 +85,23 @@ internal sealed partial class ShelfViewModel : ObservableObject
     {
         if (_started) return;
         _started = true;
+        var opening = ++_opened;
         Note = "Getting the pictures ready…";
         Task.Run(() =>
         {
-            var tiles = _build();
-            MainViewModel.PostToUi(() =>
+            var first = true;
+            foreach (var stage in _stages)
             {
-                _all = tiles;
-                Filter();
-            });
+                var tiles = stage();
+                var replace = first;
+                first = false;
+                MainViewModel.PostToUi(() =>
+                {
+                    if (opening != _opened) return;
+                    _all = replace ? tiles : [.. _all, .. tiles];
+                    Filter();
+                });
+            }
         });
     }
 
@@ -107,10 +122,16 @@ internal sealed partial class ShelfViewModel : ObservableObject
         Note = _all.Count == 0 ? "Nothing here: the game's files were not found." : Tiles.Count == 0 ? "Nothing matches." : $"{Tiles.Count} of {_all.Count}. Drag one onto the map.";
     }
 
-    /// <summary>The game's wall textures and floor and ceiling pictures, by name.</summary>
-    public static ShelfViewModel Textures(GameResources? game) => new(
+    private const string OtherGamesGroup = "From your other games";
+
+    /// <summary>
+    /// The game's wall textures and floor and ceiling pictures, by name; then those of the user's other games
+    /// (<paramref name="others"/> opens them on the worker), copied into the project when used. From a game of the same
+    /// family (Doom for a Doom II map) only the pictures this game lacks.
+    /// </summary>
+    public static ShelfViewModel Textures(GameResources? game, Func<IReadOnlyList<GameResources>>? others = null) => new(
         game is null ? "Choose a base game to see its textures." : "",
-        ["All", "Walls", "Floors and ceilings"],
+        ["All", "Walls", "Floors and ceilings", OtherGamesGroup],
         () =>
         {
             if (game is null) return [];
@@ -123,6 +144,28 @@ internal sealed partial class ShelfViewModel : ObservableObject
                     var picture = get(info.Name) is { } image ? Imaging.ToBitmap(Shrink(image)) : null;
                     var kind = group == "Walls" ? "Wall texture" : "Floor or ceiling";
                     tiles.Add(new ShelfTile(info.Name, $"{kind} {info.Name}, {info.Width} × {info.Height}. Drag it onto a wall, a floor or a ceiling.", group, info.Name.ToLowerInvariant(), picture, new ShelfDrop(info.Name, 0, info.Name)));
+                }
+            }
+
+            return tiles;
+        },
+        () =>
+        {
+            var tiles = new List<ShelfTile>();
+            if (game is null) return tiles;
+            foreach (var other in others?.Invoke() ?? [])
+            {
+                var family = other.Game.Engine == game.Game.Engine;
+                foreach (var (infos, flat) in new (IEnumerable<TextureInfo>, bool)[] { (other.Textures.Walls, false), (other.Textures.Flats, true) })
+                {
+                    foreach (var info in infos.OrderBy(i => i.Name, StringComparer.Ordinal))
+                    {
+                        if (info.IsNull || info.Name is "-" or "" || info.Name.StartsWith("F_SKY", StringComparison.OrdinalIgnoreCase) || (family && game.Textures.Has(info.Name))) continue;
+                        var image = flat ? other.Textures.GetFlat(info.Name) : other.Textures.GetWall(info.Name);
+                        if (image is null) continue;
+                        var kind = flat ? "floor or ceiling" : "wall texture";
+                        tiles.Add(new ShelfTile(info.Name, $"{other.Game.Title}'s {kind} {info.Name}, {image.Width} × {image.Height}. Drag it onto a wall, a floor or a ceiling: it is copied into this project, in its own colours.", OtherGamesGroup, $"{info.Name} {other.Game.Title}".ToLowerInvariant(), Imaging.ToBitmap(Shrink(image)), new ShelfDrop(info.Name, 0, $"{info.Name} from {other.Game.Title}", From: other, Flat: flat)));
+                    }
                 }
             }
 

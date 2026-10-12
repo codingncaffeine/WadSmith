@@ -212,6 +212,47 @@ public sealed class EditorSession : IDisposable
     /// <paramref name="ceiling"/>. One undo step; selects what was painted. Returns a sentence when
     /// there was nothing there.
     /// </summary>
+    /// <summary>
+    /// Paints with a picture from another game the user owns (<paramref name="from"/>): copied into the project on a worker the
+    /// first time (D43), then put where it was dropped as <see cref="Paint"/> does, saying what was copied.
+    /// </summary>
+    public void PaintBorrowed(GameResources from, string name, bool flat, MapPoint at, double radius, bool ceiling)
+    {
+        if (Resources is not { } into)
+        {
+            Notice?.Invoke("Pictures from your other games need this map's own game to be found first.");
+            return;
+        }
+
+        Task.Run(() =>
+        {
+            string chosen;
+            try
+            {
+                chosen = Borrowing.CopyPicture(Project, into, from, name, flat);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Copying {name} from {from.Game.Title} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"{name} could not be copied from {from.Game.Title}. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                if (Paint(chosen, at, radius, ceiling) is { } why)
+                {
+                    Notice?.Invoke(why);
+                    return;
+                }
+
+                Notice?.Invoke(chosen == name.ToUpperInvariant()
+                    ? $"{name} was copied from {from.Game.Title} into this project, so the map can use it."
+                    : $"{name} was copied from {from.Game.Title} into this project as {chosen}, since this game already has a {name}.");
+            });
+        });
+    }
+
     public string? Paint(string texture, MapPoint at, double radius, bool ceiling)
     {
         if (_geometry.LineNear(at, radius) is { OnMap: true } wall)

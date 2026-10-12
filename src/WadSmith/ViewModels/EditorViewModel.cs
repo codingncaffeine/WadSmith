@@ -61,7 +61,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         }
 
         Problems = new ProblemsViewModel(session);
-        TextureShelf = ShelfViewModel.Textures(session.Resources);
+        TextureShelf = ShelfViewModel.Textures(session.Resources, () => services.OtherGames(session.Resources));
         _looks = [.. Look.Available(session.Engine, session.Resources)];
         LookNames = [.. _looks.Select(l => l.Name)];
         ObjectShelf = ShelfViewModel.Objects(session.Resources, () => WadSmith.Editor.Editing.Prefabs.In(session.Project.Folder));

@@ -35,6 +35,25 @@ public sealed record ProjectMap
     public MapOrigin? Origin { get; init; }
 }
 
+/// <summary>Something copied into the project from another game the user owns (D43), for the Share check to name.</summary>
+public sealed record CopiedAsset
+{
+    /// <summary>"wall" or "flat".</summary>
+    public required string Kind { get; init; }
+
+    /// <summary>The game it came from (an id from data/games/games.json).</summary>
+    public required string Game { get; init; }
+
+    /// <summary>Its name in that game.</summary>
+    public required string Original { get; init; }
+
+    /// <summary>Its name in the project (the original's, unless this game already had one by that name).</summary>
+    public required string Name { get; init; }
+
+    /// <summary>The file, relative to the project folder.</summary>
+    public required string File { get; init; }
+}
+
 /// <summary>The project's own record, <c>wadsmith.json</c>: what GZDoom does not need to know but WadSmith does.</summary>
 public sealed record ProjectInfo
 {
@@ -53,6 +72,9 @@ public sealed record ProjectInfo
 
     /// <summary>Add-on files the project needs loaded before itself, in order.</summary>
     public List<string> AddOns { get; init; } = [];
+
+    /// <summary>What was copied in from the user's other games.</summary>
+    public List<CopiedAsset> Copied { get; init; } = [];
 }
 
 /// <summary>
@@ -137,7 +159,36 @@ public sealed class Project
         SaveInfo();
     }
 
-    public void SaveInfo() => WriteAtomically(Path.Combine(Folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(Info, Json));
+    public void SaveInfo()
+    {
+        lock (_gate) WriteAtomically(Path.Combine(Folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(Info, Json));
+    }
+
+    private readonly Lock _gate = new();
+
+    /// <summary>The copy of <paramref name="original"/> from <paramref name="game"/> already in the project, if any (any thread).</summary>
+    public CopiedAsset? FindCopy(string game, string original, string kind)
+    {
+        lock (_gate) return Info.Copied.LastOrDefault(c => c.Game == game && c.Kind == kind && string.Equals(c.Original, original, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Notes a copy in the project's record and writes the record (any thread).</summary>
+    public void Record(CopiedAsset copy)
+    {
+        lock (_gate)
+        {
+            Info.Copied.Add(copy);
+            WriteAtomically(Path.Combine(Folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(Info, Json));
+        }
+    }
+
+    /// <summary>Writes a file into the project in one step (a crash leaves the old file or the new, never half).</summary>
+    public void WriteFile(string relativePath, byte[] data)
+    {
+        var path = Path.Combine(Folder, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        WriteAtomically(path, data);
+    }
 
     internal static void WriteAtomically(string path, byte[] data)
     {

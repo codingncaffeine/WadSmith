@@ -46,6 +46,31 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
         }
     }
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<GameResources?>> _others = new();
+
+    /// <summary>
+    /// The user's other games, opened for their pictures, for "From your other games" on the shelves (D43): every supported
+    /// game the scan found except <paramref name="own"/> and the game it is an add-on for. Call on a worker.
+    /// </summary>
+    public IReadOnlyList<GameResources> OtherGames(GameResources? own)
+    {
+        var games = Games ?? [];
+        var found = new List<GameResources>();
+        foreach (var g in games.Where(g => g.Game.Supported && g.Game.Id != own?.Game.Id && g.Game.Id != own?.Game.AddOnFor).DistinctBy(g => g.Game.Id))
+        {
+            try
+            {
+                if (_others.GetOrAdd(g.Game.Id, id => new Lazy<GameResources?>(() => GameResources.Load(id, null, games, EngineData))).Value is { } r) found.Add(r);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Core.CorruptDataException)
+            {
+                Log.Warn($"{g.Game.Title} could not be read for its pictures: {ex.Message}");
+            }
+        }
+
+        return found;
+    }
+
     public void Shutdown() => _shutdown.Cancel();
 
     private static string? EngineDataFinder()

@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -349,6 +349,35 @@ foreach (var pose in poses)
             var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
             view.FitMap();
             if (pose == "editor-zoomed") view.ZoomBy(3.5);
+            if (pose == "editor-borrow")
+            {
+                // The Textures shelf's "From your other games", and Heretic's GRSKULL1 dropped on the starter room's north wall:
+                // copied into the project, painted, shown in 3D from the player's start.
+                editor.ShowTextures = true;
+                var filling = System.Diagnostics.Stopwatch.StartNew();
+                editor.TextureShelf.Open();
+                for (var i = 0; i < 600 && editor.TextureShelf.Tiles.Count == 0; i++) Pump(0.05);
+                Console.WriteLine($"borrow shelf: this game's {editor.TextureShelf.Tiles.Count} in {filling.ElapsedMilliseconds} ms");
+                var own = editor.TextureShelf.Tiles.Count;
+                for (var i = 0; i < 1200 && editor.TextureShelf.Tiles.Count == own; i++) Pump(0.01);
+                Console.WriteLine($"borrow shelf: all in {filling.ElapsedMilliseconds} ms ({editor.TextureShelf.Note})");
+                editor.TextureShelf.Group = editor.TextureShelf.Groups.ToList().IndexOf("From your other games");
+                editor.TextureShelf.Search = "grskull";
+                Pump(0.5);
+                Console.WriteLine($"borrow shelf: {editor.TextureShelf.Note}; {string.Join(", ", editor.TextureShelf.Tiles.Take(6).Select(t => t.Label))}");
+                Save("editor-borrow-shelf");
+                var tile = editor.TextureShelf.Tiles.First(t => t.Label == "GRSKULL1");
+                var north = editor.Session.Map.Lines.Where(l => l.OnMap).MaxBy(l => l.Start.Y + l.End.Y)!;
+                editor.Session.PaintBorrowed(tile.Drop.From!, "GRSKULL1", false, new WadSmith.Editor.Geometry.MapPoint((north.Start.X + north.End.X) / 2, (north.Start.Y + north.End.Y) / 2 - 2), 8, false);
+                for (var i = 0; i < 200 && north.Front.Middle != "GRSKULL1"; i++) Pump(0.05);
+                Pump(1.5);
+                Console.WriteLine($"borrow: north wall {north.Front.Middle}; status '{editor.Status}'; project {editor.Session.Project.Folder}");
+                editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
+                Pump(2.0);
+                Save("editor-borrow");
+                break;
+            }
+
             if (pose == "editor-fit")
             {
                 // Where the player cannot pass, marked in red; close to the first gaps of each kind with the player's box on
@@ -1224,6 +1253,62 @@ foreach (var pose in poses)
 
             Save(pose);
             break;
+        case "perf-edit" or "editor-perf-edit":
+        {
+            // How long after one small edit (a room's floor raised by 8) the new shapes, the plan's picture and the 3D scene
+            // arrive, 20 times: on the 100,000-wall grid (perf-edit) or the map given by --map (editor-perf-edit).
+            if (pose == "perf-edit")
+            {
+                Wait(vm.OpenEditorAsync(StressProject(), "MAP01"));
+            }
+            else if (vm.Page is not EditorViewModel)
+            {
+                var tile = vm.Welcome.Games.First(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
+                for (var i = 0; i < 200 && tile.Maps.Count == 0; i++) Pump(0.05);
+                if (map is not null) Wait(tile.Remix!.ExecuteAsync(tile.Maps.First(m => m.Slot == map.Split(':')[1])));
+                else Wait(tile.NewMap!.ExecuteAsync(tile));
+            }
+
+            Pump(3.0);
+            var edited = (EditorViewModel)vm.Page;
+            var session = edited.Session;
+            var plan = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
+            var view3d = window.GetVisualDescendants().OfType<WadSmith.App.ThreeD.View3D>().First();
+            var rooms = session.Map.Sectors.Where(s => s.OnMap).ToList();
+            var (geometryMs, pictureMs, sceneMs) = (new List<double>(), new List<double>(), new List<double>());
+            for (var i = 0; i < 20; i++)
+            {
+                var room = rooms[(int)((long)i * rooms.Count / 20)];
+                var started = System.Diagnostics.Stopwatch.GetTimestamp();
+                session.History.Run(new WadSmith.Editor.Editing.SetProperty<WadSmith.Editor.Model.Sector, double>(room, "Change floor height", x => x.FloorHeight, (x, v) => x.FloorHeight = v, room.FloorHeight + 8));
+                var version = session.Map.Version;
+                var (g, p, s3) = (-1.0, -1.0, -1.0);
+                while (System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds < 10_000 && (g < 0 || p < 0 || s3 < 0))
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    Thread.Sleep(1);
+                    var ms = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                    if (g < 0 && session.Geometry.Frame.Version >= version) g = ms;
+                    if (p < 0 && plan.ShownVersion >= version) p = ms;
+                    if (s3 < 0 && view3d.SceneVersion >= version) s3 = ms;
+                }
+
+                (geometryMs, pictureMs, sceneMs) = ([.. geometryMs, g], [.. pictureMs, p], [.. sceneMs, s3]);
+            }
+
+            string Band(List<double> v)
+            {
+                var o = v.Order().ToList();
+                return string.Create(CultureInfo.InvariantCulture, $"p50 {o[o.Count / 2]:0} ms, p95 {o[(int)(o.Count * 0.95)]:0} ms, max {o[^1]:0} ms");
+            }
+
+            Console.WriteLine($"perf-edit: {session.Map.Lines.Count(l => l.OnMap)} walls, {rooms.Count} areas");
+            Console.WriteLine($"perf-edit, shapes: {Band(geometryMs)}");
+            Console.WriteLine($"perf-edit, plan picture: {Band(pictureMs)}");
+            Console.WriteLine($"perf-edit, 3D scene: {Band(sceneMs)}");
+            break;
+        }
+
         case "perf":
         {
             // A 100,000-wall grid, opened as a project, panned frame by frame: whole map in view, then 8x closer.

@@ -236,6 +236,9 @@ internal sealed class MapCanvas : Control
         set => SetValue(ToolProperty, value);
     }
 
+    /// <summary>The map version the plan's picture shows (-1 before the first), for instruments.</summary>
+    internal long ShownVersion => _snapshot?.Version ?? -1;
+
     /// <summary>Whether the player's box follows the pointer and the places the player cannot pass are marked (G).</summary>
     public bool ShowFit
     {
@@ -1582,7 +1585,7 @@ internal sealed class MapCanvas : Control
                 Line => $"Let go to put {drop.Label} on the upper and lower parts of this wall, on this side.",
                 Sector => $"Let go to put {drop.Label} on this room's {(Mode == MapViewMode.Ceilings ? "ceiling" : "floor")}.",
                 _ => "Drop it on a wall or in a room.",
-            });
+            } + (drop.From is { } source && target is not null ? $" It is copied into this project from {source.Game.Title} first." : ""));
     }
 
     private void OnDrop(object? sender, DragEventArgs e)
@@ -1594,6 +1597,10 @@ internal sealed class MapCanvas : Control
         if (drop.Prefab is { } prefab)
         {
             session.PlacePrefab(prefab, ToMap(p));
+        }
+        else if (drop.Texture is { } borrowed && drop.From is { } from)
+        {
+            session.PaintBorrowed(from, borrowed, drop.Flat, ToMap(p), 7 / _zoom, Mode == MapViewMode.Ceilings);
         }
         else if (drop.Texture is { } texture)
         {

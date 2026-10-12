@@ -223,6 +223,9 @@ internal sealed class View3D : Control
     /// <summary>Whether a picture has been shown (for tools that wait for the first one).</summary>
     internal bool HasPicture => _shown is not null;
 
+    /// <summary>The map version the 3D scene was built from (-1 before the first), for instruments.</summary>
+    internal long SceneVersion => _scene?.Version ?? -1;
+
     /// <summary>Turns the orbit camera (for tools that measure drawing).</summary>
     internal void TurnBy(double degrees)
     {
