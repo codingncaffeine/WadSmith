@@ -7,12 +7,13 @@ namespace WadSmith.App.ThreeD;
 /// <summary>Renders a scene once to a PNG, on the calling thread with its own context (tests, captures, golden pictures).</summary>
 internal static unsafe class Offscreen3D
 {
-    public static byte[] RenderPng(MapScene scene, GameResources? resources, Camera3D camera, int width, int height, bool inside = false)
+    public static byte[] RenderPng(MapScene scene, GameResources? resources, Camera3D camera, int width, int height, bool inside = false, Lighting? lighting = null)
     {
         using var context = EglContext.Create();
         context.MakeCurrent();
         var gl = new Gl(EglContext.ProcAddress);
         using var renderer = new SceneRenderer(gl);
+        if (lighting is { } l) renderer.Light = l;
         renderer.Upload(scene, resources);
         using var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
         renderer.Render(camera, width, height, (byte*)bitmap.GetPixels(), inside);

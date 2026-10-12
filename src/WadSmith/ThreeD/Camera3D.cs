@@ -2,9 +2,10 @@ namespace WadSmith.App.ThreeD;
 
 /// <summary>
 /// Where the 3D view looks from: a position in map units (z up), a direction (yaw 0 faces east, 90
-/// north; pitch negative looks down) and a vertical field of view in degrees.
+/// north; pitch negative looks down) and a vertical field of view in degrees: the game's own (GZDoom keeps 73.74°
+/// up and down whatever the screen's shape; 73.75 measured against its pictures of a corridor, 2026-10-12).
 /// </summary>
-internal readonly record struct Camera3D(double X, double Y, double Z, double Yaw, double Pitch, double Fov = 74)
+internal readonly record struct Camera3D(double X, double Y, double Z, double Yaw, double Pitch, double Fov = 73.75)
 {
     public (double X, double Y, double Z) Forward
     {
@@ -33,7 +34,7 @@ internal readonly record struct Camera3D(double X, double Y, double Z, double Ya
     }
 
     /// <summary>How far an orbit camera must stand to fit something <paramref name="size"/> across into a view of this shape.</summary>
-    public static double FitDistance(double size, double aspect, double fov = 74)
+    public static double FitDistance(double size, double aspect, double fov = 73.75)
     {
         var tanV = Math.Tan(fov * Math.PI / 360);
         var tanH = tanV * aspect;

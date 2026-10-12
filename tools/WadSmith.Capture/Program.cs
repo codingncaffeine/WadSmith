@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -655,6 +655,181 @@ foreach (var pose in poses)
                 Pump(0.5);
                 Console.WriteLine($"3d align all: {string.Join(" ", session.Map.Lines.Where(l => l.OnMap).Select(l => $"{l.Front.OffsetX},{l.Front.OffsetY}"))}; undo '{session.History.UndoLabel}'; status '{editor.Status}'");
                 Save("editor-3d-align");
+                break;
+            }
+
+            if (pose == "editor-engine-view")
+            {
+                // Walking in the starter room, the game's view turned on: GZDoom (the stand-in outside the nested session) draws
+                // its picture from the camera's spot on a private screen, shown over the 3D view; with the real engine, the
+                // engine's picture is held against our own render from the same camera (and a control: ours turned 90°).
+                var stand = Environment.GetEnvironmentVariable("WS_ENGINE_PATH");
+                if (stand is null && Environment.GetEnvironmentVariable("WADSMITH_NESTED_WORK") is null)
+                {
+                    Console.Error.WriteLine("editor-engine-view needs WS_ENGINE_PATH (a stand-in engine) outside the nested session.");
+                    return 1;
+                }
+
+                if (stand is not null) settings.Current.EnginePath = stand;
+                var session = editor.Session;
+                var view3d = window.GetVisualDescendants().OfType<WadSmith.App.ThreeD.View3D>().First();
+                for (var i = 0; i < 200 && (view3d.SceneVersion < 0 || !view3d.HasPicture); i++) Pump(0.05);
+                editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
+                Pump(1.0);
+                var started = System.Diagnostics.Stopwatch.StartNew();
+                editor.EngineView = true;
+                for (var i = 0; i < 1800 && editor.EngineViewPicture is null && !editor.EngineViewNote.Contains("not", StringComparison.Ordinal) && !editor.EngineViewNote.Contains("stopped", StringComparison.Ordinal); i++) Pump(0.1);
+                Console.WriteLine($"engine view: picture {(editor.EngineViewPicture is { } b ? $"{b.PixelSize.Width}x{b.PixelSize.Height}" : "none")} after {started.Elapsed.TotalSeconds:0.0} s; note '{editor.EngineViewNote}'");
+                Pump(0.5);
+                Save("editor-engine-view");
+                if (editor.EngineViewPicture is not null && stand is null && view3d.Scene is { } scene)
+                {
+                    var cam = view3d.CurrentCamera;
+                    var theirsPath = Path.Combine(paths.Data, "engine", "view", "view.png");
+                    using var theirs = SkiaSharp.SKBitmap.Decode(theirsPath);
+                    var (w, h) = (theirs.Width, theirs.Height);
+                    var ours = WadSmith.App.ThreeD.Offscreen3D.RenderPng(scene, session.Resources, cam, w, h, inside: true);
+                    var turned = WadSmith.App.ThreeD.Offscreen3D.RenderPng(scene, session.Resources, cam with { Yaw = cam.Yaw + 90 }, w, h, inside: true);
+                    File.WriteAllBytes(Path.Combine(output, "editor-engine-view-ours.png"), ours);
+                    File.Copy(theirsPath, Path.Combine(output, "editor-engine-view-theirs.png"), overwrite: true);
+                    double Against(byte[] png)
+                    {
+                        using var mine = SkiaSharp.SKBitmap.Decode(png);
+                        double total = 0;
+                        var count = 0;
+                        for (var y = 0; y < h; y += 2)
+                        {
+                            for (var x = 0; x < w; x += 2)
+                            {
+                                var (a, c) = (mine.GetPixel(x, y), theirs.GetPixel(x, y));
+                                total += (Math.Abs(a.Red - c.Red) + Math.Abs(a.Green - c.Green) + Math.Abs(a.Blue - c.Blue)) / 3.0;
+                                count++;
+                            }
+                        }
+
+                        return total / count;
+                    }
+
+                    Console.WriteLine($"engine view measured: ours against the engine {Against(ours):0.0} per channel; control (ours turned 90°) {Against(turned):0.0}");
+                }
+
+                editor.EngineView = false;
+                Pump(0.5);
+                Console.WriteLine($"engine view off: picture {(editor.EngineViewPicture is null ? "gone" : "still there")}");
+                break;
+            }
+
+            if (pose == "editor-fogcal")
+            {
+                // Our 3D view of the fog-calibration corridors (WS_FOGCAL: L{light}F{fade}.wad with GZDoom's view.png beside each,
+                // the player at (0, −1900) looking north) from the same spot, searching the lighting constants that bring ours
+                // nearest the engine's: globVis on the unfogged corridors, then the fog density's base and darkness terms.
+                var folder = Environment.GetEnvironmentVariable("WS_FOGCAL") ?? throw new InvalidOperationException("Set WS_FOGCAL.");
+                var resources = editor.Session.Resources;
+                WadSmith.Editor.Scene.MapScene Scene(string name)
+                {
+                    var lumps = WadSmith.Core.Maps.MapLocator.Find(WadSmith.Core.Containers.WadContainer.Open(Path.Combine(folder, name + ".wad"))).First();
+                    var calMap = WadSmith.Editor.Model.EditorMap.FromModel(WadSmith.Core.Maps.MapConversion.Read(lumps, "doom"));
+                    return WadSmith.Editor.Scene.MapScene.Build(WadSmith.Editor.Geometry.MapGeometry.Build(calMap.Frame), n => resources?.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, WadSmith.App.ThreeD.SpriteShapes.For(resources));
+                }
+
+                var camera = new WadSmith.App.ThreeD.Camera3D(0, -1900, 41, 90, 0, 83.75);
+                var cache = new Dictionary<string, SkiaSharp.SKBitmap>();
+
+                // Pictures compared as 8-pixel blocks (their mean colour), so the engine's texture filtering against our
+                // nearest-pixel drawing does not drown what is measured: how bright each part of the corridor is.
+                double Diff(byte[] png, string name)
+                {
+                    using var ours = SkiaSharp.SKBitmap.Decode(png);
+                    if (!cache.TryGetValue(name, out var theirs)) cache[name] = theirs = SkiaSharp.SKBitmap.Decode(Path.Combine(folder, name, "view.png"));
+                    double total = 0;
+                    var count = 0;
+                    for (var y = 60; y < 380; y += 8)
+                    {
+                        for (var x = 200; x < 824; x += 8)
+                        {
+                            double ar = 0, ag = 0, ab = 0, br = 0, bg = 0, bb = 0;
+                            for (var j = 0; j < 8; j++)
+                            {
+                                for (var i = 0; i < 8; i++)
+                                {
+                                    var (a, b) = (ours.GetPixel(x + i, y + j), theirs.GetPixel(x + i, y + j));
+                                    (ar, ag, ab, br, bg, bb) = (ar + a.Red, ag + a.Green, ab + a.Blue, br + b.Red, bg + b.Green, bb + b.Blue);
+                                }
+                            }
+
+                            total += (Math.Abs(ar - br) + Math.Abs(ag - bg) + Math.Abs(ab - bb)) / 3.0 / 64;
+                            count++;
+                        }
+                    }
+
+                    return total / count;
+                }
+
+                // The engine's field of view first, on the bright corridor (no light falls off at 255): the vertical angle that frames it as the engine does.
+                var brightScene = Scene("L255F0");
+                var (bestFov, bestFovDiff) = (83.75, double.MaxValue);
+                for (var fov = 66.0; fov <= 92; fov += 1)
+                {
+                    var d = Diff(WadSmith.App.ThreeD.Offscreen3D.RenderPng(brightScene, resources, camera with { Fov = fov }, 1024, 640, true, new WadSmith.App.ThreeD.Lighting(64, 10, 1)), "L255F0");
+                    if (d < bestFovDiff) (bestFov, bestFovDiff) = (fov, d);
+                }
+
+                for (var fov = bestFov - 1; fov <= bestFov + 1; fov += 0.25)
+                {
+                    var d = Diff(WadSmith.App.ThreeD.Offscreen3D.RenderPng(brightScene, resources, camera with { Fov = fov }, 1024, 640, true, new WadSmith.App.ThreeD.Lighting(64, 10, 1)), "L255F0");
+                    if (d < bestFovDiff) (bestFov, bestFovDiff) = (fov, d);
+                }
+
+                Console.WriteLine($"fogcal fov best {bestFov:0.00}: {bestFovDiff:0.0} per channel on the bright corridor (83.75 from the floor calibration: {Diff(WadSmith.App.ThreeD.Offscreen3D.RenderPng(brightScene, resources, camera, 1024, 640, true, new WadSmith.App.ThreeD.Lighting(64, 10, 1)), "L255F0"):0.0})");
+                camera = camera with { Fov = bestFov };
+
+                int[] levels = [255, 192, 128, 64];
+                var plain = levels.Select(l => (Name: $"L{l}F0", Scene: Scene($"L{l}F0"))).ToList();
+                var fogged = levels.Select(l => (Name: $"L{l}F6324416", Scene: Scene($"L{l}F6324416"))).ToList();
+                double Mean(IEnumerable<(string Name, WadSmith.Editor.Scene.MapScene Scene)> set, WadSmith.App.ThreeD.Lighting light) => set.Average(s => Diff(WadSmith.App.ThreeD.Offscreen3D.RenderPng(s.Scene, resources, camera, 1024, 640, inside: true, light), s.Name));
+
+                var (bestVis, bestPlain) = (0.0, double.MaxValue);
+                for (var vis = 4.0; vis <= 2048; vis *= Math.Sqrt(2))
+                {
+                    var d = Mean(plain, new WadSmith.App.ThreeD.Lighting(vis, 100, 2));
+                    Console.WriteLine($"fogcal globVis {vis:0}: {d:0.0} per channel");
+                    if (d < bestPlain) (bestVis, bestPlain) = (vis, d);
+                }
+
+                for (var vis = bestVis / 1.35; vis <= bestVis * 1.35; vis *= 1.07)
+                {
+                    var d = Mean(plain, new WadSmith.App.ThreeD.Lighting(vis, 100, 2));
+                    if (d < bestPlain) (bestVis, bestPlain) = (vis, d);
+                }
+
+                Console.WriteLine($"fogcal globVis best {bestVis:0}: {bestPlain:0.0} per channel; each: {string.Join(", ", plain.Select(s => $"{s.Name} {Diff(WadSmith.App.ThreeD.Offscreen3D.RenderPng(s.Scene, resources, camera, 1024, 640, true, new WadSmith.App.ThreeD.Lighting(bestVis, 100, 2)), s.Name):0.0}"))}");
+                Console.WriteLine($"fogcal control: L255 ours against L64 theirs {Diff(WadSmith.App.ThreeD.Offscreen3D.RenderPng(plain[0].Scene, resources, camera, 1024, 640, true, new WadSmith.App.ThreeD.Lighting(bestVis, 100, 2)), "L64F0"):0.0}; globVis ×4 {Mean(plain, new WadSmith.App.ThreeD.Lighting(bestVis * 4, 100, 2)):0.0}");
+
+                var (bestBase, bestDark, bestFog) = (0.0, 0.0, double.MaxValue);
+                foreach (var b in new[] { 0.0, 25, 50, 100, 150, 200, 300, 400 })
+                {
+                    foreach (var k in new[] { 0.0, 0.25, 0.5, 1, 1.5, 2, 3, 4, 6 })
+                    {
+                        var d = Mean(fogged, new WadSmith.App.ThreeD.Lighting(bestVis, b, k));
+                        if (d < bestFog) (bestBase, bestDark, bestFog) = (b, k, d);
+                    }
+                }
+
+                for (var b = Math.Max(0, bestBase - 40); b <= bestBase + 40; b += 10)
+                {
+                    for (var k = Math.Max(0, bestDark - 0.5); k <= bestDark + 0.5; k += 0.1)
+                    {
+                        var d = Mean(fogged, new WadSmith.App.ThreeD.Lighting(bestVis, b, k));
+                        if (d < bestFog) (bestBase, bestDark, bestFog) = (b, k, d);
+                    }
+                }
+
+                var fit = new WadSmith.App.ThreeD.Lighting(bestVis, bestBase, bestDark);
+                Console.WriteLine($"fogcal fog best base {bestBase:0} dark {bestDark:0.0}: {bestFog:0.0} per channel; each: {string.Join(", ", fogged.Select(s => $"{s.Name} {Diff(WadSmith.App.ThreeD.Offscreen3D.RenderPng(s.Scene, resources, camera, 1024, 640, true, fit), s.Name):0.0}"))}");
+                Console.WriteLine($"fogcal fog control: no fog term {Mean(fogged, new WadSmith.App.ThreeD.Lighting(bestVis, 0, 0)):0.0}; density ×3 {Mean(fogged, new WadSmith.App.ThreeD.Lighting(bestVis, bestBase * 3, bestDark * 3)):0.0}");
+                foreach (var s in plain.Concat(fogged)) File.WriteAllBytes(Path.Combine(output, $"fogcal-{s.Name}-ours.png"), WadSmith.App.ThreeD.Offscreen3D.RenderPng(s.Scene, resources, camera, 1024, 640, true, fit));
+                Console.WriteLine($"fogcal measured: {fit}");
                 break;
             }
 

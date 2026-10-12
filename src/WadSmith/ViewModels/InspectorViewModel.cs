@@ -556,6 +556,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new NumberRow("Floor height", "How high the floor is, in map units (heightfloor). The player steps up 24 at most.", () => (decimal)s.FloorHeight, v => Set(s, "Change floor height", e => e.FloorHeight, (e, x) => e.FloorHeight = x, (double)v), 8));
         Rows.Add(new NumberRow("Ceiling height", "How high the ceiling is (heightceiling). The player is 56 tall.", () => (decimal)s.CeilingHeight, v => Set(s, "Change ceiling height", e => e.CeilingHeight, (e, x) => e.CeilingHeight = x, (double)v), 8, hint: Players));
         Rows.Add(new NumberRow("Brightness", "0 is dark, 255 full light (lightlevel). Doom's rooms are usually around 160.", () => s.Light, v => Set(s, "Change brightness", e => e.Light, (e, x) => e.Light = x, (int)v), 16, 0, 255));
+        Rows.Add(new TextRow("Light colour", "Tints everything in the room (lightcolor), as #RRGGBB in a paint program's words; #FFFFFF is plain white light. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "lightcolor", 0xFFFFFF)), text => SetRoomColour(s, "lightcolor", text, 0xFFFFFF, "Change the light colour"), texture: false));
+        Rows.Add(new TextRow("Fog colour", "Fog that thickens with distance in the room, thicker the darker the room (fadecolor), as #RRGGBB; #000000 is none. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "fadecolor", 0)), text => SetRoomColour(s, "fadecolor", text, 0, "Change the fog colour"), texture: false));
         AddMatchNeighbour(s);
         Rows.Add(new TextRow("Floor texture", "The picture on the floor (texturefloor).", () => s.FloorTexture, v => Set(s, "Change floor texture", e => e.FloorTexture, (e, x) => e.FloorTexture = x, v)));
         Rows.Add(new TextRow("Ceiling texture", "The picture on the ceiling (textureceiling).", () => s.CeilingTexture, v => Set(s, "Change ceiling texture", e => e.CeilingTexture, (e, x) => e.CeilingTexture = x, v)));
@@ -733,6 +735,26 @@ internal sealed partial class InspectorViewModel : ObservableObject
             () => Entry().Next == ends ? slots.Count + 1 : Index(slots, Entry().Next), i => _session.ChangeMapSettings(m => m with { Next = i == 0 ? null : i == slots.Count + 1 ? ends : slots[i - 1] })));
 
         if (defaults is { Switches.Count: > 0 }) Rows.Add(new InfoRow("Plays like the original", "GZDoom turns a few behaviour switches on for the original map (compat_ settings); the remix asks for the same ones in its zmapinfo.txt, so it plays the same.", () => string.Join(", ", defaults.Switches)));
+    }
+
+    /// <summary>A room's colour field (lightcolor, fadecolor) as red, green and blue; <paramref name="otherwise"/> when it has none.</summary>
+    private static (int R, int G, int B) RoomColour(Sector s, string key, int otherwise)
+    {
+        var value = s.Extra.TryGet(key, out var v) && v.Kind == Core.Maps.Udmf.UdmfValueKind.Integer ? (int)Math.Clamp(v.AsInt(), 0, 0xFFFFFF) : otherwise;
+        return ((value >> 16) & 255, (value >> 8) & 255, value & 255);
+    }
+
+    /// <summary>Sets a room's colour field from "#RRGGBB" (the default value takes the field away), one undo step.</summary>
+    private void SetRoomColour(Sector s, string key, string text, int otherwise, string label)
+    {
+        if (Lights.ParseHex(text) is not { } c)
+        {
+            _session.Tell("Write the colour as #RRGGBB, as a paint program shows it.");
+            return;
+        }
+
+        var value = (c.R << 16) | (c.G << 8) | c.B;
+        _session.History.Record(label, e => e.Field(s, key, value == otherwise ? (Core.Maps.Udmf.UdmfValue?)null : Core.Maps.Udmf.UdmfValue.Int(value)));
     }
 
     /// <summary>The map's groups, with nothing selected: each to select, lock or unlock (a locked one is unlocked here).</summary>

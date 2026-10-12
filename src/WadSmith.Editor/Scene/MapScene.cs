@@ -60,12 +60,13 @@ public readonly record struct SceneHit(Element Element, HitKind Kind, WallPart P
 public readonly record struct SurfaceTarget(Element Element, WallPart Part, bool Ceiling);
 
 /// <summary>
-/// Triangles drawn with one picture. Each corner is six numbers: x, y, z in map units (z up), u, v in
-/// texture pixels from the picture's top-left, and the light level (0–255) of the area it belongs to.
+/// Triangles drawn with one picture. Each corner is eight numbers: x, y, z in map units (z up), u, v in texture
+/// pixels from the picture's top-left, the light level (0–255) of the surface, and the area's light colour and fog
+/// colour, each a 24-bit RGB number (white light and no fog unless the area says otherwise).
 /// </summary>
 public sealed class SceneBatch(string texture, SurfaceKind kind)
 {
-    public const int Stride = 6;
+    public const int Stride = 8;
 
     public string Texture { get; } = texture;
 
@@ -84,7 +85,7 @@ public sealed class SceneBatch(string texture, SurfaceKind kind)
 
     public int VertexCount => Vertices.Count / Stride;
 
-    internal void Add(double x, double y, double z, double u, double v, int light)
+    internal void Add(double x, double y, double z, double u, double v, int light, Tint tint)
     {
         Vertices.Add((float)x);
         Vertices.Add((float)y);
@@ -92,6 +93,44 @@ public sealed class SceneBatch(string texture, SurfaceKind kind)
         Vertices.Add((float)u);
         Vertices.Add((float)v);
         Vertices.Add(light);
+        Vertices.Add(tint.LightColour);
+        Vertices.Add(tint.FadeColour);
+    }
+}
+
+/// <summary>An area's light colour and fog colour (GZDoom's lightcolor and fadecolor), each a 24-bit RGB number.</summary>
+public readonly record struct Tint(int LightColour, int FadeColour)
+{
+    public static readonly Tint Plain = new(0xFFFFFF, 0);
+
+    /// <summary>The tint an area's fields give it.</summary>
+    public static Tint Of(KeyValuePair<string, UdmfValue>[] extra) => new(Int(extra, "lightcolor", 0xFFFFFF), Int(extra, "fadecolor", 0));
+
+    /// <summary>A surface's light: the area's, moved by its own offset (lightfloor, lightceiling, a side's light) or replaced by it when absolute.</summary>
+    public static int Light(int areaLight, KeyValuePair<string, UdmfValue>[] extra, string offset, string absolute)
+    {
+        var value = Int(extra, offset, 0);
+        return Math.Clamp(Bool(extra, absolute) ? value : areaLight + value, 0, 255);
+    }
+
+    internal static int Int(KeyValuePair<string, UdmfValue>[] extra, string name, int otherwise)
+    {
+        foreach (var (k, v) in extra)
+        {
+            if (string.Equals(k, name, StringComparison.OrdinalIgnoreCase) && v.Kind == UdmfValueKind.Integer) return (int)Math.Clamp(v.AsInt(), 0, 0xFFFFFF);
+        }
+
+        return otherwise;
+    }
+
+    private static bool Bool(KeyValuePair<string, UdmfValue>[] extra, string name)
+    {
+        foreach (var (k, v) in extra)
+        {
+            if (string.Equals(k, name, StringComparison.OrdinalIgnoreCase)) return v.Kind == UdmfValueKind.Boolean && v.AsBool();
+        }
+
+        return false;
     }
 }
 
@@ -108,13 +147,13 @@ public readonly record struct SceneLight(float X, float Y, float Z, float R, flo
 public readonly record struct SpriteShape(int Width, int Height, int OffsetX, int OffsetY, double ScaleX, double ScaleY);
 
 /// <summary>
-/// The objects of one type, drawn with that type's sprite: per corner eight numbers, the foot point
+/// The objects of one type, drawn with that type's sprite: per corner ten numbers, the foot point
 /// x, y, z, the corner's offset across and up in map units (turned to face the camera when drawn),
-/// u, v in texture pixels, and light.
+/// u, v in texture pixels, the light, and the area's light colour and fog colour.
 /// </summary>
 public sealed class SpriteBatch(int type)
 {
-    public const int Stride = 8;
+    public const int Stride = 10;
 
     public int Type { get; } = type;
 
@@ -139,14 +178,16 @@ public sealed class MapScene
     /// <see cref="SpriteBatch"/>'s layout. Doom's offsets: the picture's left edge sits OffsetX pixels left of the foot point,
     /// its top OffsetY above it.
     /// </summary>
-    public static float[] SpriteQuad(double x, double y, double z, SpriteShape shape, float light)
+    public static float[] SpriteQuad(double x, double y, double z, SpriteShape shape, float light) => SpriteQuad(x, y, z, shape, light, Tint.Plain);
+
+    public static float[] SpriteQuad(double x, double y, double z, SpriteShape shape, float light, Tint tint)
     {
         var left = -shape.OffsetX * shape.ScaleX;
         var right = (shape.Width - shape.OffsetX) * shape.ScaleX;
         var top = shape.OffsetY * shape.ScaleY;
         var bottom = (shape.OffsetY - shape.Height) * shape.ScaleY;
         var quad = new List<float>(6 * SpriteBatch.Stride);
-        void Corner(double across, double up, double u, double v) => quad.AddRange([(float)x, (float)y, (float)z, (float)across, (float)up, (float)u, (float)v, light]);
+        void Corner(double across, double up, double u, double v) => quad.AddRange([(float)x, (float)y, (float)z, (float)across, (float)up, (float)u, (float)v, light, tint.LightColour, tint.FadeColour]);
         Corner(left, bottom, 0, shape.Height);
         Corner(right, bottom, shape.Width, shape.Height);
         Corner(right, top, shape.Width, 0);
@@ -201,10 +242,11 @@ public sealed class MapScene
             var v = b.Vertices;
             for (var i = 0; i < v.Count; i += SceneBatch.Stride * 3)
             {
-                var t = Distance(origin, direction, (v[i], v[i + 1], v[i + 2]), (v[i + 6], v[i + 7], v[i + 8]), (v[i + 12], v[i + 13], v[i + 14]), facing: true);
+                const int s = SceneBatch.Stride;
+                var t = Distance(origin, direction, (v[i], v[i + 1], v[i + 2]), (v[i + s], v[i + s + 1], v[i + s + 2]), (v[i + 2 * s], v[i + 2 * s + 1], v[i + 2 * s + 2]), facing: true);
                 if (t <= 0 || t >= bestT) continue;
                 bestT = t;
-                var tri = i / (SceneBatch.Stride * 3);
+                var tri = i / (s * 3);
                 var part = b.Parts[tri];
                 var kind = b.Kind == SurfaceKind.Wall ? HitKind.Wall : part == 1 ? HitKind.Ceiling : HitKind.Floor;
                 best = new SceneHit(b.Owners[tri], kind, b.Kind == SurfaceKind.Wall ? (WallPart)part : WallPart.Middle, b.Kind == SurfaceKind.Sky, t, origin.X + direction.X * t, origin.Y + direction.Y * t, origin.Z + direction.Z * t);
@@ -348,6 +390,8 @@ public sealed class MapScene
             maxZ = Math.Max(maxZ, sector.CeilingHeight);
             var triangles = Triangulator.Triangulate(loops);
             var light = Math.Clamp(sector.Light, 0, 255);
+            var tint = Tint.Of(sector.Extra);
+            var (floorLight, ceilingLight) = (Tint.Light(light, sector.Extra, "lightfloor", "lightfloorabsolute"), Tint.Light(light, sector.Extra, "lightceiling", "lightceilingabsolute"));
             var floor = Batch(sector.FloorTexture, IsSky(sector.FloorTexture) ? SurfaceKind.Sky : SurfaceKind.Floor);
             var ceiling = Batch(sector.CeilingTexture, IsSky(sector.CeilingTexture) ? SurfaceKind.Sky : SurfaceKind.Ceiling);
             var owner = sector.Element;
@@ -364,14 +408,14 @@ public sealed class MapScene
                 foreach (var p in (MapPoint[])[triangles[i], triangles[i + 1], triangles[i + 2]])
                 {
                     var (u, v) = onFloor.Texel(p.X, p.Y);
-                    floor.Add(p.X, p.Y, sector.FloorHeight, u, v, light);
+                    floor.Add(p.X, p.Y, sector.FloorHeight, u, v, floorLight, tint);
                 }
 
                 // Ceilings face down: the same triangles the other way round.
                 foreach (var p in (MapPoint[])[triangles[i + 2], triangles[i + 1], triangles[i]])
                 {
                     var (u, v) = onCeiling.Texel(p.X, p.Y);
-                    ceiling.Add(p.X, p.Y, sector.CeilingHeight, u, v, light);
+                    ceiling.Add(p.X, p.Y, sector.CeilingHeight, u, v, ceilingLight, tint);
                 }
             }
         }
@@ -395,7 +439,8 @@ public sealed class MapScene
                 if (side.Sector >= 0 && Hidden(f.Sectors[side.Sector].Extra)) return;
                 if (side.Sector < 0) return;
                 var here = f.Sectors[side.Sector];
-                var light = Math.Clamp(here.Light, 0, 255);
+                var light = Tint.Light(Math.Clamp(here.Light, 0, 255), side.Extra, "light", "lightabsolute");
+                var tint = Tint.Of(here.Extra);
                 var length = from.DistanceTo(to);
                 if (other is not { Sector: >= 0 } o)
                 {
@@ -403,7 +448,7 @@ public sealed class MapScene
                     // anchored at the bottom.
                     var h = Height(side.Middle);
                     var top = lowerUnpegged ? here.FloorHeight + h : here.CeilingHeight;
-                    Quad(side.Middle, from, to, here.FloorHeight, here.CeilingHeight, top, side, length, light, line, WallPart.Middle);
+                    Quad(side.Middle, from, to, here.FloorHeight, here.CeilingHeight, top, side, length, light, tint, line, WallPart.Middle);
                     return;
                 }
 
@@ -413,14 +458,14 @@ public sealed class MapScene
                 if (here.CeilingHeight > there.CeilingHeight && !(IsSky(here.CeilingTexture) && IsSky(there.CeilingTexture)))
                 {
                     var top = upperUnpegged ? here.CeilingHeight : there.CeilingHeight + Height(side.Top);
-                    Quad(side.Top, from, to, there.CeilingHeight, here.CeilingHeight, top, side, length, light, line, WallPart.Top);
+                    Quad(side.Top, from, to, there.CeilingHeight, here.CeilingHeight, top, side, length, light, tint, line, WallPart.Top);
                 }
 
                 // Lower part, where the floor beyond is higher.
                 if (there.FloorHeight > here.FloorHeight)
                 {
                     var top = lowerUnpegged ? here.CeilingHeight : there.FloorHeight;
-                    Quad(side.Bottom, from, to, here.FloorHeight, there.FloorHeight, top, side, length, light, line, WallPart.Bottom);
+                    Quad(side.Bottom, from, to, here.FloorHeight, there.FloorHeight, top, side, length, light, tint, line, WallPart.Bottom);
                 }
 
                 // A middle texture on a two-sided wall (a grate, a fence) is drawn once, not repeated up the wall.
@@ -432,7 +477,7 @@ public sealed class MapScene
                     var top = (lowerUnpegged ? bottom + h : ceiling) + side.OffsetY;
                     var z0 = Math.Max(bottom, top - h);
                     var z1 = Math.Min(ceiling, top);
-                    if (z1 > z0) Quad(side.Middle, from, to, z0, z1, top - side.OffsetY, side, length, light, line, WallPart.Middle);
+                    if (z1 > z0) Quad(side.Middle, from, to, z0, z1, top - side.OffsetY, side, length, light, tint, line, WallPart.Middle);
                 }
             }
         }
@@ -446,6 +491,7 @@ public sealed class MapScene
             var area = geometry.SectorAt(new MapPoint(t.X, t.Y)) is { } sector && sector.Slot < f.Sectors.Count ? f.Sectors[sector.Slot] : (SectorFrame?)null;
             var z = (area?.FloorHeight ?? 0) + t.Height;
             var light = Math.Clamp(area?.Light ?? 160, 0, 255);
+            var tint = area is { } inArea ? Tint.Of(inArea.Extra) : Tint.Plain;
             things.Add(new SceneThing(t.Element, (float)t.X, (float)t.Y, (float)z, t.Type, t.Angle, light));
             if (Smart.Lights.Kind(t.Type) is not null && t.Args[3] > 0)
             {
@@ -458,7 +504,7 @@ public sealed class MapScene
             if (!sprites.TryGetValue(t.Type, out var batch)) sprites[t.Type] = batch = new SpriteBatch(t.Type);
             batch.Owners.Add(t.Element);
 
-            batch.Vertices.AddRange(SpriteQuad(t.X, t.Y, z, shape, light));
+            batch.Vertices.AddRange(SpriteQuad(t.X, t.Y, z, shape, light, tint));
         }
 
         var (x0, y0, x1, y1) = geometry.Extent();
@@ -468,7 +514,7 @@ public sealed class MapScene
         double Height(string texture) => texture is "-" or "" ? 128 : wallSize(texture)?.Height ?? 128;
 
         // A wall part from z0 to z1 whose texture's top row sits at height top (before the side's offsets).
-        void Quad(string texture, MapPoint from, MapPoint to, double z0, double z1, double top, SideFrame side, double length, int light, Line wall, WallPart part)
+        void Quad(string texture, MapPoint from, MapPoint to, double z0, double z1, double top, SideFrame side, double length, int light, Tint tint, Line wall, WallPart part)
         {
             if (z1 <= z0 || side.Element is not { } face) return;
             var batch = Batch(texture is "" ? "-" : texture, SurfaceKind.Wall);
@@ -483,12 +529,12 @@ public sealed class MapScene
             double V(double z) => top - z + side.OffsetY;
 
             // Counter-clockwise as seen from the area the face belongs to.
-            batch.Add(from.X, from.Y, z0, u0, V(z0), light);
-            batch.Add(to.X, to.Y, z0, u1, V(z0), light);
-            batch.Add(to.X, to.Y, z1, u1, V(z1), light);
-            batch.Add(from.X, from.Y, z0, u0, V(z0), light);
-            batch.Add(to.X, to.Y, z1, u1, V(z1), light);
-            batch.Add(from.X, from.Y, z1, u0, V(z1), light);
+            batch.Add(from.X, from.Y, z0, u0, V(z0), light, tint);
+            batch.Add(to.X, to.Y, z0, u1, V(z0), light, tint);
+            batch.Add(to.X, to.Y, z1, u1, V(z1), light, tint);
+            batch.Add(from.X, from.Y, z0, u0, V(z0), light, tint);
+            batch.Add(to.X, to.Y, z1, u1, V(z1), light, tint);
+            batch.Add(from.X, from.Y, z1, u0, V(z1), light, tint);
         }
     }
 

@@ -8,6 +8,21 @@ namespace WadSmith.App.ThreeD;
 /// Draws a <see cref="MapScene"/> with OpenGL into an offscreen picture and reads it back. Lives on
 /// the 3D view's render thread with its context; nothing here may be touched from another thread.
 /// </summary>
+/// <summary>
+/// The game's light as the 3D view draws it, measured against GZDoom's own pictures (the fog-calibration corridors,
+/// 2026-10-12): <paramref name="GlobVis"/> is the engine's visibility constant in its lighting equation (how fast an
+/// unfogged area darkens with view depth); a fogged area's fog density per map unit is
+/// (<paramref name="FogBase"/> + <paramref name="FogDark"/> × (255 − light)) × 10⁻⁵. Measured 2026-10-12 against GZDoom 4.14's
+/// pictures of four corridors at light 255, 192, 128 and 64, with and without a fog colour, compared as 8-pixel blocks
+/// (capture pose editor-fogcal): visibility 54 brings ours within 8.1 per channel of the engine's (the dark corridor 0.5,
+/// the bright one 11.8, which is the texture filtering alone); the fog within 9.6 (controls: no fog term 37, three
+/// times the density 28).
+/// </summary>
+internal readonly record struct Lighting(double GlobVis, double FogBase, double FogDark)
+{
+    public static readonly Lighting Measured = new(54, 0, 1);
+}
+
 internal sealed unsafe class SceneRenderer : IDisposable
 {
     private const string SceneVertex = """
@@ -15,20 +30,34 @@ internal sealed unsafe class SceneRenderer : IDisposable
         in vec3 position;
         in vec2 uv;
         in float light;
+        in float lightColour;
+        in float fadeColour;
         uniform mat4 viewProjection;
         uniform vec2 textureSize;
         uniform vec3 eye;
         out vec2 vUv;
         out float vLight;
         out float vDistance;
+        out float vDepth;
         out vec3 vWorld;
+        out vec3 vLightColour;
+        out vec4 vFade;
+        vec3 unpack(float c)
+        {
+            float r = floor(c / 65536.0);
+            float g = floor((c - r * 65536.0) / 256.0);
+            return vec3(r, g, c - r * 65536.0 - g * 256.0) / 255.0;
+        }
         void main()
         {
             gl_Position = viewProjection * vec4(position, 1.0);
             vUv = uv / textureSize;
             vLight = light / 255.0;
             vDistance = distance(position, eye);
+            vDepth = gl_Position.w;
             vWorld = position;
+            vLightColour = unpack(lightColour);
+            vFade = vec4(unpack(fadeColour), fadeColour > 0.5 ? 1.0 : 0.0);
         }
         """;
 
@@ -38,6 +67,8 @@ internal sealed unsafe class SceneRenderer : IDisposable
         in vec2 corner;
         in vec2 uv;
         in float light;
+        in float lightColour;
+        in float fadeColour;
         uniform mat4 viewProjection;
         uniform vec2 textureSize;
         uniform vec3 eye;
@@ -45,7 +76,16 @@ internal sealed unsafe class SceneRenderer : IDisposable
         out vec2 vUv;
         out float vLight;
         out float vDistance;
+        out float vDepth;
         out vec3 vWorld;
+        out vec3 vLightColour;
+        out vec4 vFade;
+        vec3 unpack(float c)
+        {
+            float r = floor(c / 65536.0);
+            float g = floor((c - r * 65536.0) / 256.0);
+            return vec3(r, g, c - r * 65536.0 - g * 256.0) / 255.0;
+        }
         void main()
         {
             // Turned to face the camera about its upright axis, as Doom draws sprites.
@@ -55,6 +95,9 @@ internal sealed unsafe class SceneRenderer : IDisposable
             vLight = light / 255.0;
             vDistance = distance(p, eye);
             vWorld = p;
+            vDepth = gl_Position.w;
+            vLightColour = unpack(lightColour);
+            vFade = vec4(unpack(fadeColour), fadeColour > 0.5 ? 1.0 : 0.0);
         }
         """;
 
@@ -63,11 +106,17 @@ internal sealed unsafe class SceneRenderer : IDisposable
         in vec2 vUv;
         in float vLight;
         in float vDistance;
+        in float vDepth;
         in vec3 vWorld;
+        in vec3 vLightColour;
+        in vec4 vFade;
         uniform sampler2D picture;
         uniform int sky;
         uniform vec3 eye;
         uniform float fade;
+        uniform float globVis;
+        uniform float fogBase;
+        uniform float fogDark;
         uniform int overlay;
         uniform int useAlpha;
         uniform vec4 tint;
@@ -98,13 +147,29 @@ internal sealed unsafe class SceneRenderer : IDisposable
             vec4 c = texture(picture, vUv);
             if (c.a < 0.5) discard;
 
-            // Each area at its own brightness; inside the map (fade 1) also darker with distance, more so in
-            // dark rooms, as Doom lights. Never black, so the editor stays readable.
-            float shade = clamp(0.22 + vLight * 0.9 - fade * vDistance / 3072.0 * (1.15 - vLight), 0.16, 1.0);
+            // Inside the map (fade 1): the game's own light. In an area with no fog colour, GZDoom's lighting equation (the
+            // colormap index from the light level and the view depth; globVis measured against its pictures); in a fogged
+            // area the light level alone, the fog taking over with distance. Outside (orbit), flat brightness, never black,
+            // so the editor stays readable.
+            float L = vLight * 255.0;
+            float shade;
+            if (fade > 0.5 && vFade.a < 0.5)
+            {
+                float vis = min(globVis / max(vDepth, 1.0), 24.0 / 32.0);
+                shade = 1.0 - clamp(2.0 - (L + 12.0) / 128.0 - vis, 0.0, 31.0 / 32.0);
+            }
+            else if (fade > 0.5)
+            {
+                shade = vLight;
+            }
+            else
+            {
+                shade = clamp(0.22 + vLight * 0.9, 0.16, 1.0);
+            }
 
             // The map's lights add their colour, fading to nothing at their reach (subtractive ones take it away); a soft
             // one lights each surface by the way it faces it, as GZDoom does (the surface's facing from its own slope).
-            vec3 lit = vec3(shade);
+            vec3 lit = vec3(shade) * vLightColour;
             vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
             if (dot(n, eye - vWorld) < 0.0) n = -n;
             for (int i = 0; i < lightCount; i++)
@@ -116,7 +181,16 @@ internal sealed unsafe class SceneRenderer : IDisposable
                 lit += lightColours[i].rgb * fall;
             }
 
-            colour = vec4(c.rgb * clamp(lit, 0.0, 1.6), 1.0);
+            vec3 shown = c.rgb * clamp(lit, 0.0, 1.6);
+
+            // Fog: the area's fog colour takes over with distance, thicker the darker the area (density measured against the game).
+            if (fade > 0.5 && vFade.a > 0.5)
+            {
+                float density = (fogBase + fogDark * (255.0 - L)) * 0.00001;
+                shown = mix(vFade.rgb, shown, exp2(-density * vDistance));
+            }
+
+            colour = vec4(shown, 1.0);
         }
         """;
 
@@ -128,6 +202,15 @@ internal sealed unsafe class SceneRenderer : IDisposable
     private readonly int _uSky;
     private readonly int _uPicture;
     private readonly int _uFade;
+    private readonly int _uGlobVis;
+    private readonly int _uFogBase;
+    private readonly int _uFogDark;
+    private readonly int _sGlobVis;
+    private readonly int _sFogBase;
+    private readonly int _sFogDark;
+
+    /// <summary>The game's light as this renderer draws it (see <see cref="Lighting"/>); the live view uses the measured defaults.</summary>
+    public Lighting Light { get; set; } = Lighting.Measured;
     private readonly int _sprites;
     private readonly int _sViewProjection;
     private readonly int _sTextureSize;
@@ -177,6 +260,12 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _uSky = gl.Uniform(_program, "sky");
         _uPicture = gl.Uniform(_program, "picture");
         _uFade = gl.Uniform(_program, "fade");
+        _uGlobVis = gl.Uniform(_program, "globVis");
+        _uFogBase = gl.Uniform(_program, "fogBase");
+        _uFogDark = gl.Uniform(_program, "fogDark");
+        _sGlobVis = gl.Uniform(_sprites, "globVis");
+        _sFogBase = gl.Uniform(_sprites, "fogBase");
+        _sFogDark = gl.Uniform(_sprites, "fogDark");
         _sprites = gl.Program(SpriteVertex, SceneFragment, "position", "corner", "uv", "light");
         _sViewProjection = gl.Uniform(_sprites, "viewProjection");
         _sTextureSize = gl.Uniform(_sprites, "textureSize");
@@ -216,10 +305,10 @@ internal sealed unsafe class SceneRenderer : IDisposable
         }
 
         spriteBuffers.Clear();
-        if (surfaces.Length > 0) buffer = Upload(surfaces, SceneBatch.Stride, [3, 2, 1]);
+        if (surfaces.Length > 0) buffer = Upload(surfaces, SceneBatch.Stride, [3, 2, 1, 1, 1]);
         foreach (var (type, data) in sprites)
         {
-            var (vao, vbo, count) = Upload(data, SpriteBatch.Stride, [3, 2, 2, 1]);
+            var (vao, vbo, count) = Upload(data, SpriteBatch.Stride, [3, 2, 2, 1, 1, 1]);
             spriteBuffers.Add((vao, vbo, count, type));
         }
     }
@@ -228,7 +317,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
     public void Ghost(float[]? quad, bool fits)
     {
         Free(ref _ghost);
-        if (quad is { Length: > 0 }) _ghost = Upload(quad, SpriteBatch.Stride, [3, 2, 2, 1]);
+        if (quad is { Length: > 0 }) _ghost = Upload(quad, SpriteBatch.Stride, [3, 2, 2, 1, 1, 1]);
         _ghostFits = fits;
     }
 
@@ -295,6 +384,10 @@ internal sealed unsafe class SceneRenderer : IDisposable
             _gl.VertexAttribPointer(1, 2, Gl.Float, 0, stride, 3 * sizeof(float));
             _gl.EnableVertexAttribArray(2);
             _gl.VertexAttribPointer(2, 1, Gl.Float, 0, stride, 5 * sizeof(float));
+            _gl.EnableVertexAttribArray(3);
+            _gl.VertexAttribPointer(3, 1, Gl.Float, 0, stride, 6 * sizeof(float));
+            _gl.EnableVertexAttribArray(4);
+            _gl.VertexAttribPointer(4, 1, Gl.Float, 0, stride, 7 * sizeof(float));
             _batches.Add((vao, vbo, batch.VertexCount, batch.Kind, batch.Texture));
         }
 
@@ -325,6 +418,10 @@ internal sealed unsafe class SceneRenderer : IDisposable
             _gl.VertexAttribPointer(2, 2, Gl.Float, 0, stride, 5 * sizeof(float));
             _gl.EnableVertexAttribArray(3);
             _gl.VertexAttribPointer(3, 1, Gl.Float, 0, stride, 7 * sizeof(float));
+            _gl.EnableVertexAttribArray(4);
+            _gl.VertexAttribPointer(4, 1, Gl.Float, 0, stride, 8 * sizeof(float));
+            _gl.EnableVertexAttribArray(5);
+            _gl.VertexAttribPointer(5, 1, Gl.Float, 0, stride, 9 * sizeof(float));
             _spriteBatches.Add((vao, vbo, batch.VertexCount, batch.Type));
         }
 
@@ -375,6 +472,9 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _gl.Uniform3f(_uEye, (float)camera.X, (float)camera.Y, (float)camera.Z);
         _gl.Uniform1i(_uPicture, 0);
         _gl.Uniform1f(_uFade, inside ? 1f : 0f);
+        _gl.Uniform1f(_uGlobVis, (float)Light.GlobVis);
+        _gl.Uniform1f(_uFogBase, (float)Light.FogBase);
+        _gl.Uniform1f(_uFogDark, (float)Light.FogDark);
         _gl.Uniform1i(_uOverlay, 0);
         SetLights(camera, _uLightCount, _uLights, _uLightColours);
         _gl.ActiveTexture(Gl.Texture0);
@@ -396,6 +496,9 @@ internal sealed unsafe class SceneRenderer : IDisposable
             _gl.UseProgram(_sprites);
             fixed (float* m = matrix) _gl.UniformMatrix4fv(_sViewProjection, 1, 0, m);
             _gl.Uniform3f(_sEye, (float)camera.X, (float)camera.Y, (float)camera.Z);
+            _gl.Uniform1f(_sGlobVis, (float)Light.GlobVis);
+            _gl.Uniform1f(_sFogBase, (float)Light.FogBase);
+            _gl.Uniform1f(_sFogDark, (float)Light.FogDark);
             var yaw = camera.Yaw * Math.PI / 180;
             _gl.Uniform2f(_sAcross, (float)Math.Sin(yaw), (float)-Math.Cos(yaw));
             _gl.Uniform1i(_sPicture, 0);
