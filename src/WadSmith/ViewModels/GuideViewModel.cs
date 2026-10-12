@@ -42,7 +42,7 @@ internal sealed partial class GuideViewModel : ObservableObject
         _standing = standing;
         _stopped = stopped;
         _examples = GuideBook.Examples(session.Engine);
-        _checks = new(MainViewModel.PostToUi, Arrived, "the Guide's checks");
+        _checks = new(session.OnUiThread, Arrived, "the Guide's checks");
         var next = chapter.Id == GuideBook.FirstMap ? GuideBook.AfterFirstMap : GuideBook.After(chapter) is { } after ? [after] : [];
         Next = [.. next.Select(c => new GuideLink(chapter.Id == GuideBook.FirstMap ? c.Title : "Next: " + c.Title, c.Summary, new RelayCommand(() => open(c.Id))))];
         SeeOne = chapter.Landmark is { } kind ? seeOne(kind) : null;

@@ -338,7 +338,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
     {
         _session = session;
         _words = words ?? Vocabulary.Load();
-        _groupsFound = new(MainViewModel.PostToUi, r =>
+        _groupsFound = new(session.OnUiThread, r =>
         {
             if (!ReferenceEquals(r.Session, _session)) return;
             var before = string.Join("|", _groups.Select(g => $"{g.Name}{g.Locked}{g.Rooms.Count}{g.Things.Count}"));

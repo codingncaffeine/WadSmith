@@ -6,7 +6,24 @@ using WadSmith.App.ViewModels;
 using WadSmith.App.Views;
 using WadSmith.Editor.App;
 
+// The headless session starts before any test runs (see UiSessionFixture).
+[assembly: AssemblyFixture(typeof(WadSmith.Tests.UiSessionFixture))]
+
 namespace WadSmith.Tests;
+
+/// <summary>
+/// Starts the headless app session once, before the first test of the assembly, so its one set-up of Avalonia's
+/// dispatcher cannot meet a post from another test's worker ("The calling thread cannot access this object because a
+/// different thread owns it").
+/// </summary>
+public sealed class UiSessionFixture : IAsyncLifetime
+{
+    // Awaited, never blocked on: xunit runs fixtures on its own synchronization context, and a constructor that waited
+    // for the session's thread here deadlocked the whole run.
+    public ValueTask InitializeAsync() => new(Ui.EnsureStartedAsync());
+
+    public ValueTask DisposeAsync() => default;
+}
 
 /// <summary>
 /// The app on Avalonia's headless platform: the real window and pages, nothing on anybody's desktop. Avalonia is set up
@@ -15,7 +32,13 @@ namespace WadSmith.Tests;
 /// </summary>
 internal static class Ui
 {
-    private static readonly Lazy<HeadlessUnitTestSession> Session = new(() => HeadlessUnitTestSession.StartNew(typeof(HeadlessApp)));
+    // Set up once for the assembly: with the default per-test isolation the session set the app up again on every
+    // dispatch, resetting Avalonia's dispatcher each time, and a post from another test's worker in that moment
+    // re-created it on the worker's thread.
+    private static readonly Lazy<HeadlessUnitTestSession> Session = new(() => HeadlessUnitTestSession.StartNew(typeof(HeadlessApp), AvaloniaTestIsolationLevel.PerAssembly));
+
+    /// <summary>Starts the session and sets the app up now (the session sets it up at its first dispatch), once per process.</summary>
+    public static Task EnsureStartedAsync() => Session.Value.Dispatch(() => 0, CancellationToken.None);
 
     /// <summary>Runs a UI test's body on the session's thread.</summary>
     public static Task<T> Run<T>(Func<T> body) => Session.Value.Dispatch(body, TestContext.Current.CancellationToken);

@@ -39,7 +39,7 @@ internal sealed partial class ProblemsViewModel : ObservableObject
     public ProblemsViewModel(EditorSession session)
     {
         _session = session;
-        _checks = new(MainViewModel.PostToUi, r =>
+        _checks = new(session.OnUiThread, r =>
         {
             if (!ReferenceEquals(r.Session, _session)) return;
             // What the engine said at the last Play, while still true, goes with the map's own checks.

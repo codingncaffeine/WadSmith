@@ -50,6 +50,13 @@ public sealed class EditorSession : IDisposable
     public static readonly TimeSpan SaveDelay = TimeSpan.FromMilliseconds(900);
 
     private readonly Action<Action> _onUiThread;
+
+    /// <summary>
+    /// Runs an action on the UI thread, as the session was told when it was opened: the app's dispatcher, a test's
+    /// queue. Everything built for this session on a worker publishes through it, so nothing reaches a dispatcher the
+    /// session was not given.
+    /// </summary>
+    public Action<Action> OnUiThread => _onUiThread;
     private readonly Timer _timer;
     private readonly SemaphoreSlim _writer = new(1, 1);
     private readonly LatestOnWorker<MapGeometry> _shapes;

@@ -85,13 +85,13 @@ internal sealed partial class EditorViewModel : ObservableObject
         _mapSeen = (session.MapEntry.Title, session.MapEntry.Music);
         session.MapSettingsChanged += MapSettingsSeen;
         session.GeometryChanged += CameraMoved;
-        _reports = new(MainViewModel.PostToUi, ReportArrived, "the map's explanation");
+        _reports = new(session.OnUiThread, ReportArrived, "the map's explanation");
         Inspector.ExplainMap += () => ExplainMapCommand.Execute(null);
-        _shelfSounds = new LatestOnWorker<byte[]?>(MainViewModel.PostToUi, wav =>
+        _shelfSounds = new LatestOnWorker<byte[]?>(session.OnUiThread, wav =>
         {
             if (wav is not null) _services.Sound.Play(wav);
         }, "the shelf's sound");
-        _profiles = new LatestOnWorker<(EditorSession Session, ElevationProfile Profile)>(MainViewModel.PostToUi, r =>
+        _profiles = new LatestOnWorker<(EditorSession Session, ElevationProfile Profile)>(session.OnUiThread, r =>
         {
             if (!ReferenceEquals(r.Session, Session) || _measure is null) return;
             Profile = r.Profile;
