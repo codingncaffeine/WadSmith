@@ -670,6 +670,42 @@ public sealed class EditorSession : IDisposable
         return ceiling ? area.CeilingHeight : area.FloorHeight;
     }
 
+    /// <summary>Lines the textures along a wall up with this face's (<see cref="Aligning.Align"/>), one undo step, and says how many.</summary>
+    public void AlignTextures(Side face, WallPart part)
+    {
+        if (!face.OnMap || face.Line is null) return;
+        if (Grouping.Holds(_geometry, face))
+        {
+            Notice?.Invoke("That wall is locked: unlock it with nothing selected, under Groups, to change it.");
+            return;
+        }
+
+        var n = 0;
+        History.Record("Line the textures up", e => n = Aligning.Align(e, _geometry, face, part, name => Resources?.Textures.FindWall(name)?.Width));
+        Notice?.Invoke(n == 0 ? "No wall along this one carries the same texture, so there is nothing to line it up with." : $"The texture now runs on across {(n == 1 ? "the wall" : $"the {n} walls")} along this one.");
+    }
+
+    /// <summary>
+    /// Slides a face's textures by <paramref name="dx"/> across and <paramref name="dy"/> up (the 3D view: Ctrl+arrows by
+    /// 8, Ctrl+drag with the pointer); the steps of one <paramref name="gesture"/> make one undo step. Returns the offsets now.
+    /// </summary>
+    public (double X, double Y)? NudgeTexture(Side face, double dx, double dy, long gesture)
+    {
+        if (!face.OnMap || (dx == 0 && dy == 0)) return null;
+        if (Grouping.Holds(_geometry, face))
+        {
+            Notice?.Invoke("That wall is locked: unlock it with nothing selected, under Groups, to change it.");
+            return null;
+        }
+
+        History.Record("Shift the texture", e =>
+        {
+            if (dx != 0) e.Set(face, s => s.OffsetX, (s, v) => s.OffsetX = v, face.OffsetX + dx);
+            if (dy != 0) e.Set(face, s => s.OffsetY, (s, v) => s.OffsetY = v, face.OffsetY + dy);
+        }, gesture);
+        return (face.OffsetX, face.OffsetY);
+    }
+
     public string? Paint(string texture, MapPoint at, double radius, bool ceiling)
     {
         if (_geometry.LineNear(at, radius) is { OnMap: true } wall)

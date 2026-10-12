@@ -1100,6 +1100,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
 
         Rows.Add(new NumberRow("Texture shift across", "Moves this face's textures sideways, in pixels; above zero moves them left (x offset, offsetx).", () => (decimal)side.OffsetX, v => Set(side, "Shift texture across", e => e.OffsetX, (e, x) => e.OffsetX = x, (double)v), 1));
         Rows.Add(new NumberRow("Texture shift up", "Moves this face's textures up, in pixels; below zero moves them down (y offset, offsety).", () => (decimal)side.OffsetY, v => Set(side, "Shift texture up", e => e.OffsetY, (e, x) => e.OffsetY = x, (double)v), 1));
+        Rows.Add(new ActionRow("Line up the walls along it", "The same texture on the walls before and after this one runs on from this face, across the corners, as if they were one wall (auto-align; in the 3D view, Ctrl+A on a face).", () => _session.AlignTextures(side, Aligning.PartOf(side))));
     }
 
     private void AddSide(string which, Side side)

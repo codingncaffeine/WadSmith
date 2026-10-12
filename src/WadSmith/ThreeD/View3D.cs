@@ -55,6 +55,12 @@ internal sealed class View3D : Control
     /// <summary>A height drag (Ctrl+left on a floor or ceiling): the surface, its gesture, how much is applied, where it began and a pixel's worth there.</summary>
     private (SurfaceTarget Target, long Gesture, double Applied, Point From, double UnitsPerPixel)? _heightDrag;
 
+    /// <summary>A texture drag (Ctrl+left on a wall face): the face, its gesture, how much is applied, where it began and a pixel's worth there.</summary>
+    private (Editor.Model.Side Face, long Gesture, double AppliedX, double AppliedY, Point From, double UnitsPerPixel)? _textureDrag;
+
+    /// <summary>The face Ctrl+arrows are nudging and the gesture the nudges join.</summary>
+    private (Editor.Model.Side Face, long Gesture)? _nudge;
+
     /// <summary>The surface Ctrl+scroll is stepping and the gesture its steps join (one undo step until the pointer moves to another surface).</summary>
     private (Editor.Model.Element Element, bool Ceiling, long Gesture)? _wheel;
     private Point _pressedAt;
@@ -510,7 +516,8 @@ internal sealed class View3D : Control
         base.OnPointerExited(e);
         _lastPointer = null;
         _wheel = null;
-        if (_dragFrom is null && _heightDrag is null) ClearHover();
+        _nudge = null;
+        if (_dragFrom is null && _heightDrag is null && _textureDrag is null) ClearHover();
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
@@ -523,6 +530,16 @@ internal sealed class View3D : Control
             var unitsPerPixel = 2 * surface.Distance * Math.Tan(Current.Fov * Math.PI / 360) / Math.Max(Bounds.Height, 1);
             _heightDrag = (surface.Target, Editor.Editing.History.NewGesture(), 0, e.GetPosition(this), unitsPerPixel);
             _wheel = null;
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            return;
+        }
+
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0 && pressed.IsLeftButtonPressed && Session is not null && _hover is { Kind: HitKind.Wall, Element: Editor.Model.Side face } wall)
+        {
+            // Ctrl+drag on a wall face slides its texture (§3.12): a pixel is worth what the view shows at that distance.
+            var unitsPerPixel = 2 * wall.Distance * Math.Tan(Current.Fov * Math.PI / 360) / Math.Max(Bounds.Height, 1);
+            _textureDrag = (face, Editor.Editing.History.NewGesture(), 0, 0, e.GetPosition(this), unitsPerPixel);
             e.Pointer.Capture(this);
             e.Handled = true;
             return;
@@ -552,6 +569,22 @@ internal sealed class View3D : Control
                 var now = session.RaiseSurface(drag.Target, snapped - drag.Applied, drag.Gesture);
                 _heightDrag = drag with { Applied = snapped };
                 if (now is { } h) session.Tell($"{(drag.Target.Ceiling ? "Ceiling" : "Floor")} at {h:0} · let go to keep it (Shift moves by 1).");
+            }
+
+            return;
+        }
+
+        if (_textureDrag is { } slide)
+        {
+            // The texture slides with the pointer, on the 8 grid (Shift: by 1): right moves it right, up moves it up.
+            var (tx, ty) = ((at.X - slide.From.X) * slide.UnitsPerPixel, (at.Y - slide.From.Y) * slide.UnitsPerPixel);
+            var fine = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+            var (sx, sy) = fine ? (Math.Round(tx), Math.Round(ty)) : (Math.Round(tx / 8) * 8, Math.Round(ty / 8) * 8);
+            if ((sx != slide.AppliedX || sy != slide.AppliedY) && Session is { } session)
+            {
+                var now = session.NudgeTexture(slide.Face, -(sx - slide.AppliedX), -(sy - slide.AppliedY), slide.Gesture);
+                _textureDrag = slide with { AppliedX = sx, AppliedY = sy };
+                if (now is { } o) session.Tell($"Texture shifted to {o.X:0} across, {o.Y:0} up · let go to keep it (Shift moves by 1).");
             }
 
             return;
@@ -599,6 +632,14 @@ internal sealed class View3D : Control
             _heightDrag = null;
             e.Pointer.Capture(null);
             if (drag.Applied == 0 && Session is { } s) s.Tell($"Ctrl+drag moves a {(drag.Target.Ceiling ? "ceiling" : "floor")} up or down; Ctrl+scroll steps it by 8.");
+            return;
+        }
+
+        if (_textureDrag is { } slide)
+        {
+            _textureDrag = null;
+            e.Pointer.Capture(null);
+            if (slide.AppliedX == 0 && slide.AppliedY == 0 && Session is { } s) s.Tell("Ctrl+drag slides a wall's texture; Ctrl+arrows nudge it by 8; Ctrl+A lines the textures up along the wall.");
             return;
         }
 
@@ -650,6 +691,27 @@ internal sealed class View3D : Control
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0 && Session is { } session && _hover is { Kind: HitKind.Wall, Element: Editor.Model.Side face } wall)
+        {
+            // On the wall face under the pointer: Ctrl+arrows nudge its texture the way the arrow points (Shift: by 1); Ctrl+A lines the textures along the wall up with it.
+            var step = (e.KeyModifiers & KeyModifiers.Shift) != 0 ? 1 : 8;
+            var (dx, dy) = e.Key switch { Key.Left => (step, 0), Key.Right => (-step, 0), Key.Up => (0, step), Key.Down => (0, -step), _ => (0, 0) };
+            if (dx != 0 || dy != 0)
+            {
+                if (_nudge is not { } n || !ReferenceEquals(n.Face, face)) _nudge = (face, Editor.Editing.History.NewGesture());
+                if (session.NudgeTexture(face, dx, dy, _nudge.Value.Gesture) is { } now) session.Tell($"Texture shifted to {now.X:0} across, {now.Y:0} up · Ctrl+arrows move it by 8, with Shift by 1; Ctrl+A lines the walls along it up.");
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == Key.A)
+            {
+                session.AlignTextures(face, wall.Part);
+                e.Handled = true;
+                return;
+            }
+        }
+
         if (e.Key == Key.Home)
         {
             Mode = CameraMode.Orbit;

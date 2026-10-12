@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -610,6 +610,51 @@ foreach (var pose in poses)
                 session.History.Undo();
                 session.History.Undo();
                 Console.WriteLine($"3d heights undone twice: floor {room.FloorHeight}, ceiling {room.CeilingHeight}");
+                break;
+            }
+
+            if (pose == "editor-3d-align")
+            {
+                // Walking in the starter room with the pointer on the wall ahead: Ctrl+Right twice shifts its texture 16
+                // across (one undo step), Ctrl+drag slides it further, Ctrl+A lines the other walls up with it.
+                var session = editor.Session;
+                var view3d = window.GetVisualDescendants().OfType<WadSmith.App.ThreeD.View3D>().First();
+                for (var i = 0; i < 200 && (view3d.SceneVersion < 0 || !view3d.HasPicture); i++) Pump(0.05);
+                editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
+                Pump(1.0);
+                var spot = view3d.PlaySpot();
+                var (fx, fy) = (Math.Cos(spot.Angle * Math.PI / 180), Math.Sin(spot.Angle * Math.PI / 180));
+                var t = (256 - spot.Y) / fy;
+                Avalonia.Point On(double x, double y, double z) => view3d.TranslatePoint(view3d.ScreenPoint(x, y, z)!.Value, window)!.Value;
+                var wallAt = On(spot.X + fx * t, 256, 64);
+                window.MouseMove(wallAt, Avalonia.Input.RawInputModifiers.None);
+                Pump(0.5);
+                var face = view3d.Hovered?.Element as WadSmith.Editor.Model.Side;
+                Console.WriteLine($"3d align hover: {view3d.Hovered?.Words ?? "nothing"}; face offsets {face?.OffsetX},{face?.OffsetY}");
+                view3d.Focus();
+                for (var i = 0; i < 2; i++)
+                {
+                    window.KeyPress(Avalonia.Input.Key.Right, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.ArrowRight, null);
+                    Pump(0.2);
+                }
+
+                Console.WriteLine($"3d align keys: offsets {face?.OffsetX},{face?.OffsetY}; undo '{session.History.UndoLabel}'; steps {session.History.Steps.Count}");
+                window.MouseDown(wallAt, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.Control);
+                for (var k = 1; k <= 6; k++)
+                {
+                    window.MouseMove(new Avalonia.Point(wallAt.X + 10 * k, wallAt.Y), Avalonia.Input.RawInputModifiers.Control | Avalonia.Input.RawInputModifiers.LeftMouseButton);
+                    Pump(0.1);
+                }
+
+                window.MouseUp(new Avalonia.Point(wallAt.X + 60, wallAt.Y), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.Control);
+                Pump(0.5);
+                Console.WriteLine($"3d align drag: offsets {face?.OffsetX},{face?.OffsetY}; undo '{session.History.UndoLabel}'; steps {session.History.Steps.Count}; status '{editor.Status}'");
+                window.MouseMove(wallAt, Avalonia.Input.RawInputModifiers.None);
+                Pump(0.5);
+                window.KeyPress(Avalonia.Input.Key.A, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.A, null);
+                Pump(0.5);
+                Console.WriteLine($"3d align all: {string.Join(" ", session.Map.Lines.Where(l => l.OnMap).Select(l => $"{l.Front.OffsetX},{l.Front.OffsetY}"))}; undo '{session.History.UndoLabel}'; status '{editor.Status}'");
+                Save("editor-3d-align");
                 break;
             }
 
