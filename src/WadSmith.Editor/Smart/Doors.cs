@@ -146,7 +146,12 @@ public static class Doors
         var (from, to) = span is { } s ? (Math.Clamp(Math.Min(s.From, s.To), 0, wall.Length), Math.Clamp(Math.Max(s.From, s.To), 0, wall.Length)) : (0, wall.Length);
         var width = to - from;
         if (width < 8) return (null, "A door needs to be at least 8 wide; drag a longer stretch of the wall.");
-        if (width > MaxWidth) return (null, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"A door can be up to {MaxWidth:0} wide, and this one would be {width:0}: drag a shorter stretch of the wall."));
+        if (width > MaxWidth)
+        {
+            return (null, span is null
+                ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"This wall is {wall.Length:0} long, and a door can be up to {MaxWidth:0} wide: drag along the wall for a door of the width you want, or draw a short corridor between the rooms with the Room tool and click its end.")
+                : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"A door can be up to {MaxWidth:0} wide, and this one would be {width:0}: drag a shorter stretch of the wall."));
+        }
         if (Recognise(before, front) is not null || Recognise(before, back) is not null) return (null, "This wall is already a door's.");
 
         // The door goes into the corridor: the room with walls running on from both ends of this one.

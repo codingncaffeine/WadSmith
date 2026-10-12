@@ -63,6 +63,6 @@ public sealed class DoorSpanTests
         var (map, history, wall) = LongWall();
         Assert.Contains("at least 8", Make(map, history, wall, (100, 104)).Why);
         Assert.Contains("up to 256", Make(map, history, wall, (0, 400)).Why);
-        Assert.Contains("up to 256", Make(map, history, wall, null).Why);
+        Assert.Contains("corridor", Make(map, history, wall, null).Why);
     }
 }
