@@ -44,12 +44,16 @@ public sealed class AppSettings
     // Comfort (D31).
     public bool LargeInterface { get; set; }
 
+    /// <summary>Use the desktop's own title bar instead of WadSmith's.</summary>
+    public bool UseSystemTitleBar { get; set; }
+
     /// <summary>Window placement, restored on the next run.</summary>
-    public double WindowWidth { get; set; } = 1440;
+    public double WindowWidth { get; set; } = 1280;
 
-    public double WindowHeight { get; set; } = 900;
+    public double WindowHeight { get; set; } = 800;
 
-    public bool WindowMaximized { get; set; }
+    /// <summary>The first launch opens maximised, which suits every screen from a handheld up.</summary>
+    public bool WindowMaximized { get; set; } = true;
 }
 
 /// <summary>
