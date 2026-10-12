@@ -103,7 +103,7 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
     private static string? EngineDataFinder(AppSettings settings)
     {
         var found = Core.Games.EngineData.Find([.. settings.GameFolders, Path.GetDirectoryName(settings.EnginePath) ?? ""]);
-        Log.Info(found is null ? "GZDoom's data file was not found; remixing classic maps needs it." : $"GZDoom data: {found}");
+        Log.Info(found is null ? "GZDoom's data file was not found: the Objects shelf has no monsters or items, and remixing classic maps needs it." : $"GZDoom data: {found}");
         return found;
     }
 }
