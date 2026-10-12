@@ -92,23 +92,23 @@
             <Panel>
                 <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" Tool="{Binding Tool}" />
 
-                <!-- Tools: what a left drag on the plan does. -->
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
-                    <ToggleButton Classes="segment first" Content="Select" IsChecked="{Binding IsSelectTool}"
+                <!-- Tools: what a left drag on the plan does (wrapping onto a second row when the plan is narrow). -->
+                <WrapPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
+                    <ToggleButton Classes="segment tool first" Content="Select" IsChecked="{Binding IsSelectTool}"
                                   ToolTip.Tip="Click a room, a wall, a corner or a thing to see it in the Inspector; Shift adds or removes (V)." />
-                    <ToggleButton Classes="segment" Content="Room" IsChecked="{Binding IsRoomTool}"
+                    <ToggleButton Classes="segment tool" Content="Room" IsChecked="{Binding IsRoomTool}"
                                   ToolTip.Tip="Drag to draw a room. It snaps to the grid and to corners; drawn against or over other rooms, it shares their walls and never removes any (R)." />
-                    <ToggleButton Classes="segment" Content="Door" IsChecked="{Binding IsDoorTool}"
+                    <ToggleButton Classes="segment tool" Content="Door" IsChecked="{Binding IsDoorTool}"
                                   ToolTip.Tip="Click the wall between two rooms to make it a door that opens when used, with the game's door and track textures (D)." />
-                    <ToggleButton Classes="segment" Content="Window" IsChecked="{Binding IsWindowTool}"
+                    <ToggleButton Classes="segment tool" Content="Window" IsChecked="{Binding IsWindowTool}"
                                   ToolTip.Tip="Drag along a wall (or click it) for a window: through a thick wall to the room behind, or in a wall two rooms share, which becomes a wall closed but for the window (W)." />
-                    <ToggleButton Classes="segment" Content="Teleport" IsChecked="{Binding IsTeleportTool}"
+                    <ToggleButton Classes="segment tool" Content="Teleport" IsChecked="{Binding IsTeleportTool}"
                                   ToolTip.Tip="Click a room to step on, then the spot the player arrives at: stepping onto the room sends them there (T)." />
-                    <ToggleButton Classes="segment" Content="Light" IsChecked="{Binding IsLightTool}"
+                    <ToggleButton Classes="segment tool" Content="Light" IsChecked="{Binding IsLightTool}"
                                   ToolTip.Tip="Click in a room for a light, which the 3D view shows; its colour, reach and flicker are in the Inspector (L)." />
-                    <ToggleButton Classes="segment last" Content="Stairs" IsChecked="{Binding IsStairsTool}"
+                    <ToggleButton Classes="segment tool last" Content="Stairs" IsChecked="{Binding IsStairsTool}"
                                   ToolTip.Tip="Drag from the bottom of a staircase to its top: steps that climb from one floor to the other, never more than the player can step up (S)." />
-                </StackPanel>
+                </WrapPanel>
 
                 <!-- Heights legend: the colour ramp with the lowest and highest floor. -->
                 <Border IsVisible="{Binding ShowHeights}" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12" Padding="12,9,12,10"

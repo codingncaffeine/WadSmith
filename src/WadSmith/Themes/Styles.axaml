@@ -53,6 +53,10 @@
         <Setter Property="CornerRadius" Value="0" />
         <Setter Property="Padding" Value="11,6" />
     </Style>
+    <!-- The plan's tools: a little closer together, so all of them fit in one row beside the 3D view. -->
+    <Style Selector="ToggleButton.segment.tool">
+        <Setter Property="Padding" Value="9,6" />
+    </Style>
     <Style Selector="ToggleButton.segment.first">
         <Setter Property="CornerRadius" Value="4,0,0,4" />
     </Style>
