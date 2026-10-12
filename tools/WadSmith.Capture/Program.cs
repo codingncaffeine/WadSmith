@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -516,6 +516,31 @@ foreach (var pose in poses)
                 editor.Inspector.Rows.OfType<FlagRow>().Single(r => r.Label == "Courtyard is hidden").Value = true;
                 Pump(1.5);
                 Save("editor-groups-hidden");
+                break;
+            }
+
+            if (pose == "editor-map-settings")
+            {
+                // With nothing selected the Inspector shows the map's settings: the game's own values named, the map named
+                // "Gateway" and its exit set to end the game; the project's zmapinfo.txt then says so.
+                var session = editor.Session;
+                for (var i = 0; i < 200 && session.Defaults is null; i++) Pump(0.05);
+                session.Selection.Clear();
+                Pump(0.5);
+                Console.WriteLine($"map settings rows: {string.Join(" | ", editor.Inspector.Rows.Select(r => r.Label))}");
+                var name = editor.Inspector.Rows.OfType<TextRow>().Single(r => r.Label == "Name");
+                var music = editor.Inspector.Rows.OfType<ChoiceRow>().Single(r => r.Label == "Music");
+                var next = editor.Inspector.Rows.OfType<ChoiceRow>().Single(r => r.Label == "After the exit");
+                Console.WriteLine($"map settings defaults: name hint '{name.HintText}'; music '{music.Options[0]}' of {music.Options.Count}; next '{next.Options[0]}' … '{next.Options[^1]}' of {next.Options.Count}");
+                name.Value = "Gateway";
+                name.Commit();
+                next.Value = next.Options.Count - 1;
+                Wait(session.FlushAsync());
+                Pump(0.5);
+                var file = Path.Combine(session.Project.Folder, "zmapinfo.txt");
+                Console.WriteLine($"map settings record: title '{session.MapEntry.Title}' next '{session.MapEntry.Next}'");
+                Console.WriteLine($"map settings file: {(File.Exists(file) ? File.ReadAllText(file).ReplaceLineEndings(" / ") : "MISSING")}");
+                Save("editor-map-settings");
                 break;
             }
 

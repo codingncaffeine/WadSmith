@@ -60,7 +60,7 @@ public static partial class MapTitles
         return titles;
     }
 
-    private static string MapInfoFile(string id) => id switch
+    internal static string MapInfoFile(string id) => id switch
     {
         "doom-ultimate" or "doom" or "doom-shareware" or "freedoom1" => "mapinfo/doom1.txt",
         "tnt" => "mapinfo/tnt.txt",

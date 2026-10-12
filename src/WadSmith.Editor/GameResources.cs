@@ -17,13 +17,48 @@ public sealed class GameResources
     private static readonly ConcurrentDictionary<(string Engine, string Family), Lazy<ThingCatalog>> Catalogues = new();
     private readonly ConcurrentDictionary<int, RgbaImage?> _sprites = new();
 
-    private GameResources(GameDefinition game, IReadOnlyList<string> files, TextureLibrary textures, SpriteIndex sprites, ThingCatalog things)
+    private GameResources(GameDefinition game, IReadOnlyList<string> files, TextureLibrary textures, SpriteIndex sprites, ThingCatalog things, IReadOnlyList<string> music)
     {
         Game = game;
         Files = files;
         Textures = textures;
         Sprites = sprites;
         Things = things;
+        Music = music;
+        Skies = [.. textures.Walls.Where(w => w.Name.StartsWith("SKY", StringComparison.OrdinalIgnoreCase)).Select(w => w.Name).Order(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>The music the game (and the project) has, by name, A to Z: every lump or file holding a MUS or MIDI score, or an Ogg, FLAC or MP3 stream.</summary>
+    public IReadOnlyList<string> Music { get; }
+
+    /// <summary>The sky pictures the game has (every wall texture named SKY…), A to Z.</summary>
+    public IReadOnlyList<string> Skies { get; }
+
+    /// <summary>The names of the music in <paramref name="stack"/>, judged by content, A to Z.</summary>
+    public static IReadOnlyList<string> FindMusic(ResourceStack stack)
+    {
+        var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in stack.All(ResourceNamespace.Global).Concat(stack.All(ResourceNamespace.Music)))
+        {
+            if (entry.IsMarker || entry.Size < 4 || entry.Size > 64 * 1024 * 1024) continue;
+            byte[] data;
+            try
+            {
+                data = entry.Read();
+            }
+            catch (Exception ex) when (ex is IOException or Core.CorruptDataException)
+            {
+                continue;
+            }
+
+            var head = data.AsSpan(0, 4);
+            if (head.SequenceEqual("MUS\x1a"u8) || head.SequenceEqual("MThd"u8) || head.SequenceEqual("OggS"u8) || head.SequenceEqual("fLaC"u8) || head[..3].SequenceEqual("ID3"u8) || (head[0] == 0xFF && (head[1] & 0xE0) == 0xE0 && entry.Name.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)))
+            {
+                names.Add(entry.Name);
+            }
+        }
+
+        return [.. names];
     }
 
     public GameDefinition Game { get; }
@@ -77,7 +112,7 @@ public sealed class GameResources
         var things = engineData is null
             ? ThingCatalog.Empty
             : Catalogues.GetOrAdd((engineData, found.Game.Engine), key => new Lazy<ThingCatalog>(() => ThingCatalog.Load(ResourceContainer.Open(key.Engine), key.Family))).Value;
-        return new GameResources(found.Game, files, new TextureLibrary(stack), new SpriteIndex(stack), things);
+        return new GameResources(found.Game, files, new TextureLibrary(stack), new SpriteIndex(stack), things, FindMusic(stack));
     }
 
     private static RgbaImage Mirror(RgbaImage image)

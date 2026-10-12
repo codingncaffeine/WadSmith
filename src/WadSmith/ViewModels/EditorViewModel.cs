@@ -757,6 +757,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         }
 
         await Session.FlushAsync().ConfigureAwait(true);
+        await Session.RefreshMapInfoAsync().ConfigureAwait(true);
         if (!force)
         {
             var (geometry, resources, look, family, fit) = (Session.Geometry, Session.Resources, Session.Look, Session.Engine, Session.FitBaseline);

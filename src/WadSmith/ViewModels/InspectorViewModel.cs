@@ -3,6 +3,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WadSmith.Core.Games;
+using WadSmith.Core.Projects;
 using WadSmith.Editor;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Model;
@@ -250,6 +251,13 @@ internal sealed partial class InspectorViewModel : ObservableObject
         session.GeometryChanged += FindGroups;
         FindGroups();
         session.Selection.Changed += Rebuild;
+        session.MapSettingsChanged += () =>
+        {
+            if (!_session.Selection.IsEmpty) return;
+            // The game's defaults arriving (or a value not on the lists) change the choices; a change of value only refreshes the rows.
+            if (MapSettingsKey() != _mapSettingsKey) Rebuild();
+            else foreach (var r in Rows) r.Refresh();
+        };
 
         // A room just made (a door a moment ago) is known as what it is once the map's shapes catch up.
         session.GeometryChanged += () =>
@@ -308,6 +316,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         {
             Heading = "Nothing selected";
             Summary = "Click a room, a wall, a corner or a thing to see what it is and change it.";
+            AddMapSettings();
             AddGroups();
             return;
         }
@@ -673,6 +682,57 @@ internal sealed partial class InspectorViewModel : ObservableObject
         };
         var none = s.Targets.Count == 0 && Switches.NamesAreas(s.Wall.Special) ? string.Create(CultureInfo.InvariantCulture, $" No area has tag {s.Wall.Args[0]}, so it does nothing.") : "";
         return $"{char.ToUpperInvariant(s.Does[0])}{s.Does[1..]}{what} when the player uses it{(s.Repeats ? ", again and again" : ", once")}.{none}";
+    }
+
+    private string _mapSettingsKey = "";
+
+    /// <summary>What the Map settings rows' choices are built from: the game's defaults and the values set, which can add a choice.</summary>
+    private string MapSettingsKey() => $"{_session.Defaults?.Title}|{_session.Defaults?.Music}|{_session.Defaults?.Sky}|{_session.Defaults?.Next}|{_session.Defaults?.Slots.Count}|{_session.Defaults?.Switches.Count}|{_session.Defaults?.Foreign}|{_session.MapEntry.Music}|{_session.MapEntry.Sky}|{_session.MapEntry.Next}";
+
+    /// <summary>
+    /// The map's own settings, with nothing selected: its name, music, sky and what follows its exit, each the game's own
+    /// for the slot unless changed; written into the project's zmapinfo.txt, which GZDoom reads with the map.
+    /// </summary>
+    private void AddMapSettings()
+    {
+        _mapSettingsKey = MapSettingsKey();
+        var defaults = _session.Defaults;
+        Rows.Add(new HeadingRow("MAP SETTINGS"));
+        if (defaults?.Foreign == true)
+        {
+            Rows.Add(new InfoRow("Settings file", "The project holds a zmapinfo.txt WadSmith did not write; WadSmith leaves it alone, so the map's name, music, sky and next map are set in that file.", () => "This project's own zmapinfo.txt sets the map's name, music, sky and next map."));
+            return;
+        }
+
+        ProjectMap Entry() => _session.MapEntry;
+        static string TheGames(string? value, string what) => value is { Length: > 0 } ? $"The game's ({value})" : $"The game's {what}";
+        static List<string> Choices(IEnumerable<string> list, string? current, bool sorted)
+        {
+            var choices = list.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (sorted) choices.Sort(StringComparer.OrdinalIgnoreCase);
+            if (current is { Length: > 0 } && !choices.Contains(current, StringComparer.OrdinalIgnoreCase)) choices.Add(current);
+            return choices;
+        }
+
+        static int Index(List<string> choices, string? current) => current is null ? 0 : choices.FindIndex(c => string.Equals(c, current, StringComparison.OrdinalIgnoreCase)) + 1;
+
+        Rows.Add(new TextRow("Name", "What players see as the map's name, on the automap and between maps (levelname). Leave it empty for the game's own name for this slot.", () => Entry().Title,
+            v => _session.ChangeMapSettings(m => m with { Title = v }), hint: () => defaults?.Title is { } t && Entry().Title.Length == 0 ? $"the game's: {t}" : "", texture: false));
+
+        var music = Choices(_session.Resources?.Music ?? [], Entry().Music, sorted: true);
+        Rows.Add(new ChoiceRow("Music", "The music played in this map (music): the game's own for this slot, or any of the game's tracks.", [TheGames(defaults?.Music, "music"), .. music],
+            () => Index(music, Entry().Music), i => _session.ChangeMapSettings(m => m with { Music = i == 0 ? null : music[i - 1] })));
+
+        var skies = Choices(_session.Resources?.Skies ?? [], Entry().Sky, sorted: true);
+        Rows.Add(new ChoiceRow("Sky", "The sky seen over the map (sky1): the game's own for this slot, or any sky the game has.", [TheGames(defaults?.Sky, "sky"), .. skies],
+            () => Index(skies, Entry().Sky), i => _session.ChangeMapSettings(m => m with { Sky = i == 0 ? null : skies[i - 1] })));
+
+        var ends = ProjectMapInfo.EndToTitle;
+        var slots = Choices([.. defaults?.Slots ?? [], .. _session.Project.Maps().Select(m => m.Slot)], Entry().Next is { } n && n != ends ? n : null, sorted: false);
+        Rows.Add(new ChoiceRow("After the exit", "Where the exit leads (next): the game's next map for this slot, another map, or the end of the game and the title screen.", [TheGames(defaults?.Next, "next map"), .. slots, "The game ends"],
+            () => Entry().Next == ends ? slots.Count + 1 : Index(slots, Entry().Next), i => _session.ChangeMapSettings(m => m with { Next = i == 0 ? null : i == slots.Count + 1 ? ends : slots[i - 1] })));
+
+        if (defaults is { Switches.Count: > 0 }) Rows.Add(new InfoRow("Plays like the original", "GZDoom turns a few behaviour switches on for the original map (compat_ settings); the remix asks for the same ones in its zmapinfo.txt, so it plays the same.", () => string.Join(", ", defaults.Switches)));
     }
 
     /// <summary>The map's groups, with nothing selected: each to select, lock or unlock (a locked one is unlocked here).</summary>

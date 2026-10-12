@@ -1,0 +1,12 @@
+version "4.10"
+
+// play-check.sh's probe (WS_PROBE=1): prints what the engine made of the map's MAPINFO once the map is loaded.
+class WadSmithProbe : StaticEventHandler
+{
+	override void WorldLoaded(WorldEvent e)
+	{
+		Console.Printf("PROBE map=%s name=[%s] next=%s secret=%s sky=%s music=%s par=%d cluster=%d compat=%d compat2=%d",
+			level.MapName, level.LevelName, level.NextMap, level.NextSecretMap, TexMan.GetName(level.skytexture1), level.Music,
+			level.partime, level.cluster, level.compatflags, level.compatflags2);
+	}
+}

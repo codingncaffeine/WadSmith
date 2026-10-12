@@ -45,6 +45,7 @@ public static class CommandLine
         new Commands.ScriptCommand(),
         new Commands.RecogniseCommand(),
         new Commands.PlayCliCommand(),
+        new Commands.MapSettingsCommand(),
     ];
 
     public static int Run(IReadOnlyList<string> args, TextWriter output, TextWriter error)

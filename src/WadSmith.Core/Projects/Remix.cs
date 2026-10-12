@@ -23,6 +23,17 @@ public static class Remix
         var (zdoom, game, name, checksum) = Original(baseGamePath, mapName, engineDataPath, notes);
         var project = Project.Create(projectFolder, projectName ?? $"{name} remix", game.Id);
         project.SaveMap(zdoom, origin: new MapOrigin { Kind = "remix", Game = game.Id, Map = name, Checksum = checksum });
+
+        // The behaviour switches GZDoom gives the original (shorttex, light …) are asked for in the project's MAPINFO (D40).
+        try
+        {
+            ProjectMapInfo.Refresh(project, game, [baseGamePath], engineDataPath);
+        }
+        catch (Exception ex) when (ex is CorruptDataException or IOException)
+        {
+            notes.Add($"The engine's switches for the original could not be read, so the remix plays without them: {ex.Message}");
+        }
+
         return project;
     }
 

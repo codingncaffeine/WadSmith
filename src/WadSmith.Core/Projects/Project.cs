@@ -26,8 +26,17 @@ public sealed record ProjectMap
     /// <summary>The engine's name for the map's slot: MAP01, E1M1 …</summary>
     public required string Slot { get; init; }
 
-    /// <summary>The name players see (empty until the user gives one).</summary>
+    /// <summary>The name players see (empty: the base game's name for the slot).</summary>
     public string Title { get; init; } = "";
+
+    /// <summary>The music lump or file played (null: the base game's for the slot).</summary>
+    public string? Music { get; init; }
+
+    /// <summary>The sky texture (null: the base game's for the slot).</summary>
+    public string? Sky { get; init; }
+
+    /// <summary>The map the exit leads to (null: the base game's next map), or <see cref="ProjectMapInfo.EndToTitle"/>.</summary>
+    public string? Next { get; init; }
 
     /// <summary>The map file, relative to the project folder.</summary>
     public required string File { get; init; }
@@ -144,19 +153,48 @@ public sealed class Project
         lumps.AddRange(MapConversion.ToUdmfLumps(map).Select(l => (l.Name, (ReadOnlyMemory<byte>)l.Data)));
         WriteAtomically(Path.Combine(Folder, relative), WadWriter.Write(WadKind.Pwad, lumps));
 
-        var existing = Info.Maps.FindIndex(m => LumpName.Comparer.Equals(m.Slot, map.Name));
-        var entry = new ProjectMap { Slot = map.Name.ToUpperInvariant(), Title = title, File = relative, Origin = origin };
-        if (existing >= 0)
+        lock (_gate)
         {
-            var old = Info.Maps[existing];
-            Info.Maps[existing] = old with { File = relative, Title = title.Length > 0 ? title : old.Title, Origin = origin ?? old.Origin };
-        }
-        else
-        {
-            Info.Maps.Add(entry);
-        }
+            var existing = Info.Maps.FindIndex(m => LumpName.Comparer.Equals(m.Slot, map.Name));
+            var entry = new ProjectMap { Slot = map.Name.ToUpperInvariant(), Title = title, File = relative, Origin = origin };
+            if (existing >= 0)
+            {
+                var old = Info.Maps[existing];
+                Info.Maps[existing] = old with { File = relative, Title = title.Length > 0 ? title : old.Title, Origin = origin ?? old.Origin };
+            }
+            else
+            {
+                Info.Maps.Add(entry);
+            }
 
-        SaveInfo();
+            WriteAtomically(Path.Combine(Folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(Info, Json));
+        }
+    }
+
+    /// <summary>The project's entry for <paramref name="slot"/>, or null (any thread).</summary>
+    public ProjectMap? Map(string slot)
+    {
+        lock (_gate) return Info.Maps.FirstOrDefault(m => LumpName.Comparer.Equals(m.Slot, slot));
+    }
+
+    /// <summary>The project's maps as they are now (any thread).</summary>
+    public IReadOnlyList<ProjectMap> Maps()
+    {
+        lock (_gate) return [.. Info.Maps];
+    }
+
+    /// <summary>Changes a map's settings (its title, music, sky, next map) and writes the record (any thread). Returns the entry as it is now.</summary>
+    public ProjectMap UpdateMap(string slot, Func<ProjectMap, ProjectMap> change)
+    {
+        lock (_gate)
+        {
+            var i = Info.Maps.FindIndex(m => LumpName.Comparer.Equals(m.Slot, slot));
+            if (i < 0) throw new KeyNotFoundException($"The project has no map {slot}.");
+            var changed = change(Info.Maps[i]) with { Slot = Info.Maps[i].Slot, File = Info.Maps[i].File };
+            Info.Maps[i] = changed;
+            WriteAtomically(Path.Combine(Folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(Info, Json));
+            return changed;
+        }
     }
 
     public void SaveInfo()

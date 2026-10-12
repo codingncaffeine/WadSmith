@@ -28,7 +28,21 @@ public enum SaveState
 /// <param name="OnUiThread">Runs an action on the UI thread (the app passes its dispatcher).</param>
 /// <param name="Resources">The project's game opened for textures, sprites and object names, when found.</param>
 /// <param name="Picture">Paints a map as PNG for the versions list (on a worker); null for the automap drawing.</param>
-public sealed record SessionHooks(Action<Action> OnUiThread, GameResources? Resources = null, Func<MapFrame, byte[]?>? Picture = null);
+/// <param name="EngineData">The engine's gzdoom.pk3, whose MAPINFO gives the game's own settings for each map; null when the engine is not installed.</param>
+public sealed record SessionHooks(Action<Action> OnUiThread, GameResources? Resources = null, Func<MapFrame, byte[]?>? Picture = null, string? EngineData = null);
+
+/// <summary>
+/// The game's own settings for a map's slot, as the engine reads them: shown beside the map's settings, so "the game's"
+/// has a value. Read on a worker when a session opens.
+/// </summary>
+/// <param name="Title">The game's name for the slot ("Entryway"); null when it has none.</param>
+/// <param name="Music">The music lump the game plays there (D_RUNNIN).</param>
+/// <param name="Sky">The game's sky texture there (SKY1).</param>
+/// <param name="Next">Where the game's exit leads (MAP02, or an ending such as EndGameC).</param>
+/// <param name="Slots">Every slot the game defines, in its order.</param>
+/// <param name="Switches">The behaviour switches a remix keeps from its original (shorttex, light …); none for a new map.</param>
+/// <param name="Foreign">The project holds a zmapinfo.txt WadSmith did not write, which it leaves alone: the settings are set there.</param>
+public sealed record MapDefaults(string? Title, string? Music, string? Sky, string? Next, IReadOnlyList<string> Slots, IReadOnlyList<string> Switches, bool Foreign);
 
 public sealed class EditorSession : IDisposable
 {
@@ -94,9 +108,126 @@ public sealed class EditorSession : IDisposable
             _timer.Change(SaveDelay, Timeout.InfiniteTimeSpan);
             _shapes.Request(() => MapGeometry.Build(Map.Frame));
         };
+        MapEntry = project.Map(slot) ?? new ProjectMap { Slot = slot, File = $"maps/{slot}.wad" };
+        LoadMapDefaults();
     }
 
     public Project Project { get; }
+
+    // Map settings: the name, music, sky and next map of this map, kept in the project's record and written as its zmapinfo.txt.
+
+    /// <summary>The project's entry for this map: its settings as they are now (UI thread).</summary>
+    public ProjectMap MapEntry { get; private set; }
+
+    /// <summary>The game's own settings for this slot; null until read (a moment after opening) or when the game is not installed.</summary>
+    public MapDefaults? Defaults { get; private set; }
+
+    /// <summary>Raised when the map's settings change, or when the game's defaults for the slot arrive.</summary>
+    public event Action? MapSettingsChanged;
+
+    private Task _lastSettings = Task.CompletedTask;
+
+    /// <summary>
+    /// Changes the map's settings: the record is updated at once and written on a worker along with the project's
+    /// zmapinfo.txt (the slot and file never change). UI thread.
+    /// </summary>
+    public void ChangeMapSettings(Func<ProjectMap, ProjectMap> change)
+    {
+        var entry = change(MapEntry) with { Slot = MapEntry.Slot, File = MapEntry.File };
+        if (entry == MapEntry) return;
+        MapEntry = entry;
+        MapSettingsChanged?.Invoke();
+        _lastSettings = Task.Run(async () =>
+        {
+            await _writer.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                Project.UpdateMap(Slot, _ => entry);
+                WriteMapInfo();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException or KeyNotFoundException)
+            {
+                Log.Warn($"The map settings of {Slot} could not be saved: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"The map settings could not be saved: {ex.Message}"));
+            }
+            finally
+            {
+                _writer.Release();
+            }
+        });
+    }
+
+    /// <summary>Writes the project's zmapinfo.txt from its maps' settings on a worker (before Play, so the game sees them).</summary>
+    public Task RefreshMapInfoAsync() => _lastSettings = Task.Run(async () =>
+    {
+        await _writer.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            WriteMapInfo();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+        {
+            Log.Warn($"The project's zmapinfo.txt could not be written: {ex.Message}");
+        }
+        finally
+        {
+            _writer.Release();
+        }
+    });
+
+    /// <summary>The project's zmapinfo.txt from its record and the game's files (worker, under the writer).</summary>
+    private void WriteMapInfo()
+    {
+        var game = Resources?.Game ?? Core.Games.GameCatalog.Get(Project.Info.Game);
+        if (game is null) return;
+        if (!ProjectMapInfo.Refresh(Project, game, Resources?.Files ?? [], Hooks.EngineData)) Log.Info($"{ProjectMapInfo.FileName} in {Project.Folder} is the project's own: left alone.");
+    }
+
+    /// <summary>Reads the game's own settings for the slot on a worker and writes the project's zmapinfo.txt once, so a project made before has one.</summary>
+    private void LoadMapDefaults()
+    {
+        _ = Task.Run(async () =>
+        {
+            await _writer.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var foreign = ProjectMapInfo.HasForeign(Project);
+                var game = Resources?.Game ?? Core.Games.GameCatalog.Get(Project.Info.Game);
+                MapDefaults defaults;
+                if (game is null || Resources is null || Resources.Files.Count == 0 || Hooks.EngineData is not { } engine || !File.Exists(engine))
+                {
+                    defaults = new MapDefaults(null, null, null, null, [], [], foreign);
+                }
+                else
+                {
+                    var containers = Resources.Files.Select(Core.Containers.ResourceContainer.Open).ToList();
+                    var definitions = Core.Games.MapInfo.For(game, containers, engine);
+                    var d = definitions.For(Slot);
+                    var titles = Core.Games.MapTitles.For(game, containers[^1], engine);
+                    var switches = ProjectMapInfo.SwitchesFor(MapEntry, containers[0], engine, []);
+                    var music = definitions.Resolve(d?.Text("music"));
+                    if (music is not null && Resources.Music.FirstOrDefault(m => m.Equals(music, StringComparison.OrdinalIgnoreCase) || m.Equals("D_" + music, StringComparison.OrdinalIgnoreCase)) is { } lump) music = lump;
+                    defaults = new MapDefaults(titles.GetValueOrDefault(Slot), music, d?.Text("sky1"), d?.Text("next"), definitions.Slots, switches, foreign);
+                }
+
+                if (!foreign) WriteMapInfo();
+                _onUiThread(() =>
+                {
+                    if (_disposed) return;
+                    Defaults = defaults;
+                    MapSettingsChanged?.Invoke();
+                });
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"The game's settings for {Slot} could not be read: {ex.Message}");
+            }
+            finally
+            {
+                _writer.Release();
+            }
+        });
+    }
 
     /// <summary>The project's game, opened for its textures, sprites and object names; null when it was not found.</summary>
     public GameResources? Resources { get; }
@@ -1187,7 +1318,7 @@ public sealed class EditorSession : IDisposable
     public Task FlushAsync()
     {
         if (Map.Version != _savedVersion) CaptureAndSave();
-        return _lastSave;
+        return Task.WhenAll(_lastSave, _lastSettings);
     }
 
     /// <summary>

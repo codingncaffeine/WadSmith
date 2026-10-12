@@ -287,4 +287,38 @@ public sealed class SessionTests
         session.History.Undo();
         Assert.Equal(before, session.Map.Sectors.Count(s => s.OnMap));
     }
+
+    [Fact]
+    public void MapSettingsAreKeptInTheRecordAndWrittenAsMapInfo()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var ui = new FakeUi();
+        using var session = EditorSession.Open(project, "MAP01", ui.Post);
+        var changes = 0;
+        session.MapSettingsChanged += () => changes++;
+        session.ChangeMapSettings(m => m with { Title = "Gateway", Next = ProjectMapInfo.EndToTitle });
+        Assert.Equal("Gateway", session.MapEntry.Title);
+        Assert.Equal(1, changes);
+        var flush = session.FlushAsync();
+        ui.PumpUntil(() => flush.IsCompleted, TimeSpan.FromSeconds(20));
+        Assert.True(flush.IsCompletedSuccessfully);
+        Assert.Equal("Gateway", Project.Open(project.Folder).Info.Maps.Single().Title);
+        var path = Path.Combine(project.Folder, ProjectMapInfo.FileName);
+        var text = File.ReadAllText(path);
+        Assert.Contains("map MAP01 \"Gateway\"", text, StringComparison.Ordinal);
+        Assert.Contains("next = \"EndTitle\"", text, StringComparison.Ordinal);
+
+        // The same again changes nothing (the game's defaults arriving counted once meanwhile); back to the game's own values, the file goes.
+        var before = changes;
+        session.ChangeMapSettings(m => m with { Title = "Gateway" });
+        Assert.Equal(before, changes);
+        session.ChangeMapSettings(m => m with { Title = "", Next = null });
+        var again = session.FlushAsync();
+        ui.PumpUntil(() => again.IsCompleted, TimeSpan.FromSeconds(20));
+        Assert.True(again.IsCompletedSuccessfully);
+        Assert.False(File.Exists(path));
+        Assert.Equal("", Project.Open(project.Folder).Info.Maps.Single().Title);
+    }
 }
