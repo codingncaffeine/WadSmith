@@ -17,7 +17,7 @@ problems=0
 
 # Every shipped native binary must resolve its libraries, symbol versions included, on this distro. Exception: .NET's
 # LTTng trace provider, which the runtime loads only when LTTng is installed.
-for f in /usr/lib/wadsmith/wadsmith /usr/lib/wadsmith/*.so*; do
+for f in /usr/lib/wadsmith/wadsmith /usr/lib/wadsmith/wadsmith-cli /usr/lib/wadsmith/*.so*; do
     case $(basename "$f") in libcoreclrtraceptprovider.so) continue ;; esac
     bad=$(ldd "$f" 2>&1 | grep -E "not found|version .* not found" || true)
     if [ -n "$bad" ]; then
@@ -31,6 +31,8 @@ done
 # The installed command, not only the payload: /usr/bin/wadsmith --version.
 v=$(/usr/bin/wadsmith --version 2>&1 | head -1)
 case $v in WadSmith*) echo "ok   /usr/bin/wadsmith --version: $v" ;; *) echo "FAIL /usr/bin/wadsmith --version said: $v"; problems=1 ;; esac
+v=$(/usr/bin/wadsmith-cli --version 2>&1 | head -1)
+case $v in *0.*) echo "ok   /usr/bin/wadsmith-cli --version: $v" ;; *) echo "FAIL /usr/bin/wadsmith-cli --version said: $v"; problems=1 ;; esac
 
 xvfb-run -a /tmp/smoke-test.sh /tmp/wadsmith.deb || problems=1
 exit $problems

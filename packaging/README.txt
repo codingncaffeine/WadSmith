@@ -14,6 +14,7 @@ Your game files are only ever read. Your maps live in your own project folders.
 Options
   wadsmith --portable DIR   keep settings, logs and the asset library in DIR
   wadsmith --version        print the version and licence
+  wadsmith-cli help         the command-line tools: extract a game's pictures, sounds and music, remix a map, and more
 
 WadSmith is free software under the GNU General Public License, version 3 or later (LICENSE).
 https://github.com/codingncaffeine/WadSmith

@@ -43,6 +43,7 @@ smoke_one() {
     n=$(find "$payload" -maxdepth 1 -name '*.dll' | wc -l)
     if (( n < MIN_ASSEMBLIES )); then fail "only $n managed assemblies (expected >= $MIN_ASSEMBLIES)"; else ok "$n managed assemblies"; fi
     for f in wadsmith.dll WadSmith.Core.dll WadSmith.Editor.dll wadsmith.runtimeconfig.json wadsmith.deps.json \
+             wadsmith-cli wadsmith-cli.dll wadsmith-cli.runtimeconfig.json wadsmith-cli.deps.json \
              libcoreclr.so libhostfxr.so libSkiaSharp.so libHarfBuzzSharp.so; do
         [[ -f $payload/$f ]] || fail "$f missing"
     done
@@ -52,6 +53,9 @@ smoke_one() {
     local version
     version=$("$payload/wadsmith" --version 2>&1 | head -1)
     [[ $version == WadSmith* ]] && ok "--version: $version" || fail "--version said: $version"
+    version=$("$payload/wadsmith-cli" --version 2>&1 | head -1)
+    [[ $version == *0.* ]] && ok "wadsmith-cli --version: $version" || fail "wadsmith-cli --version said: $version"
+    "$payload/wadsmith-cli" help > "$tmp/cli-help.txt" 2>&1 && grep -q extract "$tmp/cli-help.txt" && ok "wadsmith-cli lists its commands" || fail "wadsmith-cli help: $(head -3 "$tmp/cli-help.txt" | tr '\n' ' ')"
 
     # Launch: a private profile, wait for the window, stay up, quit on SIGTERM.
     local profile=$tmp/profile log pid code

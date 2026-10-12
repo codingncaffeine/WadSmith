@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the Linux release artifacts into packaging/out:
-#   WadSmith-<ver>-linux-x64.tar.gz   self-contained, extract anywhere, run ./wadsmith
+#   WadSmith-<ver>-linux-x64.tar.gz   self-contained, extract anywhere, run ./wadsmith (and ./wadsmith-cli)
 #   wadsmith_<ver>_amd64.deb          system install (/usr/lib/wadsmith, /usr/bin/wadsmith)
 # The version is VersionPrefix in Directory.Build.props. Check every artifact with packaging/smoke-test.sh
 # and the .deb with packaging/deb-install-test.sh before it is released.
@@ -14,10 +14,13 @@ PUB=$OUT/publish
 rm -rf "$OUT" && mkdir -p "$PUB"
 
 # Stale obj/ output can publish XAML that was never compiled: every release starts from clean trees.
-for p in src/WadSmith src/WadSmith.Editor src/WadSmith.Core; do rm -rf "$p/bin" "$p/obj"; done
+for p in src/WadSmith src/WadSmith.Cli src/WadSmith.Editor src/WadSmith.Core; do rm -rf "$p/bin" "$p/obj"; done
 
 echo "── publish v$VER (self-contained linux-x64)"
 dotnet publish src/WadSmith/WadSmith.csproj -c Release -r linux-x64 --self-contained true \
+    -p:VersionPrefix="$VER" -o "$PUB" -v q --nologo
+# The command-line tool beside it, sharing the runtime and the WadSmith libraries (`wadsmith --help` points to it).
+dotnet publish src/WadSmith.Cli/WadSmith.Cli.csproj -c Release -r linux-x64 --self-contained true \
     -p:VersionPrefix="$VER" -o "$PUB" -v q --nologo
 
 # The views must be compiled into the app; a publish that fell back to loading XAML at run time is not shipped.
@@ -46,7 +49,11 @@ cat > "$DEB/usr/bin/wadsmith" <<'WRAP'
 #!/bin/sh
 exec /usr/lib/wadsmith/wadsmith "$@"
 WRAP
-chmod 755 "$DEB/usr/bin/wadsmith"
+cat > "$DEB/usr/bin/wadsmith-cli" <<'WRAP'
+#!/bin/sh
+exec /usr/lib/wadsmith/wadsmith-cli "$@"
+WRAP
+chmod 755 "$DEB/usr/bin/wadsmith" "$DEB/usr/bin/wadsmith-cli"
 cp src/WadSmith/Assets/icon.png "$DEB/usr/share/icons/hicolor/512x512/apps/wadsmith.png"
 cp packaging/io.github.codingncaffeine.WadSmith.desktop "$DEB/usr/share/applications/"
 INSTALLED_KB=$(du -sk "$DEB/usr" | cut -f1)
