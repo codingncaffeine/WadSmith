@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -358,6 +358,47 @@ foreach (var pose in poses)
                 editor.Session.Selection.Set(room, monster);
                 Pump(2.5);
                 Save("editor-3d-selected");
+                break;
+            }
+
+            if (pose == "editor-draw")
+            {
+                // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
+                // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
+                // one inside it.
+                view.ZoomBy(0.45);
+                Pump(0.3);
+                view.Focus();
+                window.KeyPress(Avalonia.Input.Key.R, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.R, "r");
+                Pump(0.2);
+                Avalonia.Point At(double x, double y) => view.TranslatePoint(view.ToScreen(new WadSmith.Editor.Geometry.MapPoint(x, y)), window)!.Value;
+                void Drag((double X, double Y) a, (double X, double Y) b, string? midShot)
+                {
+                    window.MouseMove(At(a.X, a.Y), Avalonia.Input.RawInputModifiers.None);
+                    window.MouseDown(At(a.X, a.Y), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    for (var k = 1; k <= 10; k++)
+                    {
+                        window.MouseMove(At(a.X + (b.X - a.X) * k / 10, a.Y + (b.Y - a.Y) * k / 10), Avalonia.Input.RawInputModifiers.LeftMouseButton);
+                        Pump(0.02);
+                    }
+
+                    if (midShot is not null) Save(midShot);
+                    window.MouseUp(At(b.X, b.Y), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(1.0);
+                }
+
+                void Report(string step)
+                {
+                    var m = editor.Session.Map;
+                    Console.WriteLine($"draw {step}: tool {editor.Tool}, {m.Sectors.Count(s => s.OnMap)} areas, {m.Lines.Count(l => l.OnMap)} walls, {m.Lines.Count(l => l.OnMap && l.Back is not null)} between areas, {editor.Session.Selection.Count} selected, undo '{editor.Session.History.UndoLabel}', status '{editor.Status}'");
+                }
+
+                Report("before");
+                Drag((256, -256), (768, 256), "editor-drawing");
+                Report("beside");
+                Drag((448, -64), (576, 64), null);
+                Report("inside");
+                Save("editor-draw");
                 break;
             }
 

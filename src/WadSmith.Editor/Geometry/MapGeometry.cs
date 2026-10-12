@@ -22,6 +22,7 @@ public sealed class MapGeometry
 
     private readonly MapPoint[][][] _loops;
     private readonly (double MinX, double MinY, double MaxX, double MaxY)[] _bounds;
+    private readonly (double MinX, double MinY, double MaxX, double MaxY)?[] _wallBounds;
     private readonly (double MinX, double MinY, double MaxX, double MaxY) _extent;
     private readonly SpatialGrid _lines;
     private readonly SpatialGrid _vertices;
@@ -31,7 +32,7 @@ public sealed class MapGeometry
     private MapGeometry(MapFrame frame)
     {
         Frame = frame;
-        (_loops, _bounds) = TraceOutlines(frame);
+        (_loops, _bounds, _wallBounds) = TraceOutlines(frame);
         _extent = ExtentOf(frame);
         foreach (var sector in frame.Sectors)
         {
@@ -95,6 +96,42 @@ public sealed class MapGeometry
         }
 
         return best;
+    }
+
+    /// <summary>The bounds of every wall with a face in the area in <paramref name="slot"/>, closed outline or not; null for an area without walls.</summary>
+    public (double MinX, double MinY, double MaxX, double MaxY)? WallBoundsAt(int slot) => slot >= 0 && slot < _wallBounds.Length ? _wallBounds[slot] : null;
+
+    /// <summary>Every wall whose box meets the box given, each once.</summary>
+    public IReadOnlyList<Line> LinesIn(double minX, double minY, double maxX, double maxY)
+    {
+        var found = new List<Line>();
+        var seen = new HashSet<int>();
+        foreach (var i in _lines.Near(minX, minY, maxX, maxY))
+        {
+            var l = Frame.Lines[i];
+            if (l.Element is null || !seen.Add(i)) continue;
+            var a = Frame.Vertices[l.V1];
+            var b = Frame.Vertices[l.V2];
+            if (Math.Max(a.X, b.X) < minX || Math.Min(a.X, b.X) > maxX || Math.Max(a.Y, b.Y) < minY || Math.Min(a.Y, b.Y) > maxY) continue;
+            found.Add(l.Element);
+        }
+
+        return found;
+    }
+
+    /// <summary>Every corner inside the box given, each once.</summary>
+    public IReadOnlyList<Vertex> VerticesIn(double minX, double minY, double maxX, double maxY)
+    {
+        var found = new List<Vertex>();
+        var seen = new HashSet<int>();
+        foreach (var i in _vertices.Near(minX, minY, maxX, maxY))
+        {
+            var v = Frame.Vertices[i];
+            if (v.Element is null || !seen.Add(i) || v.X < minX || v.X > maxX || v.Y < minY || v.Y > maxY) continue;
+            found.Add(v.Element);
+        }
+
+        return found;
     }
 
     /// <summary>The wall nearest the point within <paramref name="radius"/> map units.</summary>
@@ -227,7 +264,7 @@ public sealed class MapGeometry
     }
 
     /// <summary>Each area's loops and bounds, by area slot.</summary>
-    private static (MapPoint[][][] Loops, (double, double, double, double)[] Bounds) TraceOutlines(MapFrame frame)
+    private static (MapPoint[][][] Loops, (double, double, double, double)[] Bounds, (double, double, double, double)?[] WallBounds) TraceOutlines(MapFrame frame)
     {
         var sectorCount = frame.Sectors.Count;
 
@@ -264,6 +301,7 @@ public sealed class MapGeometry
 
         var loops = new MapPoint[sectorCount][][];
         var bounds = new (double, double, double, double)[sectorCount];
+        var wallBounds = new (double, double, double, double)?[sectorCount];
         var keep = new List<int>();
         var chain = new List<MapPoint>();
         for (var s = 0; s < sectorCount; s++)
@@ -271,6 +309,15 @@ public sealed class MapGeometry
             int s0 = start[s], s1 = start[s + 1];
             loops[s] = NoLoops;
             if (s1 == s0) continue;
+            double wx0 = double.MaxValue, wy0 = double.MaxValue, wx1 = double.MinValue, wy1 = double.MinValue;
+            for (var e = s0; e < s1; e++)
+            {
+                var v = frame.Vertices[from[e]];
+                var w = frame.Vertices[to[e]];
+                (wx0, wy0, wx1, wy1) = (Math.Min(wx0, Math.Min(v.X, w.X)), Math.Min(wy0, Math.Min(v.Y, w.Y)), Math.Max(wx1, Math.Max(v.X, w.X)), Math.Max(wy1, Math.Max(v.Y, w.Y)));
+            }
+
+            wallBounds[s] = (wx0, wy0, wx1, wy1);
 
             // A self-referencing wall (the same area on both sides) adds nothing to the outline.
             keep.Clear();
@@ -373,7 +420,7 @@ public sealed class MapGeometry
             bounds[s] = (x0, y0, x1, y1);
         }
 
-        return (loops, bounds);
+        return (loops, bounds, wallBounds);
     }
 }
 

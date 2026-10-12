@@ -41,6 +41,7 @@ public sealed class EditorSession : IDisposable
     private bool _disposed;
 
     private readonly Func<MapFrame, byte[]?>? _picture;
+    private IReadOnlyList<MapPoint>? _waitingShape;
 
     private EditorSession(Project project, string slot, EditorMap map, MapGeometry geometry, SessionHooks hooks)
     {
@@ -61,6 +62,11 @@ public sealed class EditorSession : IDisposable
             if (_disposed || g.Version <= _geometry.Version) return;
             _geometry = g;
             GeometryChanged?.Invoke();
+            if (_waitingShape is { } shape && g.Version == Map.Version)
+            {
+                _waitingShape = null;
+                DrawRoom(shape);
+            }
         }, "the map's shapes");
         map.Changed += _ =>
         {
@@ -91,6 +97,41 @@ public sealed class EditorSession : IDisposable
     public Selection Selection { get; } = new();
 
     public SaveState State { get; private set; } = SaveState.Saved;
+
+    /// <summary>What new rooms look like in this project's game.</summary>
+    public Look Look => Core.Games.GameCatalog.Get(Project.Info.Game)?.Engine is { } engine ? Look.For(engine) : Look.For("doom");
+
+    /// <summary>Raised with a sentence for the status strip when something the user did could not be done as asked.</summary>
+    public event Action<string>? Notice;
+
+    /// <summary>
+    /// Draws a shape as a room through the history (one undo step) and selects the areas it made. Works
+    /// only near the shape, so it is quick on any map; if the map's shapes are still being rebuilt after
+    /// the last change, the room is drawn the moment they are ready.
+    /// </summary>
+    public void DrawRoom(IReadOnlyList<MapPoint> shape)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _waitingShape = shape;
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<Sector> made = [];
+            var geometry = _geometry;
+            var look = Look;
+            History.Record("Draw a room", e => made = ShapeDrawing.Draw(e, geometry, shape, look));
+            if (made.Count > 0) Selection.Set([.. made]);
+            else Notice?.Invoke("That room is already there, exactly as drawn.");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Log.Warn($"Drawing a room in {Slot} failed: {ex.Message}");
+            Notice?.Invoke($"That room could not be drawn there. {ex.Message}");
+        }
+    }
 
     /// <summary>The last save's failure, in a sentence.</summary>
     public string? LastError { get; private set; }

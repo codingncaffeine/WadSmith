@@ -78,8 +78,14 @@ internal sealed class SelectionOverlay
     }
 }
 
+/// <summary>
+/// A room being drawn: the rectangle between two corners in map units (null before the drag starts),
+/// the point the pointer snaps to, and the grid step it snaps to.
+/// </summary>
+internal sealed record DrawPreview(MapPoint? From, MapPoint? To, MapPoint? Snap, double Step);
+
 /// <summary>Draws the map on the render thread through a Skia lease.</summary>
-internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null) : ICustomDrawOperation
+internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null) : ICustomDrawOperation
 {
     public Rect Bounds { get; } = bounds;
 
@@ -97,7 +103,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         using var lease = feature.Lease();
         FrameStats.Gpu = lease.GrContext is not null;
-        new MapPainter(snapshot, selection, hover, view, camera).Paint(lease.SkCanvas, lease.GrContext is not null);
+        new MapPainter(snapshot, selection, hover, view, camera, preview).Paint(lease.SkCanvas, lease.GrContext is not null);
         lease.SkCanvas.Flush();
         FrameStats.Draw(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
@@ -107,9 +113,10 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
 /// Paints the map onto any Skia canvas: the window's (through <see cref="MapDrawOperation"/>) or an
 /// offscreen picture such as a version's thumbnail.
 /// </summary>
-internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null)
+internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null)
 {
     private static readonly SKColor Background = new(0x0A, 0x07, 0x08);
+    private static readonly SKColor GridFine = new(0x15, 0x10, 0x11);
     private static readonly SKColor GridMinor = new(0x1C, 0x15, 0x16);
     private static readonly SKColor GridMajor = new(0x2E, 0x24, 0x25);
     private static readonly SKColor Accent = new(0xE0, 0x58, 0x2A);
@@ -130,6 +137,7 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
 
         if (snapshot is null)
         {
+            DrawPreview(canvas);
             canvas.Restore();
             return;
         }
@@ -175,7 +183,32 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
 
         DrawPoints(canvas, snapshot);
         if (camera is { } eye) DrawCamera(canvas, eye);
+        DrawPreview(canvas);
         canvas.Restore();
+    }
+
+    /// <summary>The room being drawn, filled faintly with a solid edge, and a cross where the pointer snaps (screen pixels).</summary>
+    private void DrawPreview(SKCanvas canvas)
+    {
+        if (preview is null) return;
+        float Sx(double x) => (float)((x - view.Cx) * view.Zoom + view.Width / 2);
+        float Sy(double y) => (float)(view.Height / 2 - (y - view.Cy) * view.Zoom);
+        if (preview is { From: { } a, To: { } b })
+        {
+            var rect = SKRect.Create(Math.Min(Sx(a.X), Sx(b.X)), Math.Min(Sy(a.Y), Sy(b.Y)), Math.Abs(Sx(b.X) - Sx(a.X)), Math.Abs(Sy(b.Y) - Sy(a.Y)));
+            using var fill = new SKPaint { Style = SKPaintStyle.Fill, Color = Accent.WithAlpha(0x38), IsAntialias = true };
+            using var edge = new SKPaint { Style = SKPaintStyle.Stroke, Color = Accent, StrokeWidth = 2, IsAntialias = true };
+            canvas.DrawRect(rect, fill);
+            canvas.DrawRect(rect, edge);
+        }
+
+        if (preview.Snap is { } s)
+        {
+            using var cross = new SKPaint { Style = SKPaintStyle.Stroke, Color = Ember, StrokeWidth = 1.5f, IsAntialias = true };
+            var (x, y) = (Sx(s.X), Sy(s.Y));
+            canvas.DrawLine(x - 7, y, x + 7, y, cross);
+            canvas.DrawLine(x, y - 7, x, y + 7, cross);
+        }
     }
 
     /// <summary>Where the 3D camera stands, as a wedge pointing the way it looks (screen pixels, so it reads at any zoom).</summary>
@@ -200,7 +233,12 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
 
     private void DrawGrid(SKCanvas canvas)
     {
-        foreach (var (step, colour) in new[] { (64.0, GridMinor), (512.0, GridMajor) })
+        // While a room is being drawn, the finer grid it snaps to shows too, fainter than the usual one.
+        var steps = new List<(double, SKColor)>();
+        if (preview is { Step: < 64 and > 0 } p) steps.Add((p.Step, GridFine));
+        steps.Add((64.0, GridMinor));
+        steps.Add((512.0, GridMajor));
+        foreach (var (step, colour) in steps)
         {
             if (step * view.Zoom < 10) continue;
             using var paint = new SKPaint { Color = colour, StrokeWidth = 1, IsAntialias = false };

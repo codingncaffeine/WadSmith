@@ -22,6 +22,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         ("zoom", "Tip: scroll to zoom in and out; drag with the right mouse button to move around. Home shows the whole map."),
         ("select", "Tip: click a room, a wall or a thing to see what it is in the Inspector on the right."),
         ("edit", "Tip: change a number in the Inspector, such as a floor height, and watch the map follow."),
+        ("draw", "Tip: choose Room at the top left of the map (or press R) and drag to draw a room. Drawn against another room, the two share a wall."),
         ("undo", "Tip: Ctrl+Z takes back the last change and Ctrl+Y brings it back. Nothing needs saving; WadSmith keeps every change."),
         ("heights", "Tip: the view buttons at the top show floors, ceilings, heights as colours, or just the walls."),
         ("orbit", "Tip: in the 3D view, drag to turn around the map, right-drag to move it, and scroll to come closer."),
@@ -31,6 +32,8 @@ internal sealed partial class EditorViewModel : ObservableObject
     private readonly AppServices _services;
     private readonly MainViewModel _main;
     private string _hoverText = "";
+    private string _drawingText = "";
+    private string _notice = "";
     private bool _goingBack;
 
     public EditorViewModel(AppServices services, EditorSession session, MainViewModel main, string? message = null, bool showVersions = false)
@@ -46,6 +49,11 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.StateChanged += _ => UpdateSaveText();
         session.Selection.Changed += () => Learned("select");
         session.GeometryChanged += UpdateHeights;
+        session.Notice += text =>
+        {
+            _notice = text;
+            UpdateStatus();
+        };
         UpdateHeights();
         UpdateSaveText();
         UpdateStatus();
@@ -117,6 +125,50 @@ internal sealed partial class EditorViewModel : ObservableObject
             else OnPropertyChanged();
         }
     }
+
+    /// <summary>What a left drag on the plan does (V selects, R draws rooms).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool))]
+    private Canvas.EditorTool _tool;
+
+    public bool IsSelectTool
+    {
+        get => Tool == Canvas.EditorTool.Select;
+        set
+        {
+            if (value) Tool = Canvas.EditorTool.Select;
+            else OnPropertyChanged();
+        }
+    }
+
+    public bool IsRoomTool
+    {
+        get => Tool == Canvas.EditorTool.Room;
+        set
+        {
+            if (value) Tool = Canvas.EditorTool.Room;
+            else OnPropertyChanged();
+        }
+    }
+
+    partial void OnToolChanged(Canvas.EditorTool value)
+    {
+        _notice = "";
+        _drawingText = "";
+        UpdateStatus();
+    }
+
+    /// <summary>Called by the canvas while a room is being drawn, with its size (null when the drawing ends).</summary>
+    public void Drawing((double Width, double Height)? size, double step)
+    {
+        _drawingText = size is { } s
+            ? string.Create(CultureInfo.InvariantCulture, $"Room {s.Width:0} × {s.Height:0} · let go to draw it, Esc to stop")
+            : "";
+        _gridStep = step;
+        UpdateStatus();
+    }
+
+    private double _gridStep = 64;
 
     partial void OnShowVersionsChanged(bool value)
     {
@@ -259,7 +311,9 @@ internal sealed partial class EditorViewModel : ObservableObject
         RedoCommand.NotifyCanExecuteChanged();
         UndoTip = Session.History.UndoLabel is { } u ? $"Undo: {u} (Ctrl+Z)" : "Nothing to undo";
         RedoTip = Session.History.RedoLabel is { } r ? $"Redo: {r} (Ctrl+Y)" : "Nothing to redo";
+        _notice = "";
         Learned("edit");
+        if (Session.History.UndoLabel == "Draw a room") Learned("draw");
     }
 
     /// <summary>The heights legend's words, from the shapes the worker built (no scan of the map here).</summary>
@@ -356,9 +410,21 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     private void UpdateStatus()
     {
+        if (_drawingText.Length > 0 || _notice.Length > 0)
+        {
+            Status = _drawingText.Length > 0 ? _drawingText : _notice;
+            return;
+        }
+
         if (_hoverText.Length > 0)
         {
             Status = _hoverText;
+            return;
+        }
+
+        if (Tool == Canvas.EditorTool.Room)
+        {
+            Status = string.Create(CultureInfo.InvariantCulture, $"Drag to draw a room. Corners snap to the grid ({_gridStep:0} units) and to corners nearby; drawn against a room, the two share a wall. Esc goes back to Select.");
             return;
         }
 

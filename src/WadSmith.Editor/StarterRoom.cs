@@ -10,17 +10,12 @@ public static class StarterRoom
 {
     public static MapModel Create(string slot, string engine)
     {
-        var (floor, ceiling, wall) = engine switch
-        {
-            "heretic" => ("FLOOR03", "FLAT520", "GRSTNPB"),
-            "hexen" => ("F_011", "F_032", "FOREST01"),
-            "strife" => ("F_FLOOR1", "F_CEIL1", "BRKGRY01"),
-            _ => ("FLOOR4_8", "CEIL3_5", "STARTAN3"),
-        };
+        var look = Look.For(engine);
+        var (floor, ceiling, wall) = (look.Floor, look.Ceiling, look.Wall);
 
         var m = new MapModel { Name = slot, Namespace = "zdoom" };
         m.Vertices.AddRange([new MapVertex { X = -256, Y = -256 }, new MapVertex { X = 256, Y = -256 }, new MapVertex { X = 256, Y = 256 }, new MapVertex { X = -256, Y = 256 }]);
-        m.Sectors.Add(new MapSector { FloorHeight = 0, CeilingHeight = 128, FloorTexture = floor, CeilingTexture = ceiling, Light = 192 });
+        m.Sectors.Add(new MapSector { FloorHeight = look.FloorHeight, CeilingHeight = look.CeilingHeight, FloorTexture = floor, CeilingTexture = ceiling, Light = look.Light });
 
         // Walls run clockwise around the room so the room is on each wall's front (right-hand) side.
         int[] order = [0, 3, 2, 1];

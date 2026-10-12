@@ -43,6 +43,38 @@ public sealed class EditorMap
     /// <summary>The map as of <see cref="Version"/>, for any thread to read.</summary>
     public MapFrame Frame => Volatile.Read(ref _frame) ?? throw new InvalidOperationException("The map has no frame yet.");
 
+    /// <summary>
+    /// Puts an element on the map: a new one at the end of its list, one an undo took off back in its
+    /// own place. Only edits call this, inside the history, which then republishes it.
+    /// </summary>
+    internal void Put(Element e)
+    {
+        if (e.OnMap) return;
+        if (e.Home < 0)
+        {
+            e.Home = e switch
+            {
+                Vertex v => Append(Vertices, v),
+                Line l => Append(Lines, l),
+                Side s => Append(Sides, s),
+                Sector s => Append(Sectors, s),
+                Thing t => Append(Things, t),
+                _ => throw new ArgumentException($"{e.GetType().Name} cannot be put on a map.", nameof(e)),
+            };
+        }
+
+        e.Slot = e.Home;
+
+        static int Append<T>(List<T> list, T item)
+        {
+            list.Add(item);
+            return list.Count - 1;
+        }
+    }
+
+    /// <summary>Takes an element off the map; its place stays empty, so no other element moves.</summary>
+    internal static void Take(Element e) => e.Slot = -1;
+
     /// <summary>Records a change to <paramref name="touched"/>: a new version and a frame with their new values.</summary>
     internal void Touch(IEnumerable<Element> touched)
     {
@@ -53,25 +85,33 @@ public sealed class EditorMap
         ChunkedList<SideFrame>.Builder? sides = null;
         ChunkedList<SectorFrame>.Builder? sectors = null;
         ChunkedList<ThingFrame>.Builder? things = null;
+
+        // An element put on the map for the first time grows its list; one taken off leaves its place empty.
+        static void Write<T>(ChunkedList<T>.Builder list, int home, T value)
+        {
+            while (list.Count <= home) list.Add(default!);
+            list[home] = value;
+        }
+
         foreach (var e in touched)
         {
-            if (!e.OnMap) continue;
+            if (e.Home < 0) continue;
             switch (e)
             {
                 case Vertex v:
-                    (vertices ??= f.Vertices.ToBuilder())[v.Slot] = MapFrame.Of(v);
+                    Write(vertices ??= f.Vertices.ToBuilder(), v.Home, v.OnMap ? MapFrame.Of(v) : default);
                     break;
                 case Line l:
-                    (lines ??= f.Lines.ToBuilder())[l.Slot] = MapFrame.Of(l);
+                    Write(lines ??= f.Lines.ToBuilder(), l.Home, l.OnMap ? MapFrame.Of(l) : default);
                     break;
                 case Side sd:
-                    (sides ??= f.Sides.ToBuilder())[sd.Slot] = MapFrame.Of(sd);
+                    Write(sides ??= f.Sides.ToBuilder(), sd.Home, sd.OnMap ? MapFrame.Of(sd) : default);
                     break;
                 case Sector sc:
-                    (sectors ??= f.Sectors.ToBuilder())[sc.Slot] = MapFrame.Of(sc);
+                    Write(sectors ??= f.Sectors.ToBuilder(), sc.Home, sc.OnMap ? MapFrame.Of(sc) : default);
                     break;
                 case Thing t:
-                    (things ??= f.Things.ToBuilder())[t.Slot] = MapFrame.Of(t);
+                    Write(things ??= f.Things.ToBuilder(), t.Home, t.OnMap ? MapFrame.Of(t) : default);
                     break;
             }
         }
@@ -99,7 +139,7 @@ public sealed class EditorMap
         static void Number<TElement>(List<TElement> list)
             where TElement : Element
         {
-            for (var i = 0; i < list.Count; i++) list[i].Slot = i;
+            for (var i = 0; i < list.Count; i++) list[i].Slot = list[i].Home = i;
         }
 
         Number(Vertices);
@@ -114,9 +154,10 @@ public sealed class EditorMap
     internal MapFrame FrameFromScratch()
     {
         static ChunkedList<TFrame> Build<TElement, TFrame>(List<TElement> list, Func<TElement, TFrame> of)
+            where TElement : Element
         {
             var b = ChunkedList<TFrame>.Empty.ToBuilder();
-            foreach (var e in list) b.Add(of(e));
+            foreach (var e in list) b.Add(e.OnMap ? of(e) : default!);
             return b.ToList();
         }
 

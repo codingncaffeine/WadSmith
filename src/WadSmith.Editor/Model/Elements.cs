@@ -18,6 +18,12 @@ public abstract class Element
     /// <summary>Where the element sits in the map's <see cref="MapFrame"/> lists; -1 when it is not on the map.</summary>
     public int Slot { get; internal set; } = -1;
 
+    /// <summary>
+    /// The place the element keeps in its list from the first time it is put on the map, also while an
+    /// undo has taken it off (so a redo puts it back where it was); -1 before that.
+    /// </summary>
+    internal int Home { get; set; } = -1;
+
     /// <summary>Whether the element is on the map (an undone addition is not).</summary>
     public bool OnMap => Slot >= 0;
 

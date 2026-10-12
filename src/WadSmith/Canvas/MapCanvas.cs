@@ -9,16 +9,28 @@ using WadSmith.Editor.Model;
 
 namespace WadSmith.App.Canvas;
 
+/// <summary>What a left drag on the plan does.</summary>
+internal enum EditorTool
+{
+    /// <summary>Click to select (Shift adds or removes).</summary>
+    Select,
+
+    /// <summary>Drag a rectangle to draw a room.</summary>
+    Room,
+}
+
 /// <summary>
 /// The 2D map view. Wheel zooms at the pointer; middle or right drag, or Space with left drag, pans;
-/// a click selects the thing, corner, wall or area under the pointer (Shift adds or removes); Home
-/// fits the map. The picture and the selection's outline are built on workers from the session's
-/// geometry and drawn on the render thread, so the UI thread only takes input and updates the view.
+/// with the Select tool a click selects the thing, corner, wall or area under the pointer (Shift adds
+/// or removes); with the Room tool a drag draws a room, snapped to corners and to the grid; Home fits
+/// the map. The picture and the selection's outline are built on workers from the session's geometry
+/// and drawn on the render thread, so the UI thread only takes input and updates the view.
 /// </summary>
 internal sealed class MapCanvas : Control
 {
     public static readonly StyledProperty<EditorSession?> SessionProperty = AvaloniaProperty.Register<MapCanvas, EditorSession?>(nameof(Session));
     public static readonly StyledProperty<MapViewMode> ModeProperty = AvaloniaProperty.Register<MapCanvas, MapViewMode>(nameof(Mode));
+    public static readonly StyledProperty<EditorTool> ToolProperty = AvaloniaProperty.Register<MapCanvas, EditorTool>(nameof(Tool), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
     private readonly LatestOnWorker<(EditorSession Session, CanvasSnapshot Picture)> _pictures;
     private readonly LatestOnWorker<(EditorSession Session, long Generation, SelectionOverlay Outline)> _outlines;
@@ -35,6 +47,13 @@ internal sealed class MapCanvas : Control
     private Point? _panFrom;
     private bool _spaceDown;
     private Element? _hover;
+    private MapPoint? _drawFrom;
+    private MapPoint? _drawTo;
+    private MapPoint? _snap;
+
+    /// <summary>The map version a drawn room was added in; its rectangle stays on screen until the picture shows it.</summary>
+    private long _drawnIn = -1;
+    private (MapPoint From, MapPoint To) _justDrawn;
 
     static MapCanvas()
     {
@@ -71,8 +90,18 @@ internal sealed class MapCanvas : Control
         set => SetValue(ModeProperty, value);
     }
 
+    /// <summary>What a left drag does: select or draw a room.</summary>
+    public EditorTool Tool
+    {
+        get => GetValue(ToolProperty);
+        set => SetValue(ToolProperty, value);
+    }
+
     /// <summary>Raised when the element under the pointer changes (null over empty space).</summary>
     public event Action<Element?, MapPoint>? HoverChanged;
+
+    /// <summary>Raised while a room is being drawn, with its size in map units (null when the drawing ends).</summary>
+    public event Action<(double Width, double Height)?, double>? Drawing;
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -80,6 +109,14 @@ internal sealed class MapCanvas : Control
         if (change.Property == ModeProperty)
         {
             RequestPicture();
+            return;
+        }
+
+        if (change.Property == ToolProperty)
+        {
+            CancelDrawing();
+            _snap = null;
+            InvalidateVisual();
             return;
         }
 
@@ -169,12 +206,60 @@ internal sealed class MapCanvas : Control
 
     private MapPoint ToMap(Point p) => new(_cx + (p.X - Bounds.Width / 2) / _zoom, _cy - (p.Y - Bounds.Height / 2) / _zoom);
 
+    /// <summary>Where a map point is on the control (for tools that drive it with pointer events).</summary>
+    internal Point ToScreen(MapPoint m) => new((m.X - _cx) * _zoom + Bounds.Width / 2, Bounds.Height / 2 - (m.Y - _cy) * _zoom);
+
     public override void Render(DrawingContext context)
     {
         if (Session is null) return;
         if (!_fitted) ComputeFit();
-        var hover = _hover is not null && !Session.Selection.Contains(_hover) ? _hoverOutline : null;
-        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera));
+        var hover = _hover is not null && !Session.Selection.Contains(_hover) && Tool == EditorTool.Select ? _hoverOutline : null;
+        // A room just drawn stays drawn as a rectangle until the picture with it arrives from the worker.
+        if (_drawnIn >= 0 && _snapshot is { } shown && shown.Version >= _drawnIn) _drawnIn = -1;
+        var (from, to) = _drawFrom is not null || _drawnIn < 0 ? (_drawFrom, _drawTo) : (_justDrawn.From, (MapPoint?)_justDrawn.To);
+        var preview = Tool == EditorTool.Room || _drawnIn >= 0 ? new DrawPreview(from, to, Tool == EditorTool.Room ? _drawFrom is null ? _snap : _drawTo : null, Tool == EditorTool.Room ? GridStep() : 0) : null;
+        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview));
+        if (_drawFrom is { } a && _drawTo is { } b && (a.X != b.X || a.Y != b.Y)) DrawSize(context, a, b);
+    }
+
+    /// <summary>The room's size beside it, in map units, so rooms can be drawn to measure.</summary>
+    private void DrawSize(DrawingContext context, MapPoint a, MapPoint b)
+    {
+        var text = new FormattedText(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{Math.Abs(b.X - a.X):0} × {Math.Abs(b.Y - a.Y):0}"), System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 13, Brushes.White);
+        var x = (Math.Max(a.X, b.X) - _cx) * _zoom + Bounds.Width / 2 + 8;
+        var y = Bounds.Height / 2 - (Math.Max(a.Y, b.Y) - _cy) * _zoom - text.Height - 6;
+        x = Math.Clamp(x, 4, Math.Max(4, Bounds.Width - text.Width - 12));
+        y = Math.Clamp(y, 4, Math.Max(4, Bounds.Height - text.Height - 8));
+        context.FillRectangle(new SolidColorBrush(Color.FromArgb(0xD0, 0x0A, 0x07, 0x08)), new Rect(x - 5, y - 2, text.Width + 10, text.Height + 4), 4);
+        context.DrawText(text, new Point(x, y));
+    }
+
+    /// <summary>
+    /// The grid a drawn corner snaps to: 64 units, halved while that still leaves 12 pixels between
+    /// lines (down to 8), so a closer view draws finer rooms.
+    /// </summary>
+    private double GridStep()
+    {
+        var step = 64.0;
+        while (step > 8 && step / 2 * _zoom >= 12) step /= 2;
+        return step;
+    }
+
+    /// <summary>Where a corner drawn at this spot lands: on a corner within a few pixels, else on the grid.</summary>
+    private MapPoint Snap(Point p)
+    {
+        var m = ToMap(p);
+        if (Session?.Geometry.VertexNear(m, 8 / _zoom) is { } v) return new MapPoint(v.X, v.Y);
+        var step = GridStep();
+        return new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step);
+    }
+
+    private void CancelDrawing()
+    {
+        if (_drawFrom is null) return;
+        _drawFrom = _drawTo = null;
+        Drawing?.Invoke(null, GridStep());
+        InvalidateVisual();
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -193,10 +278,29 @@ internal sealed class MapCanvas : Control
     {
         Focus();
         var props = e.GetCurrentPoint(this).Properties;
+        if (_drawFrom is not null && (props.IsRightButtonPressed || props.IsMiddleButtonPressed))
+        {
+            // Another button while drawing lets go of the room.
+            CancelDrawing();
+            e.Pointer.Capture(null);
+            e.Handled = true;
+            return;
+        }
+
         if (props.IsMiddleButtonPressed || props.IsRightButtonPressed || (props.IsLeftButtonPressed && _spaceDown))
         {
             _panFrom = e.GetPosition(this);
             e.Pointer.Capture(this);
+            e.Handled = true;
+            return;
+        }
+
+        if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Room)
+        {
+            _drawFrom = _drawTo = Snap(e.GetPosition(this));
+            e.Pointer.Capture(this);
+            Drawing?.Invoke((0, 0), GridStep());
+            InvalidateVisual();
             e.Handled = true;
             return;
         }
@@ -233,6 +337,21 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (Tool == EditorTool.Room)
+        {
+            var at = Snap(p);
+            if (_drawFrom is { } from2)
+            {
+                _drawTo = at;
+                Drawing?.Invoke((Math.Abs(at.X - from2.X), Math.Abs(at.Y - from2.Y)), GridStep());
+            }
+
+            _snap = at;
+            InvalidateVisual();
+            HoverChanged?.Invoke(null, at);
+            return;
+        }
+
         var hit = HitTest(p);
         if (!ReferenceEquals(hit, _hover))
         {
@@ -250,7 +369,21 @@ internal sealed class MapCanvas : Control
         {
             _panFrom = null;
             e.Pointer.Capture(null);
+            return;
         }
+
+        if (_drawFrom is not { } a || _drawTo is not { } b || e.InitialPressMouseButton != MouseButton.Left) return;
+        e.Pointer.Capture(null);
+        _drawFrom = _drawTo = null;
+        Drawing?.Invoke(null, GridStep());
+        InvalidateVisual();
+
+        // A drag too small to be a room (a click) draws nothing.
+        if (Math.Abs(b.X - a.X) < 1 || Math.Abs(b.Y - a.Y) < 1 || Session is not { } session) return;
+        MapPoint[] box = [new(a.X, a.Y), new(a.X, b.Y), new(b.X, b.Y), new(b.X, a.Y)];
+        session.DrawRoom(box);
+        _drawnIn = session.Map.Version;
+        _justDrawn = (a, b);
     }
 
     protected override void OnPointerExited(PointerEventArgs e)
@@ -274,8 +407,24 @@ internal sealed class MapCanvas : Control
                 FitMap();
                 e.Handled = true;
                 break;
+            case Key.Escape when _drawFrom is not null:
+                CancelDrawing();
+                e.Handled = true;
+                break;
+            case Key.Escape when Tool != EditorTool.Select:
+                Tool = EditorTool.Select;
+                e.Handled = true;
+                break;
             case Key.Escape:
                 Session?.Selection.Clear();
+                e.Handled = true;
+                break;
+            case Key.V when e.KeyModifiers == KeyModifiers.None:
+                Tool = EditorTool.Select;
+                e.Handled = true;
+                break;
+            case Key.R when e.KeyModifiers == KeyModifiers.None:
+                Tool = EditorTool.Room;
                 e.Handled = true;
                 break;
             case Key.OemPlus or Key.Add:

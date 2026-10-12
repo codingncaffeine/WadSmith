@@ -77,6 +77,30 @@ public sealed class History(EditorMap map)
         Moved?.Invoke();
     }
 
+    /// <summary>
+    /// Makes a structural change: <paramref name="build"/> changes the map step by step through the
+    /// edit it is given, and the result is recorded as one step of the history (nothing is recorded
+    /// when it changed nothing). If <paramref name="build"/> throws, every step it made is taken back.
+    /// </summary>
+    public StructureEdit Record(string label, Action<StructureEdit> build, long gesture = 0)
+    {
+        var edit = new StructureEdit(Map, label);
+        try
+        {
+            build(edit);
+        }
+        catch
+        {
+            // Taken back; the frame still learns of the places new elements took, so its lists stay in step with the map's.
+            edit.Abandon();
+            Map.Touch(edit.Touched);
+            throw;
+        }
+
+        if (!edit.IsEmpty) Run(edit, gesture);
+        return edit;
+    }
+
     public bool Undo()
     {
         if (_undo.Count == 0) return false;
