@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark" or "landmark-sheet" or "editor-explain" or "editor-tour":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-climb" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark" or "landmark-sheet" or "editor-explain" or "editor-tour":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -830,6 +830,48 @@ foreach (var pose in poses)
                 Console.WriteLine($"fogcal fog control: no fog term {Mean(fogged, new WadSmith.App.ThreeD.Lighting(bestVis, 0, 0)):0.0}; density ×3 {Mean(fogged, new WadSmith.App.ThreeD.Lighting(bestVis, bestBase * 3, bestDark * 3)):0.0}");
                 foreach (var s in plain.Concat(fogged)) File.WriteAllBytes(Path.Combine(output, $"fogcal-{s.Name}-ours.png"), WadSmith.App.ThreeD.Offscreen3D.RenderPng(s.Scene, resources, camera, 1024, 640, true, fit));
                 Console.WriteLine($"fogcal measured: {fit}");
+                break;
+            }
+
+            if (pose == "editor-climb")
+            {
+                // D27: a corridor drawn east of the starter room (floor 0) to a room raised to 64. The Inspector offers steps and a
+                // ramp; the ramp is made and seen, taken back, and steps made instead.
+                var session = editor.Session;
+                var view3d = window.GetVisualDescendants().OfType<WadSmith.App.ThreeD.View3D>().First();
+                for (var i = 0; i < 200 && (view3d.SceneVersion < 0 || !view3d.HasPicture); i++) Pump(0.05);
+                var told = new List<string>();
+                session.Notice += told.Add;
+                session.DrawRoom([new(256, -64), new(256, 64), new(384, 64), new(384, -64)]);
+                Pump(0.5);
+                session.DrawRoom([new(384, -192), new(384, 192), new(640, 192), new(640, -192)]);
+                Pump(0.5);
+                var high = session.Geometry.SectorAt(new WadSmith.Editor.Geometry.MapPoint(512, 0))!;
+                session.History.Record("Raise", e =>
+                {
+                    e.Set(high, x => x.FloorHeight, (x, v) => x.FloorHeight = v, 64);
+                    e.Set(high, x => x.CeilingHeight, (x, v) => x.CeilingHeight = v, 192);
+                });
+                Pump(0.8);
+                var corridor = session.Geometry.SectorAt(new WadSmith.Editor.Geometry.MapPoint(320, 0))!;
+                session.Selection.Set(corridor);
+                Pump(0.8);
+                string Offer() => string.Join(" | ", editor.Inspector.Rows.Where(r => r is ActionRow { Label: "Add steps" or "Make a ramp" } || r is InfoRow { Label: "Joins floors" }).Select(r => r is InfoRow info ? $"{r.Label}: {info.Value}" : r.Label));
+                Console.WriteLine($"climb offered: {Offer()}");
+                Save("editor-climb");
+                editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Make a ramp").Command.Execute(null);
+                Pump(1.0);
+                var plane = WadSmith.Editor.Scene.SlopePlane.Floor(corridor);
+                Console.WriteLine($"ramp: floor {plane?.Z(256, 0):0.##} at the low room, {plane?.Z(384, 0):0.##} at the high one, ceiling {corridor.CeilingHeight}; undo '{session.History.UndoLabel}'; offered now '{Offer()}'; told '{told.LastOrDefault()}'");
+                Save("editor-climb-ramp");
+                session.History.Undo();
+                Pump(0.8);
+                session.Selection.Set(corridor);
+                Pump(0.5);
+                editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Add steps").Command.Execute(null);
+                Pump(1.0);
+                Console.WriteLine($"steps: {string.Join(" ", session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().Select(x => x.FloorHeight).Order())}; undo '{session.History.UndoLabel}'; {editor.Problems.Summary}; told '{told.LastOrDefault()}'");
+                Save("editor-climb-steps");
                 break;
             }
 

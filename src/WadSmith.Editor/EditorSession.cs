@@ -1037,6 +1037,56 @@ public sealed class EditorSession : IDisposable
         }
     }
 
+    /// <summary>Cuts a room joining two floors too far apart into stairs from the low one to the high one (see <see cref="Climbs"/>), one undo step, and selects them; says why when it cannot.</summary>
+    public void AddSteps(Sector room)
+    {
+        if (!room.OnMap) return;
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => AddSteps(room);
+            return;
+        }
+
+        var geometry = _geometry;
+        if (Climbs.Find(geometry, room) is not { } climb) return;
+        if (Climbs.StairsRun(geometry, climb) is not { } run)
+        {
+            Notice?.Invoke("Steps are cut across a room square to the map's grid, four walls; make a ramp here, or draw the stairs with the Stairs tool.");
+            return;
+        }
+
+        try
+        {
+            (IReadOnlyList<Sector> Steps, string? Why) made = ([], null);
+            var look = Look;
+            History.Record("Add steps", e => made = Stairs.Make(e, geometry, run.From, run.To, look, alongX: run.AlongX));
+            if (made.Steps.Count > 0) Selection.Set([.. made.Steps]);
+            else if (made.Why is { } why) Notice?.Invoke(why);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Log.Warn($"Adding steps in {Slot} failed: {ex.Message}");
+            Notice?.Invoke($"Steps could not be added there. {ex.Message}");
+        }
+    }
+
+    /// <summary>Slopes the floor of a room joining two floors too far apart from the low one to the high one (see <see cref="Climbs.Ramp"/>), one undo step; says why when it cannot.</summary>
+    public void MakeRamp(Sector room)
+    {
+        if (!room.OnMap) return;
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => MakeRamp(room);
+            return;
+        }
+
+        var geometry = _geometry;
+        if (Climbs.Find(geometry, room) is not { } climb) return;
+        string? why = null;
+        History.Record("Make a ramp", e => why = Climbs.Ramp(e, geometry, climb));
+        if (why is not null) Notice?.Invoke(why);
+    }
+
     /// <summary>Makes a room a lift (see <see cref="Lifts.Make"/>), one undo step; says why when it cannot.</summary>
     public void MakeLift(Sector area)
     {

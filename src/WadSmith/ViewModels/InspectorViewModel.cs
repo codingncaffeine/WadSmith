@@ -321,13 +321,18 @@ internal sealed partial class InspectorViewModel : ObservableObject
     private string KindOf() => _session.Selection.Items switch
     {
         [Sector s] when Platforms.ControlOf(_session.Geometry, s) is not null => "platform control",
-        [Sector s] => (Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room") + $" {Platforms.Of(_session.Geometry, s).Count}",
+        [Sector s] => (Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room") + $" {Platforms.Of(_session.Geometry, s).Count}" + ClimbKind(s),
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : "thing",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
         [var one] => one.GetType().Name,
         var many => many.Count.ToString(CultureInfo.InvariantCulture),
     };
+
+    /// <summary>The climb a room is (D27) as far as its rows go: the floors it joins and whether steps and a ramp are offered.</summary>
+    private string ClimbKind(Sector s) => Climbs.Find(_session.Geometry, s) is { } c
+        ? string.Create(CultureInfo.InvariantCulture, $" climb {c.Low.FloorHeight} {c.High.FloorHeight} {Climbs.StairsRun(_session.Geometry, c) is not null} {c.Rise / c.Length <= Climbs.SteepestRamp}")
+        : "";
 
     public InspectorViewModel(EditorSession session, Vocabulary? words = null)
     {
@@ -669,6 +674,9 @@ internal sealed partial class InspectorViewModel : ObservableObject
     private void AddSector(Sector s)
     {
         string Players() => string.Create(CultureInfo.InvariantCulture, $"room is {s.CeilingHeight - s.FloorHeight:0} tall ≈ {(s.CeilingHeight - s.FloorHeight) / PlayerHeight:0.#} players");
+
+        // A ledge the player cannot climb comes first: what to do about it is the room's most useful offer.
+        AddClimb(s);
         Rows.Add(new NumberRow("Floor height", "How high the floor is, in map units (heightfloor). The player steps up 24 at most.", () => (decimal)s.FloorHeight, v => Set(s, "Change floor height", e => e.FloorHeight, (e, x) => e.FloorHeight = x, (double)v), 8));
         Rows.Add(new NumberRow("Ceiling height", "How high the ceiling is (heightceiling). The player is 56 tall.", () => (decimal)s.CeilingHeight, v => Set(s, "Change ceiling height", e => e.CeilingHeight, (e, x) => e.CeilingHeight = x, (double)v), 8, hint: Players,
             presets: PresetChoice.For(Presets.RoomHeights, () => s.CeilingHeight - s.FloorHeight, h => Set(s, "Make the room " + Presets.Named(Presets.RoomHeights, h)!.Name.ToLowerInvariant(), e => e.CeilingHeight, (e, x) => e.CeilingHeight = x, s.FloorHeight + h), HeightTip, bars: true)));
@@ -985,6 +993,24 @@ internal sealed partial class InspectorViewModel : ObservableObject
             e.Set(r, x => x.FloorHeight, (x, h) => x.FloorHeight = h, r.FloorHeight + (double)v);
             e.Set(r, x => x.CeilingHeight, (x, h) => x.CeilingHeight = h, r.CeilingHeight + (double)v);
         }), 8));
+    }
+
+    /// <summary>A room joining two floors too far apart to step between (D27): steps or a ramp from the low one to the high one.</summary>
+    private void AddClimb(Sector s)
+    {
+        if (Climbs.Find(_session.Geometry, s) is not { } climb) return;
+        var (low, high) = (climb.Low.FloorHeight, climb.High.FloorHeight);
+        Rows.Add(new InfoRow("Joins floors", "The floors of the rooms on either side: more than a step (24) apart, the player cannot climb from one to the other.",
+            () => string.Create(CultureInfo.InvariantCulture, $"{low:0} and {high:0}, {high - low:0} apart")));
+        if (Climbs.StairsRun(_session.Geometry, climb) is not null)
+        {
+            Rows.Add(new ActionRow("Add steps", string.Create(CultureInfo.InvariantCulture, $"Cuts the room into stairs climbing from {low:0} to {high:0}, each step a comfortable rise, as the Stairs tool makes them. One undo step."), () => _session.AddSteps(s)));
+        }
+
+        if (climb.Rise / climb.Length <= Climbs.SteepestRamp)
+        {
+            Rows.Add(new ActionRow("Make a ramp", string.Create(CultureInfo.InvariantCulture, $"Slopes the floor from {low:0} at the low room to {high:0} at the high one, a ramp the player walks up (a sloped floor, as GZDoom reads it). One undo step."), () => _session.MakeRamp(s)));
+        }
     }
 
     /// <summary>Matching a neighbour (§3.4): the floor or ceiling of one of the rooms beside it, chosen by its height.</summary>
