@@ -17,6 +17,8 @@
         <KeyBinding Gesture="Ctrl+X" Command="{Binding CutCommand}" />
         <KeyBinding Gesture="Ctrl+V" Command="{Binding PasteCommand}" />
         <KeyBinding Gesture="Ctrl+D" Command="{Binding DuplicateCommand}" />
+        <KeyBinding Gesture="Ctrl+K" Command="{Binding OpenPaletteCommand}" />
+        <KeyBinding Gesture="Ctrl+Shift+P" Command="{Binding OpenPaletteCommand}" />
     </UserControl.KeyBindings>
 
     <UserControl.DataTemplates>
@@ -349,5 +351,35 @@
                 <TextBlock Grid.Column="2" Text="{Binding SaveText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
             </Grid>
         </Border>
+
+        <!-- Command palette (Ctrl+K): every action by name, with its shortcut. -->
+        <Panel Grid.RowSpan="4" IsVisible="{Binding Palette, Converter={x:Static ObjectConverters.IsNotNull}}" Background="#66000000"
+               PointerPressed="OnPaletteBackdropPressed">
+            <Border DataContext="{Binding Palette}" x:DataType="vm:CommandPaletteViewModel" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="16,64,16,16"
+                    Width="620" MaxHeight="520" CornerRadius="8" Padding="10" Background="{DynamicResource Brush.Surface1}"
+                    BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1" PointerPressed="OnPalettePressed">
+                <Grid RowDefinitions="Auto,Auto,*">
+                    <TextBox x:Name="PaletteSearch" Text="{Binding Query}" PlaceholderText="Type a command, such as “door” or “play”…" KeyDown="OnPaletteKeyDown"
+                             ToolTip.Tip="Type a few letters of what you want to do; the arrows choose, Enter does it, Esc closes. Classic names such as “sector” or “linedef” work too." />
+                    <TextBlock Grid.Row="1" Text="Nothing matches. Try another word." Classes="secondary" Margin="6,10" IsVisible="{Binding NothingFound}" />
+                    <ListBox x:Name="PaletteList" Grid.Row="2" Margin="0,8,0,0" ItemsSource="{Binding Results}" SelectedIndex="{Binding SelectedIndex}"
+                             Background="Transparent" Focusable="False" Tapped="OnPaletteTapped"
+                             ToolTip.Tip="Click a command to do it.">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:EditorCommand">
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Group}" Classes="secondary" FontSize="12" VerticalAlignment="Center" Margin="12,0" />
+                                    <Border Grid.Column="2" CornerRadius="3" Padding="6,0" MinWidth="28" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="1"
+                                            IsVisible="{Binding Shortcut, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                        <TextBlock Text="{Binding Shortcut}" FontSize="12" HorizontalAlignment="Center" />
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+        </Panel>
     </Grid>
 </UserControl>

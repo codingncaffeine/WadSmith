@@ -1,36 +1,10 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Headless;
-using Avalonia.Threading;
 using Avalonia.VisualTree;
-using WadSmith.App;
-using WadSmith.App.ViewModels;
-using WadSmith.App.Views;
 using WadSmith.Editor.App;
 
 namespace WadSmith.Tests;
-
-/// <summary>
-/// The app on Avalonia's headless platform: the real window and pages, nothing on anybody's desktop. Avalonia is set up
-/// once per process, so every UI test shares one session; it is never disposed from a test, because an await on it
-/// resumes on the session's own thread and disposing waits for that thread.
-/// </summary>
-internal static class Ui
-{
-    private static readonly Lazy<HeadlessUnitTestSession> Session = new(() => HeadlessUnitTestSession.StartNew(typeof(HeadlessApp)));
-
-    public static Task<T> Run<T>(Func<T> body) => Session.Value.Dispatch(body, TestContext.Current.CancellationToken);
-}
-
-/// <summary>Builds the app for <see cref="Ui"/>.</summary>
-public static class HeadlessApp
-{
-    public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App.App>()
-        .UseSkia()
-        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
-        .WithInterFont();
-}
 
 /// <summary>
 /// Every control a person can press, type into or pick from carries a tooltip (§3.9): the real window is walked on
@@ -50,30 +24,18 @@ public sealed class TooltipCoverageTests
 
     private static List<string> Walk(string profile, string games)
     {
-        var paths = AppPaths.Resolve(profile, _ => null);
-        paths.EnsureCreated();
-        var settings = SettingsStore.Load(paths.SettingsFile);
-        settings.Current.GameFolders.Add(games);
-        App.App.Services = new AppServices(paths, settings, new LaunchOptions(profile, null));
-        var vm = new MainViewModel(App.App.Services);
-        var window = new MainWindow { DataContext = vm, Width = 1440, Height = 900 };
-        window.Show();
+        var (window, vm) = Ui.Start(profile, games);
         var missing = new List<string>();
         try
         {
-            for (var i = 0; i < 400 && vm.Welcome.Scanning; i++) Pump(0.05);
-            Pump(0.5);
             missing.AddRange(Untipped(window, "start screen"));
 
-            var tile = vm.Welcome.Games.FirstOrDefault() ?? throw new InvalidOperationException("No game was found in " + games);
-            Wait(tile.NewMap!.ExecuteAsync(tile));
-            var editor = (EditorViewModel)vm.Page;
-            Pump(1.0);
+            var editor = Ui.NewMap(vm);
             missing.AddRange(Untipped(window, "editor"));
             foreach (var layout in new[] { MapLayout.Plan, MapLayout.ThreeD, MapLayout.Split })
             {
                 editor.Layout = layout;
-                Pump(0.3);
+                Ui.Pump(0.3);
                 missing.AddRange(Untipped(window, $"editor, {layout}"));
             }
 
@@ -86,35 +48,41 @@ public sealed class TooltipCoverageTests
             {
                 if (element is null) continue;
                 editor.Session.Selection.Set(element);
-                Pump(0.4);
+                Ui.Pump(0.4);
                 missing.AddRange(Untipped(window, $"editor, {what} selected"));
             }
 
             editor.Session.Selection.Set();
             editor.ShowTextures = true;
-            Pump(0.5);
+            Ui.Pump(0.5);
             missing.AddRange(Untipped(window, "editor, Textures"));
             editor.ShowObjects = true;
-            Pump(0.5);
+            Ui.Pump(0.5);
             missing.AddRange(Untipped(window, "editor, Objects"));
             editor.ShowVersions = true;
-            Pump(0.5);
+            Ui.Pump(0.5);
             missing.AddRange(Untipped(window, "editor, Versions"));
             editor.ShowInspector = true;
             editor.ShowProblems = true;
-            Pump(0.4);
+            Ui.Pump(0.4);
             missing.AddRange(Untipped(window, "editor, Problems"));
 
+            editor.OpenPaletteCommand.Execute(null);
+            Ui.Pump(0.4);
+            missing.AddRange(Untipped(window, "command palette"));
+            editor.OpenPaletteCommand.Execute(null);
+            Ui.Pump(0.2);
+
             vm.OpenPreferencesCommand.Execute(null);
-            Pump(0.4);
+            Ui.Pump(0.4);
             missing.AddRange(Untipped(window, "Preferences"));
             vm.Preferences!.CloseCommand.Execute(null);
-            Pump(0.2);
+            Ui.Pump(0.2);
 
             // The control: a bare button put on the page is found, so an empty list means the walk saw every control.
             var planted = new Button { Content = "Planted" };
             window.GetVisualDescendants().OfType<Panel>().First(p => p.Name == "PlanPane").Children.Add(planted);
-            Pump(0.3);
+            Ui.Pump(0.3);
             var caught = Untipped(window, "planted");
             Assert.Equal(["planted: Button 'Planted'"], caught);
         }
@@ -165,26 +133,4 @@ public sealed class TooltipCoverageTests
         _ => c.Name ?? (c.DataContext?.GetType().Name ?? ""),
     };
 
-    private static void Pump(double seconds)
-    {
-        var until = DateTime.UtcNow.AddSeconds(seconds);
-        while (DateTime.UtcNow < until)
-        {
-            Dispatcher.UIThread.RunJobs();
-            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-            Thread.Sleep(15);
-        }
-    }
-
-    private static void Wait(Task task)
-    {
-        var until = DateTime.UtcNow.AddSeconds(60);
-        while (!task.IsCompleted)
-        {
-            if (DateTime.UtcNow > until) throw new TimeoutException("A step did not finish.");
-            Pump(0.02);
-        }
-
-        task.GetAwaiter().GetResult();
-    }
 }

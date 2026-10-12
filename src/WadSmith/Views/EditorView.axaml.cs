@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using WadSmith.App.ViewModels;
 using WadSmith.Editor.App;
 
@@ -28,6 +29,7 @@ public partial class EditorView : UserControl
                 var c = View3D.CurrentCamera;
                 return (c.X, c.Y, c.Z, c.Yaw, c.Pitch);
             };
+            vm.FitMap = Canvas.FitMap;
             vm.ViewSize = () =>
             {
                 var scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
@@ -37,6 +39,7 @@ public partial class EditorView : UserControl
             vm.PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName == nameof(EditorViewModel.Layout)) ApplyLayout(vm.Layout, focus: true);
+                if (e.PropertyName == nameof(EditorViewModel.Palette)) PaletteChanged(vm);
             };
         };
         AddHandler(KeyDownEvent, OnTabDown, RoutingStrategies.Tunnel);
@@ -86,6 +89,65 @@ public partial class EditorView : UserControl
         vm.Toggle3DCommand.Execute(null);
         e.Handled = true;
     }
+
+    // The control that had the keys before the palette opened, given them back when it closes.
+    private IInputElement? _beforePalette;
+
+    /// <summary>The palette opened: its search box takes the keys. Closed: the keys go back where they were.</summary>
+    private void PaletteChanged(EditorViewModel vm)
+    {
+        if (vm.Palette is not null)
+        {
+            _beforePalette = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
+            Dispatcher.UIThread.Post(() => PaletteSearch.Focus(), DispatcherPriority.Input);
+            return;
+        }
+
+        var back = _beforePalette is Control { IsEffectivelyVisible: true } c ? c : Canvas.IsEffectivelyVisible ? Canvas : (Control)View3D;
+        _beforePalette = null;
+        back.Focus();
+    }
+
+    private void OnPaletteKeyDown(object? sender, KeyEventArgs e)
+    {
+        if ((DataContext as EditorViewModel)?.Palette is not { } palette) return;
+        switch (e.Key)
+        {
+            case Key.Up:
+                palette.Move(-1);
+                break;
+            case Key.Down:
+                palette.Move(1);
+                break;
+            case Key.PageUp:
+                palette.Move(-8);
+                break;
+            case Key.PageDown:
+                palette.Move(8);
+                break;
+            case Key.Enter:
+                palette.RunSelectedCommand.Execute(null);
+                break;
+            case Key.Escape:
+                palette.CloseCommand.Execute(null);
+                break;
+            default:
+                return;
+        }
+
+        if (palette.SelectedIndex >= 0) PaletteList.ScrollIntoView(palette.SelectedIndex);
+        e.Handled = true;
+    }
+
+    private void OnPaletteTapped(object? sender, TappedEventArgs e)
+    {
+        if ((DataContext as EditorViewModel)?.Palette is { } palette && (e.Source as Control)?.DataContext is EditorCommand command) palette.RunCommand.Execute(command);
+    }
+
+    // A click outside the palette closes it; one inside it stays there.
+    private void OnPaletteBackdropPressed(object? sender, PointerPressedEventArgs e) => (DataContext as EditorViewModel)?.Palette?.CloseCommand.Execute(null);
+
+    private void OnPalettePressed(object? sender, PointerPressedEventArgs e) => e.Handled = true;
 
     /// <summary>A shelf picture pressed: it is dragged onto the map (the canvas takes the drop).</summary>
     private async void OnShelfTilePressed(object? sender, PointerPressedEventArgs e)

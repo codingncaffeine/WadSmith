@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform" or "editor-layout":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform" or "editor-layout" or "editor-palette":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -908,6 +908,29 @@ foreach (var pose in poses)
                     Console.WriteLine($"slope measured: ramp ours against the engine's ramp {Diff(rampOurs, "ramp"):0.0} per channel; flat against flat {Diff(flatOurs, "flat"):0.0}; controls: flat ours against the engine's ramp {Diff(flatOurs, "ramp"):0.0}, ramp ours against the engine's flat {Diff(rampOurs, "flat"):0.0}");
                 }
 
+                break;
+            }
+
+            if (pose == "editor-palette")
+            {
+                // The command palette driven with real keys: Ctrl+K opens it, letters narrow it, Enter does the top command.
+                var canvas = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
+                canvas.Focus();
+                Pump(0.3);
+                window.KeyPress(Avalonia.Input.Key.K, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.K, null);
+                Pump(0.5);
+                Console.WriteLine($"palette open: {editor.Palette is not null}; {editor.Palette?.Results.Count} commands; first '{editor.Palette?.Results.FirstOrDefault()?.Name}'");
+                Save("editor-palette");
+                window.KeyTextInput("sector");
+                Pump(0.4);
+                Console.WriteLine($"palette 'sector': {string.Join(", ", editor.Palette?.Results.Take(4).Select(c => c.Name) ?? [])}");
+                Save("editor-palette-sector");
+                foreach (var _ in "sector") window.KeyPress(Avalonia.Input.Key.Back, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Backspace, null);
+                window.KeyTextInput("wnd");
+                Pump(0.4);
+                window.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Enter, null);
+                Pump(0.4);
+                Console.WriteLine($"palette 'wnd' + Enter: tool {editor.Tool}; palette open {editor.Palette is not null}; keys with the plan {canvas.IsFocused}");
                 break;
             }
 

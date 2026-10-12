@@ -38,6 +38,8 @@ internal sealed partial class EditorViewModel : ObservableObject
         ("heights", "Tip: the view buttons at the top show floors, ceilings, heights as colours, or just the walls."),
         ("orbit", "Tip: in the 3D view, drag to turn around the map, right-drag to move it, and scroll to come closer."),
         ("walk", "Tip: choose Walk at the top of the 3D view, click it, and use WASD to walk through the map as the player would."),
+        ("tab", "Tip: press Tab to fill the window with the 3D view, and Tab again to come back."),
+        ("palette", "Tip: press Ctrl+K and type a few letters to find anything WadSmith can do, with its shortcut."),
     ];
 
     private readonly AppServices _services;
@@ -265,7 +267,110 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>Tab: the 3D view fills the map area, and Tab again brings back the layout before it (Doom Builder's Tab).</summary>
     [RelayCommand]
-    private void Toggle3D() => Layout = Layout == MapLayout.ThreeD ? _before3D ?? MapLayout.Split : MapLayout.ThreeD;
+    private void Toggle3D()
+    {
+        Layout = Layout == MapLayout.ThreeD ? _before3D ?? MapLayout.Split : MapLayout.ThreeD;
+        Learned("tab");
+    }
+
+    /// <summary>The command palette while it is open (Ctrl+K); null when closed.</summary>
+    [ObservableProperty]
+    private CommandPaletteViewModel? _palette;
+
+    // What the palette ran last, newest first, for this run of the app.
+    private readonly List<string> _recentCommands = [];
+
+    /// <summary>Shows the whole map on the plan; set by the view.</summary>
+    public Action? FitMap { get; set; }
+
+    /// <summary>Opens the command palette, or closes it when it is open (Ctrl+K).</summary>
+    [RelayCommand]
+    private void OpenPalette()
+    {
+        if (Palette is not null)
+        {
+            Palette = null;
+            return;
+        }
+
+        Palette = new CommandPaletteViewModel(Commands(), _recentCommands, () => Palette = null);
+        Learned("palette");
+    }
+
+    /// <summary>
+    /// Everything the editor can do from the keyboard or the top bar, by name, with its shortcut and the words people
+    /// look for it by (classic names included); the palette lists these, and a test holds each shortcut to the key that
+    /// does it.
+    /// </summary>
+    internal IReadOnlyList<EditorCommand> Commands()
+    {
+        bool Selected() => !Session.Selection.IsEmpty;
+        var skills = SkillNames;
+        var list = new List<EditorCommand>
+        {
+            new("Select tool", "Tools", "V", "pointer|pick|choose|arrow", () => Tool = Canvas.EditorTool.Select),
+            new("Room tool", "Tools", "R", "draw a room|sector|rectangle|shape|area", () => Tool = Canvas.EditorTool.Room),
+            new("Door tool", "Tools", "D", "make a door|doorway|opening", () => Tool = Canvas.EditorTool.Door),
+            new("Window tool", "Tools", "W", "make a window|hole in a wall", () => Tool = Canvas.EditorTool.Window),
+            new("Teleport tool", "Tools", "T", "teleporter|warp|pad", () => Tool = Canvas.EditorTool.Teleport),
+            new("Light tool", "Tools", "L", "lamp|brightness|light level|glow", () => Tool = Canvas.EditorTool.Light),
+            new("Stairs tool", "Tools", "S", "steps|staircase|stair builder", () => Tool = Canvas.EditorTool.Stairs),
+            new("Measure tool", "Tools", "M", "ruler|distance|length|tape", () => Tool = Canvas.EditorTool.Measure),
+            new("No drawing mirror", "Tools", "", "symmetry off", () => MirrorChoice = 0),
+            new("Mirror drawing left–right", "Tools", "", "symmetry|symmetric|deathmatch", () => MirrorChoice = 1),
+            new("Mirror drawing top–bottom", "Tools", "", "symmetry|symmetric", () => MirrorChoice = 2),
+            new("Mirror drawing four ways", "Tools", "", "symmetry|symmetric", () => MirrorChoice = 3),
+            new("Repeat drawing in a half turn", "Tools", "", "symmetry|rotational", () => MirrorChoice = 4),
+            new("Repeat drawing in quarter turns", "Tools", "", "symmetry|rotational", () => MirrorChoice = 5),
+
+            new("Undo", "Edit", "Ctrl+Z", "take back|revert", () => UndoCommand.Execute(null), () => UndoCommand.CanExecute(null)),
+            new("Redo", "Edit", "Ctrl+Y", "bring back", () => RedoCommand.Execute(null), () => RedoCommand.CanExecute(null)),
+            new("Copy", "Edit", "Ctrl+C", "", () => CopyCommand.Execute(null), Selected),
+            new("Cut", "Edit", "Ctrl+X", "", () => CutCommand.Execute(null), Selected),
+            new("Paste", "Edit", "Ctrl+V", "", () => PasteCommand.Execute(null), () => Editor.Editing.Copying.Clipboard is not null),
+            new("Duplicate", "Edit", "Ctrl+D", "copy in place|clone", () => DuplicateCommand.Execute(null), Selected),
+            new("Delete", "Edit", "Delete", "remove|erase", () => DeleteCommand.Execute(null), Selected),
+            new("Join the selected rooms", "Edit", "J", "merge|join sectors|combine", Session.JoinRooms, Selected),
+            new("Turn the selection left", "Edit", "Ctrl+[", "rotate|anticlockwise|counter-clockwise", () => Session.TurnSelection(90), Selected),
+            new("Turn the selection right", "Edit", "Ctrl+]", "rotate|clockwise", () => Session.TurnSelection(-90), Selected),
+            new("Mirror the selection left–right", "Edit", "Shift+H", "flip horizontally", () => Session.FlipSelection(leftToRight: true), Selected),
+            new("Mirror the selection top–bottom", "Edit", "Shift+V", "flip vertically", () => Session.FlipSelection(leftToRight: false), Selected),
+            new("Select nothing", "Edit", "Esc", "deselect|clear selection", () => Session.Selection.Clear(), Selected),
+
+            new("Show the plan alone", "View", "", "2d|top down|map only", () => Layout = MapLayout.Plan),
+            new("Show the plan and the 3D view", "View", "", "split|side by side|both", () => Layout = MapLayout.Split),
+            new("Show the 3D view alone", "View", "Tab", "3d|visual mode|full screen", () => Layout = MapLayout.ThreeD),
+            new("Show floors on the plan", "View", "", "floor textures|flats", () => IsFloors = true),
+            new("Show ceilings on the plan", "View", "", "ceiling textures|flats", () => IsCeilings = true),
+            new("Show heights as colours", "View", "", "floor heights|elevation", () => ShowHeights = !ShowHeights),
+            new("Show only the walls", "View", "", "lines|automap|wireframe|linedefs", () => IsLines = true),
+            new("Show the player's size", "View", "G", "fit|player fit|ghost|clearance", () => ShowFit = !ShowFit),
+            new("Show the whole map", "View", "Home", "zoom to fit|fit map|overview", () => FitMap?.Invoke()),
+            new("Orbit in 3D", "View", "", "turn around|model view|camera", () => CameraMode = ThreeD.CameraMode.Orbit),
+            new("Fly in 3D", "View", "", "free camera|noclip|camera", () => CameraMode = ThreeD.CameraMode.Fly),
+            new("Walk in 3D", "View", "", "player view|first person|camera", () => CameraMode = ThreeD.CameraMode.Walk),
+            new("The game's view", "View", "G in 3D", "gzdoom picture|engine view|screenshot", () => EngineView = !EngineView),
+
+            new("Inspector", "Panels", "", "properties|details", () => ShowInspector = true),
+            new("Textures shelf", "Panels", "", "textures|flats|wall pictures", () => ShowTextures = true),
+            new("Objects shelf", "Panels", "", "things|monsters|items|prefabs", () => ShowObjects = true),
+            new("Versions", "Panels", "", "history|snapshots|backups", () => ShowVersions = true),
+            new("Problems", "Panels", "", "errors|map analysis|check", () => ShowProblems = !ShowProblems),
+            new("Keep a version", "Panels", "", "snapshot|save a copy|backup", () => KeepVersionCommand.Execute(null)),
+
+            new("Play", "Play", "F9", "test|run|launch|gzdoom", () => PlayCommand.Execute(null), () => !Playing),
+            new("Play from here", "Play", "Shift+F9", "test from current position|start here", () => PlayFromHereCommand.Execute(null), () => !Playing),
+        };
+        for (var i = 0; i < skills.Length; i++)
+        {
+            var skill = i;
+            list.Add(new($"Play on {skills[i]}", "Play", "", "difficulty|skill", () => Skill = skill));
+        }
+
+        list.Add(new("Preferences", "WadSmith", "Ctrl+,", "settings|options|tips|larger text", () => OpenPreferencesCommand.Execute(null)));
+        list.Add(new("Back to the start screen", "WadSmith", "", "close|other map|home", () => CloseCommand.Execute(null)));
+        return list;
+    }
 
     /// <summary>How the 3D camera moves: orbit, fly or walk.</summary>
     [ObservableProperty]
