@@ -55,6 +55,8 @@ internal sealed partial class EditorViewModel : ObservableObject
         Inspector = new InspectorViewModel(session);
         Problems = new ProblemsViewModel(session);
         TextureShelf = ShelfViewModel.Textures(session.Resources);
+        _looks = [.. Look.Available(session.Engine, session.Resources)];
+        LookNames = [.. _looks.Select(l => l.Name)];
         ObjectShelf = ShelfViewModel.Objects(session.Resources);
         if (showVersions) Panel = SidePanel.Versions;
         session.History.Moved += OnHistoryMoved;
@@ -76,6 +78,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.TeleportPadChanged += UpdateStatus;
         session.SwitchTargetChanged += UpdateStatus;
         session.KeyToPlaceChanged += UpdateStatus;
+        Inspector.LookLike += LookLike;
         Inspector.KeyFor += colour =>
         {
             Tool = Canvas.EditorTool.Key;
@@ -120,6 +123,44 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>The game's textures, to drag onto walls, floors and ceilings.</summary>
     public ShelfViewModel TextureShelf { get; }
+
+    private readonly List<(string Name, Look Look)> _looks;
+
+    /// <summary>The looks new rooms can be drawn with: the game's own, then the room it was last taken from.</summary>
+    [ObservableProperty]
+    private IReadOnlyList<string> _lookNames;
+
+    /// <summary>Which of <see cref="LookNames"/> new rooms are drawn with.</summary>
+    [ObservableProperty]
+    private int _lookIndex;
+
+    partial void OnLookIndexChanged(int value)
+    {
+        if (value >= 0 && value < _looks.Count && Session.Look != _looks[value].Look) Session.ChooseLook(_looks[value].Look);
+    }
+
+    /// <summary>Draws new rooms like a room on the map: its pictures, heights and light (offered as "Like the room picked").</summary>
+    public void LookLike(Sector room)
+    {
+        var look = Session.LookOf(room);
+        const string name = "Like the room picked";
+        var at = _looks.FindIndex(l => l.Name == name);
+        if (at < 0)
+        {
+            _looks.Add((name, look));
+            at = _looks.Count - 1;
+        }
+        else
+        {
+            _looks[at] = (name, look);
+        }
+
+        LookNames = [.. _looks.Select(l => l.Name)];
+        Session.ChooseLook(look);
+        LookIndex = at;
+        _notice = $"New rooms will look like this one: {look.Wall} walls, {look.Floor} floor, {look.Ceiling} ceiling.";
+        UpdateStatus();
+    }
 
     /// <summary>The game's monsters, items and decorations, to drag onto the map.</summary>
     public ShelfViewModel ObjectShelf { get; }

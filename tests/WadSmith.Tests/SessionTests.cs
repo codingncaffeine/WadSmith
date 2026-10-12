@@ -240,4 +240,26 @@ public sealed class SessionTests
         session.PlaceKey("red", new Editor.Geometry.MapPoint(2000, 2000));
         Assert.Single(session.Map.Things, t => t.OnMap && t.Type == 13);
     }
+
+    [Fact]
+    public void NewRoomsTakeTheChosenLookOrARoomsOwn()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var ui = new FakeUi();
+        using var session = EditorSession.Open(project, "MAP01", ui.Post);
+        var hell = Look.Named("doom").Single(l => l.Name == "Hell").Look;
+        session.ChooseLook(hell);
+        session.DrawRoom([new(512, 0), new(512, 128), new(768, 128), new(768, 0)]);
+        var room = Assert.Single(session.Selection.Items.OfType<Sector>());
+        Assert.Equal(("FLOOR6_1", "FLAT5_6", 160), (room.FloorTexture, room.CeilingTexture, room.Light));
+        Assert.All(session.Map.Lines.Where(l => l.OnMap && l.Front.Sector == room), l => Assert.Equal("SP_HOT1", l.Front.Middle));
+
+        // A room's own look: its pictures, heights, light, and what most of its walls show.
+        var starter = session.Map.Sectors[0];
+        var like = session.LookOf(starter);
+        Assert.Equal(("FLOOR4_8", "CEIL3_5", "STARTAN3", 0.0, 128.0, 192), (like.Floor, like.Ceiling, like.Wall, like.FloorHeight, like.CeilingHeight, like.Light));
+        Assert.Equal(hell.Door, like.Door);
+    }
 }

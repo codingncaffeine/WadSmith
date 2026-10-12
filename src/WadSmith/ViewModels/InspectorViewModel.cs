@@ -219,6 +219,9 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>Raised when the user asks to place the key for a locked door (its colour): the editor then waits for the spot.</summary>
     public event Action<string>? KeyFor;
 
+    /// <summary>Raised when the user asks for new rooms to look like a room.</summary>
+    public event Action<Sector>? LookLike;
+
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
@@ -337,6 +340,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = "Its floor, ceiling and light.";
                 AddSector(s);
                 Rows.Add(new ActionRow("Make it a secret", "Finding it counts toward the secrets at the end of the map, and the walls into it show as solid walls on the in-game map so they do not give it away.", () => _session.MakeSecret(s)));
+                Rows.Add(new ActionRow("Draw new rooms like this one", "New rooms take its floor and ceiling pictures, heights, light and the texture of its walls (the Look in the Textures panel).", () => LookLike?.Invoke(s)));
                 if (Rooms.Island(_session.Geometry, s) is not null)
                 {
                     Rows.Add(new HeadingRow("INSIDE ANOTHER ROOM"));

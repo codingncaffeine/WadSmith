@@ -1,0 +1,33 @@
+{
+  "comment": "Looks for new rooms, per game family: the first is each family's default. Fields left out come from the family's default (doors, tracks, switches, steps, water, heights, light). Texture names only; a look whose textures the project's game lacks is not offered.",
+  "doom": [
+    { "name": "Tech base", "wall": "STARTAN3", "floor": "FLOOR4_8", "ceiling": "CEIL3_5", "switch": "SW1STRTN" },
+    { "name": "Brown halls", "wall": "BROWN1", "floor": "FLOOR5_1", "ceiling": "CEIL5_1", "switch": "SW1BRN1" },
+    { "name": "Stone", "wall": "STONE2", "floor": "FLAT5_4", "ceiling": "FLAT1", "switch": "SW1STON1" },
+    { "name": "Metal", "wall": "METAL1", "floor": "MFLR8_1", "ceiling": "CEIL5_2", "switch": "SW1METAL" },
+    { "name": "Wood", "wall": "WOOD1", "floor": "FLAT5_2", "ceiling": "CEIL1_1", "switch": "SW1WOOD" },
+    { "name": "Hell", "wall": "SP_HOT1", "floor": "FLOOR6_1", "ceiling": "FLAT5_6", "switch": "SW1HOT", "light": 160 },
+    { "name": "Flesh", "wall": "SKIN2", "floor": "FLAT5_6", "ceiling": "FLOOR6_1", "switch": "SW1SKIN", "light": 144 },
+    { "name": "Outdoors", "wall": "ROCK2", "floor": "RROCK19", "ceiling": "F_SKY1", "ceilingHeight": 256, "switch": "SW1STON1", "light": 208 }
+  ],
+  "heretic": [
+    { "name": "Grey stone", "wall": "GRSTNPB", "floor": "FLOOR03", "ceiling": "FLAT520" },
+    { "name": "Castle", "wall": "CSTLRCK", "floor": "FLOOR04", "ceiling": "FLOOR10" },
+    { "name": "Sandstone", "wall": "SANDSQ2", "floor": "FLOOR06", "ceiling": "FLOOR11" },
+    { "name": "Wood", "wall": "WOODWL", "floor": "FLOOR10", "ceiling": "FLAT502" },
+    { "name": "Mossy rock", "wall": "MOSSRCK1", "floor": "FLOOR19", "ceiling": "F_SKY1", "ceilingHeight": 256, "light": 208 }
+  ],
+  "hexen": [
+    { "name": "Forest", "wall": "FOREST01", "floor": "F_011", "ceiling": "F_032" },
+    { "name": "Castle", "wall": "CASTLE07", "floor": "F_009", "ceiling": "F_044" },
+    { "name": "Monastery", "wall": "MONK03", "floor": "F_041", "ceiling": "F_022" },
+    { "name": "Wasteland", "wall": "WASTE01", "floor": "F_001", "ceiling": "F_025" },
+    { "name": "Wood", "wall": "WOOD01", "floor": "F_054", "ceiling": "F_059" }
+  ],
+  "strife": [
+    { "name": "Grey brick", "wall": "BRKGRY01", "floor": "F_CONCRP", "ceiling": "F_PAVE01" },
+    { "name": "Tech", "wall": "WALTEK01", "floor": "F_TECH01", "ceiling": "F_TEKPLT" },
+    { "name": "Brown brick", "wall": "BRKBRN01", "floor": "F_BRKTOP", "ceiling": "F_CONCRP" },
+    { "name": "Wood", "wall": "WOOD01", "floor": "F_WOOD01", "ceiling": "F_PLYWOD" }
+  ]
+}

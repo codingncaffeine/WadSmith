@@ -116,7 +116,30 @@ public sealed class EditorSession : IDisposable
     public SaveState State { get; private set; } = SaveState.Saved;
 
     /// <summary>What new rooms look like in this project's game.</summary>
-    public Look Look => Core.Games.GameCatalog.Get(Project.Info.Game)?.Engine is { } engine ? Look.For(engine) : Look.For("doom");
+    public Look Look => _look ?? Look.For(Engine);
+
+    private Look? _look;
+
+    /// <summary>Makes <paramref name="look"/> what new rooms (and the doors, stairs and switches made in them) look like from now on.</summary>
+    public void ChooseLook(Look look)
+    {
+        _look = look;
+        LookChanged?.Invoke();
+    }
+
+    /// <summary>Raised when <see cref="Look"/> changes.</summary>
+    public event Action? LookChanged;
+
+    /// <summary>
+    /// The look of a room: its floor and ceiling pictures, heights and light, and the texture most of its solid walls
+    /// show; its doors, tracks and switches stay the game's.
+    /// </summary>
+    public Look LookOf(Sector room)
+    {
+        var walls = Map.Lines.Where(l => l.OnMap && l.Back is null && ReferenceEquals(l.Front.Sector, room) && l.Front.Middle is not ("-" or "")).Select(l => l.Front.Middle);
+        var wall = walls.GroupBy(t => t, StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).FirstOrDefault()?.Key ?? Look.Wall;
+        return Look with { Floor = room.FloorTexture, Ceiling = room.CeilingTexture, Wall = wall, FloorHeight = room.FloorHeight, CeilingHeight = room.CeilingHeight, Light = room.Light };
+    }
 
     /// <summary>Raised with a sentence for the status strip when something the user did could not be done as asked.</summary>
     public event Action<string>? Notice;
