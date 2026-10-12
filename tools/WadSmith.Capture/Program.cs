@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,12 +361,12 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
                 // one inside it.
-                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport";
+                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape";
                 view.ZoomBy(wide ? 0.3 : 0.45);
                 if (wide) view.PanBy(-90, 0);
                 Pump(0.3);
@@ -434,6 +434,44 @@ foreach (var pose in poses)
                     var placed = editor.Session.Map.Things.Where(t => t.OnMap && t.Type == imp.Drop.Thing).ToList();
                     Console.WriteLine($"shelf thing: {placed.Count} imp(s) at {string.Join(" ", placed.Select(t => $"({t.X},{t.Y})"))}, undo '{editor.Session.History.UndoLabel}'");
                     Save("editor-shelves");
+                    break;
+                }
+
+                if (pose == "editor-draw-shape")
+                {
+                    // Corner by corner with real clicks: an L against the starter room closed on its first corner
+                    // (captured halfway), then a triangle in the starter room closed with Enter.
+                    void Click(double x, double y)
+                    {
+                        window.MouseMove(At(x, y), Avalonia.Input.RawInputModifiers.None);
+                        window.MouseDown(At(x, y), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                        window.MouseUp(At(x, y), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                        Pump(0.6);
+                    }
+
+                    window.KeyPress(Avalonia.Input.Key.R, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.R, "r");
+                    Pump(0.2);
+                    var corners = new (double X, double Y)[] { (256, -256), (256, 256), (384, 256), (384, -128), (640, -128), (640, -256) };
+                    for (var k = 0; k < corners.Length; k++)
+                    {
+                        Click(corners[k].X, corners[k].Y);
+                        if (k == 3)
+                        {
+                            window.MouseMove(At(640, -100), Avalonia.Input.RawInputModifiers.None);
+                            Pump(0.3);
+                            Console.WriteLine($"draw status: '{editor.Status}'");
+                            Save("editor-drawing-shape");
+                        }
+                    }
+
+                    Click(256, -256);
+                    Pump(0.8);
+                    Report("L");
+                    foreach (var (x, y) in new[] { (-128.0, -128.0), (0.0, 128.0), (128.0, -128.0) }) Click(x, y);
+                    window.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Enter, null);
+                    Pump(0.8);
+                    Report("triangle");
+                    Save("editor-draw-shape");
                     break;
                 }
 

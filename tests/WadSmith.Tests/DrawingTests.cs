@@ -304,6 +304,28 @@ public sealed class DrawingTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void AnLShapedRoomBesideAnotherIsOneRoomSharingTheWall()
+    {
+        // An L against the starter room's east wall: its arm crosses nothing, its inner corner is concave.
+        var (map, made) = DrawAndCheck([new(256, -256), new(256, 256), new(384, 256), new(384, -128), new(640, -128), new(640, -256)]);
+        var room = Assert.Single(made);
+        Assert.Same(room, At(map, 320, 0));
+        Assert.Same(room, At(map, 500, -192));
+        Assert.Null(At(map, 500, 64));
+        Assert.Equal(4 + 5, Lines(map).Count);
+    }
+
+    [Fact]
+    public void ATriangleWithSlantedWallsDrawsInsideARoom()
+    {
+        var (map, made) = DrawAndCheck([new(-128, -128), new(0, 128), new(128, -128)]);
+        var room = Assert.Single(made);
+        Assert.Same(room, At(map, 0, 0));
+        Assert.Same(map.Sectors[0], At(map, -150, 100));
+        Assert.Equal(4 + 3, Lines(map).Count);
+    }
+
+    [Fact]
     public void DrawingARoomExactlyOverOneChangesNothing()
     {
         var (map, history) = Starter();

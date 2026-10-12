@@ -229,6 +229,15 @@ internal sealed partial class EditorViewModel : ObservableObject
         UpdateStatus();
     }
 
+    /// <summary>Called by the canvas while a room is drawn corner by corner (null when it ends).</summary>
+    public void Corners((int Corners, double Side)? drawing)
+    {
+        _drawingText = drawing is { } d
+            ? string.Create(CultureInfo.InvariantCulture, $"{d.Corners} corner{(d.Corners == 1 ? "" : "s")}{(d.Side > 0 ? $" · this side {d.Side:0}" : "")} · click the first corner, double-click or press Enter to close; Shift keeps sides straight, Backspace takes a corner back, Esc lets go")
+            : "";
+        UpdateStatus();
+    }
+
     /// <summary>Called by the canvas while something from a shelf is held over the plan (null when it leaves).</summary>
     public void Hint(string? text)
     {
@@ -562,7 +571,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
         if (Tool == Canvas.EditorTool.Room)
         {
-            Status = string.Create(CultureInfo.InvariantCulture, $"Drag to draw a room. Corners snap to the grid ({_gridStep:0} units) and to corners nearby; drawn against a room, the two share a wall. Esc goes back to Select.");
+            Status = string.Create(CultureInfo.InvariantCulture, $"Drag to draw a rectangle room, or click corner by corner for any shape. Corners snap to the grid ({_gridStep:0} units) and to corners nearby; drawn against a room, the two share a wall. Esc goes back to Select.");
             return;
         }
 

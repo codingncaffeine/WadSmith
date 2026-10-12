@@ -64,6 +64,10 @@ internal sealed class MapCanvas : Control
     private MapPoint? _drawFrom;
     private MapPoint? _drawTo;
     private MapPoint? _snap;
+    private Point _drawPress;
+
+    /// <summary>The corners of a room being drawn corner by corner (clicks), empty when none is.</summary>
+    private readonly List<MapPoint> _corners = [];
 
     /// <summary>The map version a drawn room was added in; its rectangle stays on screen until the picture shows it.</summary>
     private long _drawnIn = -1;
@@ -161,6 +165,9 @@ internal sealed class MapCanvas : Control
 
     /// <summary>Raised while something from a shelf is held over the plan, with what a drop there would do (null when it leaves).</summary>
     public event Action<string?>? DropHint;
+
+    /// <summary>Raised while a room is drawn corner by corner: the corners so far and the length of the side to the pointer (null when it ends).</summary>
+    public event Action<(int Corners, double Side)?>? CornersChanged;
 
     /// <summary>Raised while the selection is being moved, with what moves and how far (null when the move ends).</summary>
     public event Action<(int Corners, int Things, double Dx, double Dy)?>? Moving;
@@ -306,7 +313,7 @@ internal sealed class MapCanvas : Control
         // A room just drawn stays drawn as a rectangle until the picture with it arrives from the worker.
         if (_drawnIn >= 0 && _snapshot is { } shown && shown.Version >= _drawnIn) _drawnIn = -1;
         var (from, to) = _drawFrom is not null || _drawnIn < 0 ? (_drawFrom, _drawTo) : (_justDrawn.From, (MapPoint?)_justDrawn.To);
-        var preview = Tool == EditorTool.Room || _drawnIn >= 0 ? new DrawPreview(from, to, Tool == EditorTool.Room ? _drawFrom is null ? _snap : _drawTo : null, Tool == EditorTool.Room ? GridStep() : 0) : null;
+        var preview = Tool == EditorTool.Room || _drawnIn >= 0 ? new DrawPreview(_corners.Count > 0 ? null : from, _corners.Count > 0 ? null : to, Tool == EditorTool.Room ? _drawFrom is null || _corners.Count > 0 ? _snap : _drawTo : null, Tool == EditorTool.Room ? GridStep() : 0, _corners.Count > 0 ? [.. _corners] : null) : null;
         MovePreview? move = null;
         if (_moveGesture != 0)
         {
@@ -505,9 +512,39 @@ internal sealed class MapCanvas : Control
 
     private void CancelDrawing()
     {
-        if (_drawFrom is null) return;
+        if (_drawFrom is null && _corners.Count == 0) return;
         _drawFrom = _drawTo = null;
+        _corners.Clear();
         Drawing?.Invoke(null, GridStep());
+        CornersChanged?.Invoke(null);
+        InvalidateVisual();
+    }
+
+    /// <summary>Where the next corner of a shape goes: snapped as usual, and with Shift along a 45° step from the last corner.</summary>
+    private MapPoint NextCorner(Point p, bool straight)
+    {
+        var at = Snap(p);
+        if (!straight || _corners.Count == 0) return at;
+        var last = _corners[^1];
+        var (dx, dy) = (at.X - last.X, at.Y - last.Y);
+        var length = Math.Sqrt(dx * dx + dy * dy);
+        var angle = Math.Round(Math.Atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+        return new MapPoint(Math.Round(last.X + Math.Cos(angle) * length), Math.Round(last.Y + Math.Sin(angle) * length));
+    }
+
+    /// <summary>Closes the shape drawn corner by corner and draws it as a room.</summary>
+    private void CloseCorners()
+    {
+        if (_corners.Count < 3 || Session is not { } session)
+        {
+            return;
+        }
+
+        MapPoint[] shape = [.. _corners];
+        _corners.Clear();
+        CornersChanged?.Invoke(null);
+        session.DrawRoom(shape);
+        _drawnIn = -1;
         InvalidateVisual();
     }
 
@@ -572,9 +609,22 @@ internal sealed class MapCanvas : Control
 
         if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Room)
         {
-            _drawFrom = _drawTo = Snap(e.GetPosition(this));
+            // A double-click closes a shape drawn corner by corner.
+            if (e.ClickCount == 2 && _corners.Count >= 3)
+            {
+                CloseCorners();
+                e.Handled = true;
+                return;
+            }
+
+            _drawPress = e.GetPosition(this);
+            if (_corners.Count == 0)
+            {
+                _drawFrom = _drawTo = Snap(_drawPress);
+                Drawing?.Invoke((0, 0), GridStep());
+            }
+
             e.Pointer.Capture(this);
-            Drawing?.Invoke((0, 0), GridStep());
             InvalidateVisual();
             e.Handled = true;
             return;
@@ -636,13 +686,15 @@ internal sealed class MapCanvas : Control
 
         if (Tool == EditorTool.Room)
         {
-            var at = Snap(p);
-            if (_drawFrom is { } from2)
+            var straight = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+            var at = _corners.Count > 0 ? NextCorner(p, straight) : Snap(p);
+            if (_drawFrom is { } from2 && _corners.Count == 0)
             {
                 _drawTo = at;
                 Drawing?.Invoke((Math.Abs(at.X - from2.X), Math.Abs(at.Y - from2.Y)), GridStep());
             }
 
+            if (_corners.Count > 0) CornersChanged?.Invoke((_corners.Count, at.DistanceTo(_corners[^1])));
             _snap = at;
             InvalidateVisual();
             HoverChanged?.Invoke(null, at);
@@ -717,14 +769,34 @@ internal sealed class MapCanvas : Control
             return;
         }
 
-        if (_drawFrom is not { } a || _drawTo is not { } b || e.InitialPressMouseButton != MouseButton.Left) return;
+        if (Tool != EditorTool.Room || e.InitialPressMouseButton != MouseButton.Left || Session is not { } drawing) return;
         e.Pointer.Capture(null);
+        var released = e.GetPosition(this);
+        var dragged = Math.Abs(released.X - _drawPress.X) + Math.Abs(released.Y - _drawPress.Y) > 4;
+        var (a0, b0) = (_drawFrom, _drawTo);
         _drawFrom = _drawTo = null;
         Drawing?.Invoke(null, GridStep());
         InvalidateVisual();
 
-        // A drag too small to be a room (a click) draws nothing.
-        if (Math.Abs(b.X - a.X) < 1 || Math.Abs(b.Y - a.Y) < 1 || Session is not { } session) return;
+        // A click (no drag) puts a corner of a shape drawn corner by corner; the first corner again closes it.
+        if (!dragged || _corners.Count > 0 || a0 is not { } a || b0 is not { } b || Math.Abs(b.X - a.X) < 1 || Math.Abs(b.Y - a.Y) < 1)
+        {
+            var corner = _corners.Count > 0 ? NextCorner(released, (e.KeyModifiers & KeyModifiers.Shift) != 0) : Snap(released);
+            if (_corners.Count >= 3 && corner.DistanceTo(_corners[0]) < 1e-6)
+            {
+                CloseCorners();
+            }
+            else if (_corners.Count == 0 || corner.DistanceTo(_corners[^1]) > 1e-6)
+            {
+                _corners.Add(corner);
+                CornersChanged?.Invoke((_corners.Count, 0));
+            }
+
+            InvalidateVisual();
+            return;
+        }
+
+        var session = drawing;
         MapPoint[] box = [new(a.X, a.Y), new(a.X, b.Y), new(b.X, b.Y), new(b.X, a.Y)];
         session.DrawRoom(box);
         _drawnIn = session.Map.Version;
@@ -752,8 +824,18 @@ internal sealed class MapCanvas : Control
                 FitMap();
                 e.Handled = true;
                 break;
-            case Key.Escape when _drawFrom is not null:
+            case Key.Escape when _drawFrom is not null || _corners.Count > 0:
                 CancelDrawing();
+                e.Handled = true;
+                break;
+            case Key.Enter when _corners.Count >= 3:
+                CloseCorners();
+                e.Handled = true;
+                break;
+            case Key.Back when _corners.Count > 0:
+                _corners.RemoveAt(_corners.Count - 1);
+                CornersChanged?.Invoke(_corners.Count == 0 ? null : (_corners.Count, 0));
+                InvalidateVisual();
                 e.Handled = true;
                 break;
             case Key.Escape when _boxFrom is not null:

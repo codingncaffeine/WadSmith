@@ -82,7 +82,7 @@ internal sealed class SelectionOverlay
 /// A room being drawn: the rectangle between two corners in map units (null before the drag starts),
 /// the point the pointer snaps to, and the grid step it snaps to.
 /// </summary>
-internal sealed record DrawPreview(MapPoint? From, MapPoint? To, MapPoint? Snap, double Step);
+internal sealed record DrawPreview(MapPoint? From, MapPoint? To, MapPoint? Snap, double Step, IReadOnlyList<MapPoint>? Corners = null);
 
 /// <summary>What is being moved and by how much: its walls and objects drawn at their new place while the map catches up.</summary>
 internal sealed record MovePreview(WadSmith.Editor.Editing.MoveSet Set, double Dx, double Dy, MapPoint? MergeAt);
@@ -221,6 +221,22 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
             using var edge = new SKPaint { Style = SKPaintStyle.Stroke, Color = Accent, StrokeWidth = 2, IsAntialias = true };
             canvas.DrawRect(rect, fill);
             canvas.DrawRect(rect, edge);
+        }
+
+        // A shape drawn corner by corner: its sides so far, the side to the pointer, and a faint line back to the start.
+        if (preview.Corners is { Count: > 0 } corners)
+        {
+            using var side = new SKPaint { Style = SKPaintStyle.Stroke, Color = Accent, StrokeWidth = 2, IsAntialias = true };
+            using var faint = new SKPaint { Style = SKPaintStyle.Stroke, Color = Accent.WithAlpha(0x70), StrokeWidth = 1.5f, IsAntialias = true, PathEffect = SKPathEffect.CreateDash([6, 4], 0) };
+            using var dot = new SKPaint { Style = SKPaintStyle.Fill, Color = Accent, IsAntialias = true };
+            for (var i = 0; i + 1 < corners.Count; i++) canvas.DrawLine(Sx(corners[i].X), Sy(corners[i].Y), Sx(corners[i + 1].X), Sy(corners[i + 1].Y), side);
+            if (preview.Snap is { } tip)
+            {
+                canvas.DrawLine(Sx(corners[^1].X), Sy(corners[^1].Y), Sx(tip.X), Sy(tip.Y), side);
+                if (corners.Count >= 2) canvas.DrawLine(Sx(tip.X), Sy(tip.Y), Sx(corners[0].X), Sy(corners[0].Y), faint);
+            }
+
+            foreach (var c in corners) canvas.DrawRect(Sx(c.X) - 3, Sy(c.Y) - 3, 6, 6, dot);
         }
 
         if (preview.Snap is { } s)
