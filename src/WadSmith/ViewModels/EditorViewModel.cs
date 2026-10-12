@@ -24,6 +24,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         ("edit", "Tip: change a number in the Inspector, such as a floor height, and watch the map follow."),
         ("undo", "Tip: Ctrl+Z takes back the last change and Ctrl+Y brings it back. Nothing needs saving; WadSmith keeps every change."),
         ("heights", "Tip: the view buttons at the top show floors, ceilings, heights as colours, or just the walls."),
+        ("orbit", "Tip: in the 3D view, drag to turn around the map, right-drag to move it, and scroll to come closer."),
     ];
 
     private readonly AppServices _services;
@@ -76,6 +77,10 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     [ObservableProperty]
     private string _versionsNote = "";
+
+    /// <summary>Whether the 3D view shows beside the plan (D46).</summary>
+    [ObservableProperty]
+    private bool _show3D = true;
 
     partial void OnShowVersionsChanged(bool value)
     {

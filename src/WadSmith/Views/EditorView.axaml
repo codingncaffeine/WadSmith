@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WadSmith.App.ViewModels"
              xmlns:canvas="using:WadSmith.App.Canvas"
+             xmlns:threeD="using:WadSmith.App.ThreeD"
              x:Class="WadSmith.App.Views.EditorView"
              x:DataType="vm:EditorViewModel">
 
@@ -34,6 +35,8 @@
                         <ToggleButton Classes="segment last" Content="Lines" IsChecked="{Binding IsLines}"
                                       ToolTip.Tip="Shows only the walls, in the colours of the game's automap." />
                     </StackPanel>
+                    <ToggleButton Classes="segment first last" Content="3D" IsChecked="{Binding Show3D}" Margin="0,0,10,0"
+                                  ToolTip.Tip="Shows the map in 3D beside the plan, from any angle." />
                     <Button Classes="metal" Content="Undo" Command="{Binding UndoCommand}" ToolTip.Tip="{Binding UndoTip}" />
                     <Button Classes="metal" Content="Redo" Command="{Binding RedoCommand}" ToolTip.Tip="{Binding RedoTip}" />
                     <Button Classes="metal" Content="Keep a version" Command="{Binding KeepVersionCommand}"
@@ -46,6 +49,7 @@
 
         <!-- Canvas and Inspector -->
         <Grid Grid.Row="1" ColumnDefinitions="*,4,330">
+            <Grid x:Name="MapViews" ColumnDefinitions="*,4,*">
             <Panel>
                 <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" />
 
@@ -66,6 +70,10 @@
                     </StackPanel>
                 </Border>
             </Panel>
+            <GridSplitter Grid.Column="1" x:Name="Split3D" Background="{DynamicResource Brush.Border.Subtle}" ResizeDirection="Columns" />
+            <threeD:View3D Grid.Column="2" x:Name="View3D" Session="{Binding Session}"
+                           ToolTip.Tip="The map in 3D. Drag to turn around it, right-drag to move, scroll to come closer. Home shows the whole map." />
+            </Grid>
             <GridSplitter Grid.Column="1" Background="{DynamicResource Brush.Border.Subtle}" ResizeDirection="Columns" />
             <Border Grid.Column="2" Classes="panel" BorderThickness="1,0,0,0">
                 <Grid RowDefinitions="Auto,*">

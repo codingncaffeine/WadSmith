@@ -11,7 +11,24 @@ public partial class EditorView : UserControl
     {
         InitializeComponent();
         HeightsRamp.Background = WadSmith.App.Canvas.HeightRamp.Brush();
+        DataContextChanged += (_, _) =>
+        {
+            if (DataContext is not EditorViewModel vm) return;
+            Apply3D(vm.Show3D);
+            vm.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(EditorViewModel.Show3D)) Apply3D(vm.Show3D);
+            };
+        };
         Canvas.HoverChanged += (element, at) => (DataContext as EditorViewModel)?.Hover(element, at);
+    }
+
+    /// <summary>Shows or hides the 3D view beside the plan; hidden, it does no work.</summary>
+    private void Apply3D(bool show)
+    {
+        MapViews.ColumnDefinitions[2].Width = show ? new Avalonia.Controls.GridLength(1, Avalonia.Controls.GridUnitType.Star) : new Avalonia.Controls.GridLength(0);
+        Split3D.IsVisible = show;
+        View3D.IsVisible = show;
     }
 
     private void OnTextRowLostFocus(object? sender, RoutedEventArgs e) => ((sender as Control)?.DataContext as TextRow)?.Commit();
