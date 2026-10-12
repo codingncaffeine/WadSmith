@@ -559,6 +559,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new TextRow("Light colour", "Tints everything in the room (lightcolor), as #RRGGBB in a paint program's words; #FFFFFF is plain white light. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "lightcolor", 0xFFFFFF)), text => SetRoomColour(s, "lightcolor", text, 0xFFFFFF, "Change the light colour"), texture: false));
         Rows.Add(new TextRow("Fog colour", "Fog that thickens with distance in the room, thicker the darker the room (fadecolor), as #RRGGBB; #000000 is none. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "fadecolor", 0)), text => SetRoomColour(s, "fadecolor", text, 0, "Change the fog colour"), texture: false));
         AddMatchNeighbour(s);
+        AddSlope(s, ceiling: false);
+        AddSlope(s, ceiling: true);
         Rows.Add(new TextRow("Floor texture", "The picture on the floor (texturefloor).", () => s.FloorTexture, v => Set(s, "Change floor texture", e => e.FloorTexture, (e, x) => e.FloorTexture = x, v)));
         Rows.Add(new TextRow("Ceiling texture", "The picture on the ceiling (textureceiling).", () => s.CeilingTexture, v => Set(s, "Change ceiling texture", e => e.CeilingTexture, (e, x) => e.CeilingTexture = x, v)));
         AddFlatPlacement(s, ceiling: false);
@@ -735,6 +737,32 @@ internal sealed partial class InspectorViewModel : ObservableObject
             () => Entry().Next == ends ? slots.Count + 1 : Index(slots, Entry().Next), i => _session.ChangeMapSettings(m => m with { Next = i == 0 ? null : i == slots.Count + 1 ? ends : slots[i - 1] })));
 
         if (defaults is { Switches.Count: > 0 }) Rows.Add(new InfoRow("Plays like the original", "GZDoom turns a few behaviour switches on for the original map (compat_ settings); the remix asks for the same ones in its zmapinfo.txt, so it plays the same.", () => string.Join(", ", defaults.Switches)));
+    }
+
+    /// <summary>
+    /// The Ramp tool (§3.7): a room's floor or ceiling sloped from one of its walls, where it keeps the room's height, to
+    /// a height at the far side; the plane fields GZDoom reads.
+    /// </summary>
+    private void AddSlope(Sector s, bool ceiling)
+    {
+        var walls = Slopes.Walls(_session.Geometry, s).ToList();
+        if (walls.Count < 2) return;
+        var part = ceiling ? "ceiling" : "floor";
+        var field = ceiling ? "ceilingplane" : "floorplane";
+        (Line Wall, double Far)? Now() => (ceiling ? SlopePlane.Ceiling(s) : SlopePlane.Floor(s)) is { } p ? Slopes.Recognise(_session.Geometry, s, p, ceiling) : null;
+        double Base() => ceiling ? s.CeilingHeight : s.FloorHeight;
+        void Slope(Line wall, double far) => _session.History.Record($"Slope the {part}", e => Slopes.Set(e, s, Slopes.Ramp(_session.Geometry, s, wall, Base(), far, ceiling), ceiling));
+        Rows.Add(new ChoiceRow($"{char.ToUpperInvariant(part[0])}{part[1..]} slopes from", $"The wall the {part} stays level along, at the {part} height above; from there it slopes to the height below at the far side of the room ({field} fields, as GZDoom reads them).", ["Not sloped", .. walls.Select(w => w.Words)],
+            () => Now() is { } n ? walls.FindIndex(w => ReferenceEquals(w.Wall, n.Wall)) + 1 : 0,
+            i =>
+            {
+                if (i == 0) _session.History.Record($"Flatten the {part}", e => Slopes.Set(e, s, null, ceiling));
+                else Slope(walls[i - 1].Wall, Now()?.Far ?? Base() + (ceiling ? -64 : 64));
+            }));
+        Rows.Add(new NumberRow($"{char.ToUpperInvariant(part[0])}{part[1..]} reaches", $"The {part}'s height at the far side of the room, away from the wall it slopes from.", () => (decimal)(Now()?.Far ?? Base()), v =>
+        {
+            if (Now() is { } n) Slope(n.Wall, (double)v);
+        }, 8));
     }
 
     /// <summary>A room's colour field (lightcolor, fadecolor) as red, green and blue; <paramref name="otherwise"/> when it has none.</summary>

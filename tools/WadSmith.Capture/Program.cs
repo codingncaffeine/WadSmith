@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -830,6 +830,84 @@ foreach (var pose in poses)
                 Console.WriteLine($"fogcal fog control: no fog term {Mean(fogged, new WadSmith.App.ThreeD.Lighting(bestVis, 0, 0)):0.0}; density ×3 {Mean(fogged, new WadSmith.App.ThreeD.Lighting(bestVis, bestBase * 3, bestDark * 3)):0.0}");
                 foreach (var s in plain.Concat(fogged)) File.WriteAllBytes(Path.Combine(output, $"fogcal-{s.Name}-ours.png"), WadSmith.App.ThreeD.Offscreen3D.RenderPng(s.Scene, resources, camera, 1024, 640, true, fit));
                 Console.WriteLine($"fogcal measured: {fit}");
+                break;
+            }
+
+            if (pose == "editor-slope")
+            {
+                // The Ramp tool through the Inspector on the starter room (floor sloped from the south wall to 64 at the north), seen
+                // walking; then our view of the ramp corridor (WS_SLOPECAL: ramp.wad, flat.wad with GZDoom's view.png beside each)
+                // against the engine's, with the flat corridor as the control.
+                var session = editor.Session;
+                var view3d = window.GetVisualDescendants().OfType<WadSmith.App.ThreeD.View3D>().First();
+                for (var i = 0; i < 200 && (view3d.SceneVersion < 0 || !view3d.HasPicture); i++) Pump(0.05);
+                var room = session.Map.Sectors[0];
+                session.Selection.Set(room);
+                Pump(0.5);
+                var from = editor.Inspector.Rows.OfType<ChoiceRow>().Single(r => r.Label == "Floor slopes from");
+                Console.WriteLine($"slope choices: {string.Join(" | ", from.Options)}");
+                from.Value = from.Options.ToList().IndexOf("the south wall");
+                Pump(0.5);
+                editor.Inspector.Rows.OfType<NumberRow>().Single(r => r.Label == "Floor reaches").Value = 64;
+                Pump(0.5);
+                var plane = WadSmith.Editor.Scene.SlopePlane.Floor(room);
+                Console.WriteLine($"slope set: floor at the south wall {plane?.Z(0, -256):0.##}, at the north {plane?.Z(0, 256):0.##}; undo '{session.History.UndoLabel}'; rows say from '{from.Options[from.Value]}' reaching {editor.Inspector.Rows.OfType<NumberRow>().Single(r => r.Label == "Floor reaches").Value}");
+                editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
+                Pump(1.5);
+                Save("editor-slope");
+
+                if (Environment.GetEnvironmentVariable("WS_SLOPECAL") is { } folder)
+                {
+                    var resources = session.Resources;
+                    (WadSmith.Editor.Scene.MapScene Scene, WadSmith.Editor.Geometry.MapGeometry Geometry) Scene(string name)
+                    {
+                        var lumps = WadSmith.Core.Maps.MapLocator.Find(WadSmith.Core.Containers.WadContainer.Open(Path.Combine(folder, name + ".wad"))).First();
+                        var calMap = WadSmith.Editor.Model.EditorMap.FromModel(WadSmith.Core.Maps.MapConversion.Read(lumps, "doom"));
+                        var geometry = WadSmith.Editor.Geometry.MapGeometry.Build(calMap.Frame);
+                        return (WadSmith.Editor.Scene.MapScene.Build(geometry, n => resources?.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, WadSmith.App.ThreeD.SpriteShapes.For(resources)), geometry);
+                    }
+
+                    double Diff(byte[] png, string name)
+                    {
+                        using var ours = SkiaSharp.SKBitmap.Decode(png);
+                        using var theirs = SkiaSharp.SKBitmap.Decode(Path.Combine(folder, name, "view.png"));
+                        double total = 0;
+                        var count = 0;
+                        for (var y = 60; y < 380; y += 8)
+                        {
+                            for (var x = 200; x < 824; x += 8)
+                            {
+                                double ar = 0, ag = 0, ab = 0, br = 0, bg = 0, bb = 0;
+                                for (var j = 0; j < 8; j++)
+                                {
+                                    for (var i = 0; i < 8; i++)
+                                    {
+                                        var (a, b) = (ours.GetPixel(x + i, y + j), theirs.GetPixel(x + i, y + j));
+                                        (ar, ag, ab, br, bg, bb) = (ar + a.Red, ag + a.Green, ab + a.Blue, br + b.Red, bg + b.Green, bb + b.Blue);
+                                    }
+                                }
+
+                                total += (Math.Abs(ar - br) + Math.Abs(ag - bg) + Math.Abs(ab - bb)) / 3.0 / 64;
+                                count++;
+                            }
+                        }
+
+                        return total / count;
+                    }
+
+                    // The player stands at (0, −200) on the floor there (on the ramp, higher than on the flat), eye 41 above.
+                    var (ramp, rampGeometry) = Scene("ramp");
+                    var (flat, flatGeometry) = Scene("flat");
+                    var spot = new WadSmith.Editor.Geometry.MapPoint(0, -200);
+                    WadSmith.App.ThreeD.Camera3D Eye(WadSmith.Editor.Geometry.MapGeometry g) => new(0, -200, WadSmith.Editor.Scene.SlopePlane.FloorAt(g.AreaAt(spot)!.Value, spot) + WadSmith.Editor.Scene.Walker.EyeHeight, 90, 0);
+                    Console.WriteLine($"slope eyes: ramp {Eye(rampGeometry).Z:0.##}, flat {Eye(flatGeometry).Z:0.##}");
+                    var rampOurs = WadSmith.App.ThreeD.Offscreen3D.RenderPng(ramp, resources, Eye(rampGeometry), 1024, 640, inside: true);
+                    var flatOurs = WadSmith.App.ThreeD.Offscreen3D.RenderPng(flat, resources, Eye(flatGeometry), 1024, 640, inside: true);
+                    File.WriteAllBytes(Path.Combine(output, "slope-ramp-ours.png"), rampOurs);
+                    File.WriteAllBytes(Path.Combine(output, "slope-flat-ours.png"), flatOurs);
+                    Console.WriteLine($"slope measured: ramp ours against the engine's ramp {Diff(rampOurs, "ramp"):0.0} per channel; flat against flat {Diff(flatOurs, "flat"):0.0}; controls: flat ours against the engine's ramp {Diff(flatOurs, "ramp"):0.0}, ramp ours against the engine's flat {Diff(rampOurs, "flat"):0.0}");
+                }
+
                 break;
             }
 

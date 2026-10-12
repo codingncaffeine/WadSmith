@@ -18,13 +18,14 @@ public static class Walker
     public static double? Step(MapGeometry geometry, MapPoint from, double feet, MapPoint to)
     {
         if (geometry.AreaAt(to) is not { } area) return null;
-        if (area.FloorHeight > feet + StepHeight || area.CeilingHeight - area.FloorHeight < PlayerHeight) return null;
+        var (floor, ceiling) = (SlopePlane.FloorAt(area, to), SlopePlane.CeilingAt(area, to));
+        if (floor > feet + StepHeight || ceiling - floor < PlayerHeight) return null;
         foreach (var wall in geometry.WallsCrossing(from, to))
         {
             if (wall.Back < 0 || Blocking(wall.Extra)) return null;
         }
 
-        return area.FloorHeight + EyeHeight;
+        return floor + EyeHeight;
     }
 
     private static bool Blocking(KeyValuePair<string, UdmfValue>[] extra)

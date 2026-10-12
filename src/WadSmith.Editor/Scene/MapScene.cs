@@ -399,6 +399,7 @@ public sealed class MapScene
             // Flats line up with the map's grid (texture x is map x, texture y minus map y), turned, moved and scaled by the
             // area's own fields as GZDoom does.
             var (onFloor, onCeiling) = (FlatTransform.Of(sector.Extra, false), FlatTransform.Of(sector.Extra, true));
+            var (floorPlane, ceilingPlane) = (SlopePlane.Floor(sector.Extra), SlopePlane.Ceiling(sector.Extra));
             for (var i = 0; i < triangles.Count; i += 3)
             {
                 floor.Owners.Add(owner);
@@ -408,14 +409,14 @@ public sealed class MapScene
                 foreach (var p in (MapPoint[])[triangles[i], triangles[i + 1], triangles[i + 2]])
                 {
                     var (u, v) = onFloor.Texel(p.X, p.Y);
-                    floor.Add(p.X, p.Y, sector.FloorHeight, u, v, floorLight, tint);
+                    floor.Add(p.X, p.Y, floorPlane?.Z(p.X, p.Y) ?? sector.FloorHeight, u, v, floorLight, tint);
                 }
 
                 // Ceilings face down: the same triangles the other way round.
                 foreach (var p in (MapPoint[])[triangles[i + 2], triangles[i + 1], triangles[i]])
                 {
                     var (u, v) = onCeiling.Texel(p.X, p.Y);
-                    ceiling.Add(p.X, p.Y, sector.CeilingHeight, u, v, ceilingLight, tint);
+                    ceiling.Add(p.X, p.Y, ceilingPlane?.Z(p.X, p.Y) ?? sector.CeilingHeight, u, v, ceilingLight, tint);
                 }
             }
         }
@@ -442,30 +443,34 @@ public sealed class MapScene
                 var light = Tint.Light(Math.Clamp(here.Light, 0, 255), side.Extra, "light", "lightabsolute");
                 var tint = Tint.Of(here.Extra);
                 var length = from.DistanceTo(to);
+
+                // Heights at each end of the wall: a sloped floor or ceiling gives each end its own.
+                var (hereFloor, hereCeiling) = (Ends(here, from, to, false), Ends(here, from, to, true));
                 if (other is not { Sector: >= 0 } o)
                 {
                     // One-sided: the middle texture from floor to ceiling, hung from the ceiling unless
                     // anchored at the bottom.
                     var h = Height(side.Middle);
                     var top = lowerUnpegged ? here.FloorHeight + h : here.CeilingHeight;
-                    Quad(side.Middle, from, to, here.FloorHeight, here.CeilingHeight, top, side, length, light, tint, line, WallPart.Middle);
+                    Quad(side.Middle, from, to, hereFloor, hereCeiling, top, side, length, light, tint, line, WallPart.Middle);
                     return;
                 }
 
                 var there = f.Sectors[o.Sector];
+                var (thereFloor, thereCeiling) = (Ends(there, from, to, false), Ends(there, from, to, true));
 
                 // Upper part, where this side's ceiling is higher; none between two skies (Doom's sky trick).
-                if (here.CeilingHeight > there.CeilingHeight && !(IsSky(here.CeilingTexture) && IsSky(there.CeilingTexture)))
+                if ((hereCeiling.From > thereCeiling.From || hereCeiling.To > thereCeiling.To) && !(IsSky(here.CeilingTexture) && IsSky(there.CeilingTexture)))
                 {
                     var top = upperUnpegged ? here.CeilingHeight : there.CeilingHeight + Height(side.Top);
-                    Quad(side.Top, from, to, there.CeilingHeight, here.CeilingHeight, top, side, length, light, tint, line, WallPart.Top);
+                    Quad(side.Top, from, to, thereCeiling, hereCeiling, top, side, length, light, tint, line, WallPart.Top);
                 }
 
                 // Lower part, where the floor beyond is higher.
-                if (there.FloorHeight > here.FloorHeight)
+                if (thereFloor.From > hereFloor.From || thereFloor.To > hereFloor.To)
                 {
                     var top = lowerUnpegged ? here.CeilingHeight : there.FloorHeight;
-                    Quad(side.Bottom, from, to, here.FloorHeight, there.FloorHeight, top, side, length, light, tint, line, WallPart.Bottom);
+                    Quad(side.Bottom, from, to, hereFloor, thereFloor, top, side, length, light, tint, line, WallPart.Bottom);
                 }
 
                 // A middle texture on a two-sided wall (a grate, a fence) is drawn once, not repeated up the wall.
@@ -477,7 +482,7 @@ public sealed class MapScene
                     var top = (lowerUnpegged ? bottom + h : ceiling) + side.OffsetY;
                     var z0 = Math.Max(bottom, top - h);
                     var z1 = Math.Min(ceiling, top);
-                    if (z1 > z0) Quad(side.Middle, from, to, z0, z1, top - side.OffsetY, side, length, light, tint, line, WallPart.Middle);
+                    if (z1 > z0) Quad(side.Middle, from, to, (z0, z0), (z1, z1), top - side.OffsetY, side, length, light, tint, line, WallPart.Middle);
                 }
             }
         }
@@ -489,7 +494,7 @@ public sealed class MapScene
         {
             if (t.Element is null || Hidden(t.Extra)) continue;
             var area = geometry.SectorAt(new MapPoint(t.X, t.Y)) is { } sector && sector.Slot < f.Sectors.Count ? f.Sectors[sector.Slot] : (SectorFrame?)null;
-            var z = (area?.FloorHeight ?? 0) + t.Height;
+            var z = (area is { } standing ? SlopePlane.FloorAt(standing, new MapPoint(t.X, t.Y)) : 0) + t.Height;
             var light = Math.Clamp(area?.Light ?? 160, 0, 255);
             var tint = area is { } inArea ? Tint.Of(inArea.Extra) : Tint.Plain;
             things.Add(new SceneThing(t.Element, (float)t.X, (float)t.Y, (float)z, t.Type, t.Angle, light));
@@ -513,10 +518,16 @@ public sealed class MapScene
 
         double Height(string texture) => texture is "-" or "" ? 128 : wallSize(texture)?.Height ?? 128;
 
-        // A wall part from z0 to z1 whose texture's top row sits at height top (before the side's offsets).
-        void Quad(string texture, MapPoint from, MapPoint to, double z0, double z1, double top, SideFrame side, double length, int light, Tint tint, Line wall, WallPart part)
+        // An area's floor or ceiling height at a wall's two ends (its plane's when sloped).
+        static (double From, double To) Ends(SectorFrame area, MapPoint from, MapPoint to, bool ceiling) => ceiling
+            ? (SlopePlane.CeilingAt(area, from), SlopePlane.CeilingAt(area, to))
+            : (SlopePlane.FloorAt(area, from), SlopePlane.FloorAt(area, to));
+
+        // A wall part from z0 to z1 (each at the wall's two ends) whose texture's top row sits at height top (before the side's offsets).
+        void Quad(string texture, MapPoint from, MapPoint to, (double From, double To) z0, (double From, double To) z1, double top, SideFrame side, double length, int light, Tint tint, Line wall, WallPart part)
         {
-            if (z1 <= z0 || side.Element is not { } face) return;
+            if ((z1.From <= z0.From && z1.To <= z0.To) || side.Element is not { } face) return;
+            z1 = (Math.Max(z1.From, z0.From), Math.Max(z1.To, z0.To));
             var batch = Batch(texture is "" ? "-" : texture, SurfaceKind.Wall);
             batch.Owners.Add(face);
             batch.Owners.Add(face);
@@ -529,12 +540,12 @@ public sealed class MapScene
             double V(double z) => top - z + side.OffsetY;
 
             // Counter-clockwise as seen from the area the face belongs to.
-            batch.Add(from.X, from.Y, z0, u0, V(z0), light, tint);
-            batch.Add(to.X, to.Y, z0, u1, V(z0), light, tint);
-            batch.Add(to.X, to.Y, z1, u1, V(z1), light, tint);
-            batch.Add(from.X, from.Y, z0, u0, V(z0), light, tint);
-            batch.Add(to.X, to.Y, z1, u1, V(z1), light, tint);
-            batch.Add(from.X, from.Y, z1, u0, V(z1), light, tint);
+            batch.Add(from.X, from.Y, z0.From, u0, V(z0.From), light, tint);
+            batch.Add(to.X, to.Y, z0.To, u1, V(z0.To), light, tint);
+            batch.Add(to.X, to.Y, z1.To, u1, V(z1.To), light, tint);
+            batch.Add(from.X, from.Y, z0.From, u0, V(z0.From), light, tint);
+            batch.Add(to.X, to.Y, z1.To, u1, V(z1.To), light, tint);
+            batch.Add(from.X, from.Y, z1.From, u0, V(z1.From), light, tint);
         }
     }
 
