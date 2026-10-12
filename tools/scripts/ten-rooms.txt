@@ -1,0 +1,30 @@
+# Ten rooms joined by the editor's tools: wadsmith-cli script tools/scripts/ten-rooms.txt --out=ten.wad
+room -256 -256 256 256        # 1 the hub, where the player starts
+room -64 256 64 512           # 2 a corridor north of it
+room -256 512 256 768         # 3 the north hall
+room 384 -128 640 128         # 4 the east room, raised
+room -640 -128 -320 128       # 5 the west room, seen through a window
+room -128 -512 128 -256       # 6 the south room, a teleport pad
+room 640 -64 768 64           # 7 a closet behind the east room: a secret
+room -512 512 -256 640        # 8 a side room off the hall: the red key
+room 64 768 256 896           # 9 the exit room behind the red door
+room -256 768 -64 896         # 10 a nook north of the hall
+
+start 0 -128 90
+floor 512 0 64
+ceiling 512 0 192
+stairs 256 -64 384 64         # from the hub up to the east room
+window -256 0                 # the hub's west wall, through to the west room
+door 0 512                    # corridor to hall
+door 640 0                    # east room to its closet
+secret 704 0
+door -256 576                 # hall to the side room
+key red -384 576
+door 160 768                  # hall to the exit room
+lock 160 776 red
+exit 160 896
+teleport 0 -384 -480 0        # the south room sends to the west room
+light 0 0
+light 0 640
+light 512 0
+thing 3001 512 64

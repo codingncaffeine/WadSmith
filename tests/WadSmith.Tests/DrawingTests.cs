@@ -44,58 +44,8 @@ public sealed class DrawingTests(ITestOutputHelper output)
     /// </summary>
     internal static void AssertSound(EditorMap map)
     {
-        var lines = Lines(map);
-        var pairs = new HashSet<(long, long)>();
-        foreach (var l in lines)
-        {
-            Assert.True(l.Start.OnMap && l.End.OnMap && l.Front.OnMap && (l.Back?.OnMap ?? true), "a wall points at something off the map");
-            Assert.True(l.Length > 0, "a wall has no length");
-            Assert.Same(l, l.Front.Line);
-            if (l.Back is { } b) Assert.Same(l, b.Line);
-            Assert.Equal(l.Back is not null, l.Flag("twosided"));
-            Assert.True(pairs.Add((Math.Min(l.Start.Id, l.End.Id), Math.Max(l.Start.Id, l.End.Id))), "two walls share both corners");
-        }
-
-        for (var i = 0; i < lines.Count; i++)
-        {
-            for (var j = i + 1; j < lines.Count; j++) Assert.False(Cross(lines[i], lines[j]), $"walls {i} and {j} cross");
-        }
-
-        foreach (var v in map.Vertices.Where(v => v.OnMap))
-        {
-            foreach (var l in lines)
-            {
-                if (l.Start == v || l.End == v) continue;
-                Assert.False(OnWall(v, l), $"a corner at ({v.X}, {v.Y}) sits in the middle of a wall");
-            }
-        }
-
-        var balance = new Dictionary<(Sector, Vertex), int>();
-        void Count(Sector s, Vertex from, Vertex to)
-        {
-            balance[(s, from)] = balance.GetValueOrDefault((s, from)) + 1;
-            balance[(s, to)] = balance.GetValueOrDefault((s, to)) - 1;
-        }
-
-        foreach (var l in lines)
-        {
-            Count(l.Front.Sector, l.Start, l.End);
-            if (l.Back is { } b) Count(b.Sector, l.End, l.Start);
-        }
-
-        Assert.All(balance, kv => Assert.True(kv.Value == 0, $"an area is open at ({kv.Key.Item2.X}, {kv.Key.Item2.Y})"));
-        var used = lines.SelectMany(l => new[] { l.Front.Sector, l.Back?.Sector }).OfType<Sector>().ToHashSet();
-        Assert.All(map.Sectors.Where(s => s.OnMap), s => Assert.Contains(s, used));
-        Assert.All(used, s => Assert.True(s.OnMap, "a face belongs to an area off the map"));
-        var shapes = MapGeometry.Build(map.Frame);
-        foreach (var l in lines)
-        {
-            var (dx, dy) = ((l.End.X - l.Start.X) / l.Length, (l.End.Y - l.Start.Y) / l.Length);
-            var (mx, my) = ((l.Start.X + l.End.X) / 2, (l.Start.Y + l.End.Y) / 2);
-            Assert.True(ReferenceEquals(l.Front.Sector, shapes.SectorAt(new MapPoint(mx + dy / 8, my - dx / 8))), $"the wall at ({mx}, {my}) has its front's area on its left");
-            if (l.Back is { } back) Assert.True(ReferenceEquals(back.Sector, shapes.SectorAt(new MapPoint(mx - dy / 8, my + dx / 8))), $"the wall at ({mx}, {my}) has its back's area on its right");
-        }
-
+        var faults = Editor.Checks.Invariants.Check(map);
+        Assert.True(faults.Count == 0, string.Join(" ", faults));
         Assert.Equal(Udmf(map.FrameFromScratch().ToModel()), Udmf(map.ToModel()));
     }
 

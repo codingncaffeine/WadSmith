@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WadSmith.Core\WadSmith.Core.csproj" />
+    <ProjectReference Include="..\WadSmith.Editor\WadSmith.Editor.csproj" />
   </ItemGroup>
 
 </Project>
