@@ -292,6 +292,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             var kinds = items.Select(Name).Distinct().ToList();
             Heading = kinds.Count == 1 ? $"{items.Count} {kinds[0].ToLowerInvariant()}s selected" : $"{items.Count} things selected";
             Summary = string.Join(", ", items.GroupBy(i => Name(i)).Select(g => $"{g.Count()} {g.Key.ToLowerInvariant()}{(g.Count() > 1 ? "s" : "")}"));
+            Rows.Add(new ActionRow("Save as a prefab", "Keeps a copy of the selected rooms and things in this project, under Objects, Prefabs, to drag onto any of its maps.", _session.SavePrefab));
             if (items.All(i => i is Sector)) Rows.Add(new ActionRow("Join them into one room", "The rooms become the first one you selected: the walls between them go, and its floor, ceiling and light hold for all of it (J).", _session.JoinRooms));
             AddShaping();
             Rows.Add(new ActionRow("Delete them", "Deletes everything selected so the map stays whole (Delete).", _session.DeleteSelection));
@@ -340,6 +341,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = "Its floor, ceiling and light.";
                 AddSector(s);
                 Rows.Add(new ActionRow("Make it a secret", "Finding it counts toward the secrets at the end of the map, and the walls into it show as solid walls on the in-game map so they do not give it away.", () => _session.MakeSecret(s)));
+                Rows.Add(new ActionRow("Save as a prefab", "Keeps a copy of this room, its walls and the things in it in this project, under Objects, Prefabs, to drag onto any of its maps.", _session.SavePrefab));
                 Rows.Add(new ActionRow("Draw new rooms like this one", "New rooms take its floor and ceiling pictures, heights, light and the texture of its walls (the Look in the Textures panel).", () => LookLike?.Invoke(s)));
                 if (Rooms.Island(_session.Geometry, s) is not null)
                 {

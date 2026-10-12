@@ -273,6 +273,67 @@ public sealed class EditorSession : IDisposable
     /// <summary>Raised when <see cref="TeleportPad"/> changes.</summary>
     public event Action? TeleportPadChanged;
 
+    /// <summary>
+    /// Saves the selected rooms and things as a prefab of the project (what Copy would copy), named "Prefab N"; the file
+    /// is written on a worker, and <see cref="PrefabsChanged"/> is raised once it is. Says what happened.
+    /// </summary>
+    public void SavePrefab()
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = SavePrefab;
+            return;
+        }
+
+        var folder = Project.Folder;
+        var text = Prefabs.Text(_geometry, Selection.Items, Map.Namespace, Look);
+        if (text is null)
+        {
+            Notice?.Invoke("Select rooms or things to save as a prefab; walls and corners go with the rooms they belong to.");
+            return;
+        }
+
+        Task.Run(() =>
+        {
+            var dir = Path.Combine(folder, Prefabs.FolderName);
+            Directory.CreateDirectory(dir);
+            var name = Enumerable.Range(1, 10000).Select(n => $"Prefab {n}").First(n => !File.Exists(Path.Combine(dir, n + Prefabs.Extension)));
+            File.WriteAllText(Path.Combine(dir, name + Prefabs.Extension), text);
+            _onUiThread(() =>
+            {
+                Notice?.Invoke($"Saved as {name}: it is under Objects, Prefabs, ready to drag onto any map of this project.");
+                PrefabsChanged?.Invoke();
+            });
+        });
+    }
+
+    /// <summary>Raised on the UI thread when a prefab has been saved.</summary>
+    public event Action? PrefabsChanged;
+
+    /// <summary>
+    /// Puts a copy of a prefab with its middle near <paramref name="at"/> (in whole 64-unit steps from where it was saved),
+    /// joined to the map as a paste is, one undo step; the prefab is read on a worker.
+    /// </summary>
+    public void PlacePrefab(Prefab prefab, MapPoint at)
+    {
+        Task.Run(() =>
+        {
+            MapClip clip;
+            try
+            {
+                clip = Prefabs.Load(prefab);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Core.CorruptDataException or FormatException)
+            {
+                Log.Warn($"Reading the prefab {prefab.Path} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"The prefab {prefab.Name} could not be read. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() => Paste(clip, at));
+        });
+    }
+
     /// <summary>Joins the selected rooms into the first selected, as one undo step (see <see cref="Rooms.Join"/>), and selects it.</summary>
     public void JoinRooms()
     {
@@ -592,9 +653,15 @@ public sealed class EditorSession : IDisposable
             return;
         }
 
+        Paste(clip, at);
+    }
+
+    /// <summary>Pastes <paramref name="clip"/> as <see cref="Paste(MapPoint)"/> pastes what was copied.</summary>
+    private void Paste(MapClip clip, MapPoint at)
+    {
         if (_geometry.Version != Map.Version)
         {
-            _whenCaughtUp = () => Paste(at);
+            _whenCaughtUp = () => Paste(clip, at);
             return;
         }
 

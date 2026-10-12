@@ -262,4 +262,29 @@ public sealed class SessionTests
         Assert.Equal(("FLOOR4_8", "CEIL3_5", "STARTAN3", 0.0, 128.0, 192), (like.Floor, like.Ceiling, like.Wall, like.FloorHeight, like.CeilingHeight, like.Light));
         Assert.Equal(hell.Door, like.Door);
     }
+
+    [Fact]
+    public void APrefabSavedFromTheSessionIsPlacedAsOneStep()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var ui = new FakeUi();
+        using var session = EditorSession.Open(project, "MAP01", ui.Post);
+        var saved = false;
+        session.PrefabsChanged += () => saved = true;
+        session.DrawRoom([new(512, 0), new(512, 128), new(768, 128), new(768, 0)]);
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        session.SavePrefab();
+        ui.PumpUntil(() => saved, TimeSpan.FromSeconds(10));
+        var prefab = Assert.Single(Editor.Editing.Prefabs.In(project.Folder));
+
+        var before = session.Map.Sectors.Count(s => s.OnMap);
+        session.PlacePrefab(prefab, new Editor.Geometry.MapPoint(640, 1024));
+        ui.PumpUntil(() => session.Map.Sectors.Count(s => s.OnMap) == before + 1, TimeSpan.FromSeconds(10));
+        Assert.Equal("Paste", session.History.UndoLabel);
+        DrawingTests.AssertSound(session.Map);
+        session.History.Undo();
+        Assert.Equal(before, session.Map.Sectors.Count(s => s.OnMap));
+    }
 }

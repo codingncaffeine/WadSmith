@@ -7,8 +7,8 @@ using WadSmith.Editor;
 
 namespace WadSmith.App.ViewModels;
 
-/// <summary>What a shelf tile carries when dragged onto the map: a texture's name, or an object's number.</summary>
-internal sealed record ShelfDrop(string? Texture, int Thing, string Label)
+/// <summary>What a shelf tile carries when dragged onto the map: a texture's name, an object's number, or a prefab.</summary>
+internal sealed record ShelfDrop(string? Texture, int Thing, string Label, WadSmith.Editor.Editing.Prefab? Prefab = null)
 {
     /// <summary>The drag's format: an object handed over within WadSmith.</summary>
     public static readonly Avalonia.Input.DataFormat<ShelfDrop> Format = Avalonia.Input.DataFormat.CreateInProcessFormat<ShelfDrop>("wadsmith-shelf");
@@ -64,6 +64,14 @@ internal sealed partial class ShelfViewModel : ObservableObject
     /// <summary>What the shelf says above its pictures: loading, how many, or why it is empty.</summary>
     [ObservableProperty]
     private string _note;
+
+    /// <summary>Makes the pictures again (a prefab was saved), at once if the shelf has been shown, else when it is.</summary>
+    public void Refresh()
+    {
+        if (!_started) return;
+        _started = false;
+        Open();
+    }
 
     /// <summary>Makes the pictures the first time the shelf is shown.</summary>
     public void Open()
@@ -129,14 +137,37 @@ internal sealed partial class ShelfViewModel : ObservableObject
         (ThingCategory.Start, "Player starts"), (ThingCategory.Marker, "Markers"),
     ];
 
-    /// <summary>The game's objects with their sprites, by kind: monsters, weapons, ammunition and so on.</summary>
-    public static ShelfViewModel Objects(GameResources? game) => new(
+    private const string PrefabGroup = "Prefabs";
+
+    /// <summary>
+    /// The game's objects with their sprites, by kind: monsters, weapons, ammunition and so on; and the project's prefabs
+    /// (<paramref name="prefabs"/> lists them on the worker), each pictured from above.
+    /// </summary>
+    public static ShelfViewModel Objects(GameResources? game, Func<IReadOnlyList<WadSmith.Editor.Editing.Prefab>>? prefabs = null) => new(
         game is null ? "Choose a base game to see its monsters and items." : "",
-        ["All", .. Kinds.Select(k => k.Name)],
+        ["All", .. Kinds.Select(k => k.Name), PrefabGroup],
         () =>
         {
-            if (game is null) return [];
             var tiles = new List<ShelfTile>();
+            foreach (var prefab in prefabs?.Invoke() ?? [])
+            {
+                Bitmap? picture = null;
+                try
+                {
+                    var model = WadSmith.Core.Maps.MapConversion.FromUdmf("PREFAB", WadSmith.Core.Maps.Udmf.UdmfText.Parse(File.ReadAllText(prefab.Path)));
+                    var frame = WadSmith.Editor.Model.EditorMap.FromModel(model).Frame;
+                    using var png = new MemoryStream(Canvas.MapThumbnail.Render(frame, new Canvas.MapLook(game), Thumb, Thumb));
+                    picture = new Bitmap(png);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or WadSmith.Core.CorruptDataException or FormatException)
+                {
+                    WadSmith.Editor.App.Log.Warn($"The prefab {prefab.Path} could not be pictured: {ex.Message}");
+                }
+
+                tiles.Add(new ShelfTile(prefab.Name, $"The prefab {prefab.Name}, saved from this project. Drag it onto the map to put a copy there.", PrefabGroup, $"{prefab.Name} prefab".ToLowerInvariant(), picture, new ShelfDrop(null, 0, prefab.Name, prefab)));
+            }
+
+            if (game is null) return tiles;
             foreach (var (category, group) in Kinds)
             {
                 foreach (var t in game.Things.All.Where(t => t.Category == category).OrderBy(t => t.Name, StringComparer.CurrentCulture))

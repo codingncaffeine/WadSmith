@@ -1502,7 +1502,9 @@ internal sealed class MapCanvas : Control
             InvalidateVisual();
         }
 
-        DropHint?.Invoke(drop.Texture is null
+        DropHint?.Invoke(drop.Prefab is not null
+            ? $"Let go to put a copy of {drop.Label} here."
+            : drop.Texture is null
             ? $"Let go to place {drop.Label} here."
             : target switch
             {
@@ -1519,7 +1521,11 @@ internal sealed class MapCanvas : Control
         ClearHover();
         if (Session is not { } session || e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) is not { } drop) return;
         var p = e.GetPosition(this);
-        if (drop.Texture is { } texture)
+        if (drop.Prefab is { } prefab)
+        {
+            session.PlacePrefab(prefab, ToMap(p));
+        }
+        else if (drop.Texture is { } texture)
         {
             session.Paint(texture, ToMap(p), 7 / _zoom, Mode == MapViewMode.Ceilings);
         }

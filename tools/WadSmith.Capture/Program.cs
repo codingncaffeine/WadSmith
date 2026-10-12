@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,12 +361,12 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
                 // one inside it.
-                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-measure" or "editor-looks";
+                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-measure" or "editor-looks" or "editor-prefab";
                 view.ZoomBy(wide ? 0.3 : 0.45);
                 if (wide) view.PanBy(-90, 0);
                 Pump(0.3);
@@ -459,6 +459,45 @@ foreach (var pose in poses)
                     editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
                     Pump(1.5);
                     Save("editor-make-stairs");
+                    break;
+                }
+
+                if (pose == "editor-prefab")
+                {
+                    // A room east of the starter room with an imp in it, the Inspector's "Save as a prefab"; then the
+                    // Objects panel's Prefabs and the prefab dragged onto the map north of the starter room.
+                    Drag((384, -128), (640, 128), null);
+                    editor.Session.PlaceThing(3001, new WadSmith.Editor.Geometry.MapPoint(512, 0));
+                    window.KeyPress(Avalonia.Input.Key.V, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.V, "v");
+                    window.MouseDown(At(448, 64), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(448, 64), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.6);
+                    editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Save as a prefab").Command.Execute(null);
+                    Pump(1.0);
+                    Console.WriteLine($"prefab saved: status '{editor.Status}'");
+                    editor.ShowObjects = true;
+                    for (var i = 0; i < 200 && editor.ObjectShelf.Tiles.Count == 0; i++) Pump(0.05);
+                    editor.ObjectShelf.Group = editor.ObjectShelf.Groups.ToList().IndexOf("Prefabs");
+                    Pump(0.5);
+                    var tile = editor.ObjectShelf.Tiles.FirstOrDefault();
+                    Console.WriteLine($"prefab shelf: {editor.ObjectShelf.Note}; first tile {tile?.Label}, picture {tile?.Picture is not null}");
+                    Save("editor-prefab-shelf");
+                    if (tile is not null)
+                    {
+                        var data = new Avalonia.Input.DataTransfer();
+                        data.Add(Avalonia.Input.DataTransferItem.Create(WadSmith.App.ViewModels.ShelfDrop.Format, tile.Drop));
+                        foreach (var kind in new[] { Avalonia.Input.Raw.RawDragEventType.DragEnter, Avalonia.Input.Raw.RawDragEventType.DragOver, Avalonia.Input.Raw.RawDragEventType.Drop })
+                        {
+                            window.DragDrop(At(512, 640), kind, data, Avalonia.Input.DragDropEffects.Copy, Avalonia.Input.RawInputModifiers.None);
+                            Pump(0.1);
+                        }
+
+                        Pump(1.5);
+                    }
+
+                    Report("prefab");
+                    Console.WriteLine($"prefab placed: {editor.Session.Map.Sectors.Count(x => x.OnMap)} areas, {editor.Session.Map.Things.Count(t => t.OnMap && t.Type == 3001)} imps, undo '{editor.Session.History.UndoLabel}'");
+                    Save("editor-prefab");
                     break;
                 }
 

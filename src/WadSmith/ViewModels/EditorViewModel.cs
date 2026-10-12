@@ -57,7 +57,8 @@ internal sealed partial class EditorViewModel : ObservableObject
         TextureShelf = ShelfViewModel.Textures(session.Resources);
         _looks = [.. Look.Available(session.Engine, session.Resources)];
         LookNames = [.. _looks.Select(l => l.Name)];
-        ObjectShelf = ShelfViewModel.Objects(session.Resources);
+        ObjectShelf = ShelfViewModel.Objects(session.Resources, () => WadSmith.Editor.Editing.Prefabs.In(session.Project.Folder));
+        session.PrefabsChanged += ObjectShelf.Refresh;
         if (showVersions) Panel = SidePanel.Versions;
         session.History.Moved += OnHistoryMoved;
         session.StateChanged += _ => UpdateSaveText();
