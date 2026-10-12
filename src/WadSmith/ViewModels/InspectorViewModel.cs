@@ -280,7 +280,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
 
         if (items.Count > 1)
         {
-            Heading = $"{items.Count} things selected";
+            var kinds = items.Select(Name).Distinct().ToList();
+            Heading = kinds.Count == 1 ? $"{items.Count} {kinds[0].ToLowerInvariant()}s selected" : $"{items.Count} things selected";
             Summary = string.Join(", ", items.GroupBy(i => Name(i)).Select(g => $"{g.Count()} {g.Key.ToLowerInvariant()}{(g.Count() > 1 ? "s" : "")}"));
             Rows.Add(new ActionRow("Delete them", "Deletes everything selected so the map stays whole (Delete).", _session.DeleteSelection));
             return;

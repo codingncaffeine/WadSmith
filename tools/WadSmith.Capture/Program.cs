@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,12 +361,12 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
                 // one inside it.
-                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy";
+                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs";
                 view.ZoomBy(wide ? 0.3 : 0.45);
                 if (wide) view.PanBy(-90, 0);
                 Pump(0.3);
@@ -434,6 +434,31 @@ foreach (var pose in poses)
                     var placed = editor.Session.Map.Things.Where(t => t.OnMap && t.Type == imp.Drop.Thing).ToList();
                     Console.WriteLine($"shelf thing: {placed.Count} imp(s) at {string.Join(" ", placed.Select(t => $"({t.X},{t.Y})"))}, undo '{editor.Session.History.UndoLabel}'");
                     Save("editor-shelves");
+                    break;
+                }
+
+                if (pose == "editor-make-stairs")
+                {
+                    // A room east of the starter room raised to 64 in the Inspector, then S and a drag from the
+                    // starter room's east wall to the new room: steps between them.
+                    window.KeyPress(Avalonia.Input.Key.R, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.R, "r");
+                    Drag((512, -128), (768, 128), null);
+                    window.KeyPress(Avalonia.Input.Key.V, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.V, "v");
+                    window.MouseDown(At(640, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(640, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.5);
+                    editor.Inspector.Rows.OfType<NumberRow>().First(r => r.Label == "Floor height").Value = 64;
+                    editor.Inspector.Rows.OfType<NumberRow>().First(r => r.Label == "Ceiling height").Value = 192;
+                    Pump(0.5);
+                    window.KeyPress(Avalonia.Input.Key.S, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.S, "s");
+                    Pump(0.2);
+                    Drag((256, -64), (512, 64), "editor-making-stairs");
+                    Report("stairs");
+                    var floors = editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().Select(x => x.FloorHeight).Order();
+                    Console.WriteLine($"draw steps: {string.Join(" ", floors)}; {editor.Problems.Summary}");
+                    editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
+                    Pump(1.5);
+                    Save("editor-make-stairs");
                     break;
                 }
 

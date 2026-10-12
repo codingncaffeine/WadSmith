@@ -24,6 +24,9 @@ internal enum EditorTool
 
     /// <summary>Click a room to step on, then the spot the player arrives at.</summary>
     Teleport,
+
+    /// <summary>Drag from the bottom of a staircase to its top.</summary>
+    Stairs,
 }
 
 /// <summary>
@@ -313,7 +316,7 @@ internal sealed class MapCanvas : Control
         // A room just drawn stays drawn as a rectangle until the picture with it arrives from the worker.
         if (_drawnIn >= 0 && _snapshot is { } shown && shown.Version >= _drawnIn) _drawnIn = -1;
         var (from, to) = _drawFrom is not null || _drawnIn < 0 ? (_drawFrom, _drawTo) : (_justDrawn.From, (MapPoint?)_justDrawn.To);
-        var preview = Tool == EditorTool.Room || _drawnIn >= 0 ? new DrawPreview(_corners.Count > 0 ? null : from, _corners.Count > 0 ? null : to, Tool == EditorTool.Room ? _drawFrom is null || _corners.Count > 0 ? _snap : _drawTo : null, Tool == EditorTool.Room ? GridStep() : 0, _corners.Count > 0 ? [.. _corners] : null) : null;
+        var preview = Tool is EditorTool.Room or EditorTool.Stairs || _drawnIn >= 0 ? new DrawPreview(_corners.Count > 0 ? null : from, _corners.Count > 0 ? null : to, Tool == EditorTool.Room ? _drawFrom is null || _corners.Count > 0 ? _snap : _drawTo : null, Tool == EditorTool.Room ? GridStep() : 0, _corners.Count > 0 ? [.. _corners] : null) : null;
         MovePreview? move = null;
         if (_moveGesture != 0)
         {
@@ -607,6 +610,17 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Stairs)
+        {
+            _drawPress = e.GetPosition(this);
+            _drawFrom = _drawTo = Snap(_drawPress);
+            Drawing?.Invoke((0, 0), GridStep());
+            e.Pointer.Capture(this);
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
         if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Room)
         {
             // A double-click closes a shape drawn corner by corner.
@@ -681,6 +695,21 @@ internal sealed class MapCanvas : Control
             _cy += (p.Y - from.Y) / _zoom;
             _panFrom = p;
             InvalidateVisual();
+            return;
+        }
+
+        if (Tool == EditorTool.Stairs)
+        {
+            var at = Snap(p);
+            if (_drawFrom is { } bottom)
+            {
+                _drawTo = at;
+                Drawing?.Invoke((Math.Abs(at.X - bottom.X), Math.Abs(at.Y - bottom.Y)), GridStep());
+            }
+
+            _snap = at;
+            InvalidateVisual();
+            HoverChanged?.Invoke(null, at);
             return;
         }
 
@@ -766,6 +795,16 @@ internal sealed class MapCanvas : Control
             if (_moveGesture != 0) EndMove(keep: true);
             else if (_narrowOnClick && Session is { } s) s.Selection.Set(clicked);
             _narrowOnClick = false;
+            return;
+        }
+
+        if (Tool == EditorTool.Stairs && _drawFrom is { } low && _drawTo is { } high && e.InitialPressMouseButton == MouseButton.Left && Session is { } building)
+        {
+            e.Pointer.Capture(null);
+            _drawFrom = _drawTo = null;
+            Drawing?.Invoke(null, GridStep());
+            InvalidateVisual();
+            if (Math.Abs(high.X - low.X) >= 1 && Math.Abs(high.Y - low.Y) >= 1) building.MakeStairs(low, high);
             return;
         }
 
@@ -870,6 +909,10 @@ internal sealed class MapCanvas : Control
                 break;
             case Key.T when e.KeyModifiers == KeyModifiers.None:
                 Tool = EditorTool.Teleport;
+                e.Handled = true;
+                break;
+            case Key.S when e.KeyModifiers == KeyModifiers.None:
+                Tool = EditorTool.Stairs;
                 e.Handled = true;
                 break;
             case Key.OemPlus or Key.Add:

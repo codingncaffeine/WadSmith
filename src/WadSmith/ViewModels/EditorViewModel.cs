@@ -179,8 +179,18 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>What a left drag on the plan does (V selects, R draws rooms).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool), nameof(IsDoorTool), nameof(IsTeleportTool))]
+    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool), nameof(IsDoorTool), nameof(IsTeleportTool), nameof(IsStairsTool))]
     private Canvas.EditorTool _tool;
+
+    public bool IsStairsTool
+    {
+        get => Tool == Canvas.EditorTool.Stairs;
+        set
+        {
+            if (value) Tool = Canvas.EditorTool.Stairs;
+            else OnPropertyChanged();
+        }
+    }
 
     public bool IsTeleportTool
     {
@@ -440,6 +450,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         if (Session.History.UndoLabel == "Draw a room") Learned("draw");
         if (Session.History.UndoLabel == "Make a door") Learned("door");
         if (Session.History.UndoLabel == "Make a teleporter") Learned("teleport");
+        if (Session.History.UndoLabel == "Make stairs") Learned("stairs");
     }
 
     /// <summary>The heights legend's words, from the shapes the worker built (no scan of the map here).</summary>
@@ -574,6 +585,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         if (_hoverText.Length > 0)
         {
             Status = _hoverText;
+            return;
+        }
+
+        if (Tool == Canvas.EditorTool.Stairs)
+        {
+            Status = "Drag from the bottom of the stairs to the top: the steps climb from the floor where you start to the floor where you end, 16 a step where nothing else decides. Esc goes back to Select.";
             return;
         }
 

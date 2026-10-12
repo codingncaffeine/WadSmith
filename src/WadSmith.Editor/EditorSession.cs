@@ -224,6 +224,31 @@ public sealed class EditorSession : IDisposable
         else if (made.Why is { } why) Notice?.Invoke(why);
     }
 
+    /// <summary>Makes stairs in the rectangle dragged from <paramref name="from"/> (the bottom) to <paramref name="to"/> (see <see cref="Stairs.Make"/>), one undo step, and selects them.</summary>
+    public void MakeStairs(MapPoint from, MapPoint to)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => MakeStairs(from, to);
+            return;
+        }
+
+        try
+        {
+            (IReadOnlyList<Sector> Steps, string? Why) made = ([], null);
+            var geometry = _geometry;
+            var look = Look;
+            History.Record("Make stairs", e => made = Stairs.Make(e, geometry, from, to, look));
+            if (made.Steps.Count > 0) Selection.Set([.. made.Steps]);
+            else if (made.Why is { } why) Notice?.Invoke(why);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Log.Warn($"Making stairs in {Slot} failed: {ex.Message}");
+            Notice?.Invoke($"Stairs could not be made there. {ex.Message}");
+        }
+    }
+
     /// <summary>Makes a room a lift (see <see cref="Lifts.Make"/>), one undo step; says why when it cannot.</summary>
     public void MakeLift(Sector area)
     {

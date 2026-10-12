@@ -41,8 +41,13 @@ public static class ShapeDrawing
         /// <summary>The shape runs from A to B along it, so the inside is on the right of A to B.</summary>
         public bool BoundaryForward { get; set; }
 
-        /// <summary>For a new piece: the area found inside it.</summary>
-        public Sector? Inside { get; set; }
+        /// <summary>A divider drawn inside the shape (a cut), not part of its outline.</summary>
+        public bool Cut { get; set; }
+
+        /// <summary>For a new piece: the area found on its right (A to B), and on its left (a cut's other side).</summary>
+        public Sector? Right { get; set; }
+
+        public Sector? Left { get; set; }
     }
 
     /// <summary>One direction of an edge, with the region it bounds on its right.</summary>
@@ -58,8 +63,12 @@ public static class ShapeDrawing
     /// <summary>
     /// Draws <paramref name="shape"/> (three or more corners, either way round, not crossing itself)
     /// into the map through <paramref name="edit"/>, and returns the areas made inside it.
+    /// <paramref name="cuts"/> are walls drawn across the inside as well (each from one point on the
+    /// outline or inside to another), so the regions between them become areas of their own sharing
+    /// those walls; their lower parts show <paramref name="cutLower"/> (a staircase's risers), else the
+    /// Look's wall.
     /// </summary>
-    public static IReadOnlyList<Sector> Draw(StructureEdit edit, MapGeometry before, IReadOnlyList<MapPoint> shape, Look look)
+    public static IReadOnlyList<Sector> Draw(StructureEdit edit, MapGeometry before, IReadOnlyList<MapPoint> shape, Look look, IReadOnlyList<(MapPoint A, MapPoint B)>? cuts = null, string? cutLower = null)
     {
         if (before.Version != edit.Map.Version) throw new InvalidOperationException("The map's shapes are behind the map; draw once they have caught up.");
         var corners = Clean(shape);
@@ -115,6 +124,35 @@ public static class ShapeDrawing
             }
         }
 
+        // The cuts: split where they touch or cross what is there, one new edge per piece not already a wall.
+        foreach (var (pa, pb) in cuts ?? [])
+        {
+            var a = CornerAt(pa);
+            var b = CornerAt(pb);
+            if (a == b) continue;
+            var stops = new List<(double T, Vertex V)> { (0, a), (1, b) };
+            foreach (var v in vertices)
+            {
+                if (v != a && v != b && Along(Point(v), Point(a), Point(b)) is { } t) stops.Add((t, v));
+            }
+
+            foreach (var e in edges.ToList())
+            {
+                if (Crossing(Point(a), Point(b), Point(e.A), Point(e.B)) is not { } hit) continue;
+                var m = edit.Add(new Vertex { X = hit.X, Y = hit.Y });
+                vertices.Add(m);
+                Split(e, m);
+                stops.Add((hit.T, m));
+            }
+
+            stops.Sort((p, q) => p.T.CompareTo(q.T));
+            for (var k = 0; k + 1 < stops.Count; k++)
+            {
+                var (u, w) = (stops[k].V, stops[k + 1].V);
+                if (u != w && !edges.Any(e => (e.A == u && e.B == w) || (e.A == w && e.B == u))) edges.Add(new Edge(u, w, null) { Cut = true });
+            }
+        }
+
         // The region inside the shape: its outline seen from inside, and both sides of every wall within it.
         var outline = ring.Select(Point).ToArray();
         var halves = new List<Half>();
@@ -160,7 +198,8 @@ public static class ShapeDrawing
             {
                 if (h.Edge.Line is not { } line)
                 {
-                    h.Edge.Inside = sector;
+                    if (h.Forward) h.Edge.Right = sector;
+                    else h.Edge.Left = sector;
                 }
                 else if (h.Side is { } side)
                 {
@@ -174,10 +213,23 @@ public static class ShapeDrawing
             }
         }
 
+        // The cuts' walls: between the areas on their two sides.
+        foreach (var e in edges)
+        {
+            if (e.Line is not null || !e.Cut || e.Right is not { } right || e.Left is not { } left) continue;
+            var lower = cutLower ?? look.Wall;
+            var line = new Line(e.A, e.B, edit.Add(new Side(right) { Top = look.Wall, Bottom = lower }))
+            {
+                Back = edit.Add(new Side(left) { Top = look.Wall, Bottom = lower }),
+            };
+            line.SetFlag("twosided", true);
+            edit.Add(line);
+        }
+
         // The shape's new walls: the new area inside, and outside whatever was there before (if anything).
         foreach (var e in edges)
         {
-            if (e.Line is not null || e.Inside is not { } inside) continue;
+            if (e.Line is not null || e.Cut || e.Right is not { } inside) continue;
             var outside = before.SectorAt(LeftOf(e));
             var front = edit.Add(new Side(inside));
             var line = new Line(e.A, e.B, front);
@@ -225,14 +277,24 @@ public static class ShapeDrawing
             return corner;
         }
 
-        // Splits an existing wall at a corner on it (Walls.Split) and keeps the working set in step.
+        // Splits a wall at a corner on it (Walls.Split, or a piece of the shape not yet a wall) and keeps the working set in step.
         void Split(Edge e, Vertex m)
         {
-            var line = e.Line ?? throw new InvalidOperationException("Only existing walls are split while drawing.");
+            if (e.Line is null)
+            {
+                var to = e.B;
+                e.B = m;
+                edges.Add(new Edge(m, to, null) { Boundary = e.Boundary, BoundaryForward = e.BoundaryForward, Cut = e.Cut });
+                return;
+            }
+
+            var line = e.Line;
             var end = line.End;
             var piece = Walls.Split(edit, line, m);
             e.B = m;
-            edges.Add(new Edge(m, end, piece));
+
+            // A wall already on the outline (or a cut) stays so in both its pieces.
+            edges.Add(new Edge(m, end, piece) { Boundary = e.Boundary, BoundaryForward = e.BoundaryForward, Cut = e.Cut });
         }
 
         void GiveBack(Line line, Sector sector) => Walls.OpenUp(edit, line, sector, look.Wall);
