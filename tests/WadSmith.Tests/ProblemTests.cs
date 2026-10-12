@@ -76,16 +76,37 @@ public sealed class ProblemTests(ITestOutputHelper output)
         if (!fileName.StartsWith("freedoom", StringComparison.OrdinalIgnoreCase)) Assert.DoesNotContain("door-too-low", counts.Keys);
     }
 
+    /// <summary>
+    /// The checks run after every edit, on a worker. What must never happen is a rule that grows faster than the map: on a
+    /// grid four times the walls a linear rule takes about four times as long, a quadratic one sixteen. The ratio is the
+    /// band because it holds on any machine (measured 2026-10-12: 215 ms on the 100k grid here, 1,121 ms on a Windows CI
+    /// runner); the ceiling only catches a rule gone wildly slow. Every wall has a part in a picture the game lacks, so the
+    /// rules that list walls list them all.
+    /// </summary>
     [Fact]
-    public void CheckingAHundredThousandWallMapTakesUnderASecond()
+    public void CheckingGrowsWithTheMapNotFaster()
     {
-        var geometry = MapGeometry.Build(EditorMap.FromModel(Cli.Commands.StressGenCommand.Build(223)).Frame);
-        Problems.Check(geometry, null, Look.For("doom"), "doom");
-        var started = System.Diagnostics.Stopwatch.GetTimestamp();
-        var found = Problems.Check(geometry, null, Look.For("doom"), "doom");
-        var ms = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-        output.WriteLine($"checks on the 100k grid: {ms:0} ms; {string.Join(", ", found.Select(p => p.Rule))}");
-        Assert.True(ms < 1000, $"{ms:0} ms");
+        double Time(int n)
+        {
+            var model = Cli.Commands.StressGenCommand.Build(n);
+            foreach (var side in model.Sides) side.Top = "NOSUCH";
+            var geometry = MapGeometry.Build(EditorMap.FromModel(model).Frame);
+            Problems.Check(geometry, Freedoom.Value, Look.For("doom"), "doom");
+            var best = double.MaxValue;
+            for (var i = 0; i < 2; i++)
+            {
+                var started = System.Diagnostics.Stopwatch.GetTimestamp();
+                Problems.Check(geometry, Freedoom.Value, Look.For("doom"), "doom");
+                best = Math.Min(best, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            }
+
+            return best;
+        }
+
+        var (small, big) = (Time(111), Time(223));
+        output.WriteLine($"checks: {small:0} ms on the 25k-wall grid, {big:0} ms on the 100k one ({big / small:0.0}×)");
+        Assert.True(big < 8 * small, $"{big:0} ms against {small:0} ms on a quarter of the walls");
+        Assert.True(big < 5000, $"{big:0} ms");
     }
 
     [Fact]

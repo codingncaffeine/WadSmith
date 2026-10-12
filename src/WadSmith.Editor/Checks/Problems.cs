@@ -197,6 +197,7 @@ public static class Problems
         bool Known(string t) => t is "-" or "" || r.Textures.FindWall(t) is not null || r.Textures.FindFlat(t) is not null;
         var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         var where = new List<Element>();
+        var seen = new HashSet<Element>();
         foreach (var l in f.Lines)
         {
             if (l.Element is null) continue;
@@ -205,7 +206,7 @@ public static class Problems
                 foreach (var t in new[] { s.Top, s.Middle, s.Bottom }.Where(t => !Known(t)))
                 {
                     names.Add(t);
-                    if (!where.Contains(l.Element)) where.Add(l.Element);
+                    if (seen.Add(l.Element)) where.Add(l.Element);
                 }
             }
         }
@@ -216,7 +217,7 @@ public static class Problems
             foreach (var t in new[] { s.FloorTexture, s.CeilingTexture }.Where(t => !Known(t)))
             {
                 names.Add(t);
-                if (!where.Contains(s.Element)) where.Add(s.Element);
+                if (seen.Add(s.Element)) where.Add(s.Element);
             }
         }
 
