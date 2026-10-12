@@ -282,6 +282,13 @@ foreach (var pose in poses)
                 Pump(0.3);
             }
 
+            // The start screen scrolled to its end: the lower part of the cards, where the maps are.
+            if (args.Contains("--bottom"))
+            {
+                foreach (var scroll in window.GetVisualDescendants().OfType<Avalonia.Controls.ScrollViewer>()) scroll.ScrollToEnd();
+                Pump(0.3);
+            }
+
             Save("welcome");
             break;
         case "crash-edit":
