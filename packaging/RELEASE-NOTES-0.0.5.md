@@ -9,3 +9,4 @@
 - **Learn as you go** — A guided first map, hands-on Guide chapters, "What is this?" for anything you point at, examples from the games' own maps, a feature tour, and presets such as Low, Normal, Tall and Huge in place of numbers.
 - **For veterans too** — Classic names, Doom Builder keys, a command palette (Ctrl+K), and tooltips full, brief or off.
 - **Never lose work** — Every change is kept as you go, with versions to go back to.
+- **A command-line tool** — `wadsmith-cli`, installed beside the app, turns a game into folders of pictures, sounds, music and maps, starts a remix, checks a file and more; `wadsmith-cli help` lists it all.
