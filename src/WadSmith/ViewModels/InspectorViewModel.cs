@@ -216,7 +216,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
-        [Sector s] => Doors.Recognise(_session.Geometry, s) is not null ? "door" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : "room",
+        [Sector s] => Doors.Recognise(_session.Geometry, s) is not null ? "door" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : "room",
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : "thing",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
@@ -314,10 +314,19 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Rows.Add(new HeadingRow("ITS AREA"));
                 AddSector(s);
                 break;
+            case Sector s when Secrets.IsSecret(s):
+                Heading = "Secret area";
+                _summaryOf = () => Secrets.Recognise(_session.Geometry, s) is { } secret ? Describe(secret) : "No longer a secret.";
+                Summary = _summaryOf();
+                AddSecret(s);
+                Rows.Add(new HeadingRow("ITS AREA"));
+                AddSector(s);
+                break;
             case Sector s:
                 Heading = "Room area";
                 Summary = "Its floor, ceiling and light.";
                 AddSector(s);
+                Rows.Add(new ActionRow("Make it a secret", "Finding it counts toward the secrets at the end of the map, and the walls into it show as solid walls on the in-game map so they do not give it away.", () => _session.MakeSecret(s)));
                 Rows.Add(new ActionRow("Make it a lift", "Its floor goes down to the lowest floor beside it when the player uses a wall from below or walks onto it, waits 3 seconds and comes back up (Plat_DownWaitUpStayLip).", () => _session.MakeLift(s)));
                 Rows.Add(new ActionRow("Make it a teleport pad", "Stepping onto this room sends the player to a spot you click next (Teleport, with an arrival spot).", () => TeleportFrom?.Invoke(s)));
                 break;
@@ -480,6 +489,27 @@ internal sealed partial class InspectorViewModel : ObservableObject
             on => Change(l => (l.Settings, on), on ? "Let monsters use the lift" : "Keep monsters off the lift")));
         Rows.Add(new InfoRow("Goes down to", "The lowest floor beside it, as the game does it.", () => Now() is { } l ? string.Create(CultureInfo.InvariantCulture, $"{l.GoesDownTo:0}, {area.FloorHeight - l.GoesDownTo:0} down") : "—"));
         Rows.Add(new InfoRow("Set off from", "The walls that set it off: switches used from below, lines walked across at the top.", () => Now() is { } l ? string.Join(", ", Triggers.Ways(l.Triggers)) : "—"));
+    }
+
+    private void AddSecret(Sector area)
+    {
+        Secret? Now() => Secrets.Recognise(_session.Geometry, area);
+        Rows.Add(new FlagRow("Hidden on the in-game map", "Its entrances, with the walls that open a door into it, show as solid walls on the automap (secret).", () => Now()?.Hidden == true, on =>
+        {
+            if (Now() is { } s) _session.History.Record(on ? "Hide the secret's entrances" : "Show the secret's entrances", e => s.Entrances.ToList().ForEach(l => e.Flag(l, "secret", on)));
+        }));
+        foreach (var door in Now()?.Doors ?? [])
+        {
+            Rows.Add(new ActionRow("Make its door look like the wall", "The door into it takes the texture of the wall beside it, lined up with it, as Doom's secret doors do; it still opens when used.", () => _session.HideSecretDoor(area, door.Area)));
+        }
+
+        Rows.Add(new ActionRow("Not a secret", "It stops counting toward the secrets, and its entrances show on the in-game map again.", () => _session.MakeSecret(area, secret: false)));
+    }
+
+    private static string Describe(Secret s)
+    {
+        var doors = s.Doors.Count switch { 0 => "", 1 => " A door leads into it.", var n => $" {n} doors lead into it." };
+        return $"Counts toward the map's secrets when the player steps in.{doors}{(s.Hidden ? " Its way in shows as a solid wall on the in-game map." : " Its way in shows on the in-game map.")}";
     }
 
     private void AddWindow(Sector area)

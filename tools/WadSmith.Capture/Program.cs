@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,12 +361,12 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
                 // one inside it.
-                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window";
+                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret";
                 view.ZoomBy(wide ? 0.3 : 0.45);
                 if (wide) view.PanBy(-90, 0);
                 Pump(0.3);
@@ -459,6 +459,38 @@ foreach (var pose in poses)
                     editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
                     Pump(1.5);
                     Save("editor-make-stairs");
+                    break;
+                }
+
+                if (pose == "editor-make-secret")
+                {
+                    // A small room against the starter room's east wall, D and a click on the wall they share (a
+                    // door), then the room selected: the Inspector's "Make it a secret" and "Make its door look like
+                    // the wall".
+                    Drag((256, -64), (384, 64), null);
+                    window.KeyPress(Avalonia.Input.Key.D, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.D, "d");
+                    Pump(0.2);
+                    window.MouseMove(At(256, 0), Avalonia.Input.RawInputModifiers.None);
+                    window.MouseDown(At(256, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(256, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(1.0);
+                    Console.WriteLine($"secret door: heading '{editor.Inspector.Heading}', undo '{editor.Session.History.UndoLabel}'");
+                    window.KeyPress(Avalonia.Input.Key.V, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.V, "v");
+                    window.MouseDown(At(352, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(352, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.6);
+                    editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Make it a secret").Command.Execute(null);
+                    Pump(1.0);
+                    Console.WriteLine($"secret made: heading '{editor.Inspector.Heading}', '{editor.Inspector.Summary}', undo '{editor.Session.History.UndoLabel}'");
+                    editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Make its door look like the wall").Command.Execute(null);
+                    Pump(1.0);
+                    Console.WriteLine($"secret door hidden: undo '{editor.Session.History.UndoLabel}', rows {string.Join(" | ", editor.Inspector.Rows.Select(r => r.Label).Take(4))}");
+                    Report("secret");
+                    Wait(editor.Session.FlushAsync());
+                    Save("editor-make-secret");
+                    var session = editor.Session;
+                    var scene = WadSmith.Editor.Scene.MapScene.Build(session.Geometry, n => session.Resources?.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, WadSmith.App.ThreeD.SpriteShapes.For(session.Resources));
+                    File.WriteAllBytes(Path.Combine(output, "editor-secret-door.png"), WadSmith.App.ThreeD.Offscreen3D.RenderPng(scene, session.Resources, new WadSmith.App.ThreeD.Camera3D(96, 0, 41, 0, 0), 960, 600, inside: true));
                     break;
                 }
 

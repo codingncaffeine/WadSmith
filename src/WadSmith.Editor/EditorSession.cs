@@ -334,6 +334,42 @@ public sealed class EditorSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Makes an area a secret (it counts when the player steps in; its entrances are solid walls on the in-game
+    /// map), or with <paramref name="secret"/> false an ordinary area again; one undo step.
+    /// </summary>
+    public void MakeSecret(Sector area, bool secret = true)
+    {
+        if (!area.OnMap) return;
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => MakeSecret(area, secret);
+            return;
+        }
+
+        var geometry = _geometry;
+        History.Record(secret ? "Make a secret" : "Not a secret", e =>
+        {
+            if (secret) Secrets.Make(e, geometry, area);
+            else Secrets.Clear(e, geometry, area);
+        });
+    }
+
+    /// <summary>Makes the door into a secret look like the wall beside it from outside (one undo step).</summary>
+    public void HideSecretDoor(Sector secret, Sector door)
+    {
+        if (!secret.OnMap || !door.OnMap) return;
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => HideSecretDoor(secret, door);
+            return;
+        }
+
+        var geometry = _geometry;
+        if (Doors.Recognise(geometry, door) is not { } found) return;
+        History.Record("Hide the secret door", e => Secrets.HideDoor(e, geometry, found, secret));
+    }
+
     /// <summary>Copies the selected rooms (with their walls and things) and things; says what was copied, or what can be.</summary>
     public bool CopySelection()
     {

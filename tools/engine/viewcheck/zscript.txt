@@ -1,0 +1,25 @@
+version "4.6"
+
+// Stands the player at the spot in the wsview variable ("x y angle", eye at the player's height) and keeps
+// them there, so a screenshot taken a moment later shows what the player sees from there. Prints WSVIEW DONE
+// after 16 seconds. WadSmith compares its own 3D view with the engine's with this.
+class WadSmithView : StaticEventHandler
+{
+	override void WorldTick()
+	{
+		Array<String> parts;
+		CVar.FindCVar("wsview").GetString().Split(parts, " ", TOK_SKIPEMPTY);
+		if (parts.Size() < 3) return;
+		let mo = players[consoleplayer].mo;
+		if (level.maptime >= 5 && level.maptime < 560)
+		{
+			Vector2 at = (parts[0].ToDouble(), parts[1].ToDouble());
+			mo.SetOrigin((at, level.PointInSector(at).floorplane.ZatPoint(at)), false);
+			mo.vel = (0, 0, 0);
+			mo.angle = parts[2].ToDouble();
+			mo.pitch = 0;
+		}
+
+		if (level.maptime == 560) Console.Printf("WSVIEW DONE");
+	}
+}

@@ -1,0 +1,68 @@
+version "4.6"
+
+// Puts the player in every area the engine holds as a secret, one at a time, standing on its floor, and
+// notes whether the map's count of secrets found went up. WadSmith checks the secrets it makes with this.
+class WadSmithSecretCheck : StaticEventHandler
+{
+	Array<int> secrets;
+	int next;
+	int phase;
+	int before;
+
+	override void WorldLoaded(WorldEvent e)
+	{
+		if (e.IsSaveGame || e.IsReopen) return;
+		for (int i = 0; i < level.Sectors.Size(); i++)
+		{
+			if (level.Sectors[i].IsSecret()) secrets.Push(i);
+		}
+
+		Console.Printf("WSSECRET BEGIN %s %d %d", level.MapName, secrets.Size(), level.total_secrets);
+	}
+
+	// A point inside the area: its middle when that is in it, else just inside one of its walls.
+	static Vector2 Inside(Sector s)
+	{
+		if (level.PointInSector(s.centerspot) == s) return s.centerspot;
+		for (int i = 0; i < s.Lines.Size(); i++)
+		{
+			Line l = s.Lines[i];
+			Vector2 d = l.delta.Unit();
+			Vector2 right = (d.y, -d.x);
+			Vector2 p = (l.v1.p + l.v2.p) / 2 + (l.frontsector == s ? right : -right) * 20;
+			if (level.PointInSector(p) == s) return p;
+		}
+
+		return s.centerspot;
+	}
+
+	override void WorldTick()
+	{
+		if (level.maptime < 10 || next > secrets.Size()) return;
+		if (next == secrets.Size())
+		{
+			Console.Printf("WSSECRET END %d %d", level.found_secrets, level.total_secrets);
+			next++;
+			return;
+		}
+
+		let mo = players[consoleplayer].mo;
+		Sector s = level.Sectors[secrets[next]];
+		if (phase == 0)
+		{
+			before = level.found_secrets;
+			Vector2 at = Inside(s);
+			mo.SetOrigin((at, s.floorplane.ZatPoint(at)), false);
+			mo.vel = (0, 0, 0);
+		}
+		else if (phase == 5)
+		{
+			Console.Printf("WSSECRET %d %d", secrets[next], level.found_secrets - before);
+			next++;
+			phase = 0;
+			return;
+		}
+
+		phase++;
+	}
+}

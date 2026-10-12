@@ -179,4 +179,29 @@ public sealed class SessionTests
         Assert.Equal("Room area", inspector.Heading);
         DrawingTests.AssertSound(session.Map);
     }
+
+    [Fact]
+    public void TheInspectorMakesARoomASecretAndBack()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var ui = new FakeUi();
+        using var session = EditorSession.Open(project, "MAP01", ui.Post);
+        var inspector = new WadSmith.App.ViewModels.InspectorViewModel(session);
+        session.DrawRoom([new(256, -64), new(256, 64), new(384, 64), new(384, -64)]);
+        var room = Assert.Single(session.Selection.Items.OfType<Sector>());
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Make it a secret").Command.Execute(null);
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        Assert.Equal("Secret area", inspector.Heading);
+        Assert.Contains("solid wall on the in-game map", inspector.Summary);
+        Assert.True(inspector.Rows.OfType<WadSmith.App.ViewModels.FlagRow>().Single(r => r.Label == "Hidden on the in-game map").Value);
+
+        inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Not a secret").Command.Execute(null);
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        Assert.Equal("Room area", inspector.Heading);
+        Assert.Equal(0, room.Special);
+        Assert.DoesNotContain(session.Map.Lines, l => l.OnMap && l.Flag("secret"));
+    }
 }
