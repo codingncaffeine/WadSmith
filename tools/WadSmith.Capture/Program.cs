@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,12 +361,13 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose == "editor-draw" || pose == "editor-move")
+            if (pose == "editor-draw" || pose == "editor-move" || pose == "editor-join")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
                 // one inside it.
-                view.ZoomBy(0.45);
+                view.ZoomBy(pose == "editor-join" ? 0.3 : 0.45);
+                if (pose == "editor-join") view.PanBy(-90, 0);
                 Pump(0.3);
                 view.Focus();
                 window.KeyPress(Avalonia.Input.Key.R, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.R, "r");
@@ -394,6 +395,23 @@ foreach (var pose in poses)
                 }
 
                 Report("before");
+                if (pose == "editor-join")
+                {
+                    // A room drawn apart, then dragged west until its corner snaps onto the starter room's
+                    // (the ring shows it mid-drag); let go, the two share the wall between them.
+                    Drag((512, -256), (1024, 256), null);
+                    Report("apart");
+                    window.KeyPress(Avalonia.Input.Key.V, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.V, "v");
+                    Pump(0.2);
+                    window.MouseDown(At(700, 100), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(700, 100), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.5);
+                    Drag((700, 100), (450, 100), "editor-joining");
+                    Report("joined");
+                    Save("editor-join");
+                    break;
+                }
+
                 Drag((256, -256), (768, 256), pose == "editor-draw" ? "editor-drawing" : null);
                 Report("beside");
                 if (pose == "editor-move")

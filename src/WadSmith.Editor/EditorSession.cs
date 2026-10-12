@@ -133,6 +133,27 @@ public sealed class EditorSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Ends a drag that moved <paramref name="set"/>: joins what landed on the rest of the map (corners
+    /// merged, walls split and shared), in the same undo step as the move, and says so when walls were
+    /// left crossing.
+    /// </summary>
+    public void FinishMove(MoveSet set, long gesture)
+    {
+        var crossings = 0;
+        try
+        {
+            History.Record("Join", e => crossings = Joining.AfterMove(e, set, Look), gesture);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Log.Warn($"Joining a move in {Slot} failed: {ex.Message}");
+        }
+
+        Selection.Prune();
+        if (crossings > 0) Notice?.Invoke($"This move left {crossings} wall{(crossings == 1 ? "" : "s")} crossing another, which the game draws wrongly. Move them apart, or press Ctrl+Z to take the move back.");
+    }
+
     /// <summary>The last save's failure, in a sentence.</summary>
     public string? LastError { get; private set; }
 

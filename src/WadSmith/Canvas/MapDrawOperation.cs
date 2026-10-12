@@ -85,7 +85,7 @@ internal sealed class SelectionOverlay
 internal sealed record DrawPreview(MapPoint? From, MapPoint? To, MapPoint? Snap, double Step);
 
 /// <summary>What is being moved and by how much: its walls and objects drawn at their new place while the map catches up.</summary>
-internal sealed record MovePreview(WadSmith.Editor.Editing.MoveSet Set, double Dx, double Dy);
+internal sealed record MovePreview(WadSmith.Editor.Editing.MoveSet Set, double Dx, double Dy, MapPoint? MergeAt);
 
 /// <summary>Draws the map on the render thread through a Skia lease.</summary>
 internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null) : ICustomDrawOperation
@@ -199,6 +199,13 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
         foreach (var (x1, y1, x2, y2) in move.Set.Carried) canvas.DrawLine((float)x1 + dx, (float)y1 + dy, (float)x2 + dx, (float)y2 + dy, stroke);
         foreach (var (mx, my, fx, fy) in move.Set.Stretched) canvas.DrawLine((float)mx + dx, (float)my + dy, (float)fx, (float)fy, stroke);
         foreach (var (x, y) in move.Set.ThingSpots) canvas.DrawCircle((float)x + dx, (float)y + dy, 10 * px, stroke);
+
+        // The corner the grabbed one will become when let go.
+        if (move.MergeAt is { } m)
+        {
+            using var ring = new SKPaint { Style = SKPaintStyle.Stroke, Color = Ember, StrokeWidth = 2 * px, IsAntialias = true };
+            canvas.DrawCircle((float)m.X, (float)m.Y, 9 * px, ring);
+        }
     }
 
     /// <summary>The room being drawn, filled faintly with a solid edge, and a cross where the pointer snaps (screen pixels).</summary>

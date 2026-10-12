@@ -225,47 +225,17 @@ public static class ShapeDrawing
             return corner;
         }
 
-        // Splits an existing wall at a corner on it: the wall keeps its first piece and a copy takes the
-        // rest, with each face's texture continuing across the split as if it were still one wall.
+        // Splits an existing wall at a corner on it (Walls.Split) and keeps the working set in step.
         void Split(Edge e, Vertex m)
         {
             var line = e.Line ?? throw new InvalidOperationException("Only existing walls are split while drawing.");
             var end = line.End;
-            var first = Point(line.Start).DistanceTo(Point(m));
-            var rest = Point(m).DistanceTo(Point(end));
-            var piece = new Line(m, end, edit.Add(CopyOf(line.Front, line.Front.OffsetX + first)))
-            {
-                Special = line.Special,
-                LineId = line.LineId,
-            };
-            line.Args.CopyTo(piece.Args, 0);
-            foreach (var (k, v) in line.Extra) piece.Extra[k] = v;
-            if (line.Back is { } back)
-            {
-                piece.Back = edit.Add(CopyOf(back, back.OffsetX));
-                edit.Set(back, s => s.OffsetX, (s, x) => s.OffsetX = x, back.OffsetX + rest);
-            }
-
-            edit.Add(piece);
-            edit.Set(line, l => l.End, (l, v) => l.End = v, m);
+            var piece = Walls.Split(edit, line, m);
             e.B = m;
             edges.Add(new Edge(m, end, piece));
         }
 
-        // A wall with a room on one side gains one on the other: it stops blocking, and its texture moves
-        // to the upper and lower parts, where height differences will show it.
-        void GiveBack(Line line, Sector sector)
-        {
-            var front = line.Front;
-            var wall = front.Middle is "-" or "" ? look.Wall : front.Middle;
-            if (front.Top is "-" or "") edit.Set(front, s => s.Top, (s, v) => s.Top = v, wall);
-            if (front.Bottom is "-" or "") edit.Set(front, s => s.Bottom, (s, v) => s.Bottom = v, wall);
-            edit.Set(front, s => s.Middle, (s, v) => s.Middle = v, "-");
-            var back = edit.Add(new Side(sector) { Top = wall, Bottom = wall });
-            edit.Set(line, l => l.Back, (l, v) => l.Back = v, back);
-            edit.Flag(line, "twosided", true);
-            edit.Flag(line, "blocking", false);
-        }
+        void GiveBack(Line line, Sector sector) => Walls.OpenUp(edit, line, sector, look.Wall);
     }
 
     /// <summary>The shape's corners without repeats, turned clockwise (so the inside is on the right of each side).</summary>
@@ -365,13 +335,6 @@ public static class ShapeDrawing
         if (around is null) return new Sector { FloorHeight = look.FloorHeight, CeilingHeight = look.CeilingHeight, FloorTexture = look.Floor, CeilingTexture = look.Ceiling, Light = look.Light };
         var s = new Sector { FloorHeight = around.FloorHeight, CeilingHeight = around.CeilingHeight, FloorTexture = around.FloorTexture, CeilingTexture = around.CeilingTexture, Light = around.Light };
         foreach (var (k, v) in around.Extra) s.Extra[k] = v;
-        return s;
-    }
-
-    private static Side CopyOf(Side side, double offsetX)
-    {
-        var s = new Side(side.Sector) { OffsetX = offsetX, OffsetY = side.OffsetY, Top = side.Top, Middle = side.Middle, Bottom = side.Bottom };
-        foreach (var (k, v) in side.Extra) s.Extra[k] = v;
         return s;
     }
 

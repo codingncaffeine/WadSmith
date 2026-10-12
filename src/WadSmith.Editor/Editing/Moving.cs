@@ -12,8 +12,10 @@ namespace WadSmith.Editor.Editing;
 /// </summary>
 public sealed class MoveSet
 {
-    private MoveSet(Vertex[] vertices, Thing[] things, (double X1, double Y1, double X2, double Y2)[] carried, (double MX, double MY, double FX, double FY)[] stretched, (double X, double Y)[] thingSpots)
+    private MoveSet(MapGeometry geometry, Vertex[] vertices, Thing[] things, Line[] lines, (double X1, double Y1, double X2, double Y2)[] carried, (double MX, double MY, double FX, double FY)[] stretched, (double X, double Y)[] thingSpots)
     {
+        Geometry = geometry;
+        Lines = lines;
         Vertices = vertices;
         Things = things;
         Carried = carried;
@@ -21,7 +23,13 @@ public sealed class MoveSet
         ThingSpots = thingSpots;
     }
 
+    /// <summary>The shapes the set was gathered from (the map as it was before the move).</summary>
+    public MapGeometry Geometry { get; }
+
     public IReadOnlyList<Vertex> Vertices { get; }
+
+    /// <summary>Every wall with a moving end.</summary>
+    public IReadOnlyList<Line> Lines { get; }
 
     public IReadOnlyList<Thing> Things { get; }
 
@@ -121,6 +129,7 @@ public sealed class MoveSet
         // The walls the move touches: found round each moving corner, carried when both ends move.
         var carried = new List<(double, double, double, double)>();
         var stretched = new List<(double, double, double, double)>();
+        var touched = new List<Line>();
         var seen = new HashSet<int>();
         foreach (var slot in moving)
         {
@@ -132,6 +141,7 @@ public sealed class MoveSet
                 if (lf.V1 != slot && lf.V2 != slot) continue;
                 var (a, b) = (f.Vertices[lf.V1], f.Vertices[lf.V2]);
                 var (ma, mb) = (moving.Contains(lf.V1), moving.Contains(lf.V2));
+                touched.Add(lf.Element!);
                 if (ma && mb) carried.Add((a.X, a.Y, b.X, b.Y));
                 else if (ma) stretched.Add((a.X, a.Y, b.X, b.Y));
                 else stretched.Add((b.X, b.Y, a.X, a.Y));
@@ -140,8 +150,10 @@ public sealed class MoveSet
 
         var thingList = thingSlots.Order().Select(i => f.Things[i]).ToList();
         return new MoveSet(
+            geometry,
             [.. moving.Order().Select(i => f.Vertices[i].Element!)],
             [.. thingList.Select(t => t.Element!)],
+            [.. touched],
             [.. carried],
             [.. stretched],
             [.. thingList.Select(t => (t.X, t.Y))]);
@@ -159,6 +171,7 @@ public sealed class MoveEdit : IEdit
     private readonly MoveSet _set;
     private readonly (double X, double Y)[] _vertexStart;
     private readonly (double X, double Y)[] _thingStart;
+    private StructureEdit? _then;
 
     /// <summary>Reads where everything starts from the map: make it on the UI thread.</summary>
     public MoveEdit(MoveSet set, double dx, double dy)
@@ -189,18 +202,36 @@ public sealed class MoveEdit : IEdit
         _ => "Move",
     };
 
-    public IEnumerable<Element> Touched => _set.Vertices.Cast<Element>().Concat(_set.Things);
+    public IEnumerable<Element> Touched => _set.Vertices.Cast<Element>().Concat(_set.Things).Concat(_then?.Touched ?? []);
 
     /// <summary>The same move with a new offset from the same start (the next step of a drag).</summary>
     public MoveEdit To(double dx, double dy) => new(this, dx, dy);
 
-    public void Do(EditorMap map) => Place(Dx, Dy);
+    public void Do(EditorMap map)
+    {
+        Place(Dx, Dy);
+        _then?.Do(map);
+    }
 
-    public void Undo(EditorMap map) => Place(0, 0);
+    public void Undo(EditorMap map)
+    {
+        _then?.Undo(map);
+        Place(0, 0);
+    }
 
+    /// <summary>
+    /// Takes the next step of the drag; or, once, the joins made when it was let go (corners merged,
+    /// walls split and shared), so the drag and its joins undo as one step.
+    /// </summary>
     public bool TryMerge(IEdit next)
     {
-        if (next is not MoveEdit m || !ReferenceEquals(m._set, _set)) return false;
+        if (next is StructureEdit join && _then is null)
+        {
+            _then = join;
+            return true;
+        }
+
+        if (_then is not null || next is not MoveEdit m || !ReferenceEquals(m._set, _set)) return false;
         (Dx, Dy) = (m.Dx, m.Dy);
         return true;
     }

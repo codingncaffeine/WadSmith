@@ -72,6 +72,8 @@ internal sealed class MapCanvas : Control
     private bool _free;
     private Point _lastPointer;
     private bool _endWhenGathered;
+    private HashSet<Vertex> _moving = new(ReferenceEqualityComparer.Instance);
+    private MapPoint? _mergeAt;
 
     /// <summary>Moves of up to this many corners and objects change the map as the pointer goes; bigger ones when let go.</summary>
     private const int LiveMoveLimit = 4096;
@@ -100,6 +102,7 @@ internal sealed class MapCanvas : Control
         {
             if (!ReferenceEquals(r.Session, Session) || r.Gesture != _moveGesture) return;
             _moveSet = r.Set;
+            _moving = new HashSet<Vertex>(r.Set.Vertices, ReferenceEqualityComparer.Instance);
 
             // The point that snaps: the moving corner nearest the grab, else the nearest object.
             _anchor = Nearest(r.Set.Vertices.Select(v => new MapPoint(v.X, v.Y))) ?? Nearest(r.Set.Things.Select(t => new MapPoint(t.X, t.Y)));
@@ -257,7 +260,7 @@ internal sealed class MapCanvas : Control
         if (_moveGesture != 0)
         {
             preview = new DrawPreview(null, null, null, _free ? 0 : GridStep());
-            if (_moveSet is { } set) move = new MovePreview(set, _offset.X, _offset.Y);
+            if (_moveSet is { } set) move = new MovePreview(set, _offset.X, _offset.Y, _mergeAt);
         }
 
         context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview, move));
@@ -336,10 +339,30 @@ internal sealed class MapCanvas : Control
         _lastPointer = p;
         var m = ToMap(p);
         var (dx, dy) = (m.X - _grab.X, m.Y - _grab.Y);
+        _mergeAt = null;
         if (_anchor is { } a && !free)
         {
-            var step = GridStep();
-            (dx, dy) = (Math.Round((a.X + dx) / step) * step - a.X, Math.Round((a.Y + dy) / step) * step - a.Y);
+            // The grabbed corner snaps onto a corner that stays within a few pixels (and will become it), else to the grid.
+            var r = 8 / _zoom;
+            var (tx, ty) = (a.X + dx, a.Y + dy);
+            Vertex? best = null;
+            var bestD = r;
+            foreach (var v in Session?.Geometry.VerticesIn(tx - r, ty - r, tx + r, ty + r) ?? [])
+            {
+                var d = Math.Sqrt((v.X - tx) * (v.X - tx) + (v.Y - ty) * (v.Y - ty));
+                if (!_moving.Contains(v) && d <= bestD) (best, bestD) = (v, d);
+            }
+
+            if (best is not null)
+            {
+                (dx, dy) = (best.X - a.X, best.Y - a.Y);
+                _mergeAt = new MapPoint(best.X, best.Y);
+            }
+            else
+            {
+                var step = GridStep();
+                (dx, dy) = (Math.Round((a.X + dx) / step) * step - a.X, Math.Round((a.Y + dy) / step) * step - a.Y);
+            }
         }
 
         _offset = (dx, dy);
@@ -383,6 +406,7 @@ internal sealed class MapCanvas : Control
         {
             Commit(session, set);
             if (_offset == (0, 0)) session.History.Discard(_moveGesture);
+            else if (set.Count <= LiveMoveLimit) session.FinishMove(set, _moveGesture);
         }
         else
         {
@@ -392,6 +416,8 @@ internal sealed class MapCanvas : Control
         _moveGesture = 0;
         _moveSet = null;
         _moveEdit = null;
+        _mergeAt = null;
+        _moving = new HashSet<Vertex>(ReferenceEqualityComparer.Instance);
         Cursor = Cursor.Default;
         Moving?.Invoke(null);
         InvalidateVisual();
