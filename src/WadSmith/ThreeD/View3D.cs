@@ -7,6 +7,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using WadSmith.Editor;
 using WadSmith.Editor.Geometry;
+using WadSmith.Editor.Model;
 using WadSmith.Editor.Scene;
 
 namespace WadSmith.App.ThreeD;
@@ -102,6 +103,7 @@ internal sealed class View3D : Control
         _hovers = new(ViewModels.MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, Session) || !ReferenceEquals(r.Scene, _scene)) return;
+            if (r.Drop is null && !ReferenceEquals(_hover?.Element, r.Hit?.Element)) HoverChanged?.Invoke(r.Hit?.Element);
             _hover = r.Hit;
             _renderer?.Hover(r.Hit is { } hit ? r.Scene.Surface(hit) : ([], []));
             if (r.Drop is not { } drop) return;
@@ -182,6 +184,9 @@ internal sealed class View3D : Control
     /// <summary>What letting go of a shelf drag would do here (null to clear), for the status bar.</summary>
     public event Action<string?>? DropHint;
 
+    /// <summary>Raised when the pointer comes over something new in the view (null: over nothing), as the plan's HoverChanged.</summary>
+    public event Action<Element?>? HoverChanged;
+
     /// <summary>The surface under the pointer as last found (a moment behind the pointer), for instruments.</summary>
     internal SceneHit? Hovered => _hover;
 
@@ -222,6 +227,7 @@ internal sealed class View3D : Control
     {
         if (_hover is null) return;
         _hover = null;
+        HoverChanged?.Invoke(null);
         _renderer?.Hover(([], []));
     }
 

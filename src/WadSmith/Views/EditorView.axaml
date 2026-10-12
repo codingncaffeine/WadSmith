@@ -174,6 +174,16 @@
                                   ToolTip.Tip="Walk as the player does: eye height, up steps, stopped by walls. Drag to look, WASD to move, Shift to run." />
                 </StackPanel>
             </Panel>
+            <!-- What is this? (D33): what the pointer is over, explained; at the other corner from the Guide. -->
+            <Border Grid.ColumnSpan="3" IsVisible="{Binding Explained, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                    Margin="12" Padding="14,10" MaxWidth="380" CornerRadius="6" Background="{DynamicResource Brush.Surface1}" IsHitTestVisible="False"
+                    BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="1">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="section" Text="WHAT IS THIS?" />
+                    <TextBlock Text="{Binding Explained.Heading}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Explained.Text}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
             <!-- The Guide (§3.9): the open step beside the map, never in the way of it. -->
             <Border Grid.ColumnSpan="3" IsVisible="{Binding Guide, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Right" VerticalAlignment="Bottom"
                     Margin="12" Padding="16,12" MaxWidth="420" CornerRadius="6" Background="{DynamicResource Brush.Surface1}"
@@ -359,10 +369,12 @@
 
         <!-- Status strip: what is under the pointer, or the coach's next tip; the Guide; the problems; whether changes are kept. -->
         <Border Grid.Row="3" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,1,0,0">
-            <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="12,0">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="12,0">
                 <TextBlock Text="{Binding Status}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <ToggleButton Grid.Column="1" Classes="segment first last" Content="What is this?" IsChecked="{Binding WhatIsThis}" Padding="10,1" Margin="16,2,0,2"
+                              ToolTip.Tip="Point at anything on the plan or in the 3D view to read what it is, what it does in the game and how to change it (Shift+F1)." />
                 <!-- The Guide (§3.9): its chapters, each a few hands-on minutes on this map. -->
-                <Button Grid.Column="1" Classes="metal" Content="Guide" Padding="10,1" Margin="16,2,0,2" VerticalAlignment="Center"
+                <Button Grid.Column="2" Classes="metal" Content="Guide" Padding="10,1" Margin="16,2,0,2" VerticalAlignment="Center"
                         ToolTip.Tip="Short hands-on chapters on this map: rooms and heights, doors and keys, lifts and stairs, textures, monsters, lights, secrets, map settings, and classic names for veterans.">
                     <Button.Flyout>
                         <MenuFlyout Placement="TopEdgeAlignedRight" ItemsSource="{Binding GuideMenu}">
@@ -376,9 +388,9 @@
                         </MenuFlyout>
                     </Button.Flyout>
                 </Button>
-                <ToggleButton Grid.Column="2" Classes="segment first last" Content="{Binding Problems.Summary}" IsChecked="{Binding ShowProblems}" Padding="10,1" Margin="16,2,0,2"
+                <ToggleButton Grid.Column="3" Classes="segment first last" Content="{Binding Problems.Summary}" IsChecked="{Binding ShowProblems}" Padding="10,1" Margin="16,2,0,2"
                               ToolTip.Tip="Things that would break or spoil the map, checked as you work, each with a way to see it and often a one-click fix." />
-                <TextBlock Grid.Column="3" Text="{Binding SaveText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
+                <TextBlock Grid.Column="4" Text="{Binding SaveText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
             </Grid>
         </Border>
 

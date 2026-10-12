@@ -75,6 +75,10 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.Selection.Changed += () => Learned("select");
         session.GeometryChanged += UpdateHeights;
         session.GeometryChanged += () => Guide?.MapChanged();
+        session.GeometryChanged += () =>
+        {
+            if (WhatIsThis) Explain();
+        };
         _mapSeen = (session.MapEntry.Title, session.MapEntry.Music);
         session.MapSettingsChanged += MapSettingsSeen;
         session.GeometryChanged += CameraMoved;
@@ -381,6 +385,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Walk in 3D", "View", "", "player view|first person|camera|gravity", () => CameraMode = ThreeD.CameraMode.Walk),
             new("The game's view", "View", "G in 3D", "gzdoom picture|engine view|screenshot", () => EngineView = !EngineView),
             new("Command palette", "View", "Ctrl+K", "find a command|search|actions", () => OpenPaletteCommand.Execute(null), Also: "Ctrl+Shift+P"),
+            new("What is this?", "View", "Shift+F1", "explain|identify|what's this|describe|help", () => WhatIsThis = !WhatIsThis),
 
             new("Inspector", "Panels", "", "properties|details", () => ShowInspector = true),
             new("Textures shelf", "Panels", "", "textures|flats|wall pictures", () => ShowTextures = true),
@@ -1432,6 +1437,8 @@ internal sealed partial class EditorViewModel : ObservableObject
     public void Hover(Element? element, MapPoint at)
     {
         if (at != default) _pointer = at;
+        _hovered = element;
+        if (WhatIsThis) Explain();
         _hoverText = element switch
         {
             Line l when Tool == Canvas.EditorTool.Door => l.Back is null
@@ -1452,6 +1459,36 @@ internal sealed partial class EditorViewModel : ObservableObject
         if (element is not null) Learned("zoom");
         UpdateStatus();
     }
+
+    /// <summary>
+    /// "What is this?" (D33): while on, whatever the pointer is over on the plan or in the 3D view is explained in a card:
+    /// what it is, what it does in the game and how to change it.
+    /// </summary>
+    [ObservableProperty]
+    private bool _whatIsThis;
+
+    /// <summary>The card's explanation while "What is this?" is on; null when it is off.</summary>
+    [ObservableProperty]
+    private Explanation? _explained;
+
+    // What the pointer is over on the plan or in the 3D view, whichever it moved over last.
+    private Element? _hovered;
+
+    private static readonly Explanation Pointing = new("Point at something",
+        "Point at anything on the plan or in the 3D view: a room, a wall, a corner or an object. Shift+F1 or the button again turns this off.");
+
+    partial void OnWhatIsThisChanged(bool value) => Explain();
+
+    /// <summary>Called by the 3D view when the pointer comes over something new there.</summary>
+    public void Hover3D(Element? element)
+    {
+        _hovered = element;
+        if (WhatIsThis) Explain();
+    }
+
+    private void Explain() => Explained = WhatIsThis
+        ? Explaining.Explain(_hovered is { OnMap: true } ? _hovered : null, Session.Geometry, Session.Resources) ?? Pointing
+        : null;
 
     /// <summary>The object's name from the game's own definitions, or its number when the game does not define it.</summary>
     public string ThingName(int type) => Session.Resources?.Things.Find(type)?.Name ?? string.Create(CultureInfo.InvariantCulture, $"Object type {type}");

@@ -44,6 +44,7 @@ public partial class EditorView : UserControl
         };
         AddHandler(KeyDownEvent, OnKeys, RoutingStrategies.Bubble);
         Canvas.HoverChanged += (element, at) => (DataContext as EditorViewModel)?.Hover(element, at);
+        View3D.HoverChanged += element => (DataContext as EditorViewModel)?.Hover3D(element);
         Canvas.Drawing += (size, step) => (DataContext as EditorViewModel)?.Drawing(size, step);
         Canvas.Moving += move => (DataContext as EditorViewModel)?.Moving(move);
         Canvas.Placing += text => (DataContext as EditorViewModel)?.Hint(text);

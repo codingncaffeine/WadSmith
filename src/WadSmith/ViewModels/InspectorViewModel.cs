@@ -369,7 +369,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 break;
             case Sector s when Doors.Recognise(_session.Geometry, s) is not null:
                 Heading = "Door";
-                _summaryOf = () => Doors.Recognise(_session.Geometry, s) is { } d ? Describe(d) : "No longer a door.";
+                _summaryOf = () => Doors.Recognise(_session.Geometry, s) is { } d ? Explaining.Describe(d) : "No longer a door.";
                 Summary = _summaryOf();
                 AddDoor(s);
                 AddDoorKey(s);
@@ -379,7 +379,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 break;
             case Sector s when Lifts.Recognise(_session.Geometry, s) is not null:
                 Heading = "Lift";
-                _summaryOf = () => Lifts.Recognise(_session.Geometry, s) is { } lift ? Describe(lift) : "No longer a lift.";
+                _summaryOf = () => Lifts.Recognise(_session.Geometry, s) is { } lift ? Explaining.Describe(lift) : "No longer a lift.";
                 Summary = _summaryOf();
                 AddLift(s);
                 Rows.Add(new ActionRow("Add a switch that lowers it", "Click a solid wall next: a piece of it becomes a switch the player uses to send this lift down from there.", () => SwitchFor?.Invoke(s)));
@@ -388,7 +388,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 break;
             case Sector s when WallWindows.Recognise(_session.Geometry, s) is not null:
                 Heading = "Window";
-                _summaryOf = () => WallWindows.Recognise(_session.Geometry, s) is { } window ? Describe(window) : "No longer a window: the player can climb into it, or it is closed.";
+                _summaryOf = () => WallWindows.Recognise(_session.Geometry, s) is { } window ? Explaining.Describe(window) : "No longer a window: the player can climb into it, or it is closed.";
                 Summary = _summaryOf();
                 AddWindow(s);
                 Rows.Add(new HeadingRow("ITS AREA"));
@@ -396,7 +396,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 break;
             case Sector s when StairsFinder.Recognise(_session.Geometry, s) is not null:
                 Heading = "Stairs";
-                _summaryOf = () => StairsFinder.Recognise(_session.Geometry, s) is { } st ? Describe(st, s) : "No longer stairs.";
+                _summaryOf = () => StairsFinder.Recognise(_session.Geometry, s) is { } st ? Explaining.Describe(st, s) : "No longer stairs.";
                 Summary = _summaryOf();
                 AddStairs(s);
                 Rows.Add(new HeadingRow("THIS STEP"));
@@ -404,7 +404,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 break;
             case Sector s when Secrets.IsSecret(s):
                 Heading = "Secret area";
-                _summaryOf = () => Secrets.Recognise(_session.Geometry, s) is { } secret ? Describe(secret) : "No longer a secret.";
+                _summaryOf = () => Secrets.Recognise(_session.Geometry, s) is { } secret ? Explaining.Describe(secret) : "No longer a secret.";
                 Summary = _summaryOf();
                 AddSecret(s);
                 Rows.Add(new HeadingRow("ITS AREA"));
@@ -430,7 +430,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 break;
             case Line l when Switches.Recognise(_session.Geometry, l) is not null:
                 Heading = "Switch";
-                _summaryOf = () => Switches.Recognise(_session.Geometry, l) is { } sw ? Describe(sw) : "No longer a switch.";
+                _summaryOf = () => Switches.Recognise(_session.Geometry, l) is { } sw ? Explaining.Describe(sw) : "No longer a switch.";
                 Summary = _summaryOf();
                 AddSwitch(l);
                 Rows.Add(new HeadingRow("THE WALL"));
@@ -440,7 +440,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 break;
             case Line l when Teleports.IsTeleport(l):
                 Heading = "Teleporter";
-                _summaryOf = () => Teleports.Recognise(_session.Geometry, l) is { } t ? Describe(t) : "No longer a teleporter.";
+                _summaryOf = () => Teleports.Recognise(_session.Geometry, l) is { } t ? Explaining.Describe(t) : "No longer a teleporter.";
                 Summary = _summaryOf();
                 AddTeleporter(l);
                 Rows.Add(new HeadingRow("THE WALL"));
@@ -504,7 +504,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 break;
             case Thing t when Lights.Recognise(t) is not null:
                 Heading = "Light";
-                _summaryOf = () => Lights.Recognise(t) is { } light ? Describe(light) : "No longer a light.";
+                _summaryOf = () => Lights.Recognise(t) is { } light ? Explaining.Describe(light) : "No longer a light.";
                 Summary = _summaryOf();
                 AddLight(t);
                 break;
@@ -600,13 +600,6 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new NumberRow("Tag", "A number that links a switch or trigger to this area (sector tag, id).", () => s.Tag, v => Set(s, "Change tag", e => e.Tag, (e, x) => e.Tag = x, (int)v), 1, 0, 65535));
     }
 
-    private static string Describe(Lift lift)
-    {
-        var ways = string.Join(", ", Triggers.Ways(lift.Triggers));
-        var wait = string.Create(CultureInfo.InvariantCulture, $"{lift.Settings.Delay / 35.0:0.#} s");
-        return string.Create(CultureInfo.InvariantCulture, $"Goes down to {lift.GoesDownTo:0} when set off from {ways}{(lift.Monsters ? " (monsters too)" : "")}, waits {wait} and comes back up.");
-    }
-
     /// <summary>A lift's settings, each one undoable change to every wall that sets it off.</summary>
     private void AddLift(Sector area)
     {
@@ -663,18 +656,6 @@ internal sealed partial class InspectorViewModel : ObservableObject
         }));
     }
 
-    private static string Describe(Light l)
-    {
-        var name = Lights.Colours.FirstOrDefault(c => (c.R, c.G, c.B) == l.Colour).Name?.ToLowerInvariant() ?? Lights.Hex(l.Colour);
-        var how = l.Kind switch
-        {
-            LightKind.Pulsing => string.Create(CultureInfo.InvariantCulture, $", pulsing between {l.Reach} and {l.SecondReach}"),
-            LightKind.Flickering or LightKind.RandomFlicker => string.Create(CultureInfo.InvariantCulture, $", flickering between {l.Reach} and {l.SecondReach}"),
-            _ => "",
-        };
-        return string.Create(CultureInfo.InvariantCulture, $"A {name} light reaching {l.Reach}{how}, {l.Height:0} above the floor. The 3D view shows it; GZDoom draws it in the game.");
-    }
-
     /// <summary>For a locked door: place its key when the map has none of that colour, else select the key.</summary>
     private void AddDoorKey(Sector area)
     {
@@ -704,18 +685,6 @@ internal sealed partial class InspectorViewModel : ObservableObject
             e.Flag(wall, "playeruse", false);
             e.Flag(wall, "repeatspecial", false);
         })));
-    }
-
-    private static string Describe(Switch s)
-    {
-        var what = s.Targets.Count switch
-        {
-            0 => "",
-            1 => string.Create(CultureInfo.InvariantCulture, $" (the area with tag {s.Wall.Args[0]})"),
-            var n => string.Create(CultureInfo.InvariantCulture, $" ({n} areas with tag {s.Wall.Args[0]})"),
-        };
-        var none = s.Targets.Count == 0 && Switches.NamesAreas(s.Wall.Special) ? string.Create(CultureInfo.InvariantCulture, $" No area has tag {s.Wall.Args[0]}, so it does nothing.") : "";
-        return $"{char.ToUpperInvariant(s.Does[0])}{s.Does[1..]}{what} when the player uses it{(s.Repeats ? ", again and again" : ", once")}.{none}";
     }
 
     private string _mapSettingsKey = "";
@@ -1020,9 +989,6 @@ internal sealed partial class InspectorViewModel : ObservableObject
         }));
     }
 
-    private static string Describe(Staircase st, Sector step) =>
-        $"Step {st.Heights.ToList().IndexOf(step.FloorHeight) + 1} of {st.Count}, {st.Describe()}.";
-
     private void AddSecret(Sector area)
     {
         Secret? Now() => Secrets.Recognise(_session.Geometry, area);
@@ -1038,12 +1004,6 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new ActionRow("Not a secret", "It stops counting toward the secrets, and its entrances show on the in-game map again.", () => _session.MakeSecret(area, secret: false)));
     }
 
-    private static string Describe(Secret s)
-    {
-        var doors = s.Doors.Count switch { 0 => "", 1 => " A door leads into it.", var n => $" {n} doors lead into it." };
-        return $"Counts toward the map's secrets when the player steps in.{doors}{(s.Hidden ? " Its way in shows as a solid wall on the in-game map." : " Its way in shows on the in-game map.")}";
-    }
-
     private void AddWindow(Sector area)
     {
         WallWindow? Now() => WallWindows.Recognise(_session.Geometry, area);
@@ -1057,12 +1017,6 @@ internal sealed partial class InspectorViewModel : ObservableObject
         }));
     }
 
-    private static string Describe(WallWindow w)
-    {
-        var sill = w.Sill - w.Rooms.Min(r => r.FloorHeight);
-        return string.Create(CultureInfo.InvariantCulture, $"An opening {w.Top - w.Sill:0} tall between two rooms, its sill {sill:0} above the lower floor{(w.Blocks ? "; nothing walks or flies through it" : "")}. The player sees through it and cannot climb in.");
-    }
-
     private static string Compass(int angle) => (((angle % 360) + 360) % 360) switch
     {
         < 23 or >= 338 => "east",
@@ -1074,19 +1028,6 @@ internal sealed partial class InspectorViewModel : ObservableObject
         < 293 => "south",
         _ => "south-east",
     };
-
-    private static string Describe(Teleporter t)
-    {
-        var who = t.Monsters ? "the player or a monster" : "the player";
-        var how = t.ByUse ? "uses it" : "walks across it from the front";
-        var where = t.Arrivals.Count switch
-        {
-            0 => "nowhere: no arrival spot has its id or stands in an area with its tag",
-            1 => string.Create(CultureInfo.InvariantCulture, $"the arrival spot at {t.Arrivals[0].X:0}, {t.Arrivals[0].Y:0}"),
-            var n => $"the first of {n} arrival spots",
-        };
-        return $"Sends {who} who {how} to {where}{(t.Repeats ? "" : ", once")}.";
-    }
 
     /// <summary>A teleporter's settings: where it goes, who it sends, and taking it away.</summary>
     private void AddTeleporter(Line l)
@@ -1116,16 +1057,6 @@ internal sealed partial class InspectorViewModel : ObservableObject
     }
 
     /// <summary>The door in one sentence: how it opens, what locks it, what it does after.</summary>
-    private static string Describe(Door d)
-    {
-        var remote = string.Join(", ", d.RemoteWays());
-        var own = d.Own.Any() ? d.Monsters ? "when the player or a monster uses it" : "when the player uses it" : "";
-        var who = remote.Length == 0 ? own : own.Length == 0 ? $"from {remote}" : $"{own}, or from {remote}";
-        var key = Doors.DoomLocks.FirstOrDefault(k => k.Lock == d.Settings.Lock && k.Lock != 0).Name is { } name ? $", with the {name.ToLowerInvariant()}" : d.Settings.Lock != 0 ? $", with lock {d.Settings.Lock}" : "";
-        var after = d.Settings.StaysOpen ? "stays open" : string.Create(CultureInfo.InvariantCulture, $"closes again after {d.Settings.Delay / 35.0:0.#} s");
-        return $"Opens {who}{key}; {after}.";
-    }
-
     /// <summary>The door's own settings, each one undoable change to every wall that opens it.</summary>
     private void AddDoor(Sector area)
     {
