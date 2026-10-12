@@ -112,6 +112,19 @@
                                   ToolTip.Tip="Drag from the bottom of a staircase to its top: steps that climb from one floor to the other, never more than the player can step up (S)." />
                     <ToggleButton Classes="segment tool last" Content="Measure" IsChecked="{Binding IsMeasureTool}"
                                   ToolTip.Tip="Drag a line to measure it: below the map, the floors and ceilings along it as a cross-section, with the player for scale and every step the player can't take (M)." />
+                    <Button Classes="segment tool first last" Content="{Binding MirrorButton}" Margin="0,10,0,0" HorizontalAlignment="Stretch"
+                            ToolTip.Tip="Symmetry: rooms you draw and things you place are repeated about the middle, mirrored or turned, as deathmatch maps are built. The middle is the selection's, or the map's when nothing is selected.">
+                        <Button.Flyout>
+                            <MenuFlyout Placement="RightEdgeAlignedTop">
+                                <MenuItem Header="No mirror" Command="{Binding ChooseMirrorCommand}" CommandParameter="0" />
+                                <MenuItem Header="Mirror left–right" Command="{Binding ChooseMirrorCommand}" CommandParameter="1" />
+                                <MenuItem Header="Mirror top–bottom" Command="{Binding ChooseMirrorCommand}" CommandParameter="2" />
+                                <MenuItem Header="Mirror four ways" Command="{Binding ChooseMirrorCommand}" CommandParameter="3" />
+                                <MenuItem Header="Half turn" Command="{Binding ChooseMirrorCommand}" CommandParameter="4" />
+                                <MenuItem Header="Quarter turns" Command="{Binding ChooseMirrorCommand}" CommandParameter="5" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
                 </StackPanel>
 
                 <!-- Heights legend: the colour ramp with the lowest and highest floor. -->

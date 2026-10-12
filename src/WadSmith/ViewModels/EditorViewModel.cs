@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WadSmith.Editor;
 using WadSmith.Editor.App;
+using WadSmith.Editor.Editing;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
 
@@ -677,6 +678,64 @@ internal sealed partial class EditorViewModel : ObservableObject
     private async Task CloseAsync() => await _main.CloseEditorAsync().ConfigureAwait(true);
 
     /// <summary>Called by the canvas when the pointer moves over something new.</summary>
+    /// <summary>The symmetry modes, in words, in the order of <see cref="MirrorMode"/>.</summary>
+    public IReadOnlyList<string> MirrorModes { get; } = ["No mirror", "Mirror left–right", "Mirror top–bottom", "Mirror four ways", "Half turn", "Quarter turns"];
+
+    /// <summary>
+    /// Which symmetry mode is on; choosing one centres it on the selection's middle, or the map's when nothing is selected
+    /// (on the grid's 8).
+    /// </summary>
+    public int MirrorChoice
+    {
+        get => (int)Session.Mirror.Mode;
+        set
+        {
+            if (value < 0 || value == MirrorChoice) return;
+            var mode = (MirrorMode)value;
+            var (x0, y0, x1, y1) = Session.Selection.IsEmpty ? Session.Geometry.Extent() : SelectionBox();
+            var centre = new MapPoint(Math.Round((x0 + x1) / 2 / 8) * 8, Math.Round((y0 + y1) / 2 / 8) * 8);
+            Session.Mirror = mode == MirrorMode.Off ? Mirror.Off : new Mirror(mode, centre);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(MirrorButton));
+            Hint(mode == MirrorMode.Off ? null : string.Create(CultureInfo.InvariantCulture, $"{MirrorModes[value]} about ({centre.X:0}, {centre.Y:0}): rooms you draw and things you place are repeated there; the dashed lines show the middle."));
+        }
+    }
+
+    /// <summary>The Mirror button's words: short enough for the tools column, saying which mode is on.</summary>
+    public string MirrorButton => Session.Mirror.Mode switch
+    {
+        MirrorMode.LeftRight => "Mirror ↔",
+        MirrorMode.TopBottom => "Mirror ↕",
+        MirrorMode.FourWays => "Mirror ✣",
+        MirrorMode.HalfTurn => "Turn ½",
+        MirrorMode.QuarterTurns => "Turn ¼",
+        _ => "Mirror",
+    };
+
+    /// <summary>The Mirror menu: the mode's number (as <see cref="MirrorMode"/>).</summary>
+    [RelayCommand]
+    private void ChooseMirror(string mode) => MirrorChoice = int.Parse(mode, CultureInfo.InvariantCulture);
+
+    /// <summary>The box round the selected rooms, walls, corners and things.</summary>
+    private (double, double, double, double) SelectionBox()
+    {
+        double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+        void Add(double x, double y) => (x0, y0, x1, y1) = (Math.Min(x0, x), Math.Min(y0, y), Math.Max(x1, x), Math.Max(y1, y));
+        foreach (var e in Session.Selection.Items)
+        {
+            switch (e)
+            {
+                case Vertex v: Add(v.X, v.Y); break;
+                case Thing t: Add(t.X, t.Y); break;
+                case Line l: Add(l.Start.X, l.Start.Y); Add(l.End.X, l.End.Y); break;
+                case Side { Line: { } l }: Add(l.Start.X, l.Start.Y); Add(l.End.X, l.End.Y); break;
+                case Sector s when Session.Geometry.WallBoundsAt(s.Slot) is { } b: Add(b.MinX, b.MinY); Add(b.MaxX, b.MaxY); break;
+            }
+        }
+
+        return x0 > x1 ? Session.Geometry.Extent() : (x0, y0, x1, y1);
+    }
+
     /// <summary>Whether the plan shows the player's size at the pointer and marks where the player cannot pass (G).</summary>
     public bool ShowFit
     {

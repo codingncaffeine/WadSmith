@@ -209,7 +209,7 @@ internal sealed record FitMarks(long Version, IReadOnlyList<WadSmith.Editor.Geom
 /// <summary>What the plan shows of the player's fit: the marks, and the player's box at the pointer (null when off the map).</summary>
 internal sealed record FitOverlay(FitMarks? Marks, WadSmith.Editor.Geometry.MapPoint? Ghost, bool GhostFits);
 
-internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null, FitOverlay? fit = null) : ICustomDrawOperation
+internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null, FitOverlay? fit = null, WadSmith.Editor.Editing.Mirror? mirror = null) : ICustomDrawOperation
 {
     public Rect Bounds { get; } = bounds;
 
@@ -227,7 +227,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         using var lease = feature.Lease();
         FrameStats.Gpu = lease.GrContext is not null;
-        new MapPainter(snapshot, selection, hover, view, camera, preview, move, fit).Paint(lease.SkCanvas, lease.GrContext is not null);
+        new MapPainter(snapshot, selection, hover, view, camera, preview, move, fit, mirror).Paint(lease.SkCanvas, lease.GrContext is not null);
         lease.SkCanvas.Flush();
         FrameStats.Draw(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
@@ -237,7 +237,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
 /// Paints the map onto any Skia canvas: the window's (through <see cref="MapDrawOperation"/>) or an
 /// offscreen picture such as a version's thumbnail.
 /// </summary>
-internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null, FitOverlay? fit = null)
+internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null, FitOverlay? fit = null, WadSmith.Editor.Editing.Mirror? mirror = null)
 {
     private static readonly SKColor Background = new(0x0A, 0x07, 0x08);
     private static readonly SKColor GridFine = new(0x15, 0x10, 0x11);
@@ -313,7 +313,34 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
         DrawPoints(canvas, snapshot);
         if (camera is { } eye) DrawCamera(canvas, eye);
         DrawPreview(canvas);
+        if (mirror is { IsOn: true } symmetry) DrawMirror(canvas, symmetry);
         canvas.Restore();
+    }
+
+    private static readonly SKColor MirrorColour = new(0x4F, 0xC3, 0xE0);
+
+    /// <summary>Symmetry mode's middle: its mirror lines across the view, or a small cross for turns (screen pixels).</summary>
+    private void DrawMirror(SKCanvas canvas, WadSmith.Editor.Editing.Mirror m)
+    {
+        float Sx(double x) => (float)((x - view.Cx) * view.Zoom + view.Width / 2);
+        float Sy(double y) => (float)(view.Height / 2 - (y - view.Cy) * view.Zoom);
+        using var line = new SKPaint { Style = SKPaintStyle.Stroke, Color = MirrorColour.WithAlpha(0xB0), StrokeWidth = 1.2f, IsAntialias = true, PathEffect = SKPathEffect.CreateDash([8, 5], 0) };
+        var reach = (view.Width + view.Height) / view.Zoom;
+        foreach (var (a, b) in m.Axes(reach))
+        {
+            var turns = m.Mode is WadSmith.Editor.Editing.MirrorMode.HalfTurn or WadSmith.Editor.Editing.MirrorMode.QuarterTurns;
+            if (turns)
+            {
+                // A cross of fixed size in pixels, whatever the zoom.
+                var (cx, cy) = (Sx(m.Centre.X), Sy(m.Centre.Y));
+                canvas.DrawLine(cx - 12, cy, cx + 12, cy, line);
+                canvas.DrawLine(cx, cy - 12, cx, cy + 12, line);
+                canvas.DrawCircle(cx, cy, 6, line);
+                break;
+            }
+
+            canvas.DrawLine(Sx(a.X), Sy(a.Y), Sx(b.X), Sy(b.Y), line);
+        }
     }
 
     /// <summary>Gaps and openings the player cannot pass, in red, and the player's box at the pointer (map units).</summary>
@@ -412,6 +439,33 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
             }
 
             foreach (var c in corners) canvas.DrawRect(Sx(c.X) - 3, Sy(c.Y) - 3, 6, 6, dot);
+        }
+
+        // In symmetry mode, the copies the room will have, faintly, as it is drawn.
+        if (mirror is { IsOn: true } m)
+        {
+            using var copy = new SKPaint { Style = SKPaintStyle.Stroke, Color = MirrorColour.WithAlpha(0xC0), StrokeWidth = 1.5f, IsAntialias = true };
+            IReadOnlyList<MapPoint>? outline = preview.Round is { Count: > 2 } r ? r
+                : preview.Corners is { Count: > 0 } cs ? [.. cs, .. preview.Snap is { } tip ? new[] { tip } : []]
+                : preview is { From: { } f0, To: { } t0 } ? [f0, new MapPoint(f0.X, t0.Y), t0, new MapPoint(t0.X, f0.Y)] : null;
+            if (outline is { Count: > 1 })
+            {
+                var closed = preview.Corners is null;
+                for (var i = 0; i < m.Images(default).Count; i++)
+                {
+                    using var path = new SKPath();
+                    var first = m.Images(outline[0])[i];
+                    path.MoveTo(Sx(first.X), Sy(first.Y));
+                    foreach (var p in outline.Skip(1))
+                    {
+                        var q = m.Images(p)[i];
+                        path.LineTo(Sx(q.X), Sy(q.Y));
+                    }
+
+                    if (closed) path.Close();
+                    canvas.DrawPath(path, copy);
+                }
+            }
         }
 
         // Smart guides: thin dashed lines from what the corner lines up with, a little past both ends.

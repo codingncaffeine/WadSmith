@@ -153,6 +153,12 @@ public sealed class EditorSession : IDisposable
     /// </summary>
     public void DrawRoom(IReadOnlyList<MapPoint> shape)
     {
+        if (Mirror.IsOn)
+        {
+            DrawRooms([shape, .. Mirror.Shapes(shape)], History.NewGesture(), []);
+            return;
+        }
+
         if (_geometry.Version != Map.Version)
         {
             _whenCaughtUp = () => DrawRoom(shape);
@@ -173,6 +179,58 @@ public sealed class EditorSession : IDisposable
             Log.Warn($"Drawing a room in {Slot} failed: {ex.Message}");
             Notice?.Invoke($"That room could not be drawn there. {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Symmetry mode (§3.4): rooms drawn and objects placed are repeated about the middle as <see cref="Mirror"/> says; Off
+    /// by default.
+    /// </summary>
+    public Mirror Mirror
+    {
+        get => _mirror;
+        set
+        {
+            _mirror = value;
+            MirrorChanged?.Invoke();
+        }
+    }
+
+    private Mirror _mirror = Mirror.Off;
+
+    /// <summary>Raised when <see cref="Mirror"/> changes.</summary>
+    public event Action? MirrorChanged;
+
+    /// <summary>
+    /// Draws a room and its mirror images one after another, each once the shapes include the one before (so a copy that
+    /// touches the original shares its walls), as one undo step; selects them all.
+    /// </summary>
+    private void DrawRooms(IReadOnlyList<IReadOnlyList<MapPoint>> shapes, long gesture, List<Sector> made)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => DrawRooms(shapes, gesture, made);
+            return;
+        }
+
+        try
+        {
+            var geometry = _geometry;
+            var look = Look;
+            History.Record("Draw a room", e => made.AddRange(ShapeDrawing.Draw(e, geometry, shapes[0], look)), gesture);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Log.Warn($"Drawing a mirrored room in {Slot} failed: {ex.Message}");
+            Notice?.Invoke($"A copy of that room could not be drawn there. {ex.Message}");
+        }
+
+        if (shapes.Count > 1)
+        {
+            DrawRooms([.. shapes.Skip(1)], gesture, made);
+            return;
+        }
+
+        if (made.Any(s => s.OnMap)) Selection.Set([.. made.Where(s => s.OnMap)]);
     }
 
     /// <summary>
@@ -293,10 +351,25 @@ public sealed class EditorSession : IDisposable
     /// </summary>
     public Thing PlaceThing(int type, MapPoint at)
     {
-        var thing = new Thing { X = at.X, Y = at.Y, Type = type, Angle = 90 };
-        foreach (var f in Smart.Things.Everywhere(Engine)) thing.SetFlag(f, true);
-        History.Record("Place a thing", e => e.Add(thing));
-        Selection.Set(thing);
+        Thing New(MapPoint p, int angle)
+        {
+            var t = new Thing { X = p.X, Y = p.Y, Type = type, Angle = angle };
+            foreach (var f in Smart.Things.Everywhere(Engine)) t.SetFlag(f, true);
+            return t;
+        }
+
+        var thing = New(at, 90);
+
+        // In symmetry mode, its copies stand at the images of the spot, facing as their image would.
+        var images = Mirror.Images(at);
+        var facings = Mirror.Facings(90);
+        Thing[] copies = [.. images.Select((p, i) => New(p, facings[i])).Where(c => c.X != at.X || c.Y != at.Y).DistinctBy(c => (c.X, c.Y))];
+        History.Record("Place a thing", e =>
+        {
+            e.Add(thing);
+            foreach (var c in copies) e.Add(c);
+        });
+        Selection.Set([thing, .. copies]);
         return thing;
     }
 

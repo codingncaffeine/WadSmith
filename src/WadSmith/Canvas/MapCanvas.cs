@@ -315,6 +315,7 @@ internal sealed class MapCanvas : Control
         {
             old.GeometryChanged -= OnGeometryChanged;
             old.Selection.Changed -= OnSelectionChanged;
+            old.MirrorChanged -= InvalidateVisual;
         }
 
         _snapshot = null;
@@ -328,6 +329,7 @@ internal sealed class MapCanvas : Control
             _look = new MapLook(s.Resources);
             s.GeometryChanged += OnGeometryChanged;
             s.Selection.Changed += OnSelectionChanged;
+            s.MirrorChanged += InvalidateVisual;
             RequestPicture();
             RequestFit();
             OnSelectionChanged();
@@ -473,7 +475,7 @@ internal sealed class MapCanvas : Control
         }
 
         var fit = ShowFit ? new FitOverlay(_fitMarks, _ghost?.At, _ghost?.Fit.Fits ?? false) : null;
-        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview, move, fit));
+        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview, move, fit, Session.Mirror.IsOn ? Session.Mirror : null));
         // The selected object's facing knob, at the tip of its arrow.
         if (FacingKnob() is { } knob)
         {

@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -349,6 +349,46 @@ foreach (var pose in poses)
             var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
             view.FitMap();
             if (pose == "editor-zoomed") view.ZoomBy(3.5);
+            if (pose == "editor-mirror")
+            {
+                // Four-way symmetry about the starter room's middle; a room dragged north-east of it, seen mid-drag with its three
+                // copies, then drawn; an imp placed in it comes with three, each facing as its image.
+                var session = editor.Session;
+                editor.Session.Selection.Clear();
+                editor.MirrorChoice = (int)WadSmith.Editor.Editing.MirrorMode.FourWays;
+                Console.WriteLine($"mirror: {session.Mirror}; status '{editor.Status}'");
+                var plan = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
+                plan.FitMap();
+                plan.ZoomBy(0.45);
+                Pump(0.4);
+                Avalonia.Point Spot(double x, double y) => plan.TranslatePoint(plan.ToScreen(new WadSmith.Editor.Geometry.MapPoint(x, y)), window)!.Value;
+                plan.Focus();
+                window.KeyPress(Avalonia.Input.Key.R, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.R, "r");
+                Pump(0.2);
+                window.MouseMove(Spot(320, 128), Avalonia.Input.RawInputModifiers.None);
+                window.MouseDown(Spot(320, 128), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                for (var k = 1; k <= 10; k++)
+                {
+                    window.MouseMove(Spot(320 + 128 * k / 10.0, 128 + 192 * k / 10.0), Avalonia.Input.RawInputModifiers.LeftMouseButton);
+                    Pump(0.02);
+                }
+
+                Save("editor-mirror-drawing");
+                window.MouseUp(Spot(448, 320), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                for (var i = 0; i < 100 && session.Map.Sectors.Count(s => s.OnMap) < 5; i++) Pump(0.05);
+                Pump(0.5);
+                Console.WriteLine($"mirror rooms: {session.Map.Sectors.Count(s => s.OnMap)} areas, {session.Selection.Count} selected, undo '{session.History.UndoLabel}'");
+                session.PlaceThing(3001, new WadSmith.Editor.Geometry.MapPoint(384, 224));
+                Pump(0.5);
+                Console.WriteLine($"mirror imps: {string.Join(" ", session.Map.Things.Where(t => t.OnMap && t.Type == 3001).Select(t => $"({t.X:0},{t.Y:0} {t.Angle}°)"))}");
+                Save("editor-mirror");
+                session.History.Undo();
+                session.History.Undo();
+                Pump(0.5);
+                Console.WriteLine($"mirror undone twice: {session.Map.Sectors.Count(s => s.OnMap)} areas, {session.Map.Things.Count(t => t.OnMap)} things");
+                break;
+            }
+
             if (pose == "editor-round")
             {
                 // The starter room's north-east corner clicked, the Inspector's reach 128 and 8 sides, "Round this corner".

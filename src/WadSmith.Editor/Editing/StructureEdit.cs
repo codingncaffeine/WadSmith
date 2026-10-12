@@ -101,6 +101,18 @@ public sealed class StructureEdit : IEdit
         for (var i = _steps.Count - 1; i >= 0; i--) _steps[i].Undo();
     }
 
+    /// <summary>
+    /// Joins a later structural change of the same gesture and label into this one (one undo step): rooms drawn with their
+    /// mirror images, one after another so each joins what the one before it drew.
+    /// </summary>
+    public bool TryMerge(IEdit next)
+    {
+        if (next is not StructureEdit other || other.Label != Label || !ReferenceEquals(other.Map, Map)) return false;
+        _steps.AddRange(other._steps);
+        foreach (var e in other._order) Note(e);
+        return true;
+    }
+
     /// <summary>Takes back every step made so far (when building the edit failed).</summary>
     internal void Abandon()
     {
