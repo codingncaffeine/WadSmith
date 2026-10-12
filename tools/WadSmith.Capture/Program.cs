@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -349,6 +349,43 @@ foreach (var pose in poses)
             var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
             view.FitMap();
             if (pose == "editor-zoomed") view.ZoomBy(3.5);
+            if (pose == "editor-play")
+            {
+                // The player start taken away and Play pressed: the pre-flight says so; "Fix them and play" adds a start and plays.
+                // The engine is WS_ENGINE_PATH (a stand-in) or, only inside the nested session, the one installed: a real engine
+                // must never open on the desktop.
+                var stand = Environment.GetEnvironmentVariable("WS_ENGINE_PATH");
+                if (stand is null && Environment.GetEnvironmentVariable("WADSMITH_NESTED_WORK") is null)
+                {
+                    Console.Error.WriteLine("editor-play needs WS_ENGINE_PATH (a stand-in engine) outside the nested session.");
+                    return 1;
+                }
+
+                if (stand is not null) settings.Current.EnginePath = stand;
+                var session = editor.Session;
+                var start = session.Map.Things.First(t => t.OnMap && t.Type == 1);
+                session.History.Record("Delete", e => e.Remove(start));
+
+                // The first wall given a texture the game lacks (what the stand-in engine reports, as GZDoom does).
+                var first = session.Map.Lines.First(l => l.OnMap);
+                session.History.Record("Plant", e => e.Set(first.Front, x => x.Middle, (x, v) => x.Middle = v, "NOSUCHTX"));
+                Pump(1.0);
+                editor.PlayCommand.Execute(null);
+                for (var i = 0; i < 100 && editor.Preflight is null; i++) Pump(0.05);
+                Console.WriteLine($"play preflight: {editor.Preflight}");
+                Save("editor-play-preflight");
+                editor.FixAndPlayCommand.Execute(null);
+                for (var i = 0; i < 100 && !editor.Playing; i++) Pump(0.05);
+                Console.WriteLine($"play started: {editor.Playing}; starts {session.Map.Things.Count(t => t.OnMap && t.Type == 1)}; status '{editor.Status}'");
+                for (var i = 0; i < 1200 && editor.Playing; i++) Pump(0.05);
+                for (var i = 0; i < 100 && session.LastPlay.Count == 0; i++) Pump(0.05);
+                Pump(1.0);
+                Console.WriteLine($"play back: {session.LastPlay.Count} findings; problems {editor.Problems.Summary}: {string.Join(" | ", editor.Problems.Rows.Select(r => r.Sentence))}");
+                Console.WriteLine($"play versions: {string.Join(", ", WadSmith.Editor.MapVersions.List(session.Project, session.Slot).Select(v => v.Reason))}");
+                Save("editor-play-back");
+                break;
+            }
+
             if (pose == "editor-flatcal")
             {
                 // WadSmith's 3D view of the floor-texture maps (WS_FLATCAL: plain, turn30, pan, turnpan, scale .wad and GZDoom's

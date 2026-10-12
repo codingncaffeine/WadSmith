@@ -236,6 +236,35 @@ public sealed class EditorSession : IDisposable
         Cut();
     }
 
+    /// <summary>What the engine said about the map the last time it was played (Phase 4), on the map's own elements.</summary>
+    public IReadOnlyList<Checks.EngineFinding> LastPlay { get; private set; } = [];
+
+    /// <summary>Raised when <see cref="LastPlay"/> changes.</summary>
+    public event Action? LastPlayChanged;
+
+    /// <summary>Reads a Play's log on a worker (<paramref name="played"/>: the map as it was saved for that Play).</summary>
+    public void ReadPlayLog(string logPath, MapFrame played)
+    {
+        Task.Run(() =>
+        {
+            IReadOnlyList<Checks.EngineFinding> found = [];
+            try
+            {
+                if (File.Exists(logPath)) found = Checks.EngineLog.Read(File.ReadAllText(logPath), played);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Log.Warn($"The engine's log {logPath} could not be read: {ex.Message}");
+            }
+
+            _onUiThread(() =>
+            {
+                LastPlay = found;
+                LastPlayChanged?.Invoke();
+            });
+        });
+    }
+
     /// <summary>Says something in the status strip, for the views (a drag refused, …).</summary>
     public void Tell(string sentence) => Notice?.Invoke(sentence);
 

@@ -665,6 +665,125 @@ internal sealed partial class EditorViewModel : ObservableObject
         Session.Selection.Prune();
     }
 
+    // Play (Phase 4): the engine's difficulty, the checks before, and the engine's say after.
+    private static readonly IReadOnlyDictionary<string, string[]> SkillNamesByFamily = new Dictionary<string, string[]>
+    {
+        ["doom"] = ["I'm too young to die", "Hey, not too rough", "Hurt me plenty", "Ultra-Violence", "Nightmare!"],
+        ["heretic"] = ["Thou needeth a wet-nurse", "Yellowbellies-r-us", "Bringest them oneth", "Thou art a smite-meister", "Black plague possesses thee"],
+        ["hexen"] = ["Easiest", "Easy", "Normal", "Hard", "Hardest"],
+        ["strife"] = ["Training", "Rookie", "Veteran", "Elite", "Bloodbath"],
+    };
+
+    private string[] SkillNames => SkillNamesByFamily.GetValueOrDefault(Session.Engine) ?? SkillNamesByFamily["doom"];
+
+    /// <summary>The difficulties in the game's own words, the one Play uses marked.</summary>
+    public IReadOnlyList<string> SkillHeaders => [.. SkillNames.Select((n, i) => (i == Skill ? "✓ " : "    ") + n)];
+
+    /// <summary>Which difficulty Play starts at (0 is the easiest); "Hurt me plenty" to begin with.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SkillHeaders))]
+    private int _skill = 2;
+
+    [RelayCommand]
+    private void ChooseSkill(string index) => Skill = Math.Clamp(int.Parse(index, CultureInfo.InvariantCulture), 0, 4);
+
+    /// <summary>Whether the game is running now.</summary>
+    [ObservableProperty]
+    private bool _playing;
+
+    /// <summary>What would break the game, said before it starts (D25); null when nothing is waiting.</summary>
+    [ObservableProperty]
+    private string? _preflight;
+
+    private IReadOnlyList<WadSmith.Editor.Checks.Problem> _blocking = [];
+
+    /// <summary>Plays the map in the engine (F9): checks first, keeps a version, then starts it.</summary>
+    [RelayCommand]
+    private Task PlayAsync() => PlayAsync(force: false);
+
+    /// <summary>The pre-flight's "Fix them and play": every blocking problem with a fix is fixed (one undo step each).</summary>
+    [RelayCommand]
+    private async Task FixAndPlayAsync()
+    {
+        foreach (var p in _blocking.Where(p => p.Fix is not null)) Session.History.Record(p.FixLabel!, p.Fix!);
+        await PlayAsync(force: true).ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private Task PlayAnywayAsync() => PlayAsync(force: true);
+
+    [RelayCommand]
+    private void CancelPlay() => Preflight = null;
+
+    private async Task PlayAsync(bool force)
+    {
+        if (Playing) return;
+        Preflight = null;
+        var engines = WadSmith.Core.Engines.EngineLocator.Find(_services.Settings.Current.EnginePath, Environment.GetEnvironmentVariable);
+        if (engines.Count == 0)
+        {
+            Hint("GZDoom is not installed. Install it from your system's software centre or package manager (Arch: pacman -S gzdoom; Debian or Ubuntu: apt install gzdoom; any: flatpak install flathub org.zdoom.GZDoom), then press Play again. Editing works meanwhile.");
+            return;
+        }
+
+        await Session.FlushAsync().ConfigureAwait(true);
+        if (!force)
+        {
+            var (geometry, resources, look, family, fit) = (Session.Geometry, Session.Resources, Session.Look, Session.Engine, Session.FitBaseline);
+            var blocking = await Task.Run(() => WadSmith.Editor.Checks.Problems.Check(geometry, resources, look, family, fit).Where(p => p.Severity == WadSmith.Editor.Checks.Severity.Error).ToList()).ConfigureAwait(true);
+            if (blocking.Count > 0)
+            {
+                _blocking = blocking;
+                var fixable = blocking.Count(p => p.Fix is not null);
+                Preflight = $"Before you play: {(blocking.Count == 1 ? "1 thing" : $"{blocking.Count} things")} would break the game. {string.Join(" ", blocking.Select(p => p.Sentence))}{(fixable == 0 ? "" : fixable == blocking.Count ? " WadSmith can fix " + (fixable == 1 ? "it." : "them all.") : $" WadSmith can fix {fixable} of them.")}";
+                return;
+            }
+        }
+
+        var data = _services.Paths.Data;
+        var games = await Task.Run(_services.FoundGames).ConfigureAwait(true);
+        var config = WadSmith.Core.Engines.EngineConfig.Prepare(data, Environment.GetEnvironmentVariable);
+        var log = Path.Combine(data, "engine", "last-play.log");
+        var (request, why) = WadSmith.Core.Engines.PlayRequests.For(Session.Project, Session.Slot, games, config, log, Skill + 1);
+        if (request is null)
+        {
+            Hint(why);
+            return;
+        }
+
+        await Session.SaveVersion("Played").ConfigureAwait(true);
+        var played = Session.Map.Frame;
+        var engine = engines[0];
+        var (program, arguments) = WadSmith.Core.Engines.PlayCommand.For(engine, request);
+        try
+        {
+            if (File.Exists(log)) File.Delete(log);
+            var start = new System.Diagnostics.ProcessStartInfo(program) { UseShellExecute = false };
+            foreach (var a in arguments) start.ArgumentList.Add(a);
+            using var process = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException("the engine did not start");
+            Playing = true;
+            Hint($"Playing {Session.Slot} in {engine.Name}… WadSmith keeps your changes meanwhile; what the game says comes back to Problems when it closes.");
+            await process.WaitForExitAsync(_services.ShuttingDown).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            Log.Warn($"Starting {program} failed: {ex.Message}");
+            Hint($"{engine.Name} could not be started: {ex.Message}");
+            return;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        finally
+        {
+            Playing = false;
+        }
+
+        Session.ReadPlayLog(log, played);
+        Hint("Back from the game.");
+    }
+
     [RelayCommand]
     private async Task KeepVersionAsync()
     {
@@ -677,7 +796,6 @@ internal sealed partial class EditorViewModel : ObservableObject
     [RelayCommand]
     private async Task CloseAsync() => await _main.CloseEditorAsync().ConfigureAwait(true);
 
-    /// <summary>Called by the canvas when the pointer moves over something new.</summary>
     /// <summary>The symmetry modes, in words, in the order of <see cref="MirrorMode"/>.</summary>
     public IReadOnlyList<string> MirrorModes { get; } = ["No mirror", "Mirror left–right", "Mirror top–bottom", "Mirror four ways", "Half turn", "Quarter turns"];
 
@@ -763,6 +881,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         UpdateStatus();
     }
 
+    /// <summary>Called by the canvas when the pointer moves over something new.</summary>
     public void Hover(Element? element, MapPoint at)
     {
         if (at != default) _pointer = at;

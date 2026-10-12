@@ -44,6 +44,7 @@ public static class CommandLine
         new Commands.StressGenCommand(),
         new Commands.ScriptCommand(),
         new Commands.RecogniseCommand(),
+        new Commands.PlayCliCommand(),
     ];
 
     public static int Run(IReadOnlyList<string> args, TextWriter output, TextWriter error)

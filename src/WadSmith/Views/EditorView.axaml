@@ -7,6 +7,7 @@
              x:DataType="vm:EditorViewModel">
 
     <UserControl.KeyBindings>
+        <KeyBinding Gesture="F9" Command="{Binding PlayCommand}" />
         <KeyBinding Gesture="Ctrl+Z" Command="{Binding UndoCommand}" />
         <KeyBinding Gesture="Ctrl+Y" Command="{Binding RedoCommand}" />
         <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}" />
@@ -74,6 +75,18 @@
                         <ToggleButton Classes="segment last" Content="Lines" IsChecked="{Binding IsLines}"
                                       ToolTip.Tip="Shows only the walls, in the colours of the game's automap." />
                     </StackPanel>
+                    <SplitButton Content="▶ Play" Command="{Binding PlayCommand}" Margin="0,0,10,0" IsEnabled="{Binding !Playing}"
+                                 ToolTip.Tip="Plays this map in GZDoom (F9). WadSmith checks it first and keeps a version; what the game says about it comes back to Problems. The arrow chooses the difficulty.">
+                        <SplitButton.Flyout>
+                            <MenuFlyout>
+                                <MenuItem Header="{Binding SkillHeaders[0]}" Command="{Binding ChooseSkillCommand}" CommandParameter="0" />
+                                <MenuItem Header="{Binding SkillHeaders[1]}" Command="{Binding ChooseSkillCommand}" CommandParameter="1" />
+                                <MenuItem Header="{Binding SkillHeaders[2]}" Command="{Binding ChooseSkillCommand}" CommandParameter="2" />
+                                <MenuItem Header="{Binding SkillHeaders[3]}" Command="{Binding ChooseSkillCommand}" CommandParameter="3" />
+                                <MenuItem Header="{Binding SkillHeaders[4]}" Command="{Binding ChooseSkillCommand}" CommandParameter="4" />
+                            </MenuFlyout>
+                        </SplitButton.Flyout>
+                    </SplitButton>
                     <ToggleButton Classes="segment first last" Content="Player" IsChecked="{Binding ShowFit}" Margin="0,0,10,0"
                                   ToolTip.Tip="Shows the player's size at the pointer, green where the player fits and red where not, and marks in red where the player cannot pass: gaps under 32 across (45 on a slant) and openings under 56 high (G)." />
                     <ToggleButton Classes="segment first last" Content="3D" IsChecked="{Binding Show3D}" Margin="0,0,10,0"
@@ -93,6 +106,19 @@
             <Grid x:Name="MapViews" ColumnDefinitions="*,4,*">
             <Panel>
                 <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" Tool="{Binding Tool}" ShowFit="{Binding ShowFit}" />
+
+                <!-- Pre-flight (D25): what would break the game, said before it starts, with the way on. -->
+                <Border IsVisible="{Binding Preflight, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="110,12,12,0" Padding="16,12" MaxWidth="560"
+                        CornerRadius="6" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="{Binding Preflight}" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Classes="primary" Content="Fix them and play" Command="{Binding FixAndPlayCommand}" ToolTip.Tip="Makes the fixes WadSmith knows (each one undoes on its own), then plays." />
+                            <Button Classes="metal" Content="Play anyway" Command="{Binding PlayAnywayCommand}" />
+                            <Button Classes="metal" Content="Cancel" Command="{Binding CancelPlayCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
 
                 <!-- Tools: what a left drag on the plan does, in a column down the plan's left edge (§3.3). -->
                 <StackPanel Orientation="Vertical" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">

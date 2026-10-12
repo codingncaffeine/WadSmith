@@ -71,6 +71,9 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
         return found;
     }
 
+    /// <summary>The games the last scan found, scanning first when none has finished. Call on a worker.</summary>
+    public IReadOnlyList<FoundGame> FoundGames() => Games ?? GameLocator.Scan(GameLocator.StandardFolders(Environment.GetEnvironmentVariable).Concat(Settings.Current.GameFolders).Distinct(), cancel: ShuttingDown);
+
     public void Shutdown() => _shutdown.Cancel();
 
     private static string? EngineDataFinder()

@@ -42,15 +42,19 @@ internal sealed partial class ProblemsViewModel : ObservableObject
         _checks = new(MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, _session)) return;
+            // What the engine said at the last Play, while still true, goes with the map's own checks.
+            var known = new HashSet<WadSmith.Editor.Model.Element>(r.Found.Where(p => p.Rule == "unknown-texture").SelectMany(p => p.Show), ReferenceEqualityComparer.Instance);
+            IReadOnlyList<Problem> all = [.. r.Found, .. EngineLog.Problems(EngineLog.Still(_session.LastPlay), known)];
             Rows.Clear();
-            foreach (var p in r.Found.OrderBy(p => p.Severity)) Rows.Add(new ProblemRow(p, ShowProblem, FixProblem));
-            var errors = r.Found.Count(p => p.Severity == Severity.Error);
-            Summary = r.Found.Count == 0 ? "No problems" : r.Found.Count == 1 ? "1 problem" : $"{r.Found.Count} problems";
+            foreach (var p in all.OrderBy(p => p.Severity)) Rows.Add(new ProblemRow(p, ShowProblem, FixProblem));
+            var errors = all.Count(p => p.Severity == Severity.Error);
+            Summary = all.Count == 0 ? "No problems" : all.Count == 1 ? "1 problem" : $"{all.Count} problems";
             HasErrors = errors > 0;
-            Empty = r.Found.Count == 0;
+            Empty = all.Count == 0;
         }, "the map's checks");
         session.GeometryChanged += Request;
         session.FitBaselineChanged += Request;
+        session.LastPlayChanged += Request;
         Request();
     }
 
