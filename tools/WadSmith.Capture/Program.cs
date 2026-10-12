@@ -274,6 +274,14 @@ foreach (var pose in poses)
     switch (pose)
     {
         case "welcome":
+            // After an editor pose, back to the start screen first: it then shows the map just made on its game's tile.
+            if (vm.Page is EditorViewModel)
+            {
+                Wait(vm.CloseEditorAsync());
+                for (var i = 0; i < 100 && vm.Welcome.Games.All(t => t.Projects.Count == 0); i++) Pump(0.05);
+                Pump(0.3);
+            }
+
             Save("welcome");
             break;
         case "crash-edit":
