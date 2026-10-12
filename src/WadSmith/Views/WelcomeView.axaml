@@ -23,6 +23,19 @@
                 <ProgressBar IsIndeterminate="True" Width="80" IsVisible="{Binding Scanning}" VerticalAlignment="Center" />
             </StackPanel>
 
+            <Border Classes="card" IsVisible="{Binding NoGames}" Padding="14" Margin="0,4,0,14" MaxWidth="820" HorizontalAlignment="Left">
+                <StackPanel Spacing="8">
+                    <TextBlock FontWeight="SemiBold" FontSize="15" Text="No game yet? Freedoom is free." />
+                    <TextBlock Classes="secondary" TextWrapping="Wrap" Text="Freedoom plays like Doom and Doom II and is free to share. WadSmith can fetch it (about 30 MB) so you can make and play a map right now; your own games show up here as soon as they are installed." />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Classes="primary" Content="Get Freedoom" Command="{Binding GetFreedoomCommand}" IsEnabled="{Binding !GettingFreedoom}"
+                                ToolTip.Tip="Downloads Freedoom from its own release page, checks it, and puts it in WadSmith's games folder." />
+                        <ProgressBar Width="180" Minimum="0" Maximum="100" Value="{Binding FreedoomProgress}" IsVisible="{Binding GettingFreedoom}" VerticalAlignment="Center" />
+                        <TextBlock Classes="secondary" Text="{Binding FreedoomStatus}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="520" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <ItemsControl ItemsSource="{Binding Games}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>

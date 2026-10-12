@@ -81,6 +81,68 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     [ObservableProperty]
     private bool _busy;
 
+    /// <summary>Whether Freedoom is being fetched now.</summary>
+    [ObservableProperty]
+    private bool _gettingFreedoom;
+
+    /// <summary>How the fetch is going, in words; what went wrong when it did.</summary>
+    [ObservableProperty]
+    private string _freedoomStatus = "";
+
+    /// <summary>The fetch, 0 to 100.</summary>
+    [ObservableProperty]
+    private double _freedoomProgress;
+
+    /// <summary>Where Freedoom goes: WadSmith's own games folder, added to the folders searched.</summary>
+    public string FreedoomFolder => Path.Combine(_services.Paths.Data, "games", "freedoom");
+
+    /// <summary>
+    /// Fetches Freedoom (§3.2: the offer when no game is found): the release pinned by checksum, unpacked into WadSmith's
+    /// games folder, which is then searched like any other; the tiles fill as soon as it is in.
+    /// </summary>
+    [RelayCommand]
+    private async Task GetFreedoomAsync()
+    {
+        if (GettingFreedoom) return;
+        GettingFreedoom = true;
+        FreedoomProgress = 0;
+        FreedoomStatus = "Getting Freedoom…";
+        try
+        {
+            using var http = new HttpClient();
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("WadSmith");
+            var progress = new Progress<(long Done, long? Total)>(p =>
+            {
+                FreedoomStatus = p.Total is { } total ? $"Getting Freedoom… {p.Done / 1048576.0:0} of {total / 1048576.0:0} MB" : $"Getting Freedoom… {p.Done / 1048576.0:0} MB";
+                FreedoomProgress = p.Total is > 0 and var t ? 100.0 * p.Done / t : 0;
+            });
+            await Freedoom.InstallAsync(FreedoomFolder, http, progress, _services.ShuttingDown).ConfigureAwait(true);
+            var list = _services.Settings.Current.GameFolders;
+            if (!list.Contains(FreedoomFolder, StringComparer.Ordinal))
+            {
+                list.Add(FreedoomFolder);
+                _services.Settings.Save();
+            }
+
+            FreedoomStatus = "Freedoom is in: pick Remix a map or New map on its tile.";
+            Log.Info($"Freedoom {Freedoom.Version} unpacked into {FreedoomFolder}");
+            await ScanAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            FreedoomStatus = $"Freedoom could not be fetched: {ex.Message} Try again later, or put freedoom1.wad and freedoom2.wad in a folder and add it.";
+            Log.Warn($"Fetching Freedoom failed: {ex.Message}");
+        }
+        catch (OperationCanceledException)
+        {
+            FreedoomStatus = "";
+        }
+        finally
+        {
+            GettingFreedoom = false;
+        }
+    }
+
     /// <summary>Set by the view: asks the user for a folder (null when cancelled).</summary>
     public Func<string, Task<string?>>? PickFolder { get; set; }
 
