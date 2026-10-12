@@ -14,7 +14,7 @@ public enum TextureKind
 }
 
 /// <summary>A texture or flat the loaded files make available.</summary>
-public sealed record TextureInfo(string Name, TextureKind Kind, int Width, int Height, string Origin)
+public sealed record TextureInfo(string Name, TextureKind Kind, int Width, int Height, string Origin, ResourceContainer Source)
 {
     internal CompositeTexture? Composite { get; init; }
 
@@ -91,7 +91,7 @@ public sealed class TextureLibrary
                 {
                     // The first texture of the first TEXTURE1 is a placeholder the engines never draw.
                     if (first && lumpName == "TEXTURE1" && t == defs.Textures[0]) t.IsNull = true;
-                    _walls[t.Name] = new TextureInfo(t.Name, TextureKind.Composite, t.Width, t.Height, t.Origin) { Composite = t };
+                    _walls[t.Name] = new TextureInfo(t.Name, TextureKind.Composite, t.Width, t.Height, t.Origin, c) { Composite = t };
                 }
 
                 first = false;
@@ -123,7 +123,7 @@ public sealed class TextureLibrary
                 Notes.AddRange(parsed.Notes);
                 foreach (var (use, t) in parsed.Definitions)
                 {
-                    var info = new TextureInfo(t.Name, TextureKind.Composite, t.Width, t.Height, t.Origin) { Composite = t };
+                    var info = new TextureInfo(t.Name, TextureKind.Composite, t.Width, t.Height, t.Origin, c) { Composite = t };
                     if (use == TextureUse.Flat) _flats[t.Name] = info;
                     else if (use == TextureUse.Wall) _walls[t.Name] = info;
                 }
@@ -138,7 +138,7 @@ public sealed class TextureLibrary
     private TextureInfo SingleInfo(ResourceEntry e, TextureKind kind)
     {
         // The size is only known once the picture is read; it is filled in on first render.
-        return new TextureInfo(e.Name, kind, 0, 0, $"{e.Container.DisplayName} {e.FullPath}") { Entry = e };
+        return new TextureInfo(e.Name, kind, 0, 0, $"{e.Container.DisplayName} {e.FullPath}", e.Container) { Entry = e };
     }
 
     private RgbaImage? Render(TextureInfo info)
