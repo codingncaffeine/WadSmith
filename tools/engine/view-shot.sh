@@ -19,6 +19,8 @@ mkdir -p "$WORK/shots"; rm -f "$WORK/shots/"*.png
 echo "wait 350; screenshot" > "$WORK/shot.cfg"
 # A leading space: the engine takes an argument starting with "-" (a spot west of the middle) for an option.
 ARGS=(+set wsview " $SPOT" +set screenshot_dir "$WORK/shots" +set screenshot_type png +set crosshair 0 +set screenblocks 12 +exec "$WORK/shot.cfg")
+# Extra engine settings for one shot, such as "+set con_midtime 30" to keep a centre message up.
+if [ -n "${VIEW_EXTRA:-}" ]; then read -ra EXTRA <<< "$VIEW_EXTRA"; ARGS+=("${EXTRA[@]}"); fi
 export WS_ENGINE="$ENGINE" WS_IWAD="$IWAD" WS_MAP="$MAP" WS_FILES="$FILES" WS_PK3=viewcheck.pk3 WS_LOG=engine-view.log WS_END="WSVIEW DONE"
 export WS_ARGS="$(printf '%s\n' "${ARGS[@]}")"
 "$HERE/nested.sh" "$WORK" 120 "$HERE/door-session.sh"

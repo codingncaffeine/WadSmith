@@ -415,6 +415,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         }
 
         list.AddRange(GuideCommands());
+        list.Add(new("Feature tour", "Guide", "", "examples|museum|demo|show me everything|learn", () => OpenTourCommand.Execute(null)));
         foreach (var kind in Landmarks.Kinds)
         {
             var named = kind switch { "stairs" => "stairs", "exit" => "an exit", _ => "a " + kind };
@@ -552,6 +553,19 @@ internal sealed partial class EditorViewModel : ObservableObject
         return null;
     }
 
+    /// <summary>Opens WadSmith's feature tour (D32) for this map's game, or the first game found.</summary>
+    [RelayCommand]
+    private async Task OpenTourAsync()
+    {
+        if (ExampleGames().FirstOrDefault() is not { } game)
+        {
+            Hint("The feature tour is built for one of your games, and none was found.");
+            return;
+        }
+
+        await _main.OpenTourAsync(game, Peek?.Back ?? this).ConfigureAwait(true);
+    }
+
     /// <summary>"See it in a real map" (D28): opens a game's own map at a spot that shows <paramref name="kind"/>, read-only.</summary>
     [RelayCommand]
     private async Task ShowMeOneAsync(string kind)
@@ -591,7 +605,8 @@ internal sealed partial class EditorViewModel : ObservableObject
     public GuideMarks Marks => GuideMarks.For(Guide?.Target ?? GuideTarget.None);
 
     /// <summary>The Guide's chapters, for the Guide menu.</summary>
-    public IReadOnlyList<GuideLink> GuideMenu => _guideMenu ??= [.. GuideBook.Chapters.Select(c => new GuideLink(c.Title, c.Summary, new RelayCommand(() => StartGuide(c.Id))))];
+    public IReadOnlyList<GuideLink> GuideMenu => _guideMenu ??= [.. GuideBook.Chapters.Select(c => new GuideLink(c.Title, c.Summary, new RelayCommand(() => StartGuide(c.Id)))),
+        new GuideLink("Feature tour: a map of examples", "A small map with a room for each feature and a sign in each, built for your game. Play it to walk round; Remix it to change it.", OpenTourCommand)];
 
     private IReadOnlyList<GuideLink>? _guideMenu;
 

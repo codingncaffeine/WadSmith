@@ -45,6 +45,7 @@ public static class CommandLine
         new Commands.ScriptCommand(),
         new Commands.RecogniseCommand(),
         new Commands.LandmarksCommand(),
+        new Commands.TourCommand(),
         new Commands.PlayCliCommand(),
         new Commands.MapSettingsCommand(),
     ];

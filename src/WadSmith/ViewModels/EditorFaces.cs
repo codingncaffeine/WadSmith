@@ -27,8 +27,12 @@ internal sealed record GuideMarks(GuideTarget Target)
     public static GuideMarks For(GuideTarget target) => new(target);
 }
 
-/// <summary>A game's own map opened to learn from (D28): its banner, the landmark it was opened at, and the editor to go back to.</summary>
-internal sealed record PeekInfo(string Heading, string Says, Editor.Smart.Landmark Landmark, Core.Games.FoundGame Game, EditorViewModel? Back);
+/// <summary>A map opened to learn from: a game's own map at a landmark (D28), or the feature tour (D32, no landmark); its banner, its map, and the editor to go back to.</summary>
+internal sealed record PeekInfo(string Heading, string Says, Editor.Smart.Landmark? Landmark, Core.Games.FoundGame Game, EditorViewModel? Back, string Slot)
+{
+    /// <summary>The banner's first line: a game's own map, or WadSmith's map of examples.</summary>
+    public string Kicker => Landmark is null ? "A MAP OF EXAMPLES · READ ONLY" : "LEARNING FROM A REAL MAP · READ ONLY";
+}
 
 /// <summary>A line of "Explain this map" with its Show button's command (none for a plain fact).</summary>
 internal sealed record ReportItem(string Text, System.Windows.Input.ICommand? Show);

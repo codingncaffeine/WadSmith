@@ -115,7 +115,7 @@ internal sealed partial class MainViewModel : ObservableObject
         session.History.ReadOnly = true;
         var editor = new EditorViewModel(Services, session, this)
         {
-            Peek = new PeekInfo($"{game.Game.Title} · {landmark.Map}", landmark.Says, landmark, game, back),
+            Peek = new PeekInfo($"{game.Game.Title} · {landmark.Map}", landmark.Says, landmark, game, back, landmark.Map),
             PendingPlace = (landmark.At, 640),
         };
         if (LandmarkElement(session, landmark) is { } feature) session.Selection.Set(feature);
@@ -163,7 +163,70 @@ internal sealed partial class MainViewModel : ObservableObject
 
         Page = Welcome;
         Title = "WadSmith";
-        await Welcome.RemixMapAsync(info.Game, info.Game.Game.Title, info.Landmark.Map, "").ConfigureAwait(true);
+        if (info.Landmark is null)
+        {
+            await CopyTourAsync(peek.Session.Project.Folder, info.Slot).ConfigureAwait(true);
+            return;
+        }
+
+        await Welcome.RemixMapAsync(info.Game, info.Game.Game.Title, info.Slot, "").ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Opens WadSmith's feature tour (D32) for <paramref name="game"/>: built in the cache from its edit script, read-only, with
+    /// the way back to <paramref name="back"/>; Play walks it with each room's sign shown in the game.
+    /// </summary>
+    public async Task OpenTourAsync(FoundGame game, EditorViewModel? back)
+    {
+        var folder = Path.Combine(Services.Paths.Cache, "tour", game.Game.Id);
+        var slot = game.Game.MapNames == "ExMy" ? "E1M1" : "MAP01";
+        EditorSession session;
+        try
+        {
+            session = await Task.Run(() =>
+            {
+                // Built again each time: it never holds anything of the user's.
+                if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+                var project = FeatureTour.Create(folder, game.Game.Id, game.Game.Engine, slot);
+                return EditorSession.Open(project, slot, HooksFor(Services.ResourcesFor(project), Services.EngineData), "Opened to learn from");
+            }).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is CorruptDataException or IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            back?.Hint($"The feature tour could not be made: {ex.Message}");
+            Log.Warn(ex.Message);
+            return;
+        }
+
+        session.History.ReadOnly = true;
+        var editor = new EditorViewModel(Services, session, this)
+        {
+            Peek = new PeekInfo($"WadSmith's feature tour · {game.Game.Title}", "A room for each feature, each with a sign. Press Play to walk round it: the game shows each room's sign as you walk in.", null, game, back, slot),
+        };
+        if (Page is EditorViewModel { Peek: not null } leaving) leaving.Session.Dispose();
+        Page = editor;
+        Title = $"Feature tour · WadSmith";
+        Log.Info($"Opened the feature tour for {game.Game.Title}");
+    }
+
+    // The user's own copy of the tour, signs and all, in their projects.
+    private async Task CopyTourAsync(string from, string slot)
+    {
+        var folder = await Task.Run(() =>
+        {
+            Directory.CreateDirectory(Services.Paths.Projects);
+            var to = Path.Combine(Services.Paths.Projects, "Feature tour");
+            for (var n = 2; Directory.Exists(to); n++) to = Path.Combine(Services.Paths.Projects, $"Feature tour {n}");
+            foreach (var file in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(to, Path.GetRelativePath(from, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target);
+            }
+
+            return to;
+        }).ConfigureAwait(true);
+        await OpenEditorAsync(Project.Open(folder), slot).ConfigureAwait(true);
     }
 
     /// <summary>Back to the welcome screen, after the open map's changes reach the disk.</summary>

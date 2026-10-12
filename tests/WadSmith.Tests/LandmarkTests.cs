@@ -83,9 +83,9 @@ public sealed class LandmarkInTheWindowTests
                 for (var i = 0; i < 400 && ReferenceEquals(vm.Page, editor); i++) Ui.Pump(0.05);
                 var peek = (App.ViewModels.EditorViewModel)vm.Page!;
                 var session = peek.Session;
-                var at = peek.Peek!.Landmark.At;
+                var at = peek.Peek!.Landmark!.At;
                 var shows = Landmarks.Shows("door", at, session.Map, session.Geometry, _ => false);
-                said.Add($"peek: {peek.Peek.Landmark.Kind}, shows {shows}, selected {session.Selection.Items.SingleOrDefault() is Editor.Model.Sector s && Doors.Recognise(session.Geometry, s) is not null}, in the cache {session.Project.Folder.StartsWith(temp.Path, StringComparison.Ordinal) && session.Project.Folder.Contains("peek", StringComparison.Ordinal)}");
+                said.Add($"peek: {peek.Peek.Landmark!.Kind}, shows {shows}, selected {session.Selection.Items.SingleOrDefault() is Editor.Model.Sector s && Doors.Recognise(session.Geometry, s) is not null}, in the cache {session.Project.Folder.StartsWith(temp.Path, StringComparison.Ordinal) && session.Project.Folder.Contains("peek", StringComparison.Ordinal)}");
                 var version = session.Map.Version;
                 session.Paint("BROWN1", at, 8, ceiling: false);
                 session.ChangeMapSettings(m => m with { Title = "Changed" });

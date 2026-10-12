@@ -264,7 +264,7 @@
             <Border Grid.ColumnSpan="3" IsVisible="{Binding Peek, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="110,12,12,0" Padding="16,12" MaxWidth="560"
                     CornerRadius="6" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1">
                 <StackPanel Spacing="6">
-                    <TextBlock Classes="section" Text="LEARNING FROM A REAL MAP · READ ONLY" />
+                    <TextBlock Classes="section" Text="{Binding Peek.Kicker}" />
                     <TextBlock Text="{Binding Peek.Heading}" FontWeight="SemiBold" FontSize="16" />
                     <TextBlock Text="{Binding Peek.Says}" TextWrapping="Wrap" />
                     <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">

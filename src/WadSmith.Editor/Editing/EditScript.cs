@@ -39,6 +39,8 @@ public static class EditScript
         join X Y X Y …              the rooms at the points join into the first
         start X Y [ANGLE]           the player's start
         thing TYPE X Y [ANGLE]      an object by editor number
+        brightness X Y LEVEL        the room's brightness, 0 to 255
+        sign X Y TEXT...            a sign for the room: a WadSmith tour shows it in the game when the player walks in
         """;
 
     /// <summary>Runs <paramref name="script"/> on <paramref name="map"/>, a line at a time, each one undo step; returns what each line did.</summary>
@@ -177,6 +179,18 @@ public static class EditScript
                 var rooms = Enumerable.Range(0, (w.Length - 1) / 2).Select(i => Room(1 + 2 * i)).Distinct().ToList();
                 Record("Join rooms", e => Rooms.Join(e, g, rooms));
                 made = $"{rooms.Count} rooms joined";
+                break;
+            case "brightness":
+                var dim = Room(1);
+                var level = (int)N(3);
+                Record("Change brightness", e => e.Set(dim, s => s.Light, (s, v) => s.Light = v, Math.Clamp(level, 0, 255)));
+                made = string.Create(CultureInfo.InvariantCulture, $"brightness {level}");
+                break;
+            case "sign":
+                var signed = Room(1);
+                var text = string.Join(' ', w.Skip(3));
+                Record("Put up a sign", e => e.Field(signed, Smart.Signs.Field, Core.Maps.Udmf.UdmfValue.Str(text)));
+                made = "a sign";
                 break;
             case "start":
                 Record("Place a thing", e => e.Add(Thing(1, P(1), w.Length > 3 ? (int)N(3) : 90, engine)));
