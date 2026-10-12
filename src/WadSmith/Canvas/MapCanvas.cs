@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using SkiaSharp;
 using WadSmith.Editor;
+using WadSmith.Editor.Editing;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
 
@@ -34,6 +35,7 @@ internal sealed class MapCanvas : Control
 
     private readonly LatestOnWorker<(EditorSession Session, CanvasSnapshot Picture)> _pictures;
     private readonly LatestOnWorker<(EditorSession Session, long Generation, SelectionOverlay Outline)> _outlines;
+    private readonly LatestOnWorker<(EditorSession Session, long Gesture, MoveSet Set)> _gathers;
     private CanvasSnapshot? _snapshot;
     private MapLook _look = new(null);
     private SelectionOverlay? _selection;
@@ -55,6 +57,25 @@ internal sealed class MapCanvas : Control
     private long _drawnIn = -1;
     private (MapPoint From, MapPoint To) _justDrawn;
 
+    /// <summary>A press with the Select tool: where, on what, and whether a click without a drag selects only that.</summary>
+    private Point? _pressAt;
+    private Element? _pressed;
+    private bool _narrowOnClick;
+
+    /// <summary>A drag moving the selection: its history gesture, what moves (once gathered), the grab point, the offset so far.</summary>
+    private long _moveGesture;
+    private MoveSet? _moveSet;
+    private MoveEdit? _moveEdit;
+    private MapPoint _grab;
+    private MapPoint? _anchor;
+    private (double X, double Y) _offset;
+    private bool _free;
+    private Point _lastPointer;
+    private bool _endWhenGathered;
+
+    /// <summary>Moves of up to this many corners and objects change the map as the pointer goes; bigger ones when let go.</summary>
+    private const int LiveMoveLimit = 4096;
+
     static MapCanvas()
     {
         FocusableProperty.OverrideDefaultValue<MapCanvas>(true);
@@ -75,6 +96,16 @@ internal sealed class MapCanvas : Control
             _selection = r.Outline;
             InvalidateVisual();
         }, "the selection outline");
+        _gathers = new(ViewModels.MainViewModel.PostToUi, r =>
+        {
+            if (!ReferenceEquals(r.Session, Session) || r.Gesture != _moveGesture) return;
+            _moveSet = r.Set;
+
+            // The point that snaps: the moving corner nearest the grab, else the nearest object.
+            _anchor = Nearest(r.Set.Vertices.Select(v => new MapPoint(v.X, v.Y))) ?? Nearest(r.Set.Things.Select(t => new MapPoint(t.X, t.Y)));
+            Follow(_lastPointer, _free);
+            if (_endWhenGathered) EndMove(keep: true);
+        }, "what a drag moves");
     }
 
     public EditorSession? Session
@@ -103,6 +134,9 @@ internal sealed class MapCanvas : Control
     /// <summary>Raised while a room is being drawn, with its size in map units (null when the drawing ends).</summary>
     public event Action<(double Width, double Height)?, double>? Drawing;
 
+    /// <summary>Raised while the selection is being moved, with what moves and how far (null when the move ends).</summary>
+    public event Action<(int Corners, int Things, double Dx, double Dy)?>? Moving;
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -115,6 +149,7 @@ internal sealed class MapCanvas : Control
         if (change.Property == ToolProperty)
         {
             CancelDrawing();
+            CancelMove();
             _snap = null;
             InvalidateVisual();
             return;
@@ -218,7 +253,14 @@ internal sealed class MapCanvas : Control
         if (_drawnIn >= 0 && _snapshot is { } shown && shown.Version >= _drawnIn) _drawnIn = -1;
         var (from, to) = _drawFrom is not null || _drawnIn < 0 ? (_drawFrom, _drawTo) : (_justDrawn.From, (MapPoint?)_justDrawn.To);
         var preview = Tool == EditorTool.Room || _drawnIn >= 0 ? new DrawPreview(from, to, Tool == EditorTool.Room ? _drawFrom is null ? _snap : _drawTo : null, Tool == EditorTool.Room ? GridStep() : 0) : null;
-        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview));
+        MovePreview? move = null;
+        if (_moveGesture != 0)
+        {
+            preview = new DrawPreview(null, null, null, _free ? 0 : GridStep());
+            if (_moveSet is { } set) move = new MovePreview(set, _offset.X, _offset.Y);
+        }
+
+        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview, move));
         if (_drawFrom is { } a && _drawTo is { } b && (a.X != b.X || a.Y != b.Y)) DrawSize(context, a, b);
     }
 
@@ -253,6 +295,109 @@ internal sealed class MapCanvas : Control
         var step = GridStep();
         return new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step);
     }
+
+    private MapPoint? Nearest(IEnumerable<MapPoint> points)
+    {
+        MapPoint? best = null;
+        var bestD = double.MaxValue;
+        foreach (var p in points)
+        {
+            var d = p.DistanceTo(_grab);
+            if (d < bestD) (best, bestD) = (p, d);
+        }
+
+        return best;
+    }
+
+    /// <summary>Starts moving the selection: what moves is gathered on a worker (a selection can be the whole map).</summary>
+    private void BeginMove(Point at)
+    {
+        if (Session is not { } session) return;
+        _moveGesture = History.NewGesture();
+        _grab = ToMap(_pressAt ?? at);
+        _moveSet = null;
+        _moveEdit = null;
+        _anchor = null;
+        _offset = (0, 0);
+        _narrowOnClick = false;
+        _endWhenGathered = false;
+        _lastPointer = at;
+        var geometry = session.Geometry;
+        var seeds = MoveSet.Seeds.Of(session.Selection.Items);
+        var gesture = _moveGesture;
+        _gathers.Request(() => (session, gesture, MoveSet.Gather(geometry, seeds)));
+        Cursor = new Cursor(StandardCursorType.SizeAll);
+    }
+
+    /// <summary>The offset for the pointer at <paramref name="p"/>: the anchor follows it, snapped to the grid unless moving freely.</summary>
+    private void Follow(Point p, bool free)
+    {
+        _free = free;
+        _lastPointer = p;
+        var m = ToMap(p);
+        var (dx, dy) = (m.X - _grab.X, m.Y - _grab.Y);
+        if (_anchor is { } a && !free)
+        {
+            var step = GridStep();
+            (dx, dy) = (Math.Round((a.X + dx) / step) * step - a.X, Math.Round((a.Y + dy) / step) * step - a.Y);
+        }
+
+        _offset = (dx, dy);
+        ApplyMove();
+    }
+
+    /// <summary>Moves the map to the offset now (small moves), and redraws the moving pieces.</summary>
+    private void ApplyMove()
+    {
+        if (_moveGesture == 0 || Session is not { } session) return;
+        if (_moveSet is { IsEmpty: false } set)
+        {
+            if (set.Count <= LiveMoveLimit && (_moveEdit is not null || _offset != (0, 0))) Commit(session, set);
+            Moving?.Invoke((set.Vertices.Count, set.Things.Count, _offset.X, _offset.Y));
+        }
+
+        InvalidateVisual();
+    }
+
+    private void Commit(EditorSession session, MoveSet set)
+    {
+        var edit = _moveEdit is null ? new MoveEdit(set, _offset.X, _offset.Y) : _moveEdit.To(_offset.X, _offset.Y);
+        _moveEdit ??= edit;
+        session.History.Run(edit, _moveGesture);
+    }
+
+    /// <summary>Lets go of a move: the map keeps it (one undo step), or, with <paramref name="keep"/> false, everything goes back.</summary>
+    private void EndMove(bool keep)
+    {
+        if (_moveGesture == 0 || Session is not { } session) return;
+
+        // Let go before what moves was gathered (a very large selection): the move lands when it arrives.
+        if (keep && _moveSet is null)
+        {
+            _endWhenGathered = true;
+            return;
+        }
+
+        _endWhenGathered = false;
+        if (keep && _moveSet is { IsEmpty: false } set && (_moveEdit is not null || _offset != (0, 0)))
+        {
+            Commit(session, set);
+            if (_offset == (0, 0)) session.History.Discard(_moveGesture);
+        }
+        else
+        {
+            session.History.Discard(_moveGesture);
+        }
+
+        _moveGesture = 0;
+        _moveSet = null;
+        _moveEdit = null;
+        Cursor = Cursor.Default;
+        Moving?.Invoke(null);
+        InvalidateVisual();
+    }
+
+    private void CancelMove() => EndMove(keep: false);
 
     private void CancelDrawing()
     {
@@ -308,6 +453,9 @@ internal sealed class MapCanvas : Control
         if (props.IsLeftButtonPressed && Session is not null)
         {
             var hit = HitTest(e.GetPosition(this));
+            _pressAt = e.GetPosition(this);
+            _pressed = null;
+            _narrowOnClick = false;
             if ((e.KeyModifiers & KeyModifiers.Shift) != 0)
             {
                 if (hit is not null) Session.Selection.Toggle(hit);
@@ -318,7 +466,12 @@ internal sealed class MapCanvas : Control
             }
             else
             {
-                Session.Selection.Set(hit);
+                // Pressing on something selected keeps the selection, so all of it can be dragged; a click
+                // without a drag then selects just that.
+                if (Session.Selection.Contains(hit)) _narrowOnClick = Session.Selection.Count > 1;
+                else Session.Selection.Set(hit);
+                _pressed = hit;
+                e.Pointer.Capture(this);
             }
 
             e.Handled = true;
@@ -352,11 +505,27 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        // A press on something, then a drag of a few pixels, moves the selection.
+        var free = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+        if (_moveGesture != 0)
+        {
+            if (!_endWhenGathered) Follow(p, free);
+            return;
+        }
+
+        if (_pressed is not null && _pressAt is { } pressed && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && Math.Abs(p.X - pressed.X) + Math.Abs(p.Y - pressed.Y) > 4)
+        {
+            BeginMove(p);
+            Follow(p, free);
+            return;
+        }
+
         var hit = HitTest(p);
         if (!ReferenceEquals(hit, _hover))
         {
             _hover = hit;
             _hoverOutline = hit is null || Session is null ? null : SelectionOverlay.Take([hit], Session.Geometry, _look);
+            Cursor = hit is not null && Session?.Selection.Contains(hit) == true ? new Cursor(StandardCursorType.SizeAll) : Cursor.Default;
             InvalidateVisual();
         }
 
@@ -369,6 +538,18 @@ internal sealed class MapCanvas : Control
         {
             _panFrom = null;
             e.Pointer.Capture(null);
+            return;
+        }
+
+        if (_pressed is not null && e.InitialPressMouseButton == MouseButton.Left)
+        {
+            var clicked = _pressed;
+            _pressed = null;
+            _pressAt = null;
+            e.Pointer.Capture(null);
+            if (_moveGesture != 0) EndMove(keep: true);
+            else if (_narrowOnClick && Session is { } s) s.Selection.Set(clicked);
+            _narrowOnClick = false;
             return;
         }
 
@@ -409,6 +590,11 @@ internal sealed class MapCanvas : Control
                 break;
             case Key.Escape when _drawFrom is not null:
                 CancelDrawing();
+                e.Handled = true;
+                break;
+            case Key.Escape when _moveGesture != 0:
+                CancelMove();
+                _pressed = null;
                 e.Handled = true;
                 break;
             case Key.Escape when Tool != EditorTool.Select:

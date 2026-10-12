@@ -84,8 +84,11 @@ internal sealed class SelectionOverlay
 /// </summary>
 internal sealed record DrawPreview(MapPoint? From, MapPoint? To, MapPoint? Snap, double Step);
 
+/// <summary>What is being moved and by how much: its walls and objects drawn at their new place while the map catches up.</summary>
+internal sealed record MovePreview(WadSmith.Editor.Editing.MoveSet Set, double Dx, double Dy);
+
 /// <summary>Draws the map on the render thread through a Skia lease.</summary>
-internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null) : ICustomDrawOperation
+internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null) : ICustomDrawOperation
 {
     public Rect Bounds { get; } = bounds;
 
@@ -103,7 +106,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         using var lease = feature.Lease();
         FrameStats.Gpu = lease.GrContext is not null;
-        new MapPainter(snapshot, selection, hover, view, camera, preview).Paint(lease.SkCanvas, lease.GrContext is not null);
+        new MapPainter(snapshot, selection, hover, view, camera, preview, move).Paint(lease.SkCanvas, lease.GrContext is not null);
         lease.SkCanvas.Flush();
         FrameStats.Draw(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
@@ -113,7 +116,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
 /// Paints the map onto any Skia canvas: the window's (through <see cref="MapDrawOperation"/>) or an
 /// offscreen picture such as a version's thumbnail.
 /// </summary>
-internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null)
+internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null)
 {
     private static readonly SKColor Background = new(0x0A, 0x07, 0x08);
     private static readonly SKColor GridFine = new(0x15, 0x10, 0x11);
@@ -179,12 +182,23 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
         // Selection: areas filled, walls thick, in the accent colour; the hover in ember.
         if (selection is not null) DrawOverlay(canvas, selection, Accent, px, 3.2f, 0x40);
         if (hover is not null) DrawOverlay(canvas, hover, Ember, px, 2.4f, 0x22);
+        if (move is not null) DrawMove(canvas, move, px);
         canvas.Restore();
 
         DrawPoints(canvas, snapshot);
         if (camera is { } eye) DrawCamera(canvas, eye);
         DrawPreview(canvas);
         canvas.Restore();
+    }
+
+    /// <summary>The walls and objects being moved, at their new place (map units).</summary>
+    private static void DrawMove(SKCanvas canvas, MovePreview move, float px)
+    {
+        using var stroke = new SKPaint { Style = SKPaintStyle.Stroke, Color = Accent, StrokeWidth = 2.4f * px, IsAntialias = true, StrokeCap = SKStrokeCap.Round };
+        var (dx, dy) = ((float)move.Dx, (float)move.Dy);
+        foreach (var (x1, y1, x2, y2) in move.Set.Carried) canvas.DrawLine((float)x1 + dx, (float)y1 + dy, (float)x2 + dx, (float)y2 + dy, stroke);
+        foreach (var (mx, my, fx, fy) in move.Set.Stretched) canvas.DrawLine((float)mx + dx, (float)my + dy, (float)fx, (float)fy, stroke);
+        foreach (var (x, y) in move.Set.ThingSpots) canvas.DrawCircle((float)x + dx, (float)y + dy, 10 * px, stroke);
     }
 
     /// <summary>The room being drawn, filled faintly with a solid edge, and a cross where the pointer snaps (screen pixels).</summary>

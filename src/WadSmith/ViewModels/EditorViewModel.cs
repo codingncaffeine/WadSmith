@@ -158,6 +158,32 @@ internal sealed partial class EditorViewModel : ObservableObject
         UpdateStatus();
     }
 
+    /// <summary>Called by the canvas while the selection is being moved (null when the move ends).</summary>
+    public void Moving((int Corners, int Things, double Dx, double Dy)? move)
+    {
+        if (move is not { } m)
+        {
+            _drawingText = "";
+        }
+        else
+        {
+            var what = (m.Corners, m.Things) switch
+            {
+                (0, 1) => "1 thing",
+                (0, var t) => $"{t} things",
+                (1, 0) => "1 corner",
+                (var c, 0) => $"{c} corners",
+                (var c, var t) => $"{c} corners and {t} thing{(t == 1 ? "" : "s")}",
+            };
+            var across = m.Dx == 0 ? "" : string.Create(CultureInfo.InvariantCulture, $"{Math.Abs(m.Dx):0.#} {(m.Dx > 0 ? "east" : "west")}");
+            var up = m.Dy == 0 ? "" : string.Create(CultureInfo.InvariantCulture, $"{Math.Abs(m.Dy):0.#} {(m.Dy > 0 ? "north" : "south")}");
+            var by = string.Join(", ", new[] { across, up }.Where(x => x.Length > 0));
+            _drawingText = $"Moving {what}{(by.Length > 0 ? $" {by}" : "")} · Shift moves freely, Esc puts it back";
+        }
+
+        UpdateStatus();
+    }
+
     /// <summary>Called by the canvas while a room is being drawn, with its size (null when the drawing ends).</summary>
     public void Drawing((double Width, double Height)? size, double step)
     {

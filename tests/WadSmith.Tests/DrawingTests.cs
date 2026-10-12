@@ -41,7 +41,7 @@ public sealed class DrawingTests(ITestOutputHelper output)
     /// arrive at each corner as leave it), every area on the map has walls, two-sided means two faces,
     /// and the frame kept up edit by edit matches one built from scratch.
     /// </summary>
-    private static void AssertSound(EditorMap map)
+    internal static void AssertSound(EditorMap map)
     {
         var lines = Lines(map);
         var pairs = new HashSet<(long, long)>();

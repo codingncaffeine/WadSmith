@@ -39,6 +39,7 @@ public sealed class SceneTests
         m.Sides.Add(new MapSide { Sector = 0, Top = "UPPER", Bottom = "LOWER" });
         m.Sides.Add(new MapSide { Sector = 1, Top = "UPPER", Bottom = "LOWER" });
         var shared = new MapLine { V1 = 2, V2 = 1, Front = m.Sides.Count - 2, Back = m.Sides.Count - 1 };
+        shared.Extra["twosided"] = true;
         if (upperUnpegged) shared.Extra["dontpegtop"] = true;
         if (lowerUnpegged) shared.Extra["dontpegbottom"] = true;
         m.Lines.Add(shared);

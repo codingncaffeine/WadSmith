@@ -113,6 +113,18 @@ public sealed class History(EditorMap map)
         return true;
     }
 
+    /// <summary>
+    /// Takes back the last step for good when it belongs to <paramref name="gesture"/> (a drag let go of
+    /// with Esc, or one that ended where it started): undone, and not kept for redo.
+    /// </summary>
+    public bool Discard(long gesture)
+    {
+        if (gesture == 0 || _undo.Count == 0 || _undo[^1].Gesture != gesture || !Undo()) return false;
+        _redo.RemoveAt(_redo.Count - 1);
+        Moved?.Invoke();
+        return true;
+    }
+
     public bool Redo()
     {
         if (_redo.Count == 0) return false;

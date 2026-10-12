@@ -23,6 +23,7 @@ public partial class EditorView : UserControl
         };
         Canvas.HoverChanged += (element, at) => (DataContext as EditorViewModel)?.Hover(element, at);
         Canvas.Drawing += (size, step) => (DataContext as EditorViewModel)?.Drawing(size, step);
+        Canvas.Moving += move => (DataContext as EditorViewModel)?.Moving(move);
     }
 
     /// <summary>Shows or hides the 3D view beside the plan; hidden, it does no work.</summary>

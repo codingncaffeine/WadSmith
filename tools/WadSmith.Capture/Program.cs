@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,7 +361,7 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose == "editor-draw")
+            if (pose == "editor-draw" || pose == "editor-move")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
@@ -394,8 +394,29 @@ foreach (var pose in poses)
                 }
 
                 Report("before");
-                Drag((256, -256), (768, 256), "editor-drawing");
+                Drag((256, -256), (768, 256), pose == "editor-draw" ? "editor-drawing" : null);
                 Report("beside");
+                if (pose == "editor-move")
+                {
+                    // V for Select, a click in the new room, then a drag of it 128 east (its corners
+                    // shared with the starter room go too, stretching it); Ctrl+Z takes it back.
+                    window.KeyPress(Avalonia.Input.Key.V, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.V, "v");
+                    Pump(0.2);
+                    window.MouseDown(At(500, 100), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(500, 100), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.5);
+                    Report("selected");
+                    Drag((500, 100), (628, 100), "editor-moving");
+                    Report("moved");
+                    var corners = editor.Session.Map.Vertices.Where(v => v.OnMap).Select(v => $"({v.X:0},{v.Y:0})");
+                    Console.WriteLine("draw corners: " + string.Join(" ", corners));
+                    Save("editor-move");
+                    window.KeyPress(Avalonia.Input.Key.Z, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.Z, "z");
+                    Pump(0.8);
+                    Report("undone");
+                    break;
+                }
+
                 Drag((448, -64), (576, 64), null);
                 Report("inside");
                 Save("editor-draw");

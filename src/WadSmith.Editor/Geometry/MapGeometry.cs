@@ -102,9 +102,12 @@ public sealed class MapGeometry
     public (double MinX, double MinY, double MaxX, double MaxY)? WallBoundsAt(int slot) => slot >= 0 && slot < _wallBounds.Length ? _wallBounds[slot] : null;
 
     /// <summary>Every wall whose box meets the box given, each once.</summary>
-    public IReadOnlyList<Line> LinesIn(double minX, double minY, double maxX, double maxY)
+    public IReadOnlyList<Line> LinesIn(double minX, double minY, double maxX, double maxY) => [.. LineSlotsIn(minX, minY, maxX, maxY).Select(i => Frame.Lines[i].Element!)];
+
+    /// <summary>The places (slots in the frame) of every wall whose box meets the box given, each once.</summary>
+    public IReadOnlyList<int> LineSlotsIn(double minX, double minY, double maxX, double maxY)
     {
-        var found = new List<Line>();
+        var found = new List<int>();
         var seen = new HashSet<int>();
         foreach (var i in _lines.Near(minX, minY, maxX, maxY))
         {
@@ -113,7 +116,22 @@ public sealed class MapGeometry
             var a = Frame.Vertices[l.V1];
             var b = Frame.Vertices[l.V2];
             if (Math.Max(a.X, b.X) < minX || Math.Min(a.X, b.X) > maxX || Math.Max(a.Y, b.Y) < minY || Math.Min(a.Y, b.Y) > maxY) continue;
-            found.Add(l.Element);
+            found.Add(i);
+        }
+
+        return found;
+    }
+
+    /// <summary>The places of every object inside the box given, each once.</summary>
+    public IReadOnlyList<int> ThingSlotsIn(double minX, double minY, double maxX, double maxY)
+    {
+        var found = new List<int>();
+        var seen = new HashSet<int>();
+        foreach (var i in _things.Near(minX, minY, maxX, maxY))
+        {
+            var t = Frame.Things[i];
+            if (t.Element is null || !seen.Add(i) || t.X < minX || t.X > maxX || t.Y < minY || t.Y > maxY) continue;
+            found.Add(i);
         }
 
         return found;
