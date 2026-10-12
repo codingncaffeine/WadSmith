@@ -184,6 +184,58 @@ public sealed class EditorSession : IDisposable
     /// <summary>A flat's size in the game, for keeping a carried floor's shift within one repeat; null when unknown.</summary>
     public (int Width, int Height)? FlatSize(string name) => Resources?.Textures.GetFlat(name) is { } image ? (image.Width, image.Height) : null;
 
+    /// <summary>
+    /// Re-cuts a straight flight into <paramref name="count"/> steps from the floor below to the floor above: its steps are
+    /// joined into one room, then cut again as the Stairs tool cuts, one undo step. Says why not when it cannot.
+    /// </summary>
+    public void ReStep(Sector step, int count)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => ReStep(step, count);
+            return;
+        }
+
+        if (StairsFinder.Recognise(_geometry, step) is not { } flight || count == flight.Count || count < 1) return;
+        if (StairsFinder.Run(_geometry, flight) is not { } run)
+        {
+            Notice?.Invoke("Only straight stairs whose steps fill one rectangle can be cut again; these steps have another shape.");
+            return;
+        }
+
+        // Checked before anything changes: a refusal after the join would leave the steps joined.
+        var length = run.AlongX ? Math.Abs(run.To.X - run.From.X) : Math.Abs(run.To.Y - run.From.Y);
+        var rise = (flight.Above - flight.Below) / (count + 1);
+        if (length / count < Stairs.MinDepth || Math.Abs(rise) > Stairs.MaxRise)
+        {
+            Notice?.Invoke(length / count < Stairs.MinDepth
+                ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{count} steps would each be under {Stairs.MinDepth:0} deep; the most that fit is {(int)Math.Floor(length / Stairs.MinDepth)}.")
+                : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{count} steps would each rise {Math.Abs(rise):0}, more than the player can climb ({Stairs.MaxRise:0})."));
+            return;
+        }
+
+        var gesture = History.NewGesture();
+        var joinedIn = _geometry;
+        History.Record("Change the steps", e => Rooms.Join(e, joinedIn, [.. flight.Steps]), gesture);
+        void Cut()
+        {
+            if (_geometry.Version != Map.Version)
+            {
+                _whenCaughtUp = Cut;
+                return;
+            }
+
+            (IReadOnlyList<Sector> Steps, string? Why) made = ([], null);
+            var cutIn = _geometry;
+            var look = Look;
+            History.Record("Change the steps", e => made = Stairs.Make(e, cutIn, run.From, run.To, look, count, run.AlongX), gesture);
+            if (made.Why is { } why) Notice?.Invoke(why);
+            else Selection.Set([.. made.Steps]);
+        }
+
+        Cut();
+    }
+
     /// <summary>Says something in the status strip, for the views (a drag refused, …).</summary>
     public void Tell(string sentence) => Notice?.Invoke(sentence);
 

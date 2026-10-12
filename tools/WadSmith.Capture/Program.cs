@@ -878,6 +878,15 @@ foreach (var pose in poses)
                     Pump(0.6);
                     Pump(1.0);
                     Console.WriteLine($"stairs evened: {string.Join(" ", editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().Select(x => x.FloorHeight).Order())}; {editor.Problems.Summary}: {string.Join(" | ", editor.Problems.Rows.Select(r => r.Sentence))}");
+
+                    // Cut again into five steps from the Inspector (one step selected).
+                    editor.Session.Selection.Set(editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().First());
+                    Pump(0.4);
+                    editor.Inspector.Rows.OfType<NumberRow>().Single(r => r.Label == "Steps").Value = 5;
+                    for (var i = 0; i < 60 && editor.Session.Selection.Count != 5; i++) Pump(0.05);
+                    Pump(0.6);
+                    Console.WriteLine($"stairs five: {string.Join(" ", editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().Select(x => x.FloorHeight).Order())}; '{editor.Inspector.Heading}' / {editor.Inspector.Summary}; undo '{editor.Session.History.UndoLabel}'");
+                    Save("editor-stairs-five");
                     break;
                 }
 

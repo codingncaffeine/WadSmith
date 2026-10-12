@@ -785,6 +785,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         {
             if (Now() is { } st) _session.Selection.Set([.. st.Steps]);
         }));
+        Rows.Add(new NumberRow("Steps", "How many steps the flight has; a straight flight is cut again into that many, from the floor below to the floor above.", () => Now() is { } st ? st.Count : 0, v => _session.ReStep(step, (int)v), 1, 1, 64));
         Rows.Add(new NumberRow("Each step rises", "How much higher each step is than the one below, from the floor below the stairs; the player steps up 24 at most.", () => Now() is { } st ? (decimal)Math.Round(st.StepRise) : 0, v =>
         {
             if (Now() is { } st) _session.History.Record("Change how the stairs rise", e => StairsFinder.SetRise(e, st, (double)v));

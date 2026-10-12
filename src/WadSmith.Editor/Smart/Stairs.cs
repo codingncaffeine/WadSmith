@@ -27,18 +27,19 @@ public static class Stairs
 
     /// <summary>
     /// Makes stairs in the rectangle from <paramref name="from"/> (the bottom) to <paramref name="to"/> (the top)
-    /// through <paramref name="edit"/>. Returns the steps, or none and why.
+    /// through <paramref name="edit"/>: <paramref name="steps"/> of them when given, else as many as climb comfortably;
+    /// running along the rectangle's longer side unless <paramref name="alongX"/> says. Returns the steps, or none and why.
     /// </summary>
-    public static (IReadOnlyList<Sector> Steps, string? Why) Make(StructureEdit edit, MapGeometry before, MapPoint from, MapPoint to, Look look)
+    public static (IReadOnlyList<Sector> Steps, string? Why) Make(StructureEdit edit, MapGeometry before, MapPoint from, MapPoint to, Look look, int? steps = null, bool? alongX = null)
     {
-        var alongX = Math.Abs(to.X - from.X) >= Math.Abs(to.Y - from.Y);
-        var (start, end) = alongX ? (from.X, to.X) : (from.Y, to.Y);
-        var (side0, side1) = alongX ? (Math.Min(from.Y, to.Y), Math.Max(from.Y, to.Y)) : (Math.Min(from.X, to.X), Math.Max(from.X, to.X));
+        var runsX = alongX ?? Math.Abs(to.X - from.X) >= Math.Abs(to.Y - from.Y);
+        var (start, end) = runsX ? (from.X, to.X) : (from.Y, to.Y);
+        var (side0, side1) = runsX ? (Math.Min(from.Y, to.Y), Math.Max(from.Y, to.Y)) : (Math.Min(from.X, to.X), Math.Max(from.X, to.X));
         var length = Math.Abs(end - start);
         var dir = Math.Sign(end - start);
         if (length < 2 * MinDepth || side1 - side0 < MinDepth) return ([], "Drag a longer rectangle for stairs: from where the bottom step starts to where the top one ends.");
 
-        MapPoint At(double along, double across) => alongX ? new MapPoint(along, across) : new MapPoint(across, along);
+        MapPoint At(double along, double across) => runsX ? new MapPoint(along, across) : new MapPoint(across, along);
         var middle = (side0 + side1) / 2;
 
         // The floors the stairs join: just before the first step and just past the last.
@@ -47,7 +48,14 @@ public static class Stairs
         var bottom = below?.FloorHeight ?? look.FloorHeight;
         int count;
         double rise;
-        if (above is { } top && top.FloorHeight != bottom)
+        if (steps is { } wanted && wanted >= 1)
+        {
+            if (length / wanted < MinDepth) return ([], string.Create(CultureInfo.InvariantCulture, $"{wanted} steps would each be under {MinDepth:0} deep in {length:0}; the most that fit is {Math.Max(1, (int)Math.Floor(length / MinDepth))}."));
+            count = wanted;
+            rise = above is { } high && high.FloorHeight != bottom ? (high.FloorHeight - bottom) / (count + 1) : ComfortRise;
+            if (Math.Abs(rise) > MaxRise) return ([], string.Create(CultureInfo.InvariantCulture, $"{wanted} steps would each rise {Math.Abs(rise):0}, more than the player can climb ({MaxRise:0}); it needs at least {(int)Math.Ceiling(Math.Abs((above?.FloorHeight ?? bottom) - bottom) / MaxRise) - 1}."));
+        }
+        else if (above is { } top && top.FloorHeight != bottom)
         {
             var total = top.FloorHeight - bottom;
             count = Math.Max(1, (int)Math.Ceiling(Math.Abs(total) / ComfortRise) - 1);
@@ -73,7 +81,7 @@ public static class Stairs
         {
             var points = walls.Where(l => l.OnMap && (ReferenceEquals(l.Front.Sector, area) || ReferenceEquals(l.Back?.Sector, area))).SelectMany(l => new[] { l.Start, l.End }).ToList();
             if (points.Count == 0) continue;
-            var position = points.Average(v => alongX ? v.X : v.Y);
+            var position = points.Average(v => runsX ? v.X : v.Y);
             var step = Math.Clamp((int)Math.Floor((position - start) * dir / depth), 0, count - 1);
             area.FloorHeight = Math.Round(bottom + (step + 1) * rise);
             area.CeilingHeight = Math.Max(area.CeilingHeight, area.FloorHeight + Headroom);
@@ -157,6 +165,50 @@ public static class StairsFinder
                 edit.Set(step, s => s.FloorHeight, (s, v) => s.FloorHeight = v, height);
                 if (step.CeilingHeight < height + Stairs.Headroom) edit.Set(step, s => s.CeilingHeight, (s, v) => s.CeilingHeight = v, height + Stairs.Headroom);
             }
+        }
+    }
+
+    /// <summary>
+    /// Where a straight flight lies, when its steps together fill one rectangle square to the map's axes: its bottom and top
+    /// corners as the Stairs tool takes them, and whether it climbs along the map's x; null for any other shape.
+    /// </summary>
+    public static (MapPoint From, MapPoint To, bool AlongX)? Run(MapGeometry geometry, Staircase flight)
+    {
+        double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue, area = 0;
+        foreach (var step in flight.Steps)
+        {
+            if (geometry.Loops(step) is not { Count: 1 } loops) return null;
+            var corners = Corners(loops[0]);
+            if (corners.Count != 4 || !corners.Zip(corners.Skip(1).Append(corners[0])).All(e => e.First.X == e.Second.X || e.First.Y == e.Second.Y)) return null;
+            var (ax, ay, bx, by) = (corners.Min(p => p.X), corners.Min(p => p.Y), corners.Max(p => p.X), corners.Max(p => p.Y));
+            area += (bx - ax) * (by - ay);
+            (x0, y0, x1, y1) = (Math.Min(x0, ax), Math.Min(y0, ay), Math.Max(x1, bx), Math.Max(y1, by));
+        }
+
+        if (Math.Abs(area - (x1 - x0) * (y1 - y0)) > 1) return null;
+        MapPoint Middle(double height)
+        {
+            var at = flight.Steps.Where(s => s.FloorHeight == height).SelectMany(s => geometry.Loops(s)[0]).ToList();
+            return new MapPoint(at.Average(p => p.X), at.Average(p => p.Y));
+        }
+
+        var (low, high) = (Middle(flight.Heights[0]), Middle(flight.Heights[^1]));
+        var alongX = Math.Abs(high.X - low.X) >= Math.Abs(high.Y - low.Y);
+        return alongX
+            ? (new MapPoint(low.X < high.X ? x0 : x1, y0), new MapPoint(low.X < high.X ? x1 : x0, y1), true)
+            : (new MapPoint(x0, low.Y < high.Y ? y0 : y1), new MapPoint(x1, low.Y < high.Y ? y1 : y0), false);
+
+        // An outline's corners, without the points that lie along a straight wall.
+        static List<MapPoint> Corners(MapPoint[] loop)
+        {
+            var kept = new List<MapPoint>();
+            for (var i = 0; i < loop.Length; i++)
+            {
+                var (a, b, c) = (loop[(i + loop.Length - 1) % loop.Length], loop[i], loop[(i + 1) % loop.Length]);
+                if (Math.Abs((b.X - a.X) * (c.Y - b.Y) - (b.Y - a.Y) * (c.X - b.X)) > 1e-9) kept.Add(b);
+            }
+
+            return kept;
         }
     }
 
