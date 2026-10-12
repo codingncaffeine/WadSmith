@@ -122,7 +122,10 @@ public sealed class SettingsStore
         return new SettingsStore(path, settings ?? new AppSettings());
     }
 
-    /// <summary>Captures the settings now; a worker writes them. Returns at once.</summary>
+    /// <summary>
+    /// Captures the settings now; a thread of its own writes them (not a pool thread: a busy pool would hold the save back
+    /// for seconds, past the flush at exit). Returns at once.
+    /// </summary>
     public void Save()
     {
         var json = JsonSerializer.Serialize(Current, Json);
@@ -130,21 +133,23 @@ public sealed class SettingsStore
         {
             var idle = _pending is null;
             _pending = json;
-            if (idle) _writer = Task.Run(WriteLoop);
+            if (idle) _writer = Task.Factory.StartNew(WriteLoop, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
     }
 
     /// <summary>Waits for the last save to reach the disk (at exit).</summary>
     public bool Flush(TimeSpan timeout) => _writer.Wait(timeout);
 
-    /// <summary>Where the last save stands, for a report when a flush times out: a writer waiting to run, running, or done.</summary>
+    /// <summary>Where the last save stands, for a report when a flush is late: the writer's task, what is pending, and the thread that last wrote.</summary>
     public string WriterState
     {
         get
         {
-            lock (_gate) return $"{_writer.Status}, {(_pending is null ? "nothing pending" : "a save pending")}";
+            lock (_gate) return $"{_writer.Status}, {(_pending is null ? "nothing pending" : "a save pending")}, last written by {_lastWriter ?? "nobody yet"}";
         }
     }
+
+    private string? _lastWriter;
 
     private void WriteLoop()
     {
@@ -163,6 +168,7 @@ public sealed class SettingsStore
                 var temp = _path + ".saving";
                 File.WriteAllText(temp, json);
                 File.Move(temp, _path, overwrite: true);
+                lock (_gate) _lastWriter = $"{Thread.CurrentThread.Name ?? "an unnamed thread"} (pool thread: {Thread.CurrentThread.IsThreadPoolThread})";
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
