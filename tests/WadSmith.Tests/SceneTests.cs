@@ -182,3 +182,56 @@ public sealed class WalkerTests
         Assert.Equal(-64 + Walker.EyeHeight, Walker.Step(Rooms(-64), Here, 0, There));
     }
 }
+
+/// <summary>Clicking in the 3D view: what a ray from the camera meets first.</summary>
+public sealed class PickTests
+{
+    private static (MapScene Scene, EditorMap Map) Room()
+    {
+        var map = EditorMap.FromModel(StarterRoom.Create("MAP01", "doom"));
+        var scene = MapScene.Build(MapGeometry.Build(map.Frame), _ => (64, 128), type => type == 1 ? new SpriteShape(40, 56, 20, 52, 1, 1) : null);
+        return (scene, map);
+    }
+
+    [Fact]
+    public void LookingDownPicksTheRoomAndAcrossPicksTheWall()
+    {
+        var (scene, map) = Room();
+        Assert.Same(map.Sectors[0], scene.Pick((0, 100, 64), (0, 0, -1), 90));
+        Assert.Same(map.Sectors[0], scene.Pick((0, 100, 64), (0, 0, 1), 90));
+
+        // Facing north from the middle: the north wall (y = 256).
+        var wall = Assert.IsType<Line>(scene.Pick((0, 0, 64), (0, 1, 0), 90));
+        Assert.Equal(256, wall.Start.Y);
+        Assert.Equal(256, wall.End.Y);
+    }
+
+    [Fact]
+    public void ASpriteInTheWayIsPickedBeforeTheWallBehindIt()
+    {
+        var (scene, map) = Room();
+        var start = map.Things[0];
+
+        // From north of the player start, looking south through it: the sprite comes first.
+        Assert.Same(start, scene.Pick((start.X, start.Y + 100, 30), (0, -1, 0), -90));
+    }
+
+    [Fact]
+    public void AWallSeenFromBehindIsNotPicked()
+    {
+        var (scene, _) = Room();
+
+        // From outside the room, looking in through its south wall: the far (north) wall's front is hit, not the near wall's back.
+        var wall = Assert.IsType<Line>(scene.Pick((0, -400, 64), (0, 1, 0), 90));
+        Assert.Equal(256, wall.Start.Y);
+    }
+
+    [Fact]
+    public void TheSelectionsTrianglesAreGatheredForTinting()
+    {
+        var (scene, map) = Room();
+        var (surfaces, sprites) = scene.Highlight(new HashSet<Element> { map.Lines[0], map.Things[0] });
+        Assert.Equal(6 * SceneBatch.Stride, surfaces.Length);
+        Assert.Equal(6 * SpriteBatch.Stride, Assert.Single(sprites).Value.Length);
+    }
+}

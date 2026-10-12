@@ -16,6 +16,22 @@ internal readonly record struct Camera3D(double X, double Y, double Z, double Ya
         }
     }
 
+    /// <summary>The ray from the camera through a point of the picture (-1 to 1 across, -1 to 1 up).</summary>
+    public ((double X, double Y, double Z) Origin, (double X, double Y, double Z) Direction) Ray(double across, double up, double aspect)
+    {
+        var (fx, fy, fz) = Forward;
+        var rl = Math.Sqrt(fy * fy + fx * fx);
+        var (rx, ry) = rl < 1e-9 ? (1.0, 0.0) : (fy / rl, -fx / rl);
+        var (ux, uy, uz) = (ry * fz, -rx * fz, rx * fy - ry * fx);
+        var tanV = Math.Tan(Fov * Math.PI / 360);
+        var tanH = tanV * aspect;
+        var dx = fx + rx * across * tanH + ux * up * tanV;
+        var dy = fy + ry * across * tanH + uy * up * tanV;
+        var dz = fz + uz * up * tanV;
+        var l = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        return ((X, Y, Z), (dx / l, dy / l, dz / l));
+    }
+
     /// <summary>How far an orbit camera must stand to fit something <paramref name="size"/> across into a view of this shape.</summary>
     public static double FitDistance(double size, double aspect, double fov = 74)
     {

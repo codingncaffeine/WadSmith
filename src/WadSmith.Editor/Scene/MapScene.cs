@@ -34,6 +34,9 @@ public sealed class SceneBatch(string texture, SurfaceKind kind)
 
     public List<float> Vertices { get; } = [];
 
+    /// <summary>The element each triangle belongs to (a wall's line, a floor's or ceiling's area), in triangle order.</summary>
+    public List<Element> Owners { get; } = [];
+
     public int VertexCount => Vertices.Count / Stride;
 
     internal void Add(double x, double y, double z, double u, double v, int light)
@@ -66,6 +69,9 @@ public sealed class SpriteBatch(int type)
 
     public List<float> Vertices { get; } = [];
 
+    /// <summary>The object each pair of triangles shows.</summary>
+    public List<Thing> Owners { get; } = [];
+
     public int VertexCount => Vertices.Count / Stride;
 }
 
@@ -96,6 +102,102 @@ public sealed class MapScene
     public IReadOnlyList<SceneThing> Things { get; }
 
     public (double MinX, double MinY, double MinZ, double MaxX, double MaxY, double MaxZ) Bounds { get; }
+
+    /// <summary>
+    /// What a ray from <paramref name="origin"/> along <paramref name="direction"/> meets first: a wall's
+    /// line, a floor's or ceiling's area, or an object, counting only surfaces that face the ray (the
+    /// ones the view draws). Sprites turn to face a camera looking along <paramref name="cameraYaw"/>.
+    /// Tests every triangle: call it on a worker.
+    /// </summary>
+    public Element? Pick((double X, double Y, double Z) origin, (double X, double Y, double Z) direction, double cameraYaw)
+    {
+        Element? best = null;
+        var bestT = double.MaxValue;
+        foreach (var b in Batches)
+        {
+            var v = b.Vertices;
+            for (var i = 0; i < v.Count; i += SceneBatch.Stride * 3)
+            {
+                var t = Hit(origin, direction, (v[i], v[i + 1], v[i + 2]), (v[i + 6], v[i + 7], v[i + 8]), (v[i + 12], v[i + 13], v[i + 14]), facing: true);
+                if (t > 0 && t < bestT)
+                {
+                    bestT = t;
+                    best = b.Owners[i / (SceneBatch.Stride * 3)];
+                }
+            }
+        }
+
+        var yaw = cameraYaw * Math.PI / 180;
+        var (ax, ay) = (Math.Sin(yaw), -Math.Cos(yaw));
+        foreach (var b in Sprites)
+        {
+            var v = b.Vertices;
+            for (var i = 0; i < v.Count; i += SpriteBatch.Stride * 3)
+            {
+                (double, double, double) Corner(int k) => (v[k] + ax * v[k + 3], v[k + 1] + ay * v[k + 3], v[k + 2] + v[k + 4]);
+                var t = Hit(origin, direction, Corner(i), Corner(i + SpriteBatch.Stride), Corner(i + 2 * SpriteBatch.Stride), facing: false);
+                if (t > 0 && t < bestT)
+                {
+                    bestT = t;
+                    best = b.Owners[i / (SpriteBatch.Stride * 6)];
+                }
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// The triangles of the given elements, for tinting the selection in the view: wall and floor
+    /// corners in the batches' layout, and per object type the sprite corners.
+    /// </summary>
+    public (float[] Surfaces, Dictionary<int, float[]> Sprites) Highlight(IReadOnlySet<Element> elements)
+    {
+        var surfaces = new List<float>();
+        foreach (var b in Batches)
+        {
+            for (var tri = 0; tri < b.Owners.Count; tri++)
+            {
+                if (!elements.Contains(b.Owners[tri])) continue;
+                surfaces.AddRange(b.Vertices.GetRange(tri * SceneBatch.Stride * 3, SceneBatch.Stride * 3));
+            }
+        }
+
+        var sprites = new Dictionary<int, float[]>();
+        foreach (var b in Sprites)
+        {
+            var list = new List<float>();
+            for (var k = 0; k < b.Owners.Count; k++)
+            {
+                if (elements.Contains(b.Owners[k])) list.AddRange(b.Vertices.GetRange(k * SpriteBatch.Stride * 6, SpriteBatch.Stride * 6));
+            }
+
+            if (list.Count > 0) sprites[b.Type] = [.. list];
+        }
+
+        return ([.. surfaces], sprites);
+    }
+
+    /// <summary>Möller–Trumbore: distance along the ray to the triangle, or 0 when missed (or, if <paramref name="facing"/>, seen from behind).</summary>
+    private static double Hit((double X, double Y, double Z) o, (double X, double Y, double Z) d, (double X, double Y, double Z) a, (double X, double Y, double Z) b, (double X, double Y, double Z) c, bool facing)
+    {
+        var e1 = (X: b.X - a.X, Y: b.Y - a.Y, Z: b.Z - a.Z);
+        var e2 = (X: c.X - a.X, Y: c.Y - a.Y, Z: c.Z - a.Z);
+        var p = (X: d.Y * e2.Z - d.Z * e2.Y, Y: d.Z * e2.X - d.X * e2.Z, Z: d.X * e2.Y - d.Y * e2.X);
+        var det = e1.X * p.X + e1.Y * p.Y + e1.Z * p.Z;
+
+        // Counter-clockwise triangles face the viewer: det > 0 when the ray meets the front.
+        if (facing ? det <= 1e-9 : Math.Abs(det) <= 1e-9) return 0;
+        var inv = 1 / det;
+        var s = (X: o.X - a.X, Y: o.Y - a.Y, Z: o.Z - a.Z);
+        var u = (s.X * p.X + s.Y * p.Y + s.Z * p.Z) * inv;
+        if (u < 0 || u > 1) return 0;
+        var q = (X: s.Y * e1.Z - s.Z * e1.Y, Y: s.Z * e1.X - s.X * e1.Z, Z: s.X * e1.Y - s.Y * e1.X);
+        var v = (d.X * q.X + d.Y * q.Y + d.Z * q.Z) * inv;
+        if (v < 0 || u + v > 1) return 0;
+        var t = (e2.X * q.X + e2.Y * q.Y + e2.Z * q.Z) * inv;
+        return t > 1e-6 ? t : 0;
+    }
 
     /// <summary>The flat that means open sky in every Doom-engine game.</summary>
     public static bool IsSky(string flat) => flat.Equals("F_SKY1", StringComparison.OrdinalIgnoreCase) || flat.Equals("F_SKY", StringComparison.OrdinalIgnoreCase);
@@ -129,8 +231,12 @@ public sealed class MapScene
             var light = Math.Clamp(sector.Light, 0, 255);
             var floor = Batch(sector.FloorTexture, IsSky(sector.FloorTexture) ? SurfaceKind.Sky : SurfaceKind.Floor);
             var ceiling = Batch(sector.CeilingTexture, IsSky(sector.CeilingTexture) ? SurfaceKind.Sky : SurfaceKind.Ceiling);
+            var owner = sector.Element;
             for (var i = 0; i < triangles.Count; i += 3)
             {
+                floor.Owners.Add(owner);
+                ceiling.Owners.Add(owner);
+
                 // Flats line up with the map's grid: texture x is map x, texture y is minus map y.
                 foreach (var p in (MapPoint[])[triangles[i], triangles[i + 1], triangles[i + 2]]) floor.Add(p.X, p.Y, sector.FloorHeight, p.X, -p.Y, light);
 
@@ -147,6 +253,7 @@ public sealed class MapScene
             var b = f.Vertices[l.V2];
             var front = f.Sides[l.Front];
             var back = l.Back >= 0 ? f.Sides[l.Back] : (SideFrame?)null;
+            var line = l.Element;
             var upperUnpegged = Flag(l.Extra, "dontpegtop");
             var lowerUnpegged = Flag(l.Extra, "dontpegbottom");
             AddFace(new MapPoint(a.X, a.Y), new MapPoint(b.X, b.Y), front, back);
@@ -164,7 +271,7 @@ public sealed class MapScene
                     // anchored at the bottom.
                     var h = Height(side.Middle);
                     var top = lowerUnpegged ? here.FloorHeight + h : here.CeilingHeight;
-                    Quad(side.Middle, from, to, here.FloorHeight, here.CeilingHeight, top, side, length, light);
+                    Quad(side.Middle, from, to, here.FloorHeight, here.CeilingHeight, top, side, length, light, line);
                     return;
                 }
 
@@ -174,14 +281,14 @@ public sealed class MapScene
                 if (here.CeilingHeight > there.CeilingHeight && !(IsSky(here.CeilingTexture) && IsSky(there.CeilingTexture)))
                 {
                     var top = upperUnpegged ? here.CeilingHeight : there.CeilingHeight + Height(side.Top);
-                    Quad(side.Top, from, to, there.CeilingHeight, here.CeilingHeight, top, side, length, light);
+                    Quad(side.Top, from, to, there.CeilingHeight, here.CeilingHeight, top, side, length, light, line);
                 }
 
                 // Lower part, where the floor beyond is higher.
                 if (there.FloorHeight > here.FloorHeight)
                 {
                     var top = lowerUnpegged ? here.CeilingHeight : there.FloorHeight;
-                    Quad(side.Bottom, from, to, here.FloorHeight, there.FloorHeight, top, side, length, light);
+                    Quad(side.Bottom, from, to, here.FloorHeight, there.FloorHeight, top, side, length, light, line);
                 }
 
                 // A middle texture on a two-sided wall (a grate, a fence) is drawn once, not repeated up the wall.
@@ -193,7 +300,7 @@ public sealed class MapScene
                     var top = (lowerUnpegged ? bottom + h : ceiling) + side.OffsetY;
                     var z0 = Math.Max(bottom, top - h);
                     var z1 = Math.Min(ceiling, top);
-                    if (z1 > z0) Quad(side.Middle, from, to, z0, z1, top - side.OffsetY, side, length, light);
+                    if (z1 > z0) Quad(side.Middle, from, to, z0, z1, top - side.OffsetY, side, length, light, line);
                 }
             }
         }
@@ -209,6 +316,7 @@ public sealed class MapScene
             things.Add(new SceneThing(t.Element, (float)t.X, (float)t.Y, (float)z, t.Type, t.Angle, light));
             if (sprite?.Invoke(t.Type) is not { } shape) continue;
             if (!sprites.TryGetValue(t.Type, out var batch)) sprites[t.Type] = batch = new SpriteBatch(t.Type);
+            batch.Owners.Add(t.Element);
 
             // Doom's offsets: the picture's left edge sits OffsetX pixels left of the foot point, its top OffsetY above it.
             var left = -shape.OffsetX * shape.ScaleX;
@@ -235,10 +343,12 @@ public sealed class MapScene
         double Height(string texture) => texture is "-" or "" ? 128 : wallSize(texture)?.Height ?? 128;
 
         // A wall part from z0 to z1 whose texture's top row sits at height top (before the side's offsets).
-        void Quad(string texture, MapPoint from, MapPoint to, double z0, double z1, double top, SideFrame side, double length, int light)
+        void Quad(string texture, MapPoint from, MapPoint to, double z0, double z1, double top, SideFrame side, double length, int light, Line owner)
         {
             if (z1 <= z0) return;
             var batch = Batch(texture is "" ? "-" : texture, SurfaceKind.Wall);
+            batch.Owners.Add(owner);
+            batch.Owners.Add(owner);
             var u0 = side.OffsetX;
             var u1 = side.OffsetX + length;
             double V(double z) => top - z + side.OffsetY;

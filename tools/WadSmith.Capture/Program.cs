@@ -287,7 +287,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -332,6 +332,18 @@ foreach (var pose in poses)
             var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
             view.FitMap();
             if (pose == "editor-zoomed") view.ZoomBy(3.5);
+            if (pose == "editor-3d-selected")
+            {
+                // A room and a monster selected: outlined on the plan, tinted in the 3D view.
+                editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Orbit;
+                var room = editor.Session.Map.Sectors.OrderByDescending(s => s.CeilingHeight - s.FloorHeight).First();
+                var monster = editor.Session.Map.Things.FirstOrDefault(t => t.Type == 9) ?? editor.Session.Map.Things.First();
+                editor.Session.Selection.Set(room, monster);
+                Pump(2.5);
+                Save("editor-3d-selected");
+                break;
+            }
+
             if (pose == "editor-walk")
             {
                 // The 3D view in Walk, as the window shows it, with the camera marked on the plan.

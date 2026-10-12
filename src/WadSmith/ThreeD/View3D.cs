@@ -46,6 +46,10 @@ internal sealed class View3D : Control
     private double _lookPitch;
 
     private readonly LatestOnWorker<(EditorSession Session, MapScene Scene)> _scenes;
+    private readonly LatestOnWorker<(float[] Surfaces, Dictionary<int, float[]> Sprites)> _tints;
+    private readonly LatestOnWorker<(EditorSession Session, Editor.Model.Element? Hit, bool Toggle)> _picks;
+    private Point _pressedAt;
+    private double _dragged;
     private Renderer3D? _renderer;
     private WriteableBitmap? _shown;
     private string? _message = "Starting the 3D view…";
@@ -72,7 +76,25 @@ internal sealed class View3D : Control
             if (!_framed) Frame();
             _renderer.Show(r.Scene, r.Session.Resources);
             SendCamera();
+            RequestTint();
         }, "the 3D scene");
+        _tints = new(ViewModels.MainViewModel.PostToUi, t => _renderer?.Highlight(t), "the 3D selection");
+        _picks = new(ViewModels.MainViewModel.PostToUi, r =>
+        {
+            if (!ReferenceEquals(r.Session, Session)) return;
+            if (r.Hit is null)
+            {
+                if (!r.Toggle) r.Session.Selection.Clear();
+            }
+            else if (r.Toggle)
+            {
+                r.Session.Selection.Toggle(r.Hit);
+            }
+            else
+            {
+                r.Session.Selection.Set(r.Hit);
+            }
+        }, "a 3D click");
     }
 
     public EditorSession? Session
@@ -122,8 +144,17 @@ internal sealed class View3D : Control
         base.OnPropertyChanged(change);
         if (change.Property == SessionProperty)
         {
-            if (change.OldValue is EditorSession old) old.GeometryChanged -= RequestScene;
-            if (change.NewValue is EditorSession s) s.GeometryChanged += RequestScene;
+            if (change.OldValue is EditorSession old)
+            {
+                old.GeometryChanged -= RequestScene;
+                old.Selection.Changed -= RequestTint;
+            }
+
+            if (change.NewValue is EditorSession s)
+            {
+                s.GeometryChanged += RequestScene;
+                s.Selection.Changed += RequestTint;
+            }
             _framed = false;
             _scene = null;
             RequestScene();
@@ -148,6 +179,14 @@ internal sealed class View3D : Control
         var geometry = session.Geometry;
         var resources = session.Resources;
         _scenes.Request(() => (session, MapScene.Build(geometry, name => resources?.Textures.GetWall(name) is { } w ? (w.Width, w.Height) : null, SpriteShapes.For(resources))));
+    }
+
+    /// <summary>The selection's triangles, gathered on a worker, to tint in the view.</summary>
+    private void RequestTint()
+    {
+        if (Session is not { } session || _scene is not { } scene || _renderer is null) return;
+        var selected = new HashSet<Editor.Model.Element>(session.Selection.Items, ReferenceEqualityComparer.Instance);
+        _tints.Request(() => scene.Highlight(selected));
     }
 
     /// <summary>New bitmaps of the view's size in device pixels (the render thread draws into them).</summary>
@@ -283,6 +322,8 @@ internal sealed class View3D : Control
         Focus();
         var props = e.GetCurrentPoint(this).Properties;
         _dragFrom = e.GetPosition(this);
+        _pressedAt = _dragFrom.Value;
+        _dragged = 0;
         _panning = props.IsRightButtonPressed || props.IsMiddleButtonPressed;
         e.Pointer.Capture(this);
         e.Handled = true;
@@ -295,6 +336,7 @@ internal sealed class View3D : Control
         var dx = p.X - from.X;
         var dy = p.Y - from.Y;
         _dragFrom = p;
+        _dragged += Math.Abs(dx) + Math.Abs(dy);
         if (Mode != CameraMode.Orbit)
         {
             _lookYaw -= dx * 0.25;
@@ -321,8 +363,19 @@ internal sealed class View3D : Control
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        var clicked = _dragFrom is not null && _dragged < 4 && e.InitialPressMouseButton == MouseButton.Left;
         _dragFrom = null;
         e.Pointer.Capture(null);
+        if (!clicked || Session is not { } session || _scene is not { } scene) return;
+
+        // A click (not a drag) selects what is under the pointer, in both views; Shift adds or removes.
+        var aspect = Bounds.Width / Math.Max(Bounds.Height, 1);
+        var across = 2 * _pressedAt.X / Math.Max(Bounds.Width, 1) - 1;
+        var up = 1 - 2 * _pressedAt.Y / Math.Max(Bounds.Height, 1);
+        var camera = Current;
+        var (origin, direction) = camera.Ray(across, up, aspect);
+        var toggle = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+        _picks.Request(() => (session, scene.Pick(origin, direction, camera.Yaw), toggle));
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)

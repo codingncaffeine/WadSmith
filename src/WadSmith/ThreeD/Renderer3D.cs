@@ -25,6 +25,7 @@ internal sealed unsafe class Renderer3D : IDisposable
     private int _width;
     private int _height;
     private bool _dirty;
+    private (float[] Surfaces, Dictionary<int, float[]> Sprites)? _highlight;
     private volatile bool _stopping;
 
     public Renderer3D()
@@ -46,6 +47,18 @@ internal sealed unsafe class Renderer3D : IDisposable
             _scene = scene;
             _resources = resources;
             _sceneChanged = true;
+            _dirty = true;
+        }
+
+        _wake.Set();
+    }
+
+    /// <summary>The selection's triangles to tint (from <see cref="MapScene.Highlight"/>).</summary>
+    public void Highlight((float[] Surfaces, Dictionary<int, float[]> Sprites) selection)
+    {
+        lock (_gate)
+        {
+            _highlight = selection;
             _dirty = true;
         }
 
@@ -113,15 +126,19 @@ internal sealed unsafe class Renderer3D : IDisposable
                 bool inside;
                 WriteableBitmap[]? bitmaps;
                 int width, height;
+                (float[] Surfaces, Dictionary<int, float[]> Sprites)? highlight;
                 lock (_gate)
                 {
                     if (!_dirty) continue;
                     _dirty = false;
                     (scene, resources, sceneChanged, camera, inside, bitmaps, width, height) = (_scene, _resources, _sceneChanged, _camera, _inside, _bitmaps, _width, _height);
                     _sceneChanged = false;
+                    highlight = _highlight;
+                    _highlight = null;
                 }
 
                 if (sceneChanged && scene is not null) renderer.Upload(scene, resources);
+                if (highlight is { } h) renderer.Highlight(h.Surfaces, h.Sprites);
                 if (scene is null || bitmaps is null || width < 1 || height < 1) continue;
 
                 var bitmap = bitmaps[next];

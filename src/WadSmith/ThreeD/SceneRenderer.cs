@@ -68,9 +68,20 @@ internal sealed unsafe class SceneRenderer : IDisposable
         uniform int sky;
         uniform vec3 eye;
         uniform float fade;
+        uniform int overlay;
+        uniform int useAlpha;
+        uniform vec4 tint;
         out vec4 colour;
         void main()
         {
+            if (overlay == 1)
+            {
+                // The selection's tint: flat colour over the surface (a sprite's see-through pixels stay clear).
+                if (useAlpha == 1 && texture(picture, vUv).a < 0.5) discard;
+                colour = tint;
+                return;
+            }
+
             if (sky == 1)
             {
                 // The sky wraps four times around the view and hangs from the horizon, as in the game.
@@ -108,6 +119,14 @@ internal sealed unsafe class SceneRenderer : IDisposable
     private readonly int _sFade;
     private readonly int _sSky;
     private readonly Dictionary<int, (int Id, int Width, int Height)> _spriteTextures = [];
+    private readonly int _uOverlay;
+    private readonly int _uUseAlpha;
+    private readonly int _uTint;
+    private readonly int _sOverlay;
+    private readonly int _sUseAlpha;
+    private readonly int _sTint;
+    private (int Vao, int Vbo, int Count) _highlight;
+    private readonly List<(int Vao, int Vbo, int Count, int Type)> _highlightSprites = [];
     private readonly List<(int Vao, int Vbo, int Count, int Type)> _spriteBatches = [];
     private readonly Dictionary<(string Name, SurfaceKind Kind), (int Id, int Width, int Height)> _textures = [];
     private readonly List<(int Vao, int Vbo, int Count, SurfaceKind Kind, string Texture)> _batches = [];
@@ -136,7 +155,61 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _sPicture = gl.Uniform(_sprites, "picture");
         _sFade = gl.Uniform(_sprites, "fade");
         _sSky = gl.Uniform(_sprites, "sky");
+        _uOverlay = gl.Uniform(_program, "overlay");
+        _uUseAlpha = gl.Uniform(_program, "useAlpha");
+        _uTint = gl.Uniform(_program, "tint");
+        _sOverlay = gl.Uniform(_sprites, "overlay");
+        _sUseAlpha = gl.Uniform(_sprites, "useAlpha");
+        _sTint = gl.Uniform(_sprites, "tint");
         RendererName = gl.Text(Gl.Renderer);
+    }
+
+    /// <summary>Replaces the tinted selection: wall and floor triangles in the scene's layout, sprite corners per object type.</summary>
+    public void Highlight(float[] surfaces, Dictionary<int, float[]> sprites)
+    {
+        Free(ref _highlight);
+        foreach (var h in _highlightSprites)
+        {
+            var x = (h.Vao, h.Vbo, h.Count);
+            Free(ref x);
+        }
+
+        _highlightSprites.Clear();
+        if (surfaces.Length > 0) _highlight = Upload(surfaces, SceneBatch.Stride, [3, 2, 1]);
+        foreach (var (type, data) in sprites)
+        {
+            var (vao, vbo, count) = Upload(data, SpriteBatch.Stride, [3, 2, 2, 1]);
+            _highlightSprites.Add((vao, vbo, count, type));
+        }
+    }
+
+    private (int Vao, int Vbo, int Count) Upload(float[] data, int stride, int[] sizes)
+    {
+        int vao, vbo;
+        _gl.GenVertexArrays(1, &vao);
+        _gl.BindVertexArray(vao);
+        _gl.GenBuffers(1, &vbo);
+        _gl.BindBuffer(Gl.ArrayBuffer, vbo);
+        fixed (float* p = data) _gl.BufferData(Gl.ArrayBuffer, data.Length * sizeof(float), p, Gl.DynamicDraw);
+        var offset = 0;
+        for (var a = 0; a < sizes.Length; a++)
+        {
+            _gl.EnableVertexAttribArray(a);
+            _gl.VertexAttribPointer(a, sizes[a], Gl.Float, 0, stride * sizeof(float), offset * sizeof(float));
+            offset += sizes[a];
+        }
+
+        _gl.BindVertexArray(0);
+        return (vao, vbo, data.Length / stride);
+    }
+
+    private void Free(ref (int Vao, int Vbo, int Count) buffer)
+    {
+        if (buffer.Vao == 0) return;
+        var (vao, vbo) = (buffer.Vao, buffer.Vbo);
+        _gl.DeleteVertexArrays(1, &vao);
+        _gl.DeleteBuffers(1, &vbo);
+        buffer = default;
     }
 
     /// <summary>The GPU (or software renderer) OpenGL reports, for the log.</summary>
@@ -234,6 +307,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _gl.Uniform3f(_uEye, (float)camera.X, (float)camera.Y, (float)camera.Z);
         _gl.Uniform1i(_uPicture, 0);
         _gl.Uniform1f(_uFade, inside ? 1f : 0f);
+        _gl.Uniform1i(_uOverlay, 0);
         _gl.ActiveTexture(Gl.Texture0);
 
         foreach (var (vao, _, count, kind, texture) in _batches)
@@ -258,6 +332,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
             _gl.Uniform1i(_sPicture, 0);
             _gl.Uniform1f(_sFade, inside ? 1f : 0f);
             _gl.Uniform1i(_sSky, 0);
+            _gl.Uniform1i(_sOverlay, 0);
             foreach (var (vao, _, count, type) in _spriteBatches)
             {
                 var (id, w, h) = SpriteTexture(type);
@@ -267,6 +342,48 @@ internal sealed unsafe class SceneRenderer : IDisposable
                 _gl.BindVertexArray(vao);
                 _gl.DrawArrays(Gl.Triangles, 0, count);
             }
+        }
+
+        // The selection, tinted in the accent colour over what was drawn (same triangles, same depth).
+        if (_highlight.Count > 0 || _highlightSprites.Count > 0)
+        {
+            _gl.Enable(Gl.Blend);
+            _gl.BlendFunc(Gl.SrcAlpha, Gl.OneMinusSrcAlpha);
+            _gl.DepthMask(0);
+            if (_highlight.Count > 0)
+            {
+                _gl.Enable(Gl.CullFaceMode);
+                _gl.UseProgram(_program);
+                _gl.Uniform1i(_uOverlay, 1);
+                _gl.Uniform1i(_uUseAlpha, 0);
+                _gl.Uniform4f(_uTint, 0.878f, 0.345f, 0.165f, 0.42f);
+                _gl.BindVertexArray(_highlight.Vao);
+                _gl.DrawArrays(Gl.Triangles, 0, _highlight.Count);
+                _gl.Uniform1i(_uOverlay, 0);
+            }
+
+            if (_highlightSprites.Count > 0)
+            {
+                _gl.Disable(Gl.CullFaceMode);
+                _gl.UseProgram(_sprites);
+                _gl.Uniform1i(_sOverlay, 1);
+                _gl.Uniform1i(_sUseAlpha, 1);
+                _gl.Uniform4f(_sTint, 0.878f, 0.345f, 0.165f, 0.5f);
+                foreach (var (vao, _, count, type) in _highlightSprites)
+                {
+                    var (id, w, h) = SpriteTexture(type);
+                    if (id == 0) continue;
+                    _gl.BindTexture(Gl.Texture2D, id);
+                    _gl.Uniform2f(_sTextureSize, w, h);
+                    _gl.BindVertexArray(vao);
+                    _gl.DrawArrays(Gl.Triangles, 0, count);
+                }
+
+                _gl.Uniform1i(_sOverlay, 0);
+            }
+
+            _gl.DepthMask(1);
+            _gl.Disable(Gl.Blend);
         }
 
         _gl.BindVertexArray(0);
