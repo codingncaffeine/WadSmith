@@ -677,13 +677,13 @@ internal sealed class MapCanvas : Control
     {
         if (_grip != Grip.None)
         {
-            var turn = _transformEdit is null ? new TransformEdit(set, _placement) : _transformEdit.To(_placement);
+            var turn = _transformEdit is null ? new TransformEdit(set, _placement, Session is { } turning ? turning.FlatSize : null) : _transformEdit.To(_placement);
             _transformEdit ??= turn;
             session.History.Run(turn, _moveGesture);
             return;
         }
 
-        var edit = _moveEdit is null ? new MoveEdit(set, _offset.X, _offset.Y) : _moveEdit.To(_offset.X, _offset.Y);
+        var edit = _moveEdit is null ? new MoveEdit(set, _offset.X, _offset.Y, Session is { } moving ? moving.FlatSize : null) : _moveEdit.To(_offset.X, _offset.Y);
         _moveEdit ??= edit;
         session.History.Run(edit, _moveGesture);
     }

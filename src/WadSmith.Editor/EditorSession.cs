@@ -84,7 +84,7 @@ public sealed class EditorSession : IDisposable
 
             if (r.Set.IsEmpty || r.Make(r.Set) is not { } placement || placement.Flattens || placement == Placement.Identity) return;
             var gesture = History.NewGesture();
-            History.Run(new TransformEdit(r.Set, placement), gesture);
+            History.Run(new TransformEdit(r.Set, placement, FlatSize), gesture);
             if (r.Set.Count <= MoveSet.LiveLimit) FinishMove(r.Set, gesture);
         }, "what a turn moves");
         map.Changed += _ =>
@@ -180,6 +180,9 @@ public sealed class EditorSession : IDisposable
             Notice?.Invoke($"That room could not be drawn there. {ex.Message}");
         }
     }
+
+    /// <summary>A flat's size in the game, for keeping a carried floor's shift within one repeat; null when unknown.</summary>
+    public (int Width, int Height)? FlatSize(string name) => Resources?.Textures.GetFlat(name) is { } image ? (image.Width, image.Height) : null;
 
     /// <summary>Says something in the status strip, for the views (a drag refused, …).</summary>
     public void Tell(string sentence) => Notice?.Invoke(sentence);

@@ -391,7 +391,7 @@ foreach (var pose in poses)
                 }
 
                 Console.WriteLine($"flatcal field of view {bestFov:0.00}: plain floor differs {bestDiff:0.0} per channel");
-                foreach (var name in new[] { "plain", "turn30", "pan", "turnpan", "scale" })
+                foreach (var name in new[] { "plain", "turn30", "pan", "turnpan", "scale", "mirror" })
                 {
                     var png = WadSmith.App.ThreeD.Offscreen3D.RenderPng(Scene(name), resources, new WadSmith.App.ThreeD.Camera3D(0, 0, 641, 90, -89.9, bestFov), 1024, 640, inside: true);
                     File.WriteAllBytes(Path.Combine(output, $"ours-{name}.png"), png);
@@ -400,7 +400,7 @@ foreach (var pose in poses)
 
                 // Controls: the plain floor held against GZDoom's turned, moved and scaled ones must differ (the measure can see it).
                 var ourPlain = WadSmith.App.ThreeD.Offscreen3D.RenderPng(plain, resources, new WadSmith.App.ThreeD.Camera3D(0, 0, 641, 90, -89.9, bestFov), 1024, 640, inside: true);
-                foreach (var other in new[] { "turn30", "pan", "scale" }) Console.WriteLine($"flatcal control, plain against {other}: {Difference(ourPlain, other):0.0} per channel");
+                foreach (var other in new[] { "turn30", "pan", "scale", "mirror" }) Console.WriteLine($"flatcal control, plain against {other}: {Difference(ourPlain, other):0.0} per channel");
 
                 // The plan too: the starter room's floor turned 30 through the Inspector.
                 editor.Session.Selection.Set(editor.Session.Map.Sectors[0]);

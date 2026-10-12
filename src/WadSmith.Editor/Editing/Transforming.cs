@@ -78,11 +78,16 @@ public sealed class TransformEdit : IEdit
     private readonly (double X, double Y, int Angle)[] _thingStart;
     private readonly Line[] _whole;
     private readonly (Vertex Start, Vertex End)[] _ends;
+    private readonly FlatCarry? _carry;
     private StructureEdit? _then;
 
-    /// <summary>Reads where everything starts from the map: make it on the UI thread.</summary>
-    public TransformEdit(MoveSet set, Placement placement)
+    /// <summary>
+    /// Reads where everything starts from the map: make it on the UI thread. Rooms placed whole carry their floor and ceiling
+    /// textures, turned, sized and mirrored with them (<paramref name="flatSize"/>: a flat's size by name).
+    /// </summary>
+    public TransformEdit(MoveSet set, Placement placement, Func<string, (int Width, int Height)?>? flatSize = null)
     {
+        _carry = FlatCarry.Of(set, flatSize);
         _set = set;
         _vertexStart = [.. set.Vertices.Select(v => (v.X, v.Y))];
         _thingStart = [.. set.Things.Select(t => (t.X, t.Y, t.Angle))];
@@ -99,6 +104,7 @@ public sealed class TransformEdit : IEdit
         _thingStart = first._thingStart;
         _whole = first._whole;
         _ends = first._ends;
+        _carry = first._carry;
         Placement = placement;
     }
 
@@ -106,7 +112,7 @@ public sealed class TransformEdit : IEdit
 
     public string Label => Placement.Describe();
 
-    public IEnumerable<Element> Touched => _set.Vertices.Cast<Element>().Concat(_set.Things).Concat(_whole).Concat(_then?.Touched ?? []);
+    public IEnumerable<Element> Touched => _set.Vertices.Cast<Element>().Concat(_set.Things).Concat(_whole).Concat(_carry?.Rooms ?? []).Concat(_then?.Touched ?? []);
 
     /// <summary>The same edit placed another way from the same start (the next step of a drag).</summary>
     public TransformEdit To(Placement placement) => new(this, placement);
@@ -162,5 +168,6 @@ public sealed class TransformEdit : IEdit
         // Every step of a drag places from the start, so each wall runs as it started or, mirrored, the other way.
         var mirrors = p.Mirrors;
         for (var i = 0; i < _whole.Length; i++) (_whole[i].Start, _whole[i].End) = mirrors ? (_ends[i].End, _ends[i].Start) : _ends[i];
+        _carry?.Place(p);
     }
 }

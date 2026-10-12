@@ -190,14 +190,19 @@ public sealed class MoveEdit : IEdit
     private readonly MoveSet _set;
     private readonly (double X, double Y)[] _vertexStart;
     private readonly (double X, double Y)[] _thingStart;
+    private readonly FlatCarry? _carry;
     private StructureEdit? _then;
 
-    /// <summary>Reads where everything starts from the map: make it on the UI thread.</summary>
-    public MoveEdit(MoveSet set, double dx, double dy)
+    /// <summary>
+    /// Reads where everything starts from the map: make it on the UI thread. Rooms moved whole carry their floor and ceiling
+    /// textures (<paramref name="flatSize"/>, a flat's size by name, keeps the shift within one repeat).
+    /// </summary>
+    public MoveEdit(MoveSet set, double dx, double dy, Func<string, (int Width, int Height)?>? flatSize = null)
     {
         _set = set;
         _vertexStart = [.. set.Vertices.Select(v => (v.X, v.Y))];
         _thingStart = [.. set.Things.Select(t => (t.X, t.Y))];
+        _carry = FlatCarry.Of(set, flatSize);
         (Dx, Dy) = (dx, dy);
     }
 
@@ -206,6 +211,7 @@ public sealed class MoveEdit : IEdit
         _set = first._set;
         _vertexStart = first._vertexStart;
         _thingStart = first._thingStart;
+        _carry = first._carry;
         (Dx, Dy) = (dx, dy);
     }
 
@@ -221,7 +227,7 @@ public sealed class MoveEdit : IEdit
         _ => "Move",
     };
 
-    public IEnumerable<Element> Touched => _set.Vertices.Cast<Element>().Concat(_set.Things).Concat(_then?.Touched ?? []);
+    public IEnumerable<Element> Touched => _set.Vertices.Cast<Element>().Concat(_set.Things).Concat(_carry?.Rooms ?? []).Concat(_then?.Touched ?? []);
 
     /// <summary>The same move with a new offset from the same start (the next step of a drag).</summary>
     public MoveEdit To(double dx, double dy) => new(this, dx, dy);
@@ -259,5 +265,6 @@ public sealed class MoveEdit : IEdit
     {
         for (var i = 0; i < _vertexStart.Length; i++) (_set.Vertices[i].X, _set.Vertices[i].Y) = (_vertexStart[i].X + dx, _vertexStart[i].Y + dy);
         for (var i = 0; i < _thingStart.Length; i++) (_set.Things[i].X, _set.Things[i].Y) = (_thingStart[i].X + dx, _thingStart[i].Y + dy);
+        _carry?.Place(dx == 0 && dy == 0 ? Placement.Identity : new Placement(1, 0, 0, 1, dx, dy));
     }
 }
