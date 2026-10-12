@@ -231,6 +231,21 @@ public static class WadWriter
 public static class WadDirectory
 {
     /// <summary>The lump names of the WAD at <paramref name="path"/>, or null when it is not a readable WAD.</summary>
+    /// <summary>Whether the file's header says IWAD (false for PWAD or anything else).</summary>
+    public static bool IsIwad(string path)
+    {
+        try
+        {
+            using var f = File.OpenRead(path);
+            Span<byte> head = stackalloc byte[4];
+            return f.ReadAtLeast(head, 4, throwOnEndOfStream: false) == 4 && head.SequenceEqual("IWAD"u8);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     public static IReadOnlyList<string>? ReadNames(string path)
     {
         try

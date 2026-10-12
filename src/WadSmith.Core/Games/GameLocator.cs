@@ -4,7 +4,8 @@ using WadSmith.Core.Containers;
 namespace WadSmith.Core.Games;
 
 /// <summary>A base game found on this computer.</summary>
-public sealed record FoundGame(GameDefinition Game, string Path, long Size);
+/// <summary>A base game or add-on file found on this computer; <paramref name="Iwad"/> says whether its header reads IWAD (a copy reading PWAD, the 2024 re-release's, is one GZDoom refuses as the base game).</summary>
+public sealed record FoundGame(GameDefinition Game, string Path, long Size, bool Iwad = true);
 
 /// <summary>
 /// Finds the base games installed on this computer, judging every candidate by its lumps: Steam and
@@ -79,11 +80,23 @@ public static partial class GameLocator
                 var names = WadDirectory.ReadNames(real);
                 if (names is null) continue;
                 var game = GameCatalog.Identify(names);
-                if (game is not null) found.Add(new FoundGame(game, real, new FileInfo(real).Length));
+                if (game is not null) found.Add(new FoundGame(game, real, new FileInfo(real).Length, WadDirectory.IsIwad(real)));
             }
         }
 
-        return found;
+        // The first copy of a game found is the one used: a copy whose header says IWAD before one saying PWAD, otherwise in the order found.
+        return [.. found.OrderBy(g => g.Iwad ? 0 : 1)];
+    }
+
+    /// <summary>The files the game <paramref name="gameId"/> plays with, in load order (its base game first for an add-on); empty when it was not found.</summary>
+    public static IReadOnlyList<string> FilesFor(IReadOnlyList<FoundGame> games, string gameId)
+    {
+        var found = games.FirstOrDefault(g => g.Game.Id == gameId);
+        if (found is null) return [];
+        var files = new List<string>();
+        if (found.Game.AddOnFor is { } baseId && games.FirstOrDefault(g => g.Game.Id == baseId) is { } baseGame) files.Add(baseGame.Path);
+        files.Add(found.Path);
+        return files;
     }
 
     private static IEnumerable<string> Candidates(string folder, int depth, CancellationToken cancel)
