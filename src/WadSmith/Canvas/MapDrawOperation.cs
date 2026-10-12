@@ -32,7 +32,8 @@ internal sealed class SelectionOverlay
 
     /// <summary>
     /// What the selection is linked to by tags, drawn as dashed lines: a selected wall with an action to the areas it
-    /// works on, a selected area to the walls elsewhere that work on it (switches, lines walked over).
+    /// works on, a selected area to the walls elsewhere that work on it (switches, lines walked over), a selected
+    /// teleporter to where it sends, and a selected arrival spot to the teleporters that send there.
     /// </summary>
     public List<(float X1, float Y1, float X2, float Y2)> Links { get; } = [];
 
@@ -115,9 +116,43 @@ internal sealed class SelectionOverlay
         var f = geometry.Frame;
         (float, float)? Middle(int sector) => geometry.WallBoundsAt(sector) is { } b ? ((float)((b.MinX + b.MaxX) / 2), (float)((b.MinY + b.MaxY) / 2)) : null;
         (float, float) Mid(LineFrame l) => ((float)((f.Vertices[l.V1].X + f.Vertices[l.V2].X) / 2), (float)((f.Vertices[l.V1].Y + f.Vertices[l.V2].Y) / 2));
+        // Where a teleport wall sends: the arrival spots with its id (in its tagged areas when it names both), else every
+        // arrival spot in the areas with its tag.
+        static bool Arrival(int type) => type is Teleports.ArrivalType or 9043 or 9044;
+        IEnumerable<(float, float)> Arrivals(LineFrame l)
+        {
+            var (tid, tag) = l.Special == Teleports.TeleportNoFog ? (l.Args[0], l.Args[2]) : (l.Args[0], l.Args[1]);
+            if (tid != 0) return geometry.ThingsWithTid(tid).Select(i => f.Things[i]).Where(t => t.Element is not null && Arrival(t.Type)).Select(t => ((float)t.X, (float)t.Y));
+            return geometry.SectorsTagged(tag).SelectMany(s => geometry.WallBoundsAt(s) is { } b ? geometry.ThingSlotsIn(b.MinX, b.MinY, b.MaxX, b.MaxY).Select(i => f.Things[i]).Where(t => t.Element is not null && Arrival(t.Type) && geometry.InOrOnArea(s, new MapPoint(t.X, t.Y))) : []).Select(t => ((float)t.X, (float)t.Y));
+        }
+
         foreach (var e in items.Take(256))
         {
             var slot = e.Slot;
+            if (e is Line && slot >= 0 && slot < f.Lines.Count && f.Lines[slot] is { Element: not null, Special: Teleports.Teleport or Teleports.TeleportNoFog } sender)
+            {
+                var (sx, sy) = Mid(sender);
+                foreach (var (ax, ay) in Arrivals(sender).Take(64)) o.Links.Add((sx, sy, ax, ay));
+                continue;
+            }
+
+            if (e is Thing && slot >= 0 && slot < f.Things.Count && f.Things[slot] is { Element: not null } spot && Arrival(spot.Type))
+            {
+                // The walls that send here: by its id, or by the tag of an area it stands in.
+                var tags = geometry.SectorSlotsIn(spot.X - 1, spot.Y - 1, spot.X + 1, spot.Y + 1).Where(s => f.Sectors[s].Tag != 0 && geometry.InOrOnArea(s, new MapPoint(spot.X, spot.Y))).Select(s => f.Sectors[s].Tag).ToHashSet();
+                var near = geometry.LinesWithArg(0, spot.Tid).Concat(tags.SelectMany(t => geometry.LinesWithArg(1, t).Concat(geometry.LinesWithArg(2, t)))).Distinct();
+                foreach (var i in near.Take(64))
+                {
+                    if (f.Lines[i] is { Element: not null, Special: Teleports.Teleport or Teleports.TeleportNoFog } teleport && Arrivals(teleport).Contains(((float)spot.X, (float)spot.Y)))
+                    {
+                        var (mx, my) = Mid(teleport);
+                        o.Links.Add((mx, my, (float)spot.X, (float)spot.Y));
+                    }
+                }
+
+                continue;
+            }
+
             if (e is Line && slot >= 0 && slot < f.Lines.Count && f.Lines[slot] is { Element: not null, Special: not 0 } line && line.Args[0] != 0 && Switches.NamesAreas(line.Special))
             {
                 var (mx, my) = Mid(line);
