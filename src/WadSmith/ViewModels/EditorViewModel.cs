@@ -95,7 +95,7 @@ internal sealed partial class EditorViewModel : ObservableObject
     private void Undo()
     {
         Session.History.Undo();
-        Session.Selection.Prune(Session.Map);
+        Session.Selection.Prune();
         Learned("undo");
     }
 
@@ -103,7 +103,7 @@ internal sealed partial class EditorViewModel : ObservableObject
     private void Redo()
     {
         Session.History.Redo();
-        Session.Selection.Prune(Session.Map);
+        Session.Selection.Prune();
     }
 
     [RelayCommand]

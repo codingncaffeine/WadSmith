@@ -223,6 +223,9 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         }).ConfigureAwait(true);
     }
 
+    /// <summary>Opens a project folder named on the command line.</summary>
+    public Task OpenFolderAsync(string folder) => OpenRecentAsync(new RecentProject(Path.GetFullPath(folder)));
+
     [RelayCommand]
     private async Task OpenProjectAsync()
     {
@@ -232,15 +235,19 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         await OpenRecentAsync(new RecentProject(folder)).ConfigureAwait(true);
     }
 
-    /// <summary>Runs the project work on a worker, then opens the editor on the UI thread.</summary>
+    /// <summary>Runs the project work and reads the map on a worker, then opens the editor on the UI thread.</summary>
     private async Task StartAsync(Func<(Project Project, string Slot)> work)
     {
         if (Busy) return;
         Busy = true;
         try
         {
-            var (project, slot) = await Task.Run(work).ConfigureAwait(true);
-            _main.OpenEditor(project, slot);
+            var session = await Task.Run(() =>
+            {
+                var (project, slot) = work();
+                return EditorSession.Open(project, slot, MainViewModel.PostToUi);
+            }).ConfigureAwait(true);
+            _main.OpenEditor(session);
         }
         catch (Exception ex) when (ex is CorruptDataException or IOException or UnauthorizedAccessException or KeyNotFoundException)
         {

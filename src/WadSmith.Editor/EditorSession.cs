@@ -3,6 +3,7 @@ using WadSmith.Core.Preview;
 using WadSmith.Core.Projects;
 using WadSmith.Editor.App;
 using WadSmith.Editor.Editing;
+using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
 
 namespace WadSmith.Editor;
@@ -16,10 +17,11 @@ public enum SaveState
 }
 
 /// <summary>
-/// One map open for editing: the project it belongs to, the map, its history and selection, and
-/// continuous saving (D24). There is no Save step: a change reaches the project folder about a second
-/// after editing pauses. The map is captured on the UI thread, which is the only thread that touches
-/// it, and written by a worker, so the disk never holds the interface up.
+/// One map open for editing: the project it belongs to, the map, its history and selection, its
+/// shapes for hit testing, and continuous saving (D24). There is no Save step: a change reaches the
+/// project folder about a second after editing pauses. Only the UI thread changes the map; everything
+/// that reads all of it (saving, versions, outlines, hit-test grids) works on a worker from the map's
+/// read-only <see cref="EditorMap.Frame"/>, so nothing that grows with the map runs on the UI thread.
 /// </summary>
 public sealed class EditorSession : IDisposable
 {
@@ -28,24 +30,34 @@ public sealed class EditorSession : IDisposable
     private readonly Action<Action> _onUiThread;
     private readonly Timer _timer;
     private readonly SemaphoreSlim _writer = new(1, 1);
+    private readonly LatestOnWorker<MapGeometry> _shapes;
+    private MapGeometry _geometry;
     private long _savedVersion;
     private Task _lastSave = Task.CompletedTask;
     private bool _disposed;
 
-    private EditorSession(Project project, string slot, EditorMap map, Action<Action> onUiThread)
+    private EditorSession(Project project, string slot, EditorMap map, MapGeometry geometry, Action<Action> onUiThread)
     {
         Project = project;
         Slot = slot;
         Map = map;
         History = new History(map);
+        _geometry = geometry;
         _onUiThread = onUiThread;
         _savedVersion = map.Version;
         _timer = new Timer(_ => _onUiThread(CaptureAndSave), null, Timeout.Infinite, Timeout.Infinite);
+        _shapes = new LatestOnWorker<MapGeometry>(onUiThread, g =>
+        {
+            if (_disposed || g.Version <= _geometry.Version) return;
+            _geometry = g;
+            GeometryChanged?.Invoke();
+        }, "the map's shapes");
         map.Changed += _ =>
         {
             State = SaveState.Pending;
             StateChanged?.Invoke(State);
             _timer.Change(SaveDelay, Timeout.InfiniteTimeSpan);
+            _shapes.Request(() => MapGeometry.Build(Map.Frame));
         };
     }
 
@@ -67,13 +79,23 @@ public sealed class EditorSession : IDisposable
     /// <summary>Raised on the UI thread whenever <see cref="State"/> changes.</summary>
     public event Action<SaveState>? StateChanged;
 
+    /// <summary>
+    /// The map's outlines and hit-test grids, built on a worker after each change; it can trail the map
+    /// by one build (milliseconds on an ordinary map) and says which version it shows.
+    /// </summary>
+    public MapGeometry Geometry => _geometry;
+
+    /// <summary>Raised on the UI thread when <see cref="Geometry"/> is replaced by a newer one.</summary>
+    public event Action? GeometryChanged;
+
     /// <param name="project">The project.</param>
     /// <param name="slot">The map to open.</param>
     /// <param name="onUiThread">Runs an action on the UI thread (the app passes its dispatcher).</param>
+    /// <remarks>Reads and indexes the whole map: call it on a worker, then hand the session to the UI thread.</remarks>
     public static EditorSession Open(Project project, string slot, Action<Action> onUiThread)
     {
         var map = EditorMap.FromModel(project.LoadMap(slot));
-        var session = new EditorSession(project, slot, map, onUiThread);
+        var session = new EditorSession(project, slot, map, MapGeometry.Build(map.Frame), onUiThread);
         session.SaveVersion("Opened");
         return session;
     }
@@ -91,11 +113,12 @@ public sealed class EditorSession : IDisposable
     /// </summary>
     public void SaveVersion(string reason)
     {
-        var model = Map.ToModel();
+        var frame = Map.Frame;
         var folder = Path.Combine(Project.Folder, ".wadsmith", "versions", Slot);
         var stamp = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture);
         _ = Task.Run(() =>
         {
+            var model = frame.ToModel();
             try
             {
                 Directory.CreateDirectory(folder);
@@ -115,8 +138,8 @@ public sealed class EditorSession : IDisposable
     private void CaptureAndSave()
     {
         if (_disposed || Map.Version == _savedVersion) return;
-        var version = Map.Version;
-        var model = Map.ToModel();
+        var frame = Map.Frame;
+        var version = frame.Version;
         State = SaveState.Saving;
         StateChanged?.Invoke(State);
         _lastSave = Task.Run(async () =>
@@ -124,7 +147,7 @@ public sealed class EditorSession : IDisposable
             await _writer.WaitAsync().ConfigureAwait(false);
             try
             {
-                Project.SaveMap(model);
+                Project.SaveMap(frame.ToModel());
                 _onUiThread(() =>
                 {
                     _savedVersion = Math.Max(_savedVersion, version);

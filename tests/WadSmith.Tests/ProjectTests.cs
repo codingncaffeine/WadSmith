@@ -116,8 +116,9 @@ public sealed class StressMapTests
         var m = Cli.Commands.StressGenCommand.Build(6);
         Assert.Equal(2 * 6 * 7, m.Lines.Count);
         Assert.Empty(MapValidator.Check(m));
-        var geometry = new Editor.Geometry.MapGeometry(Editor.Model.EditorMap.FromModel(m));
-        foreach (var s in geometry.Map.Sectors) Assert.Single(geometry.Loops(s));
-        Assert.Same(geometry.Map.Sectors[0], geometry.SectorAt(new Editor.Geometry.MapPoint(64, 64)));
+        var map = Editor.Model.EditorMap.FromModel(m);
+        var geometry = Editor.Geometry.MapGeometry.Build(map.Frame);
+        foreach (var s in map.Sectors) Assert.Single(geometry.Loops(s));
+        Assert.Same(map.Sectors[0], geometry.SectorAt(new Editor.Geometry.MapPoint(64, 64)));
     }
 }

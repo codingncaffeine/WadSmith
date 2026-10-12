@@ -12,6 +12,9 @@ public interface IEdit
 
     void Undo(EditorMap map);
 
+    /// <summary>Every element the edit changes (the map republishes exactly these).</summary>
+    IEnumerable<Element> Touched { get; }
+
     /// <summary>
     /// Folds a following edit of the same gesture (a drag) into this one, so the drag undoes in one
     /// step. Returns false when the two cannot be merged.
@@ -60,6 +63,7 @@ public sealed class History(EditorMap map)
     {
         edit.Do(Map);
         _redo.Clear();
+        var touched = edit.Touched;
         if (gesture != 0 && _undo.Count > 0 && _undo[^1].Gesture == gesture && _undo[^1].Checkpoint is null && _undo[^1].Edit.TryMerge(edit))
         {
             // Merged into the previous step of the same gesture.
@@ -69,7 +73,7 @@ public sealed class History(EditorMap map)
             _undo.Add(new Entry(edit, gesture, DateTimeOffset.Now));
         }
 
-        Map.Touch();
+        Map.Touch(touched);
         Moved?.Invoke();
     }
 
@@ -80,7 +84,7 @@ public sealed class History(EditorMap map)
         _undo.RemoveAt(_undo.Count - 1);
         e.Edit.Undo(Map);
         _redo.Add(e);
-        Map.Touch();
+        Map.Touch(e.Edit.Touched);
         Moved?.Invoke();
         return true;
     }
@@ -92,7 +96,7 @@ public sealed class History(EditorMap map)
         _redo.RemoveAt(_redo.Count - 1);
         e.Edit.Do(Map);
         _undo.Add(e);
-        Map.Touch();
+        Map.Touch(e.Edit.Touched);
         Moved?.Invoke();
         return true;
     }
@@ -120,6 +124,8 @@ public sealed class SetProperty<TElement, TValue>(TElement element, string label
 
     public TElement Element { get; } = element;
 
+    public IEnumerable<Element> Touched => [Element];
+
     public void Do(EditorMap map) => set(Element, _new);
 
     public void Undo(EditorMap map) => set(Element, _old);
@@ -136,6 +142,8 @@ public sealed class SetProperty<TElement, TValue>(TElement element, string label
 public sealed class Batch(string label, IReadOnlyList<IEdit> edits) : IEdit
 {
     public string Label { get; } = label;
+
+    public IEnumerable<Element> Touched => edits.SelectMany(e => e.Touched);
 
     public void Do(EditorMap map)
     {

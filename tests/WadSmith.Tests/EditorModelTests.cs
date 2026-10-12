@@ -124,7 +124,7 @@ public sealed class EditorModelTests
         var sel = new Selection();
         var ghost = new Thing();
         sel.Set(map.Lines[0], ghost);
-        sel.Prune(map);
+        sel.Prune();
         Assert.Equal([map.Lines[0]], sel.Items);
     }
 }

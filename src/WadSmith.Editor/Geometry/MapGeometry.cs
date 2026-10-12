@@ -11,45 +11,77 @@ public readonly record struct MapPoint(double X, double Y)
 }
 
 /// <summary>
-/// Shapes and hit tests over an <see cref="EditorMap"/>: each area's outline as closed loops, which
-/// area a point is in, and the nearest wall, corner or thing to a point. Results for areas are cached
-/// per map version.
+/// Shapes and hit tests for one <see cref="MapFrame"/>: each area's outline as closed loops, which
+/// area a point is in, and the nearest wall, corner or thing to a point. Built once per frame on a
+/// worker (whole-map work never runs on the UI thread) and read-only afterwards; the queries use
+/// spatial grids, so a hover on a 100,000-wall map costs microseconds.
 /// </summary>
-public sealed class MapGeometry(EditorMap map)
+public sealed class MapGeometry
 {
-    private long _cachedVersion = -1;
-    private Dictionary<Sector, List<MapPoint[]>> _loops = new(ReferenceEqualityComparer.Instance);
-    private Dictionary<Sector, (double MinX, double MinY, double MaxX, double MaxY)> _bounds = new(ReferenceEqualityComparer.Instance);
+    private static readonly MapPoint[][] NoLoops = [];
 
-    public EditorMap Map { get; } = map;
+    private readonly MapPoint[][][] _loops;
+    private readonly (double MinX, double MinY, double MaxX, double MaxY)[] _bounds;
+    private readonly (double MinX, double MinY, double MaxX, double MaxY) _extent;
+    private readonly SpatialGrid _lines;
+    private readonly SpatialGrid _vertices;
+    private readonly SpatialGrid _things;
+    private readonly SpatialGrid _sectors;
+
+    private MapGeometry(MapFrame frame)
+    {
+        Frame = frame;
+        (_loops, _bounds) = TraceOutlines(frame);
+        _extent = ExtentOf(frame);
+
+        _lines = SpatialGrid.Build(_extent, frame.Lines.Count, i =>
+        {
+            var l = frame.Lines[i];
+            if (l.Element is null) return null;
+            var a = frame.Vertices[l.V1];
+            var b = frame.Vertices[l.V2];
+            return (Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Max(a.X, b.X), Math.Max(a.Y, b.Y));
+        });
+        _vertices = SpatialGrid.Build(_extent, frame.Vertices.Count, i => frame.Vertices[i] is { Element: not null } v ? (v.X, v.Y, v.X, v.Y) : null);
+        _things = SpatialGrid.Build(_extent, frame.Things.Count, i => frame.Things[i] is { Element: not null } t ? (t.X, t.Y, t.X, t.Y) : null);
+        _sectors = SpatialGrid.Build(_extent, frame.Sectors.Count, i => _loops[i].Length > 0 ? _bounds[i] : null);
+    }
+
+    /// <summary>The frame these shapes were made from.</summary>
+    public MapFrame Frame { get; }
+
+    public long Version => Frame.Version;
+
+    /// <summary>Traces outlines and indexes everything; whole-map work, so call it on a worker.</summary>
+    public static MapGeometry Build(MapFrame frame) => new(frame);
 
     /// <summary>
     /// The closed loops around an area: its walls, each turned so the area is on its right, chained
     /// end to start. An area that is not closed gives its open chains as well; the checks report it.
     /// </summary>
-    public IReadOnlyList<MapPoint[]> Loops(Sector sector)
-    {
-        Refresh();
-        return _loops.TryGetValue(sector, out var l) ? l : [];
-    }
+    public IReadOnlyList<MapPoint[]> Loops(Sector sector) => LoopsAt(sector.Slot);
+
+    /// <summary>The loops of the area in <paramref name="slot"/>.</summary>
+    public IReadOnlyList<MapPoint[]> LoopsAt(int slot) => slot >= 0 && slot < _loops.Length ? _loops[slot] : NoLoops;
 
     /// <summary>The area containing the point (even-odd over its loops), or null for the void.</summary>
     public Sector? SectorAt(MapPoint p)
     {
-        Refresh();
         Sector? best = null;
+        var bestSlot = -1;
         var bestArea = double.MaxValue;
-        foreach (var (sector, loops) in _loops)
+        foreach (var s in _sectors.Near(p.X, p.Y, p.X, p.Y))
         {
-            var b = _bounds[sector];
+            var b = _bounds[s];
             if (p.X < b.MinX || p.X > b.MaxX || p.Y < b.MinY || p.Y > b.MaxY) continue;
-            if (!Inside(loops, p)) continue;
+            if (!Inside(_loops[s], p)) continue;
 
             // Nested areas (a pillar's area inside a room): the smallest one containing the point wins.
             var area = (b.MaxX - b.MinX) * (b.MaxY - b.MinY);
-            if (area < bestArea)
+            if (area < bestArea || (area == bestArea && s < bestSlot))
             {
-                best = sector;
+                best = Frame.Sectors[s].Element;
+                bestSlot = s;
                 bestArea = area;
             }
         }
@@ -62,13 +94,17 @@ public sealed class MapGeometry(EditorMap map)
     {
         Line? best = null;
         var bestD = radius;
-        foreach (var l in Map.Lines)
+        foreach (var i in _lines.Near(p.X - radius, p.Y - radius, p.X + radius, p.Y + radius))
         {
-            var d = DistanceToSegment(p, MapPoint.Of(l.Start), MapPoint.Of(l.End));
-            if (d <= bestD)
+            var l = Frame.Lines[i];
+            var a = Frame.Vertices[l.V1];
+            var b = Frame.Vertices[l.V2];
+            var d = DistanceToSegment(p, new MapPoint(a.X, a.Y), new MapPoint(b.X, b.Y));
+            // Ties go to the later wall, as a scan in map order would pick.
+            if (d < bestD || (d == bestD && (best is null || i > best.Slot)))
             {
                 bestD = d;
-                best = l;
+                best = l.Element;
             }
         }
 
@@ -79,13 +115,14 @@ public sealed class MapGeometry(EditorMap map)
     {
         Vertex? best = null;
         var bestD = radius;
-        foreach (var v in Map.Vertices)
+        foreach (var i in _vertices.Near(p.X - radius, p.Y - radius, p.X + radius, p.Y + radius))
         {
-            var d = p.DistanceTo(MapPoint.Of(v));
-            if (d <= bestD)
+            var v = Frame.Vertices[i];
+            var d = p.DistanceTo(new MapPoint(v.X, v.Y));
+            if (d < bestD || (d == bestD && (best is null || i > best.Slot)))
             {
                 bestD = d;
-                best = v;
+                best = v.Element;
             }
         }
 
@@ -96,13 +133,14 @@ public sealed class MapGeometry(EditorMap map)
     {
         Thing? best = null;
         var bestD = radius;
-        foreach (var t in Map.Things)
+        foreach (var i in _things.Near(p.X - radius, p.Y - radius, p.X + radius, p.Y + radius))
         {
+            var t = Frame.Things[i];
             var d = p.DistanceTo(new MapPoint(t.X, t.Y));
-            if (d <= bestD)
+            if (d < bestD || (d == bestD && (best is null || i > best.Slot)))
             {
                 bestD = d;
-                best = t;
+                best = t.Element;
             }
         }
 
@@ -119,13 +157,24 @@ public sealed class MapGeometry(EditorMap map)
     }
 
     /// <summary>The map's extent, for fitting it to a view.</summary>
-    public (double MinX, double MinY, double MaxX, double MaxY) Extent()
+    public (double MinX, double MinY, double MaxX, double MaxY) Extent() => _extent;
+
+    private static (double MinX, double MinY, double MaxX, double MaxY) ExtentOf(MapFrame frame)
     {
-        if (Map.Vertices.Count == 0) return (-512, -512, 512, 512);
-        return (Map.Vertices.Min(v => v.X), Map.Vertices.Min(v => v.Y), Map.Vertices.Max(v => v.X), Map.Vertices.Max(v => v.Y));
+        double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+        foreach (var v in frame.Vertices)
+        {
+            if (v.Element is null) continue;
+            x0 = Math.Min(x0, v.X);
+            y0 = Math.Min(y0, v.Y);
+            x1 = Math.Max(x1, v.X);
+            y1 = Math.Max(y1, v.Y);
+        }
+
+        return x0 > x1 ? (-512, -512, 512, 512) : (x0, y0, x1, y1);
     }
 
-    private static bool Inside(List<MapPoint[]> loops, MapPoint p)
+    private static bool Inside(MapPoint[][] loops, MapPoint p)
     {
         var inside = false;
         foreach (var loop in loops)
@@ -141,55 +190,123 @@ public sealed class MapGeometry(EditorMap map)
         return inside;
     }
 
-    private void Refresh()
+    /// <summary>Each area's loops and bounds, by area slot.</summary>
+    private static (MapPoint[][][] Loops, (double, double, double, double)[] Bounds) TraceOutlines(MapFrame frame)
     {
-        if (_cachedVersion == Map.Version) return;
-        _cachedVersion = Map.Version;
+        var sectorCount = frame.Sectors.Count;
 
         // Each side contributes its wall, turned so its area is on the right (front: start to end).
-        var edges = new Dictionary<Sector, List<(Vertex From, Vertex To)>>(ReferenceEqualityComparer.Instance);
-        foreach (var l in Map.Lines)
+        // Edges are grouped by area in flat arrays: no allocation per area for the common small ones.
+        var start = new int[sectorCount + 1];
+        int SectorOf(int side) => side >= 0 ? frame.Sides[side].Sector : -1;
+        foreach (var l in frame.Lines)
         {
-            Add(l.Front.Sector, l.Start, l.End);
-            if (l.Back is { } back) Add(back.Sector, l.End, l.Start);
+            if (l.Element is null) continue;
+            if (SectorOf(l.Front) is var f and >= 0) start[f + 1]++;
+            if (SectorOf(l.Back) is var b and >= 0) start[b + 1]++;
         }
 
-        void Add(Sector s, Vertex a, Vertex b)
+        for (var i = 0; i < sectorCount; i++) start[i + 1] += start[i];
+        var from = new int[start[sectorCount]];
+        var to = new int[start[sectorCount]];
+        var fill = (int[])start.Clone();
+        foreach (var l in frame.Lines)
         {
-            if (!edges.TryGetValue(s, out var list)) edges[s] = list = [];
-            list.Add((a, b));
-        }
-
-        _loops = new(ReferenceEqualityComparer.Instance);
-        _bounds = new(ReferenceEqualityComparer.Instance);
-        foreach (var (sector, list) in edges)
-        {
-            // A self-referencing wall (the same area on both sides) adds nothing to the outline.
-            var pairs = list.Where(e => !list.Contains((e.To, e.From))).ToList();
-            var byStart = new Dictionary<Vertex, List<int>>(ReferenceEqualityComparer.Instance);
-            for (var i = 0; i < pairs.Count; i++)
+            if (l.Element is null) continue;
+            if (SectorOf(l.Front) is var f and >= 0)
             {
-                if (!byStart.TryGetValue(pairs[i].From, out var starts)) byStart[pairs[i].From] = starts = [];
-                starts.Add(i);
+                from[fill[f]] = l.V1;
+                to[fill[f]++] = l.V2;
             }
 
-            var used = new bool[pairs.Count];
-            var loops = new List<MapPoint[]>();
-            for (var i = 0; i < pairs.Count; i++)
+            if (SectorOf(l.Back) is var b and >= 0)
+            {
+                from[fill[b]] = l.V2;
+                to[fill[b]++] = l.V1;
+            }
+        }
+
+        var loops = new MapPoint[sectorCount][][];
+        var bounds = new (double, double, double, double)[sectorCount];
+        var keep = new List<int>();
+        var chain = new List<MapPoint>();
+        for (var s = 0; s < sectorCount; s++)
+        {
+            int s0 = start[s], s1 = start[s + 1];
+            loops[s] = NoLoops;
+            if (s1 == s0) continue;
+
+            // A self-referencing wall (the same area on both sides) adds nothing to the outline.
+            keep.Clear();
+            var big = s1 - s0 > 32;
+            HashSet<long>? pairs = null;
+            if (big)
+            {
+                pairs = new HashSet<long>(s1 - s0);
+                for (var e = s0; e < s1; e++) pairs.Add(((long)from[e] << 32) | (uint)to[e]);
+            }
+
+            for (var e = s0; e < s1; e++)
+            {
+                bool reversed;
+                if (pairs is not null)
+                {
+                    reversed = pairs.Contains(((long)to[e] << 32) | (uint)from[e]);
+                }
+                else
+                {
+                    reversed = false;
+                    for (var o = s0; o < s1 && !reversed; o++) reversed = from[o] == to[e] && to[o] == from[e];
+                }
+
+                if (!reversed) keep.Add(e);
+            }
+
+            // Chain the walls end to start, taking the first unused wall that starts where the last ended.
+            Dictionary<int, List<int>>? byStart = null;
+            if (big)
+            {
+                byStart = [];
+                for (var k = 0; k < keep.Count; k++)
+                {
+                    if (!byStart.TryGetValue(from[keep[k]], out var list)) byStart[from[keep[k]]] = list = [];
+                    list.Add(k);
+                }
+            }
+
+            var used = new bool[keep.Count];
+            var found = new List<MapPoint[]>();
+            for (var i = 0; i < keep.Count; i++)
             {
                 if (used[i]) continue;
-                var loop = new List<MapPoint>();
+                chain.Clear();
                 var at = i;
                 while (at >= 0 && !used[at])
                 {
                     used[at] = true;
-                    loop.Add(MapPoint.Of(pairs[at].From));
+                    var v = frame.Vertices[from[keep[at]]];
+                    chain.Add(new MapPoint(v.X, v.Y));
+                    var end = to[keep[at]];
                     var next = -1;
-                    if (byStart.TryGetValue(pairs[at].To, out var candidates))
+                    if (byStart is not null)
                     {
-                        foreach (var c in candidates)
+                        if (byStart.TryGetValue(end, out var candidates))
                         {
-                            if (!used[c])
+                            foreach (var c in candidates)
+                            {
+                                if (!used[c])
+                                {
+                                    next = c;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        for (var c = 0; c < keep.Count; c++)
+                        {
+                            if (!used[c] && from[keep[c]] == end)
                             {
                                 next = c;
                                 break;
@@ -200,13 +317,119 @@ public sealed class MapGeometry(EditorMap map)
                     at = next;
                 }
 
-                if (loop.Count >= 3) loops.Add([.. loop]);
+                if (chain.Count >= 3) found.Add([.. chain]);
             }
 
-            if (loops.Count == 0) continue;
-            _loops[sector] = loops;
-            var all = loops.SelectMany(x => x).ToList();
-            _bounds[sector] = (all.Min(q => q.X), all.Min(q => q.Y), all.Max(q => q.X), all.Max(q => q.Y));
+            if (found.Count == 0) continue;
+            loops[s] = [.. found];
+            double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+            foreach (var loop in found)
+            {
+                foreach (var q in loop)
+                {
+                    x0 = Math.Min(x0, q.X);
+                    y0 = Math.Min(y0, q.Y);
+                    x1 = Math.Max(x1, q.X);
+                    y1 = Math.Max(y1, q.Y);
+                }
+            }
+
+            bounds[s] = (x0, y0, x1, y1);
+        }
+
+        return (loops, bounds);
+    }
+}
+
+/// <summary>
+/// A uniform grid over the map for finding items near a point. Each item is filed in every cell its
+/// bounds cross; an item that would cross a great many cells (a very long diagonal wall, a huge area)
+/// goes on a short list that every query checks.
+/// </summary>
+internal sealed class SpatialGrid
+{
+    private const int MaxCellsPerItem = 256;
+
+    private readonly double _x0;
+    private readonly double _y0;
+    private readonly double _cell;
+    private readonly int _cols;
+    private readonly int _rows;
+    private readonly int[] _start;
+    private readonly int[] _items;
+    private readonly int[] _large;
+
+    private SpatialGrid(double x0, double y0, double cell, int cols, int rows, int[] start, int[] items, int[] large)
+    {
+        (_x0, _y0, _cell, _cols, _rows, _start, _items, _large) = (x0, y0, cell, cols, rows, start, items, large);
+    }
+
+    /// <summary>About two items per cell, at most four million cells.</summary>
+    public static SpatialGrid Build((double MinX, double MinY, double MaxX, double MaxY) extent, int count, Func<int, (double MinX, double MinY, double MaxX, double MaxY)?> boundsOf)
+    {
+        var w = Math.Max(extent.MaxX - extent.MinX, 1);
+        var h = Math.Max(extent.MaxY - extent.MinY, 1);
+        var cell = Math.Max(16, Math.Sqrt(w * h / Math.Max(count / 2.0, 1)));
+        while ((w / cell + 1) * (h / cell + 1) > 4_000_000) cell *= 2;
+        var cols = (int)(w / cell) + 1;
+        var rows = (int)(h / cell) + 1;
+
+        var spans = new (int C0, int R0, int C1, int R1)[count];
+        var start = new int[cols * rows + 1];
+        var large = new List<int>();
+        for (var i = 0; i < count; i++)
+        {
+            spans[i] = (-1, -1, -1, -1);
+            if (boundsOf(i) is not { } b) continue;
+            int c0 = Col(b.MinX), r0 = Row(b.MinY), c1 = Col(b.MaxX), r1 = Row(b.MaxY);
+            if ((long)(c1 - c0 + 1) * (r1 - r0 + 1) > MaxCellsPerItem)
+            {
+                large.Add(i);
+                continue;
+            }
+
+            spans[i] = (c0, r0, c1, r1);
+            for (var r = r0; r <= r1; r++)
+            {
+                for (var c = c0; c <= c1; c++) start[r * cols + c + 1]++;
+            }
+        }
+
+        for (var i = 0; i < cols * rows; i++) start[i + 1] += start[i];
+        var items = new int[start[cols * rows]];
+        var fill = (int[])start.Clone();
+        for (var i = 0; i < count; i++)
+        {
+            var (c0, r0, c1, r1) = spans[i];
+            if (c0 < 0) continue;
+            for (var r = r0; r <= r1; r++)
+            {
+                for (var c = c0; c <= c1; c++) items[fill[r * cols + c]++] = i;
+            }
+        }
+
+        return new SpatialGrid(extent.MinX, extent.MinY, cell, cols, rows, start, items, [.. large]);
+
+        int Col(double x) => Math.Clamp((int)((x - extent.MinX) / cell), 0, cols - 1);
+        int Row(double y) => Math.Clamp((int)((y - extent.MinY) / cell), 0, rows - 1);
+    }
+
+    /// <summary>Items filed in the cells the box crosses, plus the large ones; an item may come more than once.</summary>
+    public IEnumerable<int> Near(double minX, double minY, double maxX, double maxY)
+    {
+        foreach (var i in _large) yield return i;
+        int c0 = Col(minX), r0 = Row(minY), c1 = Col(maxX), r1 = Row(maxY);
+        for (var r = r0; r <= r1; r++)
+        {
+            for (var c = c0; c <= c1; c++)
+            {
+                var cellIndex = r * _cols + c;
+                for (var k = _start[cellIndex]; k < _start[cellIndex + 1]; k++) yield return _items[k];
+            }
         }
     }
+
+    private int Col(double x) => Math.Clamp((int)Math.Floor((x - _x0) / _cell), 0, _cols - 1);
+
+    private int Row(double y) => Math.Clamp((int)Math.Floor((y - _y0) / _cell), 0, _rows - 1);
 }

@@ -15,6 +15,12 @@ public abstract class Element
 
     public long Id { get; }
 
+    /// <summary>Where the element sits in the map's <see cref="MapFrame"/> lists; -1 when it is not on the map.</summary>
+    public int Slot { get; internal set; } = -1;
+
+    /// <summary>Whether the element is on the map (an undone addition is not).</summary>
+    public bool OnMap => Slot >= 0;
+
     /// <summary>Every field the editor has no typed property for, kept in order.</summary>
     public UdmfFields Extra { get; } = new();
 

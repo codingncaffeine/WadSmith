@@ -6,10 +6,14 @@ namespace WadSmith.Editor.Model;
 /// <summary>
 /// The map being edited, as an object graph: lines point at their corners and faces, faces at their
 /// areas. Built from a <see cref="MapModel"/> and written back to one. Changed only on the UI thread,
-/// through the history; <see cref="Version"/> counts every change so readers know when to refresh.
+/// through the history; <see cref="Version"/> counts every change so readers know when to refresh, and
+/// after each change <see cref="Frame"/> holds a read-only copy for other threads, updated only where
+/// the change touched it. The element lists change only through the map itself.
 /// </summary>
 public sealed class EditorMap
 {
+    private MapFrame? _frame;
+
     public required string Name { get; set; }
 
     public required string Namespace { get; set; }
@@ -36,10 +40,100 @@ public sealed class EditorMap
     /// <summary>Raised after every change, with the new version.</summary>
     public event Action<long>? Changed;
 
-    internal void Touch()
+    /// <summary>The map as of <see cref="Version"/>, for any thread to read.</summary>
+    public MapFrame Frame => Volatile.Read(ref _frame) ?? throw new InvalidOperationException("The map has no frame yet.");
+
+    /// <summary>Records a change to <paramref name="touched"/>: a new version and a frame with their new values.</summary>
+    internal void Touch(IEnumerable<Element> touched)
     {
         Version++;
+        var f = Frame;
+        ChunkedList<VertexFrame>.Builder? vertices = null;
+        ChunkedList<LineFrame>.Builder? lines = null;
+        ChunkedList<SideFrame>.Builder? sides = null;
+        ChunkedList<SectorFrame>.Builder? sectors = null;
+        ChunkedList<ThingFrame>.Builder? things = null;
+        foreach (var e in touched)
+        {
+            if (!e.OnMap) continue;
+            switch (e)
+            {
+                case Vertex v:
+                    (vertices ??= f.Vertices.ToBuilder())[v.Slot] = MapFrame.Of(v);
+                    break;
+                case Line l:
+                    (lines ??= f.Lines.ToBuilder())[l.Slot] = MapFrame.Of(l);
+                    break;
+                case Side sd:
+                    (sides ??= f.Sides.ToBuilder())[sd.Slot] = MapFrame.Of(sd);
+                    break;
+                case Sector sc:
+                    (sectors ??= f.Sectors.ToBuilder())[sc.Slot] = MapFrame.Of(sc);
+                    break;
+                case Thing t:
+                    (things ??= f.Things.ToBuilder())[t.Slot] = MapFrame.Of(t);
+                    break;
+            }
+        }
+
+        Volatile.Write(ref _frame, new MapFrame
+        {
+            Version = Version,
+            Name = Name,
+            Namespace = Namespace,
+            Globals = MapFrame.Copy(Globals),
+            OtherBlocks = f.OtherBlocks,
+            OtherLumps = f.OtherLumps,
+            Vertices = vertices?.ToList() ?? f.Vertices,
+            Lines = lines?.ToList() ?? f.Lines,
+            Sides = sides?.ToList() ?? f.Sides,
+            Sectors = sectors?.ToList() ?? f.Sectors,
+            Things = things?.ToList() ?? f.Things,
+        });
         Changed?.Invoke(Version);
+    }
+
+    /// <summary>Numbers every element by its place and takes the first frame.</summary>
+    private void TakeFirstFrame()
+    {
+        static void Number<TElement>(List<TElement> list)
+            where TElement : Element
+        {
+            for (var i = 0; i < list.Count; i++) list[i].Slot = i;
+        }
+
+        Number(Vertices);
+        Number(Sectors);
+        Number(Sides);
+        Number(Lines);
+        Number(Things);
+        Volatile.Write(ref _frame, FrameFromScratch());
+    }
+
+    /// <summary>A frame built from every element (what <see cref="Touch"/> keeps up to date piece by piece).</summary>
+    internal MapFrame FrameFromScratch()
+    {
+        static ChunkedList<TFrame> Build<TElement, TFrame>(List<TElement> list, Func<TElement, TFrame> of)
+        {
+            var b = ChunkedList<TFrame>.Empty.ToBuilder();
+            foreach (var e in list) b.Add(of(e));
+            return b.ToList();
+        }
+
+        return new MapFrame
+        {
+            Version = Version,
+            Name = Name,
+            Namespace = Namespace,
+            Globals = MapFrame.Copy(Globals),
+            OtherBlocks = [.. OtherBlocks],
+            OtherLumps = [.. OtherLumps],
+            Vertices = Build(Vertices, MapFrame.Of),
+            Lines = Build(Lines, MapFrame.Of),
+            Sides = Build(Sides, MapFrame.Of),
+            Sectors = Build(Sectors, MapFrame.Of),
+            Things = Build(Things, MapFrame.Of),
+        };
     }
 
     public static EditorMap FromModel(MapModel m)
@@ -97,76 +191,12 @@ public sealed class EditorMap
             e.Things.Add(x);
         }
 
+        e.TakeFirstFrame();
         return e;
     }
 
     /// <summary>The map as the index-based model the file formats use, in the editor's current order.</summary>
-    public MapModel ToModel()
-    {
-        var m = new MapModel { Name = Name, Namespace = Namespace };
-        foreach (var (k, v) in Globals) m.Globals[k] = v;
-        m.OtherBlocks.AddRange(OtherBlocks);
-        m.OtherLumps.AddRange(OtherLumps);
-
-        var vIndex = Index(Vertices);
-        var sIndex = Index(Sectors);
-        var sideIndex = Index(Sides);
-
-        foreach (var v in Vertices)
-        {
-            var x = new MapVertex { X = v.X, Y = v.Y };
-            Copy(v.Extra, x.Extra);
-            m.Vertices.Add(x);
-        }
-
-        foreach (var s in Sectors)
-        {
-            var x = new MapSector { FloorHeight = s.FloorHeight, CeilingHeight = s.CeilingHeight, FloorTexture = s.FloorTexture, CeilingTexture = s.CeilingTexture, Light = s.Light, Special = s.Special, Id = s.Tag };
-            Copy(s.Extra, x.Extra);
-            m.Sectors.Add(x);
-        }
-
-        foreach (var s in Sides)
-        {
-            var x = new MapSide { OffsetX = s.OffsetX, OffsetY = s.OffsetY, Top = s.Top, Middle = s.Middle, Bottom = s.Bottom, Sector = sIndex.GetValueOrDefault(s.Sector, -1) };
-            Copy(s.Extra, x.Extra);
-            m.Sides.Add(x);
-        }
-
-        foreach (var l in Lines)
-        {
-            var x = new MapLine
-            {
-                V1 = vIndex[l.Start],
-                V2 = vIndex[l.End],
-                Front = sideIndex[l.Front],
-                Back = l.Back is null ? -1 : sideIndex[l.Back],
-                Special = l.Special,
-                Id = l.LineId,
-            };
-            l.Args.CopyTo(x.Args, 0);
-            Copy(l.Extra, x.Extra);
-            m.Lines.Add(x);
-        }
-
-        foreach (var t in Things)
-        {
-            var x = new MapThing { X = t.X, Y = t.Y, Height = t.Height, Angle = t.Angle, Type = t.Type, Special = t.Special, Id = t.Tid };
-            t.Args.CopyTo(x.Args, 0);
-            Copy(t.Extra, x.Extra);
-            m.Things.Add(x);
-        }
-
-        return m;
-    }
-
-    private static Dictionary<T, int> Index<T>(List<T> list)
-        where T : notnull
-    {
-        var d = new Dictionary<T, int>(list.Count, ReferenceEqualityComparer.Instance as IEqualityComparer<T>);
-        for (var i = 0; i < list.Count; i++) d[list[i]] = i;
-        return d;
-    }
+    public MapModel ToModel() => Frame.ToModel();
 
     private static void Copy(UdmfFields from, UdmfFields to)
     {

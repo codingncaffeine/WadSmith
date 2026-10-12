@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="WadSmith.Tests" />
+    <InternalsVisibleTo Include="WadSmith.Capture" />
   </ItemGroup>
 
   <ItemGroup>

@@ -40,8 +40,8 @@ public sealed class SessionTests
         var m = StarterRoom.Create("MAP01", engine);
         Assert.Empty(MapValidator.Check(m));
         Assert.Contains(m.Things, t => t.Type == 1);
-        var geometry = new Editor.Geometry.MapGeometry(EditorMap.FromModel(m));
-        var map = geometry.Map;
+        var map = EditorMap.FromModel(m);
+        var geometry = Editor.Geometry.MapGeometry.Build(map.Frame);
         // The player start stands inside the room, so the room's walls face inward.
         Assert.Same(map.Sectors[0], geometry.SectorAt(new Editor.Geometry.MapPoint(map.Things[0].X, map.Things[0].Y)));
     }

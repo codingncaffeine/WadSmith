@@ -4,13 +4,15 @@ using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using SkiaSharp;
 using WadSmith.Core.Preview;
-using WadSmith.Editor;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
 
 namespace WadSmith.App.Canvas;
 
-/// <summary>The selected and hovered elements' shapes, taken on the UI thread (small).</summary>
+/// <summary>
+/// The shapes of some elements (the selection, or the one under the pointer), read from a geometry's
+/// frame, so a worker can build it for a large selection.
+/// </summary>
 internal sealed class SelectionOverlay
 {
     public List<(float X1, float Y1, float X2, float Y2)> Lines { get; } = [];
@@ -21,51 +23,43 @@ internal sealed class SelectionOverlay
 
     public List<SKPath> Areas { get; } = [];
 
-    public SelectionOverlay? Hover { get; private set; }
-
-    public static SelectionOverlay Take(EditorSession session, MapGeometry geometry, Element? hover)
+    public static SelectionOverlay Take(IReadOnlyList<Element> items, MapGeometry geometry)
     {
         var o = new SelectionOverlay();
-        foreach (var e in session.Selection.Items) o.Add(e, geometry);
-        if (hover is not null && !session.Selection.Contains(hover))
+        var f = geometry.Frame;
+        foreach (var e in items)
         {
-            o.Hover = new SelectionOverlay();
-            o.Hover.Add(hover, geometry);
+            var slot = e.Slot;
+            if (slot < 0) continue;
+            switch (e)
+            {
+                case Line when slot < f.Lines.Count && f.Lines[slot] is { Element: not null } l:
+                    var a = f.Vertices[l.V1];
+                    var b = f.Vertices[l.V2];
+                    o.Lines.Add(((float)a.X, (float)a.Y, (float)b.X, (float)b.Y));
+                    break;
+                case Vertex when slot < f.Vertices.Count && f.Vertices[slot] is { Element: not null } v:
+                    o.Points.Add(((float)v.X, (float)v.Y));
+                    break;
+                case Thing when slot < f.Things.Count && f.Things[slot] is { Element: not null } t:
+                    o.Things.Add(((float)t.X, (float)t.Y, 16));
+                    break;
+                case Sector:
+                    var loops = geometry.LoopsAt(slot);
+                    if (loops.Count == 0) break;
+                    var path = new SKPath { FillType = SKPathFillType.EvenOdd };
+                    CanvasSnapshot.AddLoops(path, loops);
+                    o.Areas.Add(path);
+                    break;
+            }
         }
 
         return o;
     }
-
-    private void Add(Element e, MapGeometry geometry)
-    {
-        switch (e)
-        {
-            case Line l:
-                Lines.Add(((float)l.Start.X, (float)l.Start.Y, (float)l.End.X, (float)l.End.Y));
-                break;
-            case Vertex v:
-                Points.Add(((float)v.X, (float)v.Y));
-                break;
-            case Thing t:
-                Things.Add(((float)t.X, (float)t.Y, 16));
-                break;
-            case Sector s:
-                var path = new SKPath { FillType = SKPathFillType.EvenOdd };
-                foreach (var loop in geometry.Loops(s))
-                {
-                    path.MoveTo((float)loop[0].X, (float)loop[0].Y);
-                    for (var i = 1; i < loop.Length; i++) path.LineTo((float)loop[i].X, (float)loop[i].Y);
-                    path.Close();
-                }
-
-                Areas.Add(path);
-                break;
-        }
-    }
 }
 
 /// <summary>Draws the map on the render thread through a Skia lease.</summary>
-internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot snapshot, SelectionOverlay selection, MapCanvas.View view, bool showHeights) : ICustomDrawOperation
+internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, bool showHeights) : ICustomDrawOperation
 {
     private static readonly SKColor Background = new(0x0A, 0x07, 0x08);
     private static readonly SKColor GridMinor = new(0x1C, 0x15, 0x16);
@@ -74,6 +68,9 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot snapshot, Sel
     private static readonly SKColor Ember = new(0xE0, 0x98, 0x59);
     private static readonly SKColor PlayerStart = new(0x5F, 0xD3, 0x5F);
     private static readonly SKColor ThingColour = new(0xC9, 0xC2, 0xBC);
+
+    /// <summary>Above this many walls on screen they are drawn one pixel wide.</summary>
+    internal const int DenseWalls = 20_000;
 
     public Rect Bounds { get; } = bounds;
 
@@ -88,20 +85,40 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot snapshot, Sel
     public void Render(ImmediateDrawingContext context)
     {
         if (context.TryGetFeature<ISkiaSharpApiLeaseFeature>() is not { } feature) return;
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
         using var lease = feature.Lease();
         var canvas = lease.SkCanvas;
+        FrameStats.Gpu = lease.GrContext is not null;
         canvas.Save();
         canvas.ClipRect(new SKRect(0, 0, (float)Bounds.Width, (float)Bounds.Height));
         canvas.Clear(Background);
         DrawGrid(canvas);
 
+        if (snapshot is null)
+        {
+            canvas.Restore();
+            return;
+        }
+
         var m = view.Matrix;
         var px = (float)(1 / view.Zoom);
-        using var paint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeCap = SKStrokeCap.Round };
+
+        // What the view covers in map units, a few pixels wider so strokes at the edge stay whole.
+        var left = (float)(view.Cx - view.Width / 2 / view.Zoom) - 4 * px;
+        var right = (float)(view.Cx + view.Width / 2 / view.Zoom) + 4 * px;
+        var bottom = (float)(view.Cy - view.Height / 2 / view.Zoom) - 4 * px;
+        var top = (float)(view.Cy + view.Height / 2 / view.Zoom) + 4 * px;
+
+        // A view crowded with walls draws them one pixel wide, as other editors always do, and fills
+        // areas without smoothing their edges (the walls cover them); the usual look costs too much
+        // when tens of thousands of walls are on screen at once.
+        var walls = snapshot.Walls.Visible(left, bottom, right, top);
+        var dense = walls.Shapes > DenseWalls;
 
         canvas.Save();
         canvas.Concat(in m);
-        if (showHeights) DrawHeights(canvas);
+        if (showHeights) DrawHeights(canvas, snapshot.Heights.Visible(left, bottom, right, top), !dense);
+        using var paint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeCap = SKStrokeCap.Round };
 
         // Openings first, then steps, then solid walls on top: the automap's order.
         foreach (var (style, colour, width) in new[]
@@ -113,17 +130,19 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot snapshot, Sel
         })
         {
             paint.Color = colour;
-            paint.StrokeWidth = width * px;
-            canvas.DrawPath(snapshot.PathFor(style), paint);
+            paint.StrokeWidth = dense ? 0 : width * px;
+            snapshot.Walls.Draw(canvas, (int)style, paint, walls);
         }
 
         // Selection: areas filled, walls thick, in the accent colour; the hover in ember.
-        DrawOverlay(canvas, selection, Accent, px, 3.2f, 0x40);
-        if (selection.Hover is { } hover) DrawOverlay(canvas, hover, Ember, px, 2.4f, 0x22);
+        if (selection is not null) DrawOverlay(canvas, selection, Accent, px, 3.2f, 0x40);
+        if (hover is not null) DrawOverlay(canvas, hover, Ember, px, 2.4f, 0x22);
         canvas.Restore();
 
-        DrawPoints(canvas);
+        DrawPoints(canvas, snapshot);
         canvas.Restore();
+        canvas.Flush();
+        FrameStats.Draw(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
 
     private void DrawGrid(SKCanvas canvas)
@@ -151,15 +170,13 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot snapshot, Sel
     }
 
     /// <summary>Areas coloured by floor height: deep blue for the lowest, through green, to warm red for the highest.</summary>
-    private void DrawHeights(SKCanvas canvas)
+    private void DrawHeights(SKCanvas canvas, (List<int> Cells, int Shapes, bool All) visible, bool smooth)
     {
-        var (min, max) = snapshot.FloorRange;
-        var span = Math.Max(max - min, 1);
-        using var fill = new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = true };
-        foreach (var (path, floor) in snapshot.Areas.OrderBy(a => a.Floor))
+        using var fill = new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = smooth };
+        for (var g = 0; g < snapshot!.HeightShades.Length; g++)
         {
-            fill.Color = HeightColour((floor - min) / span).WithAlpha(0x8C);
-            canvas.DrawPath(path, fill);
+            fill.Color = HeightColour(snapshot.HeightShades[g]).WithAlpha(0x8C);
+            snapshot.Heights.Draw(canvas, g, fill, visible);
         }
     }
 
@@ -193,7 +210,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot snapshot, Sel
     }
 
     /// <summary>Corners (when zoomed in) and things, in screen pixels so they stay readable at any zoom.</summary>
-    private void DrawPoints(SKCanvas canvas)
+    private void DrawPoints(SKCanvas canvas, CanvasSnapshot picture)
     {
         float Sx(float x) => (float)((x - view.Cx) * view.Zoom + view.Width / 2);
         float Sy(float y) => (float)(view.Height / 2 - (y - view.Cy) * view.Zoom);
@@ -201,13 +218,19 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot snapshot, Sel
         if (view.Zoom > 0.25)
         {
             using var v = new SKPaint { Color = new SKColor(0xB3, 0xA9, 0xA6), IsAntialias = false };
-            var pts = snapshot.Vertices;
-            for (var i = 0; i < pts.Length; i += 2) canvas.DrawRect(Sx(pts[i]) - 1.5f, Sy(pts[i + 1]) - 1.5f, 3, 3, v);
+            var pts = picture.Vertices;
+            for (var i = 0; i < pts.Length; i += 2)
+            {
+                var x = Sx(pts[i]);
+                var y = Sy(pts[i + 1]);
+                if (x < -4 || y < -4 || x > view.Width + 4 || y > view.Height + 4) continue;
+                canvas.DrawRect(x - 1.5f, y - 1.5f, 3, 3, v);
+            }
         }
 
         using var ring = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = 1.4f, IsAntialias = true };
         using var tick = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = 1.4f, IsAntialias = true };
-        foreach (var t in snapshot.Things)
+        foreach (var t in picture.Things)
         {
             var x = Sx(t.X);
             var y = Sy(t.Y);

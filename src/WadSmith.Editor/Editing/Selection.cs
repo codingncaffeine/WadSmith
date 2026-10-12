@@ -6,6 +6,7 @@ namespace WadSmith.Editor.Editing;
 public sealed class Selection
 {
     private readonly List<Element> _items = [];
+    private readonly HashSet<Element> _set = new(ReferenceEqualityComparer.Instance);
 
     public IReadOnlyList<Element> Items => _items;
 
@@ -18,18 +19,24 @@ public sealed class Selection
     public IEnumerable<T> OfType<T>()
         where T : Element => _items.OfType<T>();
 
-    public bool Contains(Element e) => _items.Contains(e);
+    public bool Contains(Element e) => _set.Contains(e);
 
     public void Set(params Element[] elements)
     {
         _items.Clear();
-        _items.AddRange(elements.Distinct());
+        _set.Clear();
+        foreach (var e in elements)
+        {
+            if (_set.Add(e)) _items.Add(e);
+        }
+
         Changed?.Invoke();
     }
 
     public void Toggle(Element e)
     {
-        if (!_items.Remove(e)) _items.Add(e);
+        if (_set.Remove(e)) _items.Remove(e);
+        else if (_set.Add(e)) _items.Add(e);
         Changed?.Invoke();
     }
 
@@ -37,13 +44,16 @@ public sealed class Selection
     {
         if (_items.Count == 0) return;
         _items.Clear();
+        _set.Clear();
         Changed?.Invoke();
     }
 
     /// <summary>Drops anything no longer on the map (after an undo removed it).</summary>
-    public void Prune(EditorMap map)
+    public void Prune()
     {
-        var alive = new HashSet<Element>(map.Vertices.Cast<Element>().Concat(map.Lines).Concat(map.Sides).Concat(map.Sectors).Concat(map.Things));
-        if (_items.RemoveAll(e => !alive.Contains(e)) > 0) Changed?.Invoke();
+        var removed = _items.RemoveAll(e => !e.OnMap);
+        if (removed == 0) return;
+        _set.RemoveWhere(e => !e.OnMap);
+        Changed?.Invoke();
     }
 }
