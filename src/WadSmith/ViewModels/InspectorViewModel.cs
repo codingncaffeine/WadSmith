@@ -213,11 +213,14 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>Raised when the user asks to make a room a teleport pad: the editor then waits for the arrival spot.</summary>
     public event Action<Sector>? TeleportFrom;
 
+    /// <summary>Raised when the user asks for a switch that works a door or a lift: the editor then waits for the wall.</summary>
+    public event Action<Sector>? SwitchFor;
+
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
         [Sector s] => Doors.Recognise(_session.Geometry, s) is not null ? "door" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : "room",
-        [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : l.Special == 0 ? "wall" : "wall with an action",
+        [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : "thing",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
         [var one] => one.GetType().Name,
@@ -295,6 +298,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 _summaryOf = () => Doors.Recognise(_session.Geometry, s) is { } d ? Describe(d) : "No longer a door.";
                 Summary = _summaryOf();
                 AddDoor(s);
+                Rows.Add(new ActionRow("Add a switch that opens it", "Click a solid wall next: a piece of it becomes a switch the player uses to open this door from there (the door gets a tag; its own walls still open it).", () => SwitchFor?.Invoke(s)));
                 Rows.Add(new HeadingRow("ITS AREA"));
                 AddSector(s);
                 break;
@@ -303,6 +307,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 _summaryOf = () => Lifts.Recognise(_session.Geometry, s) is { } lift ? Describe(lift) : "No longer a lift.";
                 Summary = _summaryOf();
                 AddLift(s);
+                Rows.Add(new ActionRow("Add a switch that lowers it", "Click a solid wall next: a piece of it becomes a switch the player uses to send this lift down from there.", () => SwitchFor?.Invoke(s)));
                 Rows.Add(new HeadingRow("ITS AREA"));
                 AddSector(s);
                 break;
@@ -329,6 +334,16 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Rows.Add(new ActionRow("Make it a secret", "Finding it counts toward the secrets at the end of the map, and the walls into it show as solid walls on the in-game map so they do not give it away.", () => _session.MakeSecret(s)));
                 Rows.Add(new ActionRow("Make it a lift", "Its floor goes down to the lowest floor beside it when the player uses a wall from below or walks onto it, waits 3 seconds and comes back up (Plat_DownWaitUpStayLip).", () => _session.MakeLift(s)));
                 Rows.Add(new ActionRow("Make it a teleport pad", "Stepping onto this room sends the player to a spot you click next (Teleport, with an arrival spot).", () => TeleportFrom?.Invoke(s)));
+                break;
+            case Line l when Switches.Recognise(_session.Geometry, l) is not null:
+                Heading = "Switch";
+                _summaryOf = () => Switches.Recognise(_session.Geometry, l) is { } sw ? Describe(sw) : "No longer a switch.";
+                Summary = _summaryOf();
+                AddSwitch(l);
+                Rows.Add(new HeadingRow("THE WALL"));
+                AddLine(l);
+                AddSide("Front", l.Front);
+                if (l.Back is { } switchBack) AddSide("Back", switchBack);
                 break;
             case Line l when Teleports.IsTeleport(l):
                 Heading = "Teleporter";
@@ -410,7 +425,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 break;
         }
 
-        if (items[0] is Sector or Line) AddShaping();
+        if (items[0] is Sector) AddShaping();
 
         // Last: deleting it, in words that say what happens to the rest (Delete does the same).
         var (verb, tip) = items[0] switch
@@ -489,6 +504,40 @@ internal sealed partial class InspectorViewModel : ObservableObject
             on => Change(l => (l.Settings, on), on ? "Let monsters use the lift" : "Keep monsters off the lift")));
         Rows.Add(new InfoRow("Goes down to", "The lowest floor beside it, as the game does it.", () => Now() is { } l ? string.Create(CultureInfo.InvariantCulture, $"{l.GoesDownTo:0}, {area.FloorHeight - l.GoesDownTo:0} down") : "—"));
         Rows.Add(new InfoRow("Set off from", "The walls that set it off: switches used from below, lines walked across at the top.", () => Now() is { } l ? string.Join(", ", Triggers.Ways(l.Triggers)) : "—"));
+    }
+
+    private void AddSwitch(Line wall)
+    {
+        Switch? Now() => Switches.Recognise(_session.Geometry, wall);
+        Rows.Add(new ActionRow("Select what it works on", "Selects every area with the tag its action names; the map shows them joined to the switch by dashed lines.", () =>
+        {
+            if (Now() is { Targets.Count: > 0 } sw) _session.Selection.Set([.. sw.Targets]);
+        }));
+        Rows.Add(new FlagRow("Works again and again", "Every time it is used, not only the first (repeatspecial).", () => wall.Flag("repeatspecial"), on => Flag(wall, "repeatspecial", on, on ? "Make the switch work again and again" : "Make the switch work once")));
+        Rows.Add(new ActionRow("Not a switch", "Takes the action away; the wall keeps its look and does nothing when used.", () => _session.History.Record("Take the switch away", e =>
+        {
+            e.Set(wall, x => x.Special, (x, v) => x.Special = v, 0);
+            for (var i = 0; i < 5; i++)
+            {
+                var k = i;
+                e.Set(wall, x => x.Args[k], (x, v) => x.Args[k] = v, 0);
+            }
+
+            e.Flag(wall, "playeruse", false);
+            e.Flag(wall, "repeatspecial", false);
+        })));
+    }
+
+    private static string Describe(Switch s)
+    {
+        var what = s.Targets.Count switch
+        {
+            0 => "",
+            1 => string.Create(CultureInfo.InvariantCulture, $" (the area with tag {s.Wall.Args[0]})"),
+            var n => string.Create(CultureInfo.InvariantCulture, $" ({n} areas with tag {s.Wall.Args[0]})"),
+        };
+        var none = s.Targets.Count == 0 && Switches.NamesAreas(s.Wall.Special) ? string.Create(CultureInfo.InvariantCulture, $" No area has tag {s.Wall.Args[0]}, so it does nothing.") : "";
+        return $"{char.ToUpperInvariant(s.Does[0])}{s.Does[1..]}{what} when the player uses it{(s.Repeats ? ", again and again" : ", once")}.{none}";
     }
 
     private void AddSecret(Sector area)

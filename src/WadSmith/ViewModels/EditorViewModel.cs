@@ -62,6 +62,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.Selection.Changed += () => Learned("select");
         session.GeometryChanged += UpdateHeights;
         session.TeleportPadChanged += UpdateStatus;
+        session.SwitchTargetChanged += UpdateStatus;
+        Inspector.SwitchFor += target =>
+        {
+            Tool = Canvas.EditorTool.Switch;
+            Session.SwitchTarget = target;
+        };
         Inspector.TeleportFrom += pad =>
         {
             Tool = Canvas.EditorTool.Teleport;
@@ -246,6 +252,7 @@ internal sealed partial class EditorViewModel : ObservableObject
     {
         _notice = "";
         _drawingText = "";
+        _hoverText = "";
         UpdateStatus();
     }
 
@@ -556,6 +563,12 @@ internal sealed partial class EditorViewModel : ObservableObject
             Line l when Tool == Canvas.EditorTool.Door => l.Back is null
                 ? "Wall · solid · a door goes in a wall between two rooms"
                 : string.Create(CultureInfo.InvariantCulture, $"Wall · between two areas · {l.Length:0} long · click to make it a door"),
+            Line l when Tool == Canvas.EditorTool.Window => l.Back is null
+                ? string.Create(CultureInfo.InvariantCulture, $"Wall · solid · {l.Length:0} long · drag along it for a window through to the room behind")
+                : string.Create(CultureInfo.InvariantCulture, $"Wall · between two areas · {l.Length:0} long · drag along it for a window in it"),
+            Line l when Tool == Canvas.EditorTool.Switch && Session.SwitchTarget is not null => l.Back is null
+                ? string.Create(CultureInfo.InvariantCulture, $"Wall · solid · {l.Length:0} long · click to put the switch here")
+                : "Wall · between two areas · a switch goes on a solid wall",
             Sector s => string.Create(CultureInfo.InvariantCulture, $"Area · floor {s.FloorHeight:0}, ceiling {s.CeilingHeight:0}, light {s.Light} · {s.FloorTexture}"),
             Line l => string.Create(CultureInfo.InvariantCulture, $"Wall · {(l.Back is null ? "solid" : "between two areas")} · {l.Length:0} long{(l.Special != 0 ? " · has an action" : "")} · double-click to add a corner"),
             Thing t => string.Create(CultureInfo.InvariantCulture, $"{ThingName(t.Type)} · facing {t.Angle}°"),
@@ -601,6 +614,14 @@ internal sealed partial class EditorViewModel : ObservableObject
         if (Tool == Canvas.EditorTool.Stairs)
         {
             Status = "Drag from the bottom of the stairs to the top: the steps climb from the floor where you start to the floor where you end, 16 a step where nothing else decides. Esc goes back to Select.";
+            return;
+        }
+
+        if (Tool == Canvas.EditorTool.Switch)
+        {
+            Status = Session.SwitchTarget is null
+                ? "Click the door or lift the switch works. Esc goes back to Select."
+                : "Now click the solid wall where the switch goes: a piece of it 64 wide becomes the switch. Esc goes back to Select.";
             return;
         }
 

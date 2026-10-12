@@ -30,6 +30,9 @@ internal enum EditorTool
 
     /// <summary>Drag along a wall, or click it, for a window.</summary>
     Window,
+
+    /// <summary>Click a door or a lift, then the wall where its switch goes.</summary>
+    Switch,
 }
 
 /// <summary>
@@ -232,6 +235,7 @@ internal sealed class MapCanvas : Control
             CancelMove();
             if (change.GetNewValue<EditorTool>() != EditorTool.Teleport && Session is { } leaving) leaving.TeleportPad = null;
             _windowWall = null;
+            if (change.GetNewValue<EditorTool>() != EditorTool.Switch && Session is { } unswitching) unswitching.SwitchTarget = null;
             _snap = null;
             InvalidateVisual();
             return;
@@ -867,6 +871,24 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (props.IsLeftButtonPressed && Session is { } switching && Tool == EditorTool.Switch)
+        {
+            var p = e.GetPosition(this);
+            if (switching.SwitchTarget is not { OnMap: true } target)
+            {
+                switching.SwitchTarget = switching.Geometry.SectorAt(ToMap(p));
+            }
+            else if (WallAt(p) is { } wall)
+            {
+                switching.SwitchTarget = null;
+                switching.MakeSwitch(target, wall, ToMap(p));
+                Tool = EditorTool.Select;
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Window)
         {
             if (WallAt(e.GetPosition(this)) is { } wall)
@@ -1059,7 +1081,7 @@ internal sealed class MapCanvas : Control
             return;
         }
 
-        var hit = Tool is EditorTool.Door or EditorTool.Window ? WallAt(p) : HitTest(p);
+        var hit = Tool is EditorTool.Door or EditorTool.Window || (Tool == EditorTool.Switch && Session?.SwitchTarget is not null) ? WallAt(p) : HitTest(p);
         if (!ReferenceEquals(hit, _hover) || _overGrip)
         {
             _overGrip = false;

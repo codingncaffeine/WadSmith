@@ -187,6 +187,25 @@ public sealed class ProblemTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void ASwitchNamingATagNoAreaHasIsSaid()
+    {
+        var (map, history) = Clean();
+        history.Record("Switch", e =>
+        {
+            e.Set(map.Lines[1], l => l.Special, (l, v) => l.Special = v, Doors.DoorRaise);
+            e.Set(map.Lines[1], l => l.Args[0], (l, v) => l.Args[0] = v, 7);
+            e.Flag(map.Lines[1], "playeruse", true);
+        });
+        var problem = Only(map, "tag-nowhere");
+        Assert.Contains("tag 7", problem.Sentence);
+        Assert.Same(map.Lines[1], Assert.Single(problem.Show));
+
+        // Once an area has the tag, the switch works on it.
+        history.Record("Tag", e => e.Set(map.Sectors[0], s => s.Tag, (s, v) => s.Tag = v, 7));
+        Assert.Empty(Check(map));
+    }
+
+    [Fact]
     public void DoorTracksThatSlideAreAnchored()
     {
         var (map, history, rooms) = MovingTests.Drawn((0, 0, 256, 256), (256, 96, 384, 160), (384, 0, 640, 256));

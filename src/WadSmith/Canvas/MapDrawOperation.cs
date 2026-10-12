@@ -6,6 +6,7 @@ using SkiaSharp;
 using WadSmith.Core.Preview;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
+using WadSmith.Editor.Smart;
 
 namespace WadSmith.App.Canvas;
 
@@ -29,8 +30,14 @@ internal sealed class SelectionOverlay
     /// <summary>The box round everything selected, in map units (null when nothing is on the map).</summary>
     public (double MinX, double MinY, double MaxX, double MaxY)? Box { get; private set; }
 
-    /// <summary>Whether the selection turns and resizes with handles: any wall, face or room, or more than one corner or object.</summary>
-    public bool HasHandles => Box is not null && (Lines.Count + Faces.Count + Areas.Count > 0 || Points.Count + Things.Count > 1);
+    /// <summary>
+    /// What the selection is linked to by tags, drawn as dashed lines: a selected wall with an action to the areas it
+    /// works on, a selected area to the walls elsewhere that work on it (switches, lines walked over).
+    /// </summary>
+    public List<(float X1, float Y1, float X2, float Y2)> Links { get; } = [];
+
+    /// <summary>Whether the selection turns and resizes with handles: a room, or more than one wall, face, corner or object (one wall alone only stretches its room).</summary>
+    public bool HasHandles => Box is not null && (Areas.Count > 0 || Lines.Count + Faces.Count + Points.Count + Things.Count > 1);
 
     public static SelectionOverlay Take(IReadOnlyList<Element> items, MapGeometry geometry, MapLook look)
     {
@@ -98,7 +105,39 @@ internal sealed class SelectionOverlay
         }
 
         if (x0 <= x1) o.Box = (x0, y0, x1, y1);
+        AddLinks(o, items, geometry);
         return o;
+    }
+
+    /// <summary>The tag links of the selected walls and areas, from the frame alone (a worker builds the overlay).</summary>
+    private static void AddLinks(SelectionOverlay o, IReadOnlyList<Element> items, MapGeometry geometry)
+    {
+        var f = geometry.Frame;
+        (float, float)? Middle(int sector) => geometry.WallBoundsAt(sector) is { } b ? ((float)((b.MinX + b.MaxX) / 2), (float)((b.MinY + b.MaxY) / 2)) : null;
+        (float, float) Mid(LineFrame l) => ((float)((f.Vertices[l.V1].X + f.Vertices[l.V2].X) / 2), (float)((f.Vertices[l.V1].Y + f.Vertices[l.V2].Y) / 2));
+        foreach (var e in items.Take(256))
+        {
+            var slot = e.Slot;
+            if (e is Line && slot >= 0 && slot < f.Lines.Count && f.Lines[slot] is { Element: not null, Special: not 0 } line && line.Args[0] != 0 && Switches.NamesAreas(line.Special))
+            {
+                var (mx, my) = Mid(line);
+                foreach (var s in geometry.SectorsTagged(line.Args[0]).Take(64))
+                {
+                    if (Middle(s) is { } c) o.Links.Add((mx, my, c.Item1, c.Item2));
+                }
+            }
+            else if (e is Sector && slot >= 0 && slot < f.Sectors.Count && f.Sectors[slot] is { Element: not null, Tag: not 0 } area && Middle(slot) is { } c)
+            {
+                foreach (var i in geometry.LinesNaming(area.Tag).Take(64))
+                {
+                    if (f.Lines[i] is { Element: not null, Special: not 0 } by && Switches.NamesAreas(by.Special))
+                    {
+                        var (mx, my) = Mid(by);
+                        o.Links.Add((mx, my, c.Item1, c.Item2));
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -377,6 +416,11 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
         }
         foreach (var (x, y) in o.Points) canvas.DrawRect(x - 5 * px, y - 5 * px, 10 * px, 10 * px, stroke);
         foreach (var (x, y, r) in o.Things) canvas.DrawCircle(x, y, Math.Max(r, 6 * px), stroke);
+
+        // Tag links: dashed, from the wall that works on an area to the area's middle.
+        if (o.Links.Count == 0) return;
+        using var dash = new SKPaint { Style = SKPaintStyle.Stroke, Color = colour, StrokeWidth = 1.5f * px, IsAntialias = true, PathEffect = SKPathEffect.CreateDash([6 * px, 4 * px], 0) };
+        foreach (var (x1, y1, x2, y2) in o.Links) canvas.DrawLine(x1, y1, x2, y2, dash);
     }
 
     /// <summary>Corners (when zoomed in) and things, in screen pixels so they stay readable at any zoom.</summary>

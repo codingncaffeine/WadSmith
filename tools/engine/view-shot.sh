@@ -17,7 +17,8 @@ mkdir -p "$WORK/shots"; rm -f "$WORK/shots/"*.png
 
 # One console line, so the wait holds the screenshot back until the player has stood there a while.
 echo "wait 350; screenshot" > "$WORK/shot.cfg"
-ARGS=(+set wsview "$SPOT" +set screenshot_dir "$WORK/shots" +set screenshot_type png +set crosshair 0 +set screenblocks 12 +exec "$WORK/shot.cfg")
+# A leading space: the engine takes an argument starting with "-" (a spot west of the middle) for an option.
+ARGS=(+set wsview " $SPOT" +set screenshot_dir "$WORK/shots" +set screenshot_type png +set crosshair 0 +set screenblocks 12 +exec "$WORK/shot.cfg")
 export WS_ENGINE="$ENGINE" WS_IWAD="$IWAD" WS_MAP="$MAP" WS_FILES="$FILES" WS_PK3=viewcheck.pk3 WS_LOG=engine-view.log WS_END="WSVIEW DONE"
 export WS_ARGS="$(printf '%s\n' "${ARGS[@]}")"
 "$HERE/nested.sh" "$WORK" 120 "$HERE/door-session.sh"

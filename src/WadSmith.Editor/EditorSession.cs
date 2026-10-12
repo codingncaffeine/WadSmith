@@ -223,6 +223,39 @@ public sealed class EditorSession : IDisposable
     /// <summary>Raised when <see cref="TeleportPad"/> changes.</summary>
     public event Action? TeleportPadChanged;
 
+    /// <summary>The door or lift waiting for its switch (the click on a wall that comes next).</summary>
+    public Sector? SwitchTarget
+    {
+        get => _switchTarget;
+        set
+        {
+            _switchTarget = value;
+            SwitchTargetChanged?.Invoke();
+        }
+    }
+
+    private Sector? _switchTarget;
+
+    /// <summary>Raised when <see cref="SwitchTarget"/> changes.</summary>
+    public event Action? SwitchTargetChanged;
+
+    /// <summary>Makes a switch on a wall that works a door or a lift (see <see cref="Switches.Make"/>), one undo step, and selects it; says why when it cannot.</summary>
+    public void MakeSwitch(Sector target, Line wall, MapPoint at)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => MakeSwitch(target, wall, at);
+            return;
+        }
+
+        (Line? Switch, string? Why) made = (null, null);
+        var geometry = _geometry;
+        var look = Look;
+        History.Record("Make a switch", e => made = Switches.Make(e, geometry, wall, at, target, look));
+        if (made.Switch is { } done) Selection.Set(done);
+        else if (made.Why is { } why) Notice?.Invoke(why);
+    }
+
     /// <summary>Makes a room a teleport pad sending to a spot (see <see cref="Teleports.Make"/>), one undo step, and selects the arrival spot; says why when it cannot.</summary>
     public void MakeTeleporter(Sector pad, MapPoint at, int angle)
     {

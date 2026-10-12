@@ -57,6 +57,7 @@ public static class Problems
         ThingsOutside(geometry, resources, found);
         StuckInWalls(geometry, resources, found);
         TeleportsNowhere(geometry, found);
+        TagsNowhere(geometry, found);
         DoorTracks(geometry, found);
         if (look == Look.For("doom")) MissingKeys(f, found);
         return found;
@@ -293,6 +294,16 @@ public static class Problems
 
         if (nowhere.Count == 0) return;
         found.Add(new Problem("teleport-nowhere", Severity.Warning, $"{Count(nowhere.Count, "A teleporter sends", "teleporters send")} nowhere: no arrival spot has {(nowhere.Count == 1 ? "its" : "their")} id or stands in an area with {(nowhere.Count == 1 ? "its" : "their")} tag.", nowhere));
+    }
+
+    /// <summary>Walls whose action works on the areas with a tag (a switch, a line walked over) when no area has that tag.</summary>
+    private static void TagsNowhere(MapGeometry g, List<Problem> found)
+    {
+        var nowhere = g.Frame.Lines.Where(l => l.Element is not null && l.Special != 0 && l.Args[0] != 0 && Switches.NamesAreas(l.Special) && g.SectorsTagged(l.Args[0]).Count == 0).ToList();
+        if (nowhere.Count == 0) return;
+        var tags = nowhere.Select(l => l.Args[0]).Distinct().Order().ToList();
+        var named = tags.Count == 1 ? string.Create(CultureInfo.InvariantCulture, $"tag {tags[0]}") : $"tags {string.Join(", ", tags.Take(5))}{(tags.Count > 5 ? "…" : "")}";
+        found.Add(new Problem("tag-nowhere", Severity.Warning, $"{Count(nowhere.Count, "A wall's action works on", "walls' actions work on")} {named}, and no area has {(tags.Count == 1 ? "it" : "them")}: {(nowhere.Count == 1 ? "it does" : "they do")} nothing. Give the area the tag in the Inspector, or add the switch again from the door or lift.", [.. nowhere.Select(l => l.Element!)]));
     }
 
     private static bool ArrivalExists(MapGeometry g, int tid, int tag)

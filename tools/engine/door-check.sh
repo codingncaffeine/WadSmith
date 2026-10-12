@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Asks the installed GZDoom whether a map's doors open and its lifts go down: every wall with a door
-# action naming no tag, and every wall with a lift action, is used (or crossed) as the player would,
+# action (its own walls, or a switch naming its tag), and every wall with a lift action, is used (or crossed) as the player would,
 # and the door's ceiling or the lift's floor read 2 seconds later. Runs headless in a private nested
 # session (tools/engine/nested.sh).
 #
@@ -23,6 +23,7 @@ LOG="$WORK/engine-doors.log"
 command grep -q "WSDOOR END" "$LOG" 2>/dev/null || { echo "door-check: the engine did not finish; see $WORK/engine-stdout-doors.txt"; exit 2; }
 BAD=0
 while read -r _ wall area floor before after used; do
+  if [ "$area" = -1 ]; then echo "door-check: wall $wall: NAMES A TAG NO AREA HAS, so it opens nothing"; BAD=1; continue; fi
   if awk -v b="$before" -v a="$after" -v f="$floor" 'BEGIN { exit !(a > b + 16 && b <= f + 0.5) }'; then verdict=opened
   elif awk -v b="$before" -v f="$floor" 'BEGIN { exit !(b > f + 16) }'; then verdict="already open (a door that stays open)"
   else verdict="DID NOT OPEN"; BAD=1; fi
