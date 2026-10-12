@@ -459,6 +459,27 @@ foreach (var pose in poses)
                     editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
                     Pump(1.5);
                     Save("editor-make-stairs");
+
+                    // The middle step selected: the Inspector knows the flight; steps of 20, then evened out again.
+                    editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Orbit;
+                    view.Focus();
+                    Pump(0.3);
+                    window.KeyPress(Avalonia.Input.Key.V, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.V, "v");
+                    window.MouseDown(At(384, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(384, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.6);
+                    Console.WriteLine($"stairs inspector: '{editor.Inspector.Heading}' / {editor.Inspector.Summary} / rows {string.Join(" | ", editor.Inspector.Rows.Select(r => r.Label).Take(4))}");
+                    editor.Inspector.Rows.OfType<NumberRow>().Single(r => r.Label == "Each step rises").Value = 20;
+                    Pump(0.6);
+                    var all = WadSmith.Editor.Smart.StairsFinder.Recognise(editor.Session.Geometry, editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().Single())!;
+                    Console.WriteLine($"stairs at 20: {string.Join(" ", all.Heights)}; {editor.Inspector.Summary}; undo '{editor.Session.History.UndoLabel}'");
+                    Save("editor-stairs-inspector");
+                    editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Even the steps out").Command.Execute(null);
+                    Pump(0.6);
+                    editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Select all the steps").Command.Execute(null);
+                    Pump(0.6);
+                    Pump(1.0);
+                    Console.WriteLine($"stairs evened: {string.Join(" ", editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().Select(x => x.FloorHeight).Order())}; {editor.Problems.Summary}: {string.Join(" | ", editor.Problems.Rows.Select(r => r.Sentence))}");
                     break;
                 }
 

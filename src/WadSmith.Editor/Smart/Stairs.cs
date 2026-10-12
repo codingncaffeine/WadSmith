@@ -82,3 +82,100 @@ public static class Stairs
         return (made, null);
     }
 }
+
+/// <summary>
+/// A staircase found in the map (D21): steps (areas the player stands in, each with a floor no more than 24 below it on
+/// one side and no more than 24 above on another), joined into one flight; pieces of one step at one height count once.
+/// </summary>
+/// <param name="Steps">Every area of the flight, lowest step first.</param>
+/// <param name="Heights">The steps' floor heights, lowest first: one a step.</param>
+/// <param name="Below">The floor the flight climbs from: the lowest floor a step down from its lowest step.</param>
+/// <param name="Above">The floor it climbs to: the highest floor a step up from its highest step (a ledge too high to climb is not where it goes).</param>
+public sealed record Staircase(IReadOnlyList<Sector> Steps, IReadOnlyList<double> Heights, double Below, double Above)
+{
+    public int Count => Heights.Count;
+
+    /// <summary>How much each step rises on average, counting the climb from below and onto the top: the rise that evens them out.</summary>
+    public double Rise => (Above - Below) / (Count + 1);
+
+    /// <summary>Every rise climbing the flight: onto the first step, each next step, and onto the floor above.</summary>
+    public IReadOnlyList<double> Rises => [Heights[0] - Below, .. Heights.Zip(Heights.Skip(1), (a, b) => b - a), Above - Heights[^1]];
+
+    /// <summary>The rise of the first step: what every step rises once the rise is set.</summary>
+    public double StepRise => Heights[0] - Below;
+
+    /// <summary>Whether every rise is the same, onto the top too.</summary>
+    public bool Even => Rises.Distinct().Count() == 1;
+
+    /// <summary>The climb in words: "from 0 to 64, 16 a step", "…, 20 a step and 4 onto the top", or "…, steps of 8 to 24".</summary>
+    public string Describe()
+    {
+        var steps = Rises.Take(Count).Distinct().Count() == 1;
+        var how = Even ? $"{StepRise:0} a step" : steps ? $"{StepRise:0} a step and {Rises[^1]:0} onto the top" : $"steps of {Rises.Min():0} to {Rises.Max():0}";
+        return string.Create(CultureInfo.InvariantCulture, $"climbing from {Below:0} to {Above:0}, {how}");
+    }
+}
+
+/// <summary>Recognising stairs, and changing how they climb.</summary>
+public static class StairsFinder
+{
+    /// <summary>The staircase <paramref name="area"/> is a step of, or null (two steps at least).</summary>
+    public static Staircase? Recognise(MapGeometry geometry, Sector area)
+    {
+        if (!IsStep(geometry, area)) return null;
+        var flight = new HashSet<Sector>(ReferenceEqualityComparer.Instance) { area };
+        var queue = new Queue<Sector>([area]);
+        while (queue.Count > 0)
+        {
+            var s = queue.Dequeue();
+            foreach (var n in Beside(geometry, s))
+            {
+                if (!flight.Contains(n) && Math.Abs(n.FloorHeight - s.FloorHeight) <= Stairs.MaxRise && IsStep(geometry, n) && flight.Add(n)) queue.Enqueue(n);
+            }
+        }
+
+        var heights = flight.Select(s => s.FloorHeight).Distinct().Order().ToList();
+        if (heights.Count < 2) return null;
+        var lowest = flight.Where(s => s.FloorHeight == heights[0]).ToList();
+        var highest = flight.Where(s => s.FloorHeight == heights[^1]).ToList();
+        var below = lowest.SelectMany(s => Beside(geometry, s)).Where(n => !flight.Contains(n) && heights[0] - n.FloorHeight is > 0 and <= Stairs.MaxRise).Select(n => n.FloorHeight).DefaultIfEmpty(heights[0]).Min();
+        var above = highest.SelectMany(s => Beside(geometry, s)).Where(n => !flight.Contains(n) && n.FloorHeight - heights[^1] is > 0 and <= Stairs.MaxRise).Select(n => n.FloorHeight).DefaultIfEmpty(heights[^1]).Max();
+        return new Staircase([.. flight.OrderBy(s => s.FloorHeight).ThenBy(s => s.Slot)], heights, below, above);
+    }
+
+    /// <summary>
+    /// Sets the steps' floors through <paramref name="edit"/>: the lowest step <paramref name="rise"/> above the floor below,
+    /// each next one <paramref name="rise"/> higher (pieces of one step together), keeping 72 of headroom over each.
+    /// </summary>
+    public static void SetRise(StructureEdit edit, Staircase stairs, double rise)
+    {
+        for (var i = 0; i < stairs.Heights.Count; i++)
+        {
+            var height = Math.Round(stairs.Below + (i + 1) * rise);
+            foreach (var step in stairs.Steps.Where(s => s.FloorHeight == stairs.Heights[i]).ToList())
+            {
+                edit.Set(step, s => s.FloorHeight, (s, v) => s.FloorHeight = v, height);
+                if (step.CeilingHeight < height + Stairs.Headroom) edit.Set(step, s => s.CeilingHeight, (s, v) => s.CeilingHeight = v, height + Stairs.Headroom);
+            }
+        }
+    }
+
+    private static bool IsStep(MapGeometry geometry, Sector s)
+    {
+        if (!s.OnMap || s.CeilingHeight - s.FloorHeight < 56 || Lifts.Recognise(geometry, s) is not null) return false;
+        var beside = Beside(geometry, s).ToList();
+        return beside.Any(n => s.FloorHeight - n.FloorHeight is > 0 and <= Stairs.MaxRise) && beside.Any(n => n.FloorHeight - s.FloorHeight is > 0 and <= Stairs.MaxRise);
+    }
+
+    /// <summary>The areas across the area's two-sided walls that do not block.</summary>
+    private static IEnumerable<Sector> Beside(MapGeometry geometry, Sector s)
+    {
+        if (geometry.WallBoundsAt(s.Slot) is not { } b) yield break;
+        foreach (var l in geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY))
+        {
+            if (!l.OnMap || l.Back is null || l.Flag("blocking")) continue;
+            if (ReferenceEquals(l.Front.Sector, s) && !ReferenceEquals(l.Back.Sector, s)) yield return l.Back.Sector;
+            else if (ReferenceEquals(l.Back.Sector, s) && !ReferenceEquals(l.Front.Sector, s)) yield return l.Front.Sector;
+        }
+    }
+}

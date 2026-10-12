@@ -225,7 +225,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
-        [Sector s] => Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room",
+        [Sector s] => Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room",
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : "thing",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
@@ -326,6 +326,14 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = _summaryOf();
                 AddWindow(s);
                 Rows.Add(new HeadingRow("ITS AREA"));
+                AddSector(s);
+                break;
+            case Sector s when StairsFinder.Recognise(_session.Geometry, s) is not null:
+                Heading = "Stairs";
+                _summaryOf = () => StairsFinder.Recognise(_session.Geometry, s) is { } st ? Describe(st, s) : "No longer stairs.";
+                Summary = _summaryOf();
+                AddStairs(s);
+                Rows.Add(new HeadingRow("THIS STEP"));
                 AddSector(s);
                 break;
             case Sector s when Secrets.IsSecret(s):
@@ -633,6 +641,26 @@ internal sealed partial class InspectorViewModel : ObservableObject
         var none = s.Targets.Count == 0 && Switches.NamesAreas(s.Wall.Special) ? string.Create(CultureInfo.InvariantCulture, $" No area has tag {s.Wall.Args[0]}, so it does nothing.") : "";
         return $"{char.ToUpperInvariant(s.Does[0])}{s.Does[1..]}{what} when the player uses it{(s.Repeats ? ", again and again" : ", once")}.{none}";
     }
+
+    private void AddStairs(Sector step)
+    {
+        Staircase? Now() => StairsFinder.Recognise(_session.Geometry, step);
+        Rows.Add(new ActionRow("Select all the steps", "Selects every step of this flight.", () =>
+        {
+            if (Now() is { } st) _session.Selection.Set([.. st.Steps]);
+        }));
+        Rows.Add(new NumberRow("Each step rises", "How much higher each step is than the one below, from the floor below the stairs; the player steps up 24 at most.", () => Now() is { } st ? (decimal)Math.Round(st.StepRise) : 0, v =>
+        {
+            if (Now() is { } st) _session.History.Record("Change how the stairs rise", e => StairsFinder.SetRise(e, st, (double)v));
+        }, 2, 1, (decimal)Stairs.MaxRise));
+        Rows.Add(new ActionRow("Even the steps out", "Makes every step rise the same, from the floor below the stairs to the floor above them.", () =>
+        {
+            if (Now() is { } st) _session.History.Record("Even the steps out", e => StairsFinder.SetRise(e, st, st.Rise));
+        }));
+    }
+
+    private static string Describe(Staircase st, Sector step) =>
+        $"Step {st.Heights.ToList().IndexOf(step.FloorHeight) + 1} of {st.Count}, {st.Describe()}.";
 
     private void AddSecret(Sector area)
     {
