@@ -136,4 +136,18 @@
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="MaxWidth" Value="360" />
     </Style>
+
+    <!-- The guided first map points at the control its open step is about: an outline in the accent colour
+         on its own border width, with its words in the accent colour, so nothing around it moves. -->
+    <Style Selector=":is(Button).guide /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+    </Style>
+    <Style Selector=":is(Button).guide:checked /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent.Ink}" />
+    </Style>
+    <Style Selector="SplitButton.guide /template/ Button /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+    </Style>
 </Styles>

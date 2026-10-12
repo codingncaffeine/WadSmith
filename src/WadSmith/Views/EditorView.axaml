@@ -65,7 +65,7 @@
                         <ToggleButton Classes="segment last" Content="Lines" IsChecked="{Binding IsLines}"
                                       ToolTip.Tip="Shows only the walls, in the colours of the game's automap." />
                     </StackPanel>
-                    <SplitButton Content="{Binding Faces.Play.Label, StringFormat='▶ {0}'}" Command="{Binding PlayCommand}" Margin="0,0,10,0" IsEnabled="{Binding !Playing}"
+                    <SplitButton Content="{Binding Faces.Play.Label, StringFormat='▶ {0}'}" Classes.guide="{Binding Marks.Play}" Command="{Binding PlayCommand}" Margin="0,0,10,0" IsEnabled="{Binding !Playing}"
                                  ToolTip.Tip="{Binding Faces.Play.Tip}">
                         <SplitButton.Flyout>
                             <MenuFlyout>
@@ -86,7 +86,7 @@
                                       ToolTip.Tip="The plan alone, from above, with all the room it can have." />
                         <ToggleButton Classes="segment" Content="Split" IsChecked="{Binding IsSplit}" Focusable="False"
                                       ToolTip.Tip="The plan and the 3D view side by side; drag the line between them to share the room. What you select in one is selected in the other." />
-                        <ToggleButton Classes="segment last" Content="{Binding Faces.ThreeD.Label}" IsChecked="{Binding Is3DOnly}" Focusable="False"
+                        <ToggleButton Classes="segment last" Content="{Binding Faces.ThreeD.Label}" Classes.guide="{Binding Marks.ThreeD}" IsChecked="{Binding Is3DOnly}" Focusable="False"
                                       ToolTip.Tip="{Binding Faces.ThreeD.Tip}" />
                     </StackPanel>
                     <Button Classes="metal" Content="Undo" Command="{Binding UndoCommand}" ToolTip.Tip="{Binding UndoTip}" />
@@ -109,9 +109,9 @@
                 <StackPanel Orientation="Vertical" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
                     <ToggleButton Classes="segment tool first" Content="{Binding SelectLabel}" IsChecked="{Binding IsSelectTool}"
                                   ToolTip.Tip="{Binding Faces.Select.Tip}" />
-                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Room.Label}" IsChecked="{Binding IsRoomTool}"
+                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Room.Label}" Classes.guide="{Binding Marks.Room}" IsChecked="{Binding IsRoomTool}"
                                   ToolTip.Tip="{Binding Faces.Room.Tip}" />
-                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Door.Label}" IsChecked="{Binding IsDoorTool}"
+                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Door.Label}" Classes.guide="{Binding Marks.Door}" IsChecked="{Binding IsDoorTool}"
                                   ToolTip.Tip="{Binding Faces.Door.Tip}" />
                     <ToggleButton Classes="segment tool" Content="{Binding Faces.Window.Label}" IsChecked="{Binding IsWindowTool}"
                                   ToolTip.Tip="{Binding Faces.Window.Tip}" />
@@ -174,6 +174,24 @@
                                   ToolTip.Tip="Walk as the player does: eye height, up steps, stopped by walls. Drag to look, WASD to move, Shift to run." />
                 </StackPanel>
             </Panel>
+            <!-- The guided first map (§3.9): the open step beside the map, never in the way of it. -->
+            <Border Grid.ColumnSpan="3" IsVisible="{Binding Guide, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                    Margin="12" Padding="16,12" MaxWidth="420" CornerRadius="6" Background="{DynamicResource Brush.Surface1}"
+                    BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1">
+                <StackPanel DataContext="{Binding Guide}" x:DataType="vm:GuideViewModel" Spacing="6">
+                    <TextBlock Classes="section" Text="{Binding StepLabel}" />
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                        <Button Classes="metal" Content="Skip this step" Command="{Binding SkipCommand}" IsVisible="{Binding !Finished}"
+                                ToolTip.Tip="Goes on to the next step without this one. Your map stays as it is." />
+                        <Button Classes="metal" Content="Stop the guide" Command="{Binding StopCommand}" IsVisible="{Binding !Finished}"
+                                ToolTip.Tip="Ends the guide; your map stays as it is. Ctrl+K and “Guided first map” start it again." />
+                        <Button Classes="primary" Content="Keep going" Command="{Binding StopCommand}" IsVisible="{Binding Finished}"
+                                ToolTip.Tip="Closes the guide. Your map is yours to change." />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
             <!-- Pre-flight (D25): what would break the game, said before it starts, with the way on; over both views, so the 3D view alone shows it too. -->
             <Border Grid.ColumnSpan="3" IsVisible="{Binding Preflight, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="110,12,12,0" Padding="16,12" MaxWidth="560"
                     CornerRadius="6" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1">
@@ -191,11 +209,11 @@
             <Border Grid.Column="2" Classes="panel" BorderThickness="1,0,0,0">
                 <Grid RowDefinitions="Auto,*">
                 <StackPanel Orientation="Horizontal" Margin="18,12,18,2">
-                    <ToggleButton Classes="segment first" Content="Inspector" IsChecked="{Binding ShowInspector}"
+                    <ToggleButton Classes="segment first" Content="Inspector" Classes.guide="{Binding Marks.Inspector}" IsChecked="{Binding ShowInspector}"
                                   ToolTip.Tip="What you selected and its settings." />
-                    <ToggleButton Classes="segment" Content="Textures" IsChecked="{Binding ShowTextures}"
+                    <ToggleButton Classes="segment" Content="Textures" Classes.guide="{Binding Marks.Textures}" IsChecked="{Binding ShowTextures}"
                                   ToolTip.Tip="The game's textures. Drag one onto a wall, a floor or a ceiling." />
-                    <ToggleButton Classes="segment" Content="{Binding Faces.Objects.Label}" IsChecked="{Binding ShowObjects}"
+                    <ToggleButton Classes="segment" Content="{Binding Faces.Objects.Label}" Classes.guide="{Binding Marks.Objects}" IsChecked="{Binding ShowObjects}"
                                   ToolTip.Tip="{Binding Faces.Objects.Tip}" />
                     <ToggleButton Classes="segment last" Content="Versions" IsChecked="{Binding ShowVersions}"
                                   ToolTip.Tip="Copies of this map WadSmith kept for you. Go back to any of them." />

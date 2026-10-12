@@ -39,6 +39,9 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
 
     /// <summary>Starts a new map for this game (set by the welcome screen).</summary>
     public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<GameTileViewModel>? NewMap { get; set; }
+
+    /// <summary>Starts a new map for this game with the guided first map running (set by the welcome screen).</summary>
+    public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<GameTileViewModel>? GuidedMap { get; set; }
 }
 
 /// <summary>A recently opened project.</summary>
@@ -179,7 +182,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         Games.Clear();
         foreach (var g in found.Where(g => g.Game.IsBaseGame && g.Game.Supported).GroupBy(g => g.Game.Id).Select(g => g.First()).OrderBy(g => g.Game.Title, StringComparer.Ordinal))
         {
-            var tile = new GameTileViewModel(g) { Remix = RemixCommand, NewMap = NewMapCommand };
+            var tile = new GameTileViewModel(g) { Remix = RemixCommand, NewMap = NewMapCommand, GuidedMap = GuidedMapCommand };
             Games.Add(tile);
             _ = LoadTileAsync(tile);
         }
@@ -269,7 +272,12 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task NewMapAsync(GameTileViewModel tile)
+    private Task NewMapAsync(GameTileViewModel tile) => NewMap(tile, guide: false);
+
+    [RelayCommand]
+    private Task GuidedMapAsync(GameTileViewModel tile) => NewMap(tile, guide: true);
+
+    private async Task NewMap(GameTileViewModel tile, bool guide)
     {
         await StartAsync(() =>
         {
@@ -278,7 +286,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
             var slot = tile.Found.Game.MapNames == "ExMy" ? "E1M1" : "MAP01";
             project.SaveMap(StarterRoom.Create(slot, tile.Found.Game.Engine), origin: new MapOrigin { Kind = "new" });
             return (project, slot);
-        }).ConfigureAwait(true);
+        }, guide).ConfigureAwait(true);
     }
 
     [RelayCommand]
@@ -305,7 +313,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     }
 
     /// <summary>Runs the project work and reads the map on a worker, then opens the editor on the UI thread.</summary>
-    private async Task StartAsync(Func<(Project Project, string Slot)> work)
+    private async Task StartAsync(Func<(Project Project, string Slot)> work, bool guide = false)
     {
         if (Busy) return;
         Busy = true;
@@ -316,7 +324,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
                 var (project, slot) = work();
                 return EditorSession.Open(project, slot, MainViewModel.HooksFor(_services.ResourcesFor(project), _services.EngineData));
             }).ConfigureAwait(true);
-            _main.OpenEditor(session);
+            _main.OpenEditor(session, guide: guide);
         }
         catch (Exception ex) when (ex is CorruptDataException or IOException or UnauthorizedAccessException or KeyNotFoundException)
         {

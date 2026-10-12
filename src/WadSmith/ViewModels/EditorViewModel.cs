@@ -74,6 +74,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.StateChanged += _ => UpdateSaveText();
         session.Selection.Changed += () => Learned("select");
         session.GeometryChanged += UpdateHeights;
+        session.GeometryChanged += () => Guide?.MapChanged();
         session.GeometryChanged += CameraMoved;
         _profiles = new LatestOnWorker<(EditorSession Session, ElevationProfile Profile)>(MainViewModel.PostToUi, r =>
         {
@@ -222,7 +223,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         set
         {
             if (value == Layout) return;
-            if (value == MapLayout.ThreeD) _before3D = Layout;
+            if (value == MapLayout.ThreeD)
+            {
+                _before3D = Layout;
+                Guide?.Saw3D();
+            }
+
             _services.Settings.Current.Layout = value;
             _services.Settings.Save();
             OnPropertyChanged();
@@ -373,6 +379,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Walk in 3D", "View", "", "player view|first person|camera|gravity", () => CameraMode = ThreeD.CameraMode.Walk),
             new("The game's view", "View", "G in 3D", "gzdoom picture|engine view|screenshot", () => EngineView = !EngineView),
             new("Command palette", "View", "Ctrl+K", "find a command|search|actions", () => OpenPaletteCommand.Execute(null), Also: "Ctrl+Shift+P"),
+            new("Guided first map", "View", "", "tutorial|help|learn|guide|how do i", () => StartGuideCommand.Execute(null), () => Guide is null),
 
             new("Inspector", "Panels", "", "properties|details", () => ShowInspector = true),
             new("Textures shelf", "Panels", "", "textures|flats|wall pictures", () => ShowTextures = true),
@@ -458,6 +465,27 @@ internal sealed partial class EditorViewModel : ObservableObject
             ThreeD: F("3D", "The 3D view alone, from any angle; the same key again goes back to the plan", "Show the 3D view alone"));
     }
 
+
+    /// <summary>The guided first map while it runs; null when it is not running.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Marks))]
+    private GuideViewModel? _guide;
+
+    /// <summary>Which control the guide's open step outlines.</summary>
+    public GuideMarks Marks => GuideMarks.For(Guide?.Target ?? GuideTarget.None);
+
+    /// <summary>Starts the guided first map on this map (§3.9).</summary>
+    [RelayCommand]
+    private void StartGuide()
+    {
+        if (Guide is not null) return;
+        var guide = new GuideViewModel(Session, Keyed, () => Guide = null);
+        guide.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(GuideViewModel.Target)) OnPropertyChanged(nameof(Marks));
+        };
+        Guide = guide;
+    }
     /// <summary>The classic names or the keys changed in Preferences: every label, tooltip, tip and key follows at once.</summary>
     internal void VeteranChanged()
     {
@@ -467,6 +495,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectLabel));
         OnPropertyChanged(nameof(ClassicKeys));
         Inspector.Rebuild();
+        Guide?.Rewrite();
         UpdateStatus();
     }
 
@@ -1234,6 +1263,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             foreach (var a in arguments) start.ArgumentList.Add(a);
             using var process = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException("the engine did not start");
             Playing = true;
+            Guide?.Played();
             Hint($"Playing {Session.Slot} in {engine.Name}… WadSmith keeps your changes meanwhile; what the game says comes back to Problems when it closes.");
             await process.WaitForExitAsync(_services.ShuttingDown).ConfigureAwait(true);
         }

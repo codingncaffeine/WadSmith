@@ -67,10 +67,11 @@ internal sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>Shows an opened session in the editor; called on the UI thread.</summary>
-    public void OpenEditor(EditorSession session, string? message = null, bool showVersions = false)
+    public void OpenEditor(EditorSession session, string? message = null, bool showVersions = false, bool guide = false)
     {
         var editor = new EditorViewModel(Services, session, this, message, showVersions);
         Page = editor;
+        if (guide) editor.StartGuideCommand.Execute(null);
         Title = $"{session.Project.Info.Name} · WadSmith";
         Remember(session.Project.Folder);
         Log.Info($"Opened {session.Project.Folder} map {session.Slot}");

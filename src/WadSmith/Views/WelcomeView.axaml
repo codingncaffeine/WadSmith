@@ -69,6 +69,8 @@
                                     <Button Classes="metal" Content="New map" Command="{Binding NewMap}" CommandParameter="{Binding}"
                                             ToolTip.Tip="Start with one lit room and a player start, ready to play." />
                                 </StackPanel>
+                                <Button Classes="metal" Content="Guided first map · 10 minutes" Command="{Binding GuidedMap}" CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                        ToolTip.Tip="A new map, and seven short steps beside it: a room, a door, a texture, a monster and a weapon, a way out, then Play. You can skip or stop at any time." />
                             </StackPanel>
                         </Border>
                     </DataTemplate>

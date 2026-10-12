@@ -67,6 +67,12 @@ public sealed class TooltipCoverageTests
             Ui.Pump(0.4);
             missing.AddRange(Untipped(window, "editor, Problems"));
 
+            editor.StartGuideCommand.Execute(null);
+            Ui.Pump(0.4);
+            missing.AddRange(Untipped(window, "guided first map"));
+            editor.Guide!.StopCommand.Execute(null);
+            Ui.Pump(0.2);
+
             editor.OpenPaletteCommand.Execute(null);
             Ui.Pump(0.4);
             missing.AddRange(Untipped(window, "command palette"));

@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -908,6 +908,47 @@ foreach (var pose in poses)
                     Console.WriteLine($"slope measured: ramp ours against the engine's ramp {Diff(rampOurs, "ramp"):0.0} per channel; flat against flat {Diff(flatOurs, "flat"):0.0}; controls: flat ours against the engine's ramp {Diff(flatOurs, "ramp"):0.0}, ramp ours against the engine's flat {Diff(rampOurs, "flat"):0.0}");
                 }
 
+                break;
+            }
+
+            if (pose == "editor-guide")
+            {
+                // The guided first map: its card and outline on step 1, then step 3 after a room and the 3D view, then the end.
+                editor.StartGuideCommand.Execute(null);
+                Pump(0.8);
+                Console.WriteLine($"guide: {editor.Guide?.StepLabel} {editor.Guide?.Title}; marks room {editor.Marks.Room}");
+                Save("editor-guide-1");
+                var session = editor.Session;
+                var xs = session.Map.Vertices.Where(v => v.OnMap).Select(v => v.X).ToList();
+                var ys = session.Map.Vertices.Where(v => v.OnMap).Select(v => v.Y).ToList();
+                var (x1, y0, y1) = (xs.Max(), ys.Min(), ys.Max());
+                session.DrawRoom([new(x1, y0), new(x1 + 256, y0), new(x1 + 256, y1), new(x1, y1)]);
+                Pump(0.8);
+                editor.Layout = WadSmith.Editor.App.MapLayout.ThreeD;
+                Pump(0.5);
+                editor.Layout = WadSmith.Editor.App.MapLayout.Split;
+                Pump(0.8);
+                Console.WriteLine($"guide: {editor.Guide?.StepLabel} {editor.Guide?.Title}; marks door {editor.Marks.Door}");
+                Save("editor-guide-3");
+                for (var i = 0; i < 4; i++) editor.Guide!.SkipCommand.Execute(null);
+                Pump(0.5);
+                Save("editor-guide-7");
+                editor.Guide!.SkipCommand.Execute(null);
+                editor.Guide!.SkipCommand.Execute(null);
+                editor.Guide = null;
+                editor.StartGuideCommand.Execute(null);
+                for (var i = 0; i < 3; i++) editor.Guide!.SkipCommand.Execute(null);
+                Pump(0.5);
+                Save("editor-guide-4");
+                editor.Guide = null;
+                editor.StartGuideCommand.Execute(null);
+                for (var i = 0; i < 6; i++) editor.Guide!.SkipCommand.Execute(null);
+                Pump(0.3);
+                Pump(0.3);
+                editor.Guide!.Played();
+                Pump(0.8);
+                Console.WriteLine($"guide: {editor.Guide?.StepLabel} {editor.Guide?.Title}");
+                Save("editor-guide-done");
                 break;
             }
 
