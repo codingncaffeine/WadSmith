@@ -14,13 +14,13 @@ namespace WadSmith.App.ThreeD;
 /// unfogged area darkens with view depth); a fogged area's fog density per map unit is
 /// (<paramref name="FogBase"/> + <paramref name="FogDark"/> × (255 − light)) × 10⁻⁵. Measured 2026-10-12 against GZDoom 4.14's
 /// pictures of four corridors at light 255, 192, 128 and 64, with and without a fog colour, compared as 8-pixel blocks
-/// (capture pose editor-fogcal): visibility 54 brings ours within 8.1 per channel of the engine's (the dark corridor 0.5,
-/// the bright one 11.8, which is the texture filtering alone); the fog within 9.6 (controls: no fog term 37, three
-/// times the density 28).
+/// (capture pose editor-fogcal), with the camera's pixel stretch (<see cref="Camera3D.PixelStretch"/>): visibility 58
+/// brings ours within 2.4 per channel of the engine's (the bright corridor 0.9, the dark one 0.1; before the stretch
+/// the bright one alone read 11.8); the fog within 5.2 (controls: no fog term 32.7, three times the density 26.6).
 /// </summary>
 internal readonly record struct Lighting(double GlobVis, double FogBase, double FogDark)
 {
-    public static readonly Lighting Measured = new(54, 0, 1);
+    public static readonly Lighting Measured = new(58, 0, 1);
 }
 
 internal sealed unsafe class SceneRenderer : IDisposable

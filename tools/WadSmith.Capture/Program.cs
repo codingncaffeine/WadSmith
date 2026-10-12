@@ -437,8 +437,8 @@ foreach (var pose in poses)
 
                 // GZDoom's eye stands 41 above where it put the player (600); its picture's field of view is found on the plain floor.
                 var plain = Scene("plain");
-                var (bestFov, bestDiff) = (74.0, double.MaxValue);
-                for (var fov = 80.0; fov <= 86.0; fov += 0.25)
+                var (bestFov, bestDiff) = (73.75, double.MaxValue);
+                for (var fov = 70.0; fov <= 86.0; fov += 0.25)
                 {
                     var d = Difference(WadSmith.App.ThreeD.Offscreen3D.RenderPng(plain, resources, new WadSmith.App.ThreeD.Camera3D(0, 0, 641, 90, -89.9, fov), 1024, 640, inside: true), "plain");
                     if (d < bestDiff) (bestFov, bestDiff) = (fov, d);
@@ -733,7 +733,7 @@ foreach (var pose in poses)
                     return WadSmith.Editor.Scene.MapScene.Build(WadSmith.Editor.Geometry.MapGeometry.Build(calMap.Frame), n => resources?.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, WadSmith.App.ThreeD.SpriteShapes.For(resources));
                 }
 
-                var camera = new WadSmith.App.ThreeD.Camera3D(0, -1900, 41, 90, 0, 83.75);
+                var camera = new WadSmith.App.ThreeD.Camera3D(0, -1900, 41, 90, 0);
                 var cache = new Dictionary<string, SkiaSharp.SKBitmap>();
 
                 // Pictures compared as 8-pixel blocks (their mean colour), so the engine's texture filtering against our
@@ -768,7 +768,7 @@ foreach (var pose in poses)
 
                 // The engine's field of view first, on the bright corridor (no light falls off at 255): the vertical angle that frames it as the engine does.
                 var brightScene = Scene("L255F0");
-                var (bestFov, bestFovDiff) = (83.75, double.MaxValue);
+                var (bestFov, bestFovDiff) = (73.75, double.MaxValue);
                 for (var fov = 66.0; fov <= 92; fov += 1)
                 {
                     var d = Diff(WadSmith.App.ThreeD.Offscreen3D.RenderPng(brightScene, resources, camera with { Fov = fov }, 1024, 640, true, new WadSmith.App.ThreeD.Lighting(64, 10, 1)), "L255F0");
@@ -781,7 +781,7 @@ foreach (var pose in poses)
                     if (d < bestFovDiff) (bestFov, bestFovDiff) = (fov, d);
                 }
 
-                Console.WriteLine($"fogcal fov best {bestFov:0.00}: {bestFovDiff:0.0} per channel on the bright corridor (83.75 from the floor calibration: {Diff(WadSmith.App.ThreeD.Offscreen3D.RenderPng(brightScene, resources, camera, 1024, 640, true, new WadSmith.App.ThreeD.Lighting(64, 10, 1)), "L255F0"):0.0})");
+                Console.WriteLine($"fogcal fov best {bestFov:0.00}: {bestFovDiff:0.0} per channel on the bright corridor (73.75, the default: {Diff(WadSmith.App.ThreeD.Offscreen3D.RenderPng(brightScene, resources, camera, 1024, 640, true, new WadSmith.App.ThreeD.Lighting(64, 10, 1)), "L255F0"):0.0})");
                 camera = camera with { Fov = bestFov };
 
                 int[] levels = [255, 192, 128, 64];

@@ -536,7 +536,7 @@ internal sealed class View3D : Control
         if ((e.KeyModifiers & KeyModifiers.Control) != 0 && pressed.IsLeftButtonPressed && Session is not null && _hover is { Kind: HitKind.Floor or HitKind.Ceiling } surface)
         {
             // Ctrl+drag on a floor or ceiling moves it (§3.4): a pixel is worth what the view shows at that distance.
-            var unitsPerPixel = 2 * surface.Distance * Math.Tan(Current.Fov * Math.PI / 360) / Math.Max(Bounds.Height, 1);
+            var unitsPerPixel = 2 * surface.Distance * Math.Tan(Current.Fov * Math.PI / 360) / Math.Max(Bounds.Height, 1) / Current.Stretch;
             _heightDrag = (surface.Target, Editor.Editing.History.NewGesture(), 0, e.GetPosition(this), unitsPerPixel);
             _wheel = null;
             e.Pointer.Capture(this);

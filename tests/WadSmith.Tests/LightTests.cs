@@ -135,7 +135,7 @@ public sealed class LightTests
             }
 
             var scene = MapScene.Build(MapGeometry.Build(map.Frame), n => r.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, SpriteShapes.For(r));
-            return SKBitmap.Decode(Offscreen3D.RenderPng(scene, r, new Camera3D(0, 0, 641, 90, -89.9), 512, 320));
+            return SKBitmap.Decode(Offscreen3D.RenderPng(scene, r, new Camera3D(0, 0, 641, 90, -89.9, Stretch: 1), 512, 320));
         }
 
         using var dark = Picture(null, 0);
@@ -143,7 +143,8 @@ public sealed class LightTests
         using var plain = Picture(9800, 0);
         using var soft = Picture(9830, 0);
 
-        // Units a pixel from the camera: 641 above the floor, its field of view across.
+        // Units a pixel from the camera: 641 above the floor, its field of view across (drawn without the game's pixel stretch, so a
+        // pixel is the same number of units across and along).
         var unitsPerPixel = 2 * 641 * Math.Tan(74 * Math.PI / 360) * 512 / 320 / 512;
 
         // The light's share at a distance beside it: how much of the way from unlit (0.22 shade) to full (1.0) it adds.

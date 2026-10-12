@@ -2,11 +2,18 @@ namespace WadSmith.App.ThreeD;
 
 /// <summary>
 /// Where the 3D view looks from: a position in map units (z up), a direction (yaw 0 faces east, 90
-/// north; pitch negative looks down) and a vertical field of view in degrees: the game's own (GZDoom keeps 73.74°
-/// up and down whatever the screen's shape; 73.75 measured against its pictures of a corridor, 2026-10-12).
+/// north; pitch negative looks down), a vertical field of view in degrees: the game's own (GZDoom keeps 73.74°
+/// up and down whatever the screen's shape; 73.75 measured against its pictures of a corridor, 2026-10-12), and the
+/// game's pixel stretch: GZDoom draws heights 1.2 times taller than widths (Doom's tall pixels, MAPINFO PixelRatio),
+/// stretching every height about the eye before turning the view (its SetViewMatrix). Measured 2026-10-12: the engine's
+/// walls stood 1.18–1.24 times taller than ours at the same width; the floor calibration's "83.75°" looking straight
+/// down is this stretch too (0.75 × 1.2 = tan 41.99°).
 /// </summary>
-internal readonly record struct Camera3D(double X, double Y, double Z, double Yaw, double Pitch, double Fov = 73.75)
+internal readonly record struct Camera3D(double X, double Y, double Z, double Yaw, double Pitch, double Fov = 73.75, double Stretch = Camera3D.PixelStretch)
 {
+    /// <summary>GZDoom's default pixel ratio: heights drawn 1.2 times taller.</summary>
+    public const double PixelStretch = 1.2;
+
     public (double X, double Y, double Z) Forward
     {
         get
@@ -17,7 +24,7 @@ internal readonly record struct Camera3D(double X, double Y, double Z, double Ya
         }
     }
 
-    /// <summary>The ray from the camera through a point of the picture (-1 to 1 across, -1 to 1 up).</summary>
+    /// <summary>The ray from the camera through a point of the picture (-1 to 1 across, -1 to 1 up), in the map (the stretch undone).</summary>
     public ((double X, double Y, double Z) Origin, (double X, double Y, double Z) Direction) Ray(double across, double up, double aspect)
     {
         var (fx, fy, fz) = Forward;
@@ -28,7 +35,7 @@ internal readonly record struct Camera3D(double X, double Y, double Z, double Ya
         var tanH = tanV * aspect;
         var dx = fx + rx * across * tanH + ux * up * tanV;
         var dy = fy + ry * across * tanH + uy * up * tanV;
-        var dz = fz + uz * up * tanV;
+        var dz = (fz + uz * up * tanV) / Stretch;
         var l = Math.Sqrt(dx * dx + dy * dy + dz * dz);
         return ((X, Y, Z), (dx / l, dy / l, dz / l));
     }
@@ -75,12 +82,14 @@ internal readonly record struct Camera3D(double X, double Y, double Z, double Ya
         var uy = rz * fx - rx * fz;
         var uz = rx * fy - ry * fx;
 
+        // Heights are stretched about the eye before the view turns, as GZDoom does.
+        var s = Stretch;
         double[] view =
         [
             rx, ux, -fx, 0,
             ry, uy, -fy, 0,
-            rz, uz, -fz, 0,
-            -(rx * X + ry * Y + rz * Z), -(ux * X + uy * Y + uz * Z), fx * X + fy * Y + fz * Z, 1,
+            rz * s, uz * s, -fz * s, 0,
+            -(rx * X + ry * Y + rz * s * Z), -(ux * X + uy * Y + uz * s * Z), fx * X + fy * Y + fz * s * Z, 1,
         ];
 
         const double near = 2;
