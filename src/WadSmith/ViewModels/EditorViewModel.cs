@@ -72,6 +72,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.StateChanged += _ => UpdateSaveText();
         session.Selection.Changed += () => Learned("select");
         session.GeometryChanged += UpdateHeights;
+        session.GeometryChanged += CameraMoved;
         _profiles = new LatestOnWorker<(EditorSession Session, ElevationProfile Profile)>(MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, Session) || _measure is null) return;
@@ -700,6 +701,185 @@ internal sealed partial class EditorViewModel : ObservableObject
     /// <summary>Plays the map in the engine (F9): checks first, keeps a version, then starts it.</summary>
     [RelayCommand]
     private Task PlayAsync() => PlayAsync(force: false, from: null);
+
+    // The game's view (D41): GZDoom's own picture from where the 3D camera stands, shown over the 3D view.
+
+    /// <summary>Whether the 3D pane shows the game's own picture from where the camera stands (G, or the Game's view button).</summary>
+    [ObservableProperty]
+    private bool _engineView;
+
+    /// <summary>The game's picture, or null while none has been taken.</summary>
+    [ObservableProperty]
+    private Bitmap? _engineViewPicture;
+
+    /// <summary>What is going on with the game's view, under the picture.</summary>
+    [ObservableProperty]
+    private string _engineViewNote = "";
+
+    /// <summary>Set by the view: where the 3D camera's eye is and which way it looks.</summary>
+    public Func<(double X, double Y, double Z, double Yaw, double Pitch)>? ViewCamera { get; set; }
+
+    /// <summary>Set by the view: the 3D pane's size in pixels.</summary>
+    public Func<(int Width, int Height)>? ViewSize { get; set; }
+
+    private CancellationTokenSource? _engineViewRun;
+    private bool _engineViewAgain;
+    private WadSmith.Core.Engines.EngineRenderer _engineRenderer = WadSmith.Core.Engines.EngineRenderer.Vulkan;
+    private readonly Dictionary<string, string> _engineViewCache = new(StringComparer.Ordinal);
+    private Avalonia.Threading.DispatcherTimer? _engineViewSettle;
+
+    partial void OnEngineViewChanged(bool value)
+    {
+        if (value)
+        {
+            _ = RefreshEngineViewAsync();
+            return;
+        }
+
+        _engineViewRun?.Cancel();
+        _engineViewSettle?.Stop();
+        EngineViewPicture = null;
+        EngineViewNote = "";
+    }
+
+    /// <summary>Called when the 3D camera moves or the map changes: a new picture once things settle, while the game's view is on.</summary>
+    public void CameraMoved()
+    {
+        if (!EngineView) return;
+        _engineViewSettle ??= new Avalonia.Threading.DispatcherTimer(TimeSpan.FromMilliseconds(700), Avalonia.Threading.DispatcherPriority.Background, (_, _) =>
+        {
+            _engineViewSettle!.Stop();
+            _ = RefreshEngineViewAsync();
+        });
+        _engineViewSettle.Stop();
+        _engineViewSettle.Start();
+    }
+
+    /// <summary>Whether a picture is all black (every eighth pixel darker than 2 of 255): what OpenGL draws on a bare private screen.</summary>
+    private static bool IsBlack(string png)
+    {
+        using var bitmap = SkiaSharp.SKBitmap.Decode(png);
+        if (bitmap is null) return false;
+        for (var y = 0; y < bitmap.Height; y += 8)
+        {
+            for (var x = 0; x < bitmap.Width; x += 8)
+            {
+                var p = bitmap.GetPixel(x, y);
+                if (p.Red > 2 || p.Green > 2 || p.Blue > 2) return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Takes the game's picture from the camera's spot on a worker (one at a time; a move meanwhile queues one more) and shows it.</summary>
+    private async Task RefreshEngineViewAsync()
+    {
+        if (!EngineView || ViewCamera is null || ViewSize is null) return;
+        if (_engineViewRun is not null)
+        {
+            _engineViewAgain = true;
+            return;
+        }
+
+        var engines = WadSmith.Core.Engines.EngineLocator.Find(_services.Settings.Current.EnginePath, Environment.GetEnvironmentVariable);
+        if (engines.Count == 0)
+        {
+            EngineViewNote = "GZDoom is not installed, so there is no game's view to show. Install it (Arch: pacman -S gzdoom; Debian or Ubuntu: apt install gzdoom) and try again.";
+            return;
+        }
+
+        var screen = WadSmith.Core.Engines.EngineView.FindScreen(Environment.GetEnvironmentVariable);
+        if (screen is null)
+        {
+            EngineViewNote = WadSmith.Core.Engines.EngineView.NeedsScreen;
+            return;
+        }
+
+        var cam = ViewCamera();
+        var (w, h) = ViewSize();
+        w = Math.Clamp(w & ~1, 320, 1280);
+        h = Math.Clamp(h & ~1, 200, 800);
+
+        // The engine's pitch counts down as positive; its player's feet stand an eye height under the camera.
+        var spot = new WadSmith.Core.Engines.ViewSpot(cam.X, cam.Y, cam.Yaw, cam.Z - WadSmith.Editor.Scene.Walker.EyeHeight, -cam.Pitch);
+        await Session.FlushAsync().ConfigureAwait(true);
+        await Session.RefreshMapInfoAsync().ConfigureAwait(true);
+        var key = $"{spot.Text}|{w}x{h}|{Session.Map.Version}";
+        if (_engineViewCache.TryGetValue(key, out var kept) && File.Exists(kept) && Picture(kept) is { } seen)
+        {
+            EngineViewPicture = seen;
+            EngineViewNote = "The game's own view from here. Move the camera for another; turn Game's view off (G) to go back.";
+            return;
+        }
+
+        var data = _services.Paths.Data;
+        var games = await Task.Run(_services.FoundGames).ConfigureAwait(true);
+        var config = WadSmith.Core.Engines.EngineConfig.Prepare(data, Environment.GetEnvironmentVariable);
+        var (request, why) = WadSmith.Core.Engines.PlayRequests.For(Session.Project, Session.Slot, games, config, Path.Combine(data, "engine", "view", "engine-view.log"), 3);
+        if (request is null)
+        {
+            EngineViewNote = why ?? "";
+            return;
+        }
+
+        var run = _engineViewRun = new CancellationTokenSource();
+        EngineViewNote = "Asking GZDoom for its view from here… about fifteen seconds.";
+        try
+        {
+            var folder = Path.Combine(data, "engine", "view");
+            if (_engineViewCache.Count == 0 && Directory.Exists(folder))
+            {
+                foreach (var old in Directory.GetFiles(folder, "view-*.png")) File.Delete(old);
+            }
+
+            var renderer = _engineRenderer;
+            var png = await Task.Run(() => WadSmith.Core.Engines.EngineView.CaptureAsync(engines[0], request, spot, w, h, data, screen, TimeSpan.FromSeconds(90), run.Token, renderer)).ConfigureAwait(true);
+            if (run.IsCancellationRequested) return;
+            if (renderer == WadSmith.Core.Engines.EngineRenderer.Vulkan && await Task.Run(() => IsBlack(png)).ConfigureAwait(true))
+            {
+                // No Vulkan to draw with on this computer: the classic software renderer from now on (its picture is the game's own too).
+                _engineRenderer = WadSmith.Core.Engines.EngineRenderer.Software;
+                Log.Info("The game's view came back black with Vulkan; the software renderer is used from now on.");
+                png = await Task.Run(() => WadSmith.Core.Engines.EngineView.CaptureAsync(engines[0], request, spot, w, h, data, screen, TimeSpan.FromSeconds(90), run.Token, _engineRenderer)).ConfigureAwait(true);
+                if (run.IsCancellationRequested) return;
+            }
+
+            if (_engineViewCache.Count >= 24)
+            {
+                foreach (var f in _engineViewCache.Values) File.Delete(f);
+                _engineViewCache.Clear();
+            }
+
+            var copy = Path.Combine(folder, $"view-{(uint)key.GetHashCode():x8}.png");
+            File.Copy(png, copy, overwrite: true);
+            _engineViewCache[key] = copy;
+            EngineViewPicture = Picture(copy) ?? throw new WadSmith.Core.Engines.EngineViewException("The engine's screenshot could not be read as a picture.");
+            EngineViewNote = "The game's own view from here. Move the camera for another; turn Game's view off (G) to go back.";
+        }
+        catch (WadSmith.Core.Engines.EngineViewException ex)
+        {
+            EngineViewNote = ex.Message;
+            Log.Warn($"The game's view could not be taken: {ex.Message}");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            EngineViewNote = $"The game's view could not be taken: {ex.Message}";
+            Log.Warn($"The game's view could not be taken: {ex.Message}");
+        }
+        finally
+        {
+            _engineViewRun = null;
+            if (_engineViewAgain && EngineView)
+            {
+                _engineViewAgain = false;
+                _ = RefreshEngineViewAsync();
+            }
+        }
+    }
 
     /// <summary>Where Play From Here starts: the 3D view's spot (set by the view).</summary>
     public Func<(double X, double Y, double Angle)>? PlaySpot { get; set; }

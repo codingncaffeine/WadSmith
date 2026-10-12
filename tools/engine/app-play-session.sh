@@ -5,8 +5,9 @@
 set -u
 WORK="${WADSMITH_NESTED_WORK:?}"
 case "${XDG_CONFIG_HOME:-}" in "$WORK"/*) ;; *) echo "app-play-session: XDG_CONFIG_HOME is not private, refusing" > "$WORK/session.txt"; exit 99;; esac
-export HOME="$WORK/home"; mkdir -p "$HOME"
+# The build environment first (it reads the real HOME), then a private HOME for everything started here.
 source "$WS_ROOT/scratch/env.sh" >/dev/null 2>&1
+export HOME="$WORK/home"; mkdir -p "$HOME"
 rm -rf "$WORK/capture"
 dotnet run --no-build --project "$WS_ROOT/tools/WadSmith.Capture" -c Release -- "$WORK/capture" "--games=$WS_GAMES" editor-play > "$WORK/capture.txt" 2>&1 &
 CAP=$!

@@ -177,6 +177,12 @@
             <Panel Grid.Column="2" x:Name="Pane3D">
                 <threeD:View3D x:Name="View3D" Session="{Binding Session}" Mode="{Binding CameraMode}"
                                ToolTip.Tip="The map in 3D. Orbit: drag to turn, right-drag to move, scroll to come closer. Fly and Walk: drag to look, WASD to move. Home shows the whole map." />
+                <Image Source="{Binding EngineViewPicture}" IsVisible="{Binding EngineView}" Stretch="Uniform" />
+                <Border IsVisible="{Binding EngineView}" VerticalAlignment="Bottom" Background="#C0120C0E" Padding="12,8">
+                    <TextBlock Text="{Binding EngineViewNote}" Classes="secondary" TextWrapping="Wrap" />
+                </Border>
+                <ToggleButton Classes="segment first last" Content="Game's view" IsChecked="{Binding EngineView}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10"
+                              ToolTip.Tip="GZDoom's own picture from where the 3D view stands (G), drawn on a private screen so nothing opens on your desktop. Takes a few seconds; move the camera for another." />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
                     <ToggleButton Classes="segment first" Content="Orbit" IsChecked="{Binding IsOrbit}"
                                   ToolTip.Tip="Turn around the map like a model on a table." />

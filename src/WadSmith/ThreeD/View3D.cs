@@ -166,6 +166,15 @@ internal sealed class View3D : Control
     /// <summary>The surface under the pointer as last found (a moment behind the pointer), for instruments.</summary>
     internal SceneHit? Hovered => _hover;
 
+    /// <summary>The camera as it stands now: the eye, which way it looks.</summary>
+    internal Camera3D CurrentCamera => Current;
+
+    /// <summary>The scene drawn now (null before the first), for instruments that draw it again elsewhere.</summary>
+    internal MapScene? Scene => _scene;
+
+    /// <summary>Raised when G is pressed in the view: the game's own view on or off (D41).</summary>
+    public event Action? EngineViewToggled;
+
     /// <summary>Where a map point lands on this view, in its own coordinates; null when it is behind the camera.</summary>
     internal Point? ScreenPoint(double x, double y, double z)
     {
@@ -716,6 +725,13 @@ internal sealed class View3D : Control
         {
             Mode = CameraMode.Orbit;
             Frame();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.G && e.KeyModifiers == KeyModifiers.None)
+        {
+            EngineViewToggled?.Invoke();
             e.Handled = true;
             return;
         }

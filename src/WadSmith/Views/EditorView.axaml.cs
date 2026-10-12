@@ -12,11 +12,26 @@ public partial class EditorView : UserControl
         InitializeComponent();
         HeightsRamp.Background = WadSmith.App.Canvas.HeightRamp.Brush();
         View3D.CameraMoved += camera => Canvas.ShowCamera(camera);
+        View3D.CameraMoved += _ => (DataContext as EditorViewModel)?.CameraMoved();
+        View3D.EngineViewToggled += () =>
+        {
+            if (DataContext is EditorViewModel vm) vm.EngineView = !vm.EngineView;
+        };
         DataContextChanged += (_, _) =>
         {
             if (DataContext is not EditorViewModel vm) return;
             Apply3D(vm.Show3D);
             vm.PlaySpot = () => View3D.PlaySpot();
+            vm.ViewCamera = () =>
+            {
+                var c = View3D.CurrentCamera;
+                return (c.X, c.Y, c.Z, c.Yaw, c.Pitch);
+            };
+            vm.ViewSize = () =>
+            {
+                var scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+                return ((int)Math.Round(View3D.Bounds.Width * scale), (int)Math.Round(View3D.Bounds.Height * scale));
+            };
             vm.Problems.ShowRequested += elements => Canvas.FitTo(elements);
             vm.PropertyChanged += (_, e) =>
             {
