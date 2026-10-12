@@ -42,6 +42,13 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'global.json') }}
           restore-keys: nuget-${{ runner.os }}-
 
+      # Freedoom and GZDoom's own data file, pinned by checksum; commercial games are local-only.
+      - name: Fetch the free test data
+        shell: bash
+        run: |
+          tools/fetch-test-data.sh "$RUNNER_TEMP/games"
+          echo "WADSMITH_TEST_GAMES=$RUNNER_TEMP/games" >> "$GITHUB_ENV"
+
       - name: Build (warnings are errors)
         run: dotnet build WadSmith.slnx -c Release -warnaserror
 

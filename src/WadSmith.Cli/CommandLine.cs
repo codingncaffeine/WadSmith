@@ -37,6 +37,10 @@ public static class CommandLine
         new Commands.InspectCommand(),
         new Commands.RoundTripCommand(),
         new Commands.ExtractCommand(),
+        new Commands.TranslateCommand(),
+        new Commands.Render2dCommand(),
+        new Commands.ValidateCommand(),
+        new Commands.RemixCommand(),
     ];
 
     public static int Run(IReadOnlyList<string> args, TextWriter output, TextWriter error)

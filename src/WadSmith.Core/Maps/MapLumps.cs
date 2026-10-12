@@ -21,13 +21,17 @@ public sealed class MapLumps
         "THINGS", "LINEDEFS", "SIDEDEFS", "VERTEXES", "SEGS", "SSECTORS", "NODES", "SECTORS", "REJECT", "BLOCKMAP", "BEHAVIOR", "SCRIPTS",
     };
 
-    public MapLumps(string name, MapFormat format, IReadOnlyList<(string Name, byte[] Data)> lumps, ResourceContainer source)
+    public MapLumps(string name, MapFormat format, IReadOnlyList<(string Name, byte[] Data)> lumps, ResourceContainer source, byte[]? label = null)
     {
         Name = name;
         Format = format;
         Lumps = lumps;
         Source = source;
+        Label = label ?? [];
     }
+
+    /// <summary>The content of the map's name marker (almost always empty).</summary>
+    public byte[] Label { get; }
 
     /// <summary>The map's slot name, such as MAP01 or E1M1.</summary>
     public string Name { get; }
@@ -79,7 +83,7 @@ public static class MapLocator
             // A map WAD in a PK3 takes its name from the file, whatever its marker says.
             foreach (var m in FindInWad(inner).Take(1))
             {
-                maps.Add(new MapLumps(e.Name.ToUpperInvariant(), m.Format, m.Lumps, container));
+                maps.Add(new MapLumps(e.Name.ToUpperInvariant(), m.Format, m.Lumps, container, m.Label));
             }
         }
 
@@ -104,7 +108,7 @@ public static class MapLocator
                 }
 
                 if (j < entries.Count) lumps.Add((entries[j].Name, entries[j].Read()));
-                maps.Add(new MapLumps(entries[i].Name, MapFormat.Udmf, lumps, wad));
+                maps.Add(new MapLumps(entries[i].Name, MapFormat.Udmf, lumps, wad, entries[i].Read()));
                 i = j;
             }
             else if (LumpName.Comparer.Equals(next, "THINGS"))
@@ -117,11 +121,36 @@ public static class MapLocator
                 }
 
                 var hexen = lumps.Any(l => LumpName.Comparer.Equals(l.Item1, "BEHAVIOR"));
-                maps.Add(new MapLumps(entries[i].Name, hexen ? MapFormat.Hexen : MapFormat.Doom, lumps, wad));
+                maps.Add(new MapLumps(entries[i].Name, hexen ? MapFormat.Hexen : MapFormat.Doom, lumps, wad, entries[i].Read()));
                 i = j - 1;
             }
         }
 
         return maps;
+    }
+}
+
+/// <summary>The checksum GZDoom identifies a map by (for its per-map compatibility fixes).</summary>
+public static class MapChecksum
+{
+    /// <summary>
+    /// MD5 over the name marker's content, THINGS, LINEDEFS, SIDEDEFS and SECTORS (TEXTMAP for UDMF),
+    /// then BEHAVIOR if present; as uppercase hex, the form the engine's tables use.
+    /// </summary>
+    public static string Compute(MapLumps map)
+    {
+        using var md5 = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.MD5);
+        if (map.Format == MapFormat.Udmf)
+        {
+            md5.AppendData(map.Get("TEXTMAP") ?? []);
+        }
+        else
+        {
+            md5.AppendData(map.Label);
+            foreach (var n in new[] { "THINGS", "LINEDEFS", "SIDEDEFS", "SECTORS" }) md5.AppendData(map.Get(n) ?? []);
+        }
+
+        if (map.Get("BEHAVIOR") is { } behavior) md5.AppendData(behavior);
+        return Convert.ToHexString(md5.GetHashAndReset());
     }
 }

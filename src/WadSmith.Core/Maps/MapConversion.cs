@@ -55,12 +55,19 @@ internal static class FlagLayouts
         B(0x0800, "translucent"), B(0x1000, "invisible"), B(0x2000, "friend"), B(0x4000, "standing"),
     ];
 
-    /// <summary>Hexen-format activation (bits 10–12) as UDMF trigger fields.</summary>
+    /// <summary>
+    /// Hexen-format activation (bits 10–12) as UDMF trigger fields, with the meaning GZDoom gives a
+    /// non-UDMF map: a shootable line also fires when a projectile crosses it, activation 6 is a use
+    /// that passes through to lines behind (ZDoom), and 7 is "projectile touch" (hit or cross).
+    /// </summary>
     public static readonly string[][] HexenActivation =
     [
-        ["playercross"], ["playeruse"], ["monstercross"], ["impact"], ["playerpush"], ["missilecross"],
-        ["playeruse", "passuse"], ["playercross", "monstercross", "missilecross"],
+        ["playercross"], ["playeruse"], ["monstercross"], ["impact", "missilecross"], ["playerpush"], ["missilecross"],
+        ["playeruse", "passuse"], ["impact", "missilecross"],
     ];
+
+    /// <summary>Every trigger field a Hexen-format activation can set.</summary>
+    public static readonly string[] HexenActivationFields = ["playercross", "playeruse", "monstercross", "impact", "playerpush", "missilecross", "passuse"];
 
     public static void Apply(int flags, FlagBit[] layout, UdmfFields into)
     {
@@ -424,10 +431,7 @@ public static class MapConversion
             FlagLayouts.Apply(flags, lineLayout, line.Extra);
             if (hexen)
             {
-                foreach (var f in FlagLayouts.HexenActivation[(flags >> 10) & 7])
-                {
-                    if (line.Special != 0 || f != "playercross") line.SetFlag(f, true);
-                }
+                foreach (var f in ActivationFields(flags, line.Special)) line.SetFlag(f, true);
 
                 line.Args[0] = l.Arg0;
                 line.Args[1] = l.Arg1;
@@ -494,7 +498,7 @@ public static class MapConversion
         foreach (var t in m.Things)
         {
             var flags = FlagLayouts.Collect(t.Extra, thingLayout);
-            if (t.SourceFlags is { } src && SameThingFlags(src, flags, format, m.Namespace, thingLayout)) flags = src;
+            if (t.SourceFlags is { } src && SameThingFlags(t, src, format, m.Namespace, thingLayout)) flags = src;
             c.Things.Add(hexen
                 ? new ClassicThing(ToShort(t.X), ToShort(t.Y), (short)t.Angle, (ushort)t.Type, (ushort)flags, (short)t.Id, ToShort(t.Height), (byte)t.Special, (byte)t.Args[0], (byte)t.Args[1], (byte)t.Args[2], (byte)t.Args[3], (byte)t.Args[4])
                 : new ClassicThing(ToShort(t.X), ToShort(t.Y), (short)t.Angle, (ushort)t.Type, (ushort)flags));
@@ -504,7 +508,7 @@ public static class MapConversion
         {
             var flags = FlagLayouts.Collect(l.Extra, lineLayout);
             if (hexen) flags |= HexenActivationBits(l) << 10;
-            if (l.SourceFlags is { } src && SameLineFlags(src, flags, format, m.Namespace, lineLayout)) flags = src;
+            if (l.SourceFlags is { } src && SameLineFlags(l, src, format, m.Namespace, lineLayout)) flags = src;
             var front = l.Front < 0 ? ClassicLine.NoSide : (ushort)l.Front;
             var back = l.Back < 0 ? ClassicLine.NoSide : (ushort)l.Back;
             c.Lines.Add(hexen
@@ -547,33 +551,67 @@ public static class MapConversion
 
     private static short ToShort(double v) => (short)Math.Clamp(Math.Truncate(v), short.MinValue, short.MaxValue);
 
+    /// <summary>The trigger fields of a Hexen-format activation; a line with no action gets none for "cross" (the zero default).</summary>
+    private static IEnumerable<string> ActivationFields(int flags, int special) =>
+        FlagLayouts.HexenActivation[(flags >> 10) & 7].Where(f => special != 0 || f != "playercross");
+
     private static int HexenActivationBits(MapLine l)
     {
         bool F(string n) => l.Flag(n);
         if (F("playeruse") && F("passuse")) return 6;
-        if (F("playercross") && F("monstercross") && F("missilecross")) return 7;
+        if (F("impact")) return 3;
         if (F("playeruse")) return 1;
         if (F("monstercross")) return 2;
-        if (F("impact")) return 3;
         if (F("playerpush")) return 4;
         if (F("missilecross")) return 5;
         return 0;
     }
 
-    /// <summary>Whether a source flag word still means what the model says, so its exact bits may be written back.</summary>
-    private static bool SameThingFlags(int source, int collected, MapFormat format, string ns, FlagBit[] layout)
+    /// <summary>The flag fields a layout (and, for Hexen lines, the activation) owns that are set on an element.</summary>
+    private static SortedSet<string> OwnedFlags(UdmfFields extra, FlagBit[] layout, bool withActivation)
     {
-        var effective = source;
-        if (format != MapFormat.Hexen && ns != "strife" && (effective & 0x0100) != 0) effective &= 0x1F;
-        var known = layout.Aggregate(0, (a, b) => a | b.Mask);
-        return (effective & known) == (collected & known);
+        var owned = new SortedSet<string>(FlagLayouts.Names(layout), StringComparer.OrdinalIgnoreCase);
+        if (withActivation) owned.UnionWith(FlagLayouts.HexenActivationFields);
+        var set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (k, v) in extra)
+        {
+            if (owned.Contains(k) && v.Kind == UdmfValueKind.Boolean && v.AsBool()) set.Add(k.ToLowerInvariant());
+        }
+
+        return set;
     }
 
-    private static bool SameLineFlags(int source, int collected, MapFormat format, string ns, FlagBit[] layout)
+    /// <summary>
+    /// Whether a thing's source flag word still means exactly what the model says (same named flags
+    /// set), so its original bits, unknown ones included, may be written back.
+    /// </summary>
+    private static bool SameThingFlags(MapThing t, int source, MapFormat format, string ns, FlagBit[] layout)
     {
-        var effective = source;
-        if (format != MapFormat.Hexen && ns == "doom" && (effective & 0x0800) != 0) effective &= 0x01FF;
-        var known = layout.Aggregate(0, (a, b) => a | b.Mask) | (format == MapFormat.Hexen ? 0x1C00 : 0);
-        return (effective & known) == (collected & known);
+        var probe = new UdmfFields();
+        var flags = source;
+        if (format != MapFormat.Hexen && ns != "strife" && (flags & 0x0100) != 0) flags &= 0x1F;
+        FlagLayouts.Apply(flags, layout, probe);
+        if (format != MapFormat.Hexen && ns == "strife")
+        {
+            probe["coop"] = true;
+            probe["dm"] = true;
+        }
+
+        return OwnedFlags(probe, layout, false).SetEquals(OwnedFlags(t.Extra, layout, false));
+    }
+
+    private static bool SameLineFlags(MapLine l, int source, MapFormat format, string ns, FlagBit[] layout)
+    {
+        var probe = new UdmfFields();
+        var flags = source;
+        if (format != MapFormat.Hexen && ns == "doom" && (flags & 0x0800) != 0) flags &= 0x01FF;
+        FlagLayouts.Apply(flags, layout, probe);
+        var hexen = format == MapFormat.Hexen;
+        if (hexen)
+        {
+            foreach (var f in ActivationFields(flags, l.Special)) probe[f] = true;
+        }
+
+        return OwnedFlags(probe, layout, hexen).SetEquals(OwnedFlags(l.Extra, layout, hexen));
     }
 }

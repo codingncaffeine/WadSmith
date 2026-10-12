@@ -1,0 +1,30 @@
+version "4.6"
+
+// Prints the engine's own view of a map once it is loaded: every line's action, arguments,
+// activation, flags and translucency, every sector's type, and every line id. WadSmith compares
+// its translation of classic maps with this.
+class WadSmithDump : StaticEventHandler
+{
+	override void WorldLoaded(WorldEvent e)
+	{
+		if (e.IsSaveGame || e.IsReopen) return;
+		Console.Printf("WSDUMP BEGIN %s %d %d", level.MapName, level.Lines.Size(), level.Sectors.Size());
+		for (int i = 0; i < level.Lines.Size(); i++)
+		{
+			Line l = level.Lines[i];
+			Console.Printf("WSL %d %d %d %d %d %d %d %d %d %d %.4f", i, l.special, l.args[0], l.args[1], l.args[2], l.args[3], l.args[4], l.activation, l.flags, l.flags2, l.alpha);
+		}
+		for (int i = 0; i < level.Sectors.Size(); i++)
+		{
+			Sector sec = level.Sectors[i];
+			Console.Printf("WSS %d %d %d %d", i, sec.special, sec.Flags, sec.damageamount);
+		}
+		for (int id = 1; id < 32768; id++)
+		{
+			let it = level.CreateLineIdIterator(id);
+			int ln;
+			while ((ln = it.Next()) >= 0) Console.Printf("WSI %d %d", id, ln);
+		}
+		Console.Printf("WSDUMP END");
+	}
+}
