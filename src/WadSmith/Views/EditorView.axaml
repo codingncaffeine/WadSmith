@@ -94,8 +94,10 @@
                                   ToolTip.Tip="Click a room, a wall, a corner or a thing to see it in the Inspector; Shift adds or removes (V)." />
                     <ToggleButton Classes="segment" Content="Room" IsChecked="{Binding IsRoomTool}"
                                   ToolTip.Tip="Drag to draw a room. It snaps to the grid and to corners; drawn against or over other rooms, it shares their walls and never removes any (R)." />
-                    <ToggleButton Classes="segment last" Content="Door" IsChecked="{Binding IsDoorTool}"
+                    <ToggleButton Classes="segment" Content="Door" IsChecked="{Binding IsDoorTool}"
                                   ToolTip.Tip="Click the wall between two rooms to make it a door that opens when used, with the game's door and track textures (D)." />
+                    <ToggleButton Classes="segment last" Content="Teleport" IsChecked="{Binding IsTeleportTool}"
+                                  ToolTip.Tip="Click a room to step on, then the spot the player arrives at: stepping onto the room sends them there (T)." />
                 </StackPanel>
 
                 <!-- Heights legend: the colour ramp with the lowest and highest floor. -->

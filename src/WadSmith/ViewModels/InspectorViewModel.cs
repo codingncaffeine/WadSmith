@@ -210,11 +210,15 @@ internal sealed partial class InspectorViewModel : ObservableObject
     private Func<string>? _summaryOf;
     private string _kind = "";
 
+    /// <summary>Raised when the user asks to make a room a teleport pad: the editor then waits for the arrival spot.</summary>
+    public event Action<Sector>? TeleportFrom;
+
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
         [Sector s] => Doors.Recognise(_session.Geometry, s) is not null ? "door" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : "room",
-        [Line l] => Exits.IsExit(l) ? "exit" : l.Special == 0 ? "wall" : "wall with an action",
+        [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : l.Special == 0 ? "wall" : "wall with an action",
+        [Thing t] => Teleports.IsArrival(t) ? "arrival" : "thing",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
         [var one] => one.GetType().Name,
         var many => many.Count.ToString(CultureInfo.InvariantCulture),
@@ -228,7 +232,15 @@ internal sealed partial class InspectorViewModel : ObservableObject
         // A room just made (a door a moment ago) is known as what it is once the map's shapes catch up.
         session.GeometryChanged += () =>
         {
-            if (KindOf() != _kind) Rebuild();
+            if (KindOf() != _kind)
+            {
+                Rebuild();
+                return;
+            }
+
+            // What the shapes tell (where a teleporter sends, what opens a door) is read again from the new ones.
+            foreach (var r in Rows) r.Refresh();
+            if (_summaryOf is { } summary) Summary = summary();
         };
         session.Map.Changed += _ =>
         {
@@ -297,6 +309,31 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = "Its floor, ceiling and light.";
                 AddSector(s);
                 Rows.Add(new ActionRow("Make it a lift", "Its floor goes down to the lowest floor beside it when the player uses a wall from below or walks onto it, waits 3 seconds and comes back up (Plat_DownWaitUpStayLip).", () => _session.MakeLift(s)));
+                Rows.Add(new ActionRow("Make it a teleport pad", "Stepping onto this room sends the player to a spot you click next (Teleport, with an arrival spot).", () => TeleportFrom?.Invoke(s)));
+                break;
+            case Line l when Teleports.IsTeleport(l):
+                Heading = "Teleporter";
+                _summaryOf = () => Teleports.Recognise(_session.Geometry, l) is { } t ? Describe(t) : "No longer a teleporter.";
+                Summary = _summaryOf();
+                AddTeleporter(l);
+                Rows.Add(new HeadingRow("THE WALL"));
+                AddLine(l);
+                AddSide("Front", l.Front);
+                if (l.Back is { } teleBack) AddSide("Back", teleBack);
+                break;
+            case Thing t when Teleports.IsArrival(t):
+                Heading = "Teleport arrival";
+                _summaryOf = () =>
+                {
+                    var n = Teleports.SendersTo(_session.Geometry, t).Count;
+                    return $"Whoever a teleporter sends here arrives facing {Compass(t.Angle)}; {(n == 0 ? "no wall sends here yet" : n == 1 ? "1 wall sends here" : $"{n} walls send here")}.";
+                };
+                Summary = _summaryOf();
+                Rows.Add(new ActionRow("Select the walls that send here", "Selects every wall that teleports to this spot.", () =>
+                {
+                    if (Teleports.SendersTo(_session.Geometry, t) is { Count: > 0 } senders) _session.Selection.Set([.. senders]);
+                }));
+                AddThing(t);
                 break;
             case Line l when Exits.IsExit(l):
                 Heading = l.Flag("playeruse") ? "Exit switch" : l.Flag("playercross") ? "Exit line" : "Exit";
@@ -419,6 +456,49 @@ internal sealed partial class InspectorViewModel : ObservableObject
             on => Change(l => (l.Settings, on), on ? "Let monsters use the lift" : "Keep monsters off the lift")));
         Rows.Add(new InfoRow("Goes down to", "The lowest floor beside it, as the game does it.", () => Now() is { } l ? string.Create(CultureInfo.InvariantCulture, $"{l.GoesDownTo:0}, {area.FloorHeight - l.GoesDownTo:0} down") : "—"));
         Rows.Add(new InfoRow("Set off from", "The walls that set it off: switches used from below, lines walked across at the top.", () => Now() is { } l ? string.Join(", ", Triggers.Ways(l.Triggers)) : "—"));
+    }
+
+    private static string Compass(int angle) => (((angle % 360) + 360) % 360) switch
+    {
+        < 23 or >= 338 => "east",
+        < 68 => "north-east",
+        < 113 => "north",
+        < 158 => "north-west",
+        < 203 => "west",
+        < 248 => "south-west",
+        < 293 => "south",
+        _ => "south-east",
+    };
+
+    private static string Describe(Teleporter t)
+    {
+        var who = t.Monsters ? "the player or a monster" : "the player";
+        var how = t.ByUse ? "uses it" : "walks across it from the front";
+        var where = t.Arrivals.Count switch
+        {
+            0 => "nowhere: no arrival spot has its id or stands in an area with its tag",
+            1 => string.Create(CultureInfo.InvariantCulture, $"the arrival spot at {t.Arrivals[0].X:0}, {t.Arrivals[0].Y:0}"),
+            var n => $"the first of {n} arrival spots",
+        };
+        return $"Sends {who} who {how} to {where}{(t.Repeats ? "" : ", once")}.";
+    }
+
+    /// <summary>A teleporter's settings: where it goes, who it sends, and taking it away.</summary>
+    private void AddTeleporter(Line l)
+    {
+        Rows.Add(new ActionRow("Select where it goes", "Selects the arrival spot this wall sends to.", () =>
+        {
+            if (Teleports.Recognise(_session.Geometry, l) is { Arrivals.Count: > 0 } t) _session.Selection.Set([.. t.Arrivals]);
+        }));
+        Rows.Add(new FlagRow("Monsters are sent too", "Monsters walking across it are teleported as well (monstercross).", () => l.Flag("monstercross") || l.Flag("monsteruse"),
+            on => _session.History.Record(on ? "Let monsters teleport" : "Keep monsters from teleporting", e => e.Flag(l, l.Flag("playeruse") ? "monsteruse" : "monstercross", on))));
+        Rows.Add(new FlagRow("Works again and again", "Every crossing teleports, not only the first (repeatspecial).", () => l.Flag("repeatspecial"),
+            on => _session.History.Record(on ? "Make the teleporter repeat" : "Make the teleporter work once", e => e.Flag(l, "repeatspecial", on))));
+        Rows.Add(new ActionRow("Not a teleporter", "Takes the teleport away from this wall; the arrival spot stays.", () => _session.History.Record("Take the teleporter away", e =>
+        {
+            e.Set(l, x => x.Special, (x, v) => x.Special = v, 0);
+            foreach (var f in new[] { "playercross", "monstercross", "playeruse", "monsteruse", "repeatspecial" }) e.Flag(l, f, false);
+        })));
     }
 
     /// <summary>An exit's settings: where it goes, and taking it away.</summary>

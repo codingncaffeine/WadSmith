@@ -21,6 +21,9 @@ internal enum EditorTool
 
     /// <summary>Click a wall between two rooms to make it a door.</summary>
     Door,
+
+    /// <summary>Click a room to step on, then the spot the player arrives at.</summary>
+    Teleport,
 }
 
 /// <summary>
@@ -175,6 +178,7 @@ internal sealed class MapCanvas : Control
         {
             CancelDrawing();
             CancelMove();
+            if (change.GetNewValue<EditorTool>() != EditorTool.Teleport && Session is { } leaving) leaving.TeleportPad = null;
             _snap = null;
             InvalidateVisual();
             return;
@@ -515,6 +519,25 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (props.IsLeftButtonPressed && Session is { } teleporting && Tool == EditorTool.Teleport)
+        {
+            var at = ToMap(e.GetPosition(this));
+            if (teleporting.TeleportPad is not { OnMap: true } pad)
+            {
+                teleporting.TeleportPad = teleporting.Geometry.SectorAt(at);
+            }
+            else
+            {
+                var step = GridStep();
+                teleporting.TeleportPad = null;
+                teleporting.MakeTeleporter(pad, new MapPoint(Math.Round(at.X / step) * step, Math.Round(at.Y / step) * step), 90);
+                Tool = EditorTool.Select;
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Door)
         {
             if (WallAt(e.GetPosition(this)) is { } wall) Session.MakeDoor(wall);
@@ -736,6 +759,10 @@ internal sealed class MapCanvas : Control
                 break;
             case Key.D when e.KeyModifiers == KeyModifiers.None:
                 Tool = EditorTool.Door;
+                e.Handled = true;
+                break;
+            case Key.T when e.KeyModifiers == KeyModifiers.None:
+                Tool = EditorTool.Teleport;
                 e.Handled = true;
                 break;
             case Key.OemPlus or Key.Add:

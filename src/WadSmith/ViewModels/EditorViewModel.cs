@@ -60,6 +60,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.StateChanged += _ => UpdateSaveText();
         session.Selection.Changed += () => Learned("select");
         session.GeometryChanged += UpdateHeights;
+        session.TeleportPadChanged += UpdateStatus;
+        Inspector.TeleportFrom += pad =>
+        {
+            Tool = Canvas.EditorTool.Teleport;
+            Session.TeleportPad = pad;
+        };
         session.Notice += text =>
         {
             _notice = text;
@@ -165,8 +171,18 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>What a left drag on the plan does (V selects, R draws rooms).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool), nameof(IsDoorTool))]
+    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool), nameof(IsDoorTool), nameof(IsTeleportTool))]
     private Canvas.EditorTool _tool;
+
+    public bool IsTeleportTool
+    {
+        get => Tool == Canvas.EditorTool.Teleport;
+        set
+        {
+            if (value) Tool = Canvas.EditorTool.Teleport;
+            else OnPropertyChanged();
+        }
+    }
 
     public bool IsDoorTool
     {
@@ -406,6 +422,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         Learned("edit");
         if (Session.History.UndoLabel == "Draw a room") Learned("draw");
         if (Session.History.UndoLabel == "Make a door") Learned("door");
+        if (Session.History.UndoLabel == "Make a teleporter") Learned("teleport");
     }
 
     /// <summary>The heights legend's words, from the shapes the worker built (no scan of the map here).</summary>
@@ -518,6 +535,14 @@ internal sealed partial class EditorViewModel : ObservableObject
         if (_hoverText.Length > 0)
         {
             Status = _hoverText;
+            return;
+        }
+
+        if (Tool == Canvas.EditorTool.Teleport)
+        {
+            Status = Session.TeleportPad is null
+                ? "Click the room to step on: it becomes the teleport pad. Esc goes back to Select."
+                : "Now click where the player arrives. Stepping onto the pad sends them there. Esc goes back to Select.";
             return;
         }
 

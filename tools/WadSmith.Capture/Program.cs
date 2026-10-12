@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,12 +361,12 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
                 // one inside it.
-                var wide = pose is "editor-join" or "editor-make-lift";
+                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport";
                 view.ZoomBy(wide ? 0.3 : 0.45);
                 if (wide) view.PanBy(-90, 0);
                 Pump(0.3);
@@ -434,6 +434,31 @@ foreach (var pose in poses)
                     var placed = editor.Session.Map.Things.Where(t => t.OnMap && t.Type == imp.Drop.Thing).ToList();
                     Console.WriteLine($"shelf thing: {placed.Count} imp(s) at {string.Join(" ", placed.Select(t => $"({t.X},{t.Y})"))}, undo '{editor.Session.History.UndoLabel}'");
                     Save("editor-shelves");
+                    break;
+                }
+
+                if (pose == "editor-make-teleport")
+                {
+                    // A pad in the starter room and a room apart; T, a click on the pad, a click in the far room:
+                    // stepping on the pad sends the player there. Saved for the engine check.
+                    window.KeyPress(Avalonia.Input.Key.R, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.R, "r");
+                    Drag((-64, -64), (64, 64), null);
+                    Drag((512, -128), (768, 128), null);
+                    window.KeyPress(Avalonia.Input.Key.T, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.T, "t");
+                    Pump(0.2);
+                    foreach (var (x, y) in new[] { (0.0, 0.0), (640.0, 0.0) })
+                    {
+                        window.MouseDown(At(x, y), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                        window.MouseUp(At(x, y), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                        Pump(0.6);
+                        Console.WriteLine($"draw status: '{editor.Status}'");
+                    }
+
+                    Report("teleport");
+                    Console.WriteLine($"draw inspector: '{editor.Inspector.Heading}', '{editor.Inspector.Summary}'");
+                    Save("editor-make-teleport");
+                    Wait(editor.Session.FlushAsync());
+                    Console.WriteLine($"draw project: {editor.Session.Project.Folder}");
                     break;
                 }
 

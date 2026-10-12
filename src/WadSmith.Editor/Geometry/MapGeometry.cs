@@ -28,7 +28,9 @@ public sealed class MapGeometry
     private readonly SpatialGrid _vertices;
     private readonly SpatialGrid _things;
     private readonly SpatialGrid _sectors;
-    private readonly Dictionary<int, List<int>> _byFirstArg = [];
+    private readonly Dictionary<(int Arg, int Value), List<int>> _byArg = [];
+    private readonly Dictionary<int, List<int>> _sectorsByTag = [];
+    private readonly Dictionary<int, List<int>> _thingsByTid = [];
 
     private MapGeometry(MapFrame frame)
     {
@@ -53,27 +55,61 @@ public sealed class MapGeometry
         _things = SpatialGrid.Build(_extent, frame.Things.Count, i => frame.Things[i] is { Element: not null } t ? (t.X, t.Y, t.X, t.Y) : null);
         _sectors = SpatialGrid.Build(_extent, frame.Sectors.Count, i => _loops[i].Length > 0 ? _bounds[i] : null);
 
-        // Walls with an action, by its first argument: for most actions the tag of what they work on.
+        // Walls with an action, by each of their first three arguments (the tags and ids actions name).
         for (var i = 0; i < frame.Lines.Count; i++)
         {
             var l = frame.Lines[i];
-            if (l.Element is null || l.Special == 0 || l.Args[0] == 0) continue;
-            if (!_byFirstArg.TryGetValue(l.Args[0], out var list)) _byFirstArg[l.Args[0]] = list = [];
-            list.Add(i);
+            if (l.Element is null || l.Special == 0) continue;
+            for (var a = 0; a < 3; a++)
+            {
+                if (l.Args[a] == 0) continue;
+                if (!_byArg.TryGetValue((a, l.Args[a]), out var list)) _byArg[(a, l.Args[a])] = list = [];
+                list.Add(i);
+            }
+
             HighestTag = Math.Max(HighestTag, l.Args[0]);
         }
 
-        foreach (var s in frame.Sectors)
+        for (var i = 0; i < frame.Sectors.Count; i++)
         {
-            if (s.Element is not null) HighestTag = Math.Max(HighestTag, s.Tag);
+            var s = frame.Sectors[i];
+            if (s.Element is null) continue;
+            HighestTag = Math.Max(HighestTag, s.Tag);
+            if (s.Tag == 0) continue;
+            if (!_sectorsByTag.TryGetValue(s.Tag, out var list)) _sectorsByTag[s.Tag] = list = [];
+            list.Add(i);
+        }
+
+        for (var i = 0; i < frame.Things.Count; i++)
+        {
+            var t = frame.Things[i];
+            if (t.Element is null || t.Tid == 0) continue;
+            HighestTid = Math.Max(HighestTid, t.Tid);
+            if (!_thingsByTid.TryGetValue(t.Tid, out var list)) _thingsByTid[t.Tid] = list = [];
+            list.Add(i);
         }
     }
+
+    /// <summary>The highest id (tid) any object has (a new id above it is free).</summary>
+    public int HighestTid { get; }
+
+    /// <summary>The places of the walls whose action has <paramref name="value"/> as its argument number <paramref name="arg"/> (0–2).</summary>
+    public IReadOnlyList<int> LinesWithArg(int arg, int value) => value != 0 && _byArg.TryGetValue((arg, value), out var list) ? list : [];
+
+    /// <summary>The places of tagged areas without a closed outline (the spatial grid cannot find them by position).</summary>
+    public IEnumerable<int> SectorsWithoutOutline() => _sectorsByTag.Values.SelectMany(l => l).Where(s => _loops[s].Length == 0);
+
+    /// <summary>The places of the areas with the tag given.</summary>
+    public IReadOnlyList<int> SectorsTagged(int tag) => tag != 0 && _sectorsByTag.TryGetValue(tag, out var list) ? list : [];
+
+    /// <summary>The places of the objects with the id given.</summary>
+    public IReadOnlyList<int> ThingsWithTid(int tid) => tid != 0 && _thingsByTid.TryGetValue(tid, out var list) ? list : [];
 
     /// <summary>The highest tag any area has or any wall's action names (a new tag above it is free).</summary>
     public int HighestTag { get; }
 
     /// <summary>The places of the walls whose action's first argument is <paramref name="tag"/> (the walls that work on that tag, for most actions).</summary>
-    public IReadOnlyList<int> LinesNaming(int tag) => tag != 0 && _byFirstArg.TryGetValue(tag, out var list) ? list : [];
+    public IReadOnlyList<int> LinesNaming(int tag) => LinesWithArg(0, tag);
 
     /// <summary>The frame these shapes were made from.</summary>
     public MapFrame Frame { get; }
@@ -191,6 +227,28 @@ public sealed class MapGeometry
         }
 
         return found;
+    }
+
+    /// <summary>
+    /// Whether a point is in the area in <paramref name="slot"/> or on its edge (where the game's own
+    /// choice between the two areas sharing the edge depends on its BSP); for an area without a closed
+    /// outline, whether the point is within its walls' box.
+    /// </summary>
+    public bool InOrOnArea(int slot, MapPoint p)
+    {
+        if (slot < 0 || slot >= _loops.Length) return false;
+        var loops = _loops[slot];
+        if (loops.Length == 0) return WallBoundsAt(slot) is { } b && p.X >= b.MinX && p.X <= b.MaxX && p.Y >= b.MinY && p.Y <= b.MaxY;
+        if (Inside(loops, p)) return true;
+        foreach (var loop in loops)
+        {
+            for (int i = 0, j = loop.Length - 1; i < loop.Length; j = i++)
+            {
+                if (DistanceToSegment(p, loop[j], loop[i]) <= 1e-6) return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>The wall nearest the point within <paramref name="radius"/> map units.</summary>

@@ -191,6 +191,39 @@ public sealed class EditorSession : IDisposable
         return thing;
     }
 
+    /// <summary>The room chosen as a teleport pad, waiting for where the player arrives (the Teleport tool's first click).</summary>
+    public Sector? TeleportPad
+    {
+        get => _teleportPad;
+        set
+        {
+            _teleportPad = value;
+            TeleportPadChanged?.Invoke();
+        }
+    }
+
+    private Sector? _teleportPad;
+
+    /// <summary>Raised when <see cref="TeleportPad"/> changes.</summary>
+    public event Action? TeleportPadChanged;
+
+    /// <summary>Makes a room a teleport pad sending to a spot (see <see cref="Teleports.Make"/>), one undo step, and selects the arrival spot; says why when it cannot.</summary>
+    public void MakeTeleporter(Sector pad, MapPoint at, int angle)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => MakeTeleporter(pad, at, angle);
+            return;
+        }
+
+        (Thing? Arrival, string? Why) made = (null, null);
+        var geometry = _geometry;
+        var engine = Engine;
+        History.Record("Make a teleporter", e => made = Teleports.Make(e, geometry, pad, at, angle, engine));
+        if (made.Arrival is { } arrival) Selection.Set(arrival);
+        else if (made.Why is { } why) Notice?.Invoke(why);
+    }
+
     /// <summary>Makes a room a lift (see <see cref="Lifts.Make"/>), one undo step; says why when it cannot.</summary>
     public void MakeLift(Sector area)
     {

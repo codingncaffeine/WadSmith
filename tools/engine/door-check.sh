@@ -32,6 +32,10 @@ while read -r _ wall area before after used; do
   if awk -v b="$before" -v a="$after" 'BEGIN { exit !(a < b - 8) }'; then verdict="went down"; else verdict="DID NOT GO DOWN"; BAD=1; fi
   echo "door-check: wall $wall, lift area $area: floor $before -> $after, used $used: $verdict"
 done < <(command grep '^WSLIFT [0-9]' "$LOG")
-command grep -m1 '^WSDOOR BEGIN' "$LOG" | sed 's/^WSDOOR BEGIN/door-check: map/; s/$/ walls that open doors or lower lifts/'
-if ! command grep -qE '^WS(DOOR|LIFT) [0-9]' "$LOG"; then echo "door-check: no wall opens a door or lowers a lift, so nothing was checked"; BAD=1; fi
+command grep -m1 '^WSDOOR BEGIN' "$LOG" | sed 's/^WSDOOR BEGIN/door-check: map/; s/$/ walls that open doors, lower lifts or teleport/'
+while read -r _ wall x0 y0 x1 y1 used; do
+  if awk -v a="$x0" -v b="$y0" -v c="$x1" -v d="$y1" 'BEGIN { exit !((c-a)*(c-a) + (d-b)*(d-b) > 256) }'; then verdict="sent the player to ($x1, $y1)"; else verdict="DID NOT SEND THE PLAYER ANYWHERE"; fi
+  echo "door-check: wall $wall, teleporter: used $used: $verdict"
+done < <(command grep '^WSTELE [0-9]' "$LOG")
+if ! command grep -qE '^WS(DOOR|LIFT|TELE) [0-9]' "$LOG"; then echo "door-check: no wall opens a door, lowers a lift or teleports, so nothing was checked"; BAD=1; fi
 exit $BAD

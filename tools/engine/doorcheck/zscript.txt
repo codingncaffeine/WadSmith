@@ -13,6 +13,10 @@ class WadSmithDoorCheck : StaticEventHandler
 	double closed;
 	bool used;
 	Sector target;
+	Vector3 home;
+	double homeAngle;
+
+	static bool IsTeleport(Line l) { return l.special == 70 || l.special == 71; }
 
 	static bool IsLift(Line l) { return l.special == 62 || l.special == 206; }
 
@@ -34,6 +38,7 @@ class WadSmithDoorCheck : StaticEventHandler
 			Line l = level.Lines[i];
 			if ((l.special == 11 || l.special == 12 || l.special == 13) && l.args[0] == 0 && l.backsector) openers.Push(i);
 			else if (IsLift(l) && TargetOf(l)) openers.Push(i);
+			else if (IsTeleport(l) && (l.activation & SPAC_Cross)) openers.Push(i);
 		}
 
 		Console.Printf("WSDOOR BEGIN %s %d", level.MapName, openers.Size());
@@ -44,6 +49,8 @@ class WadSmithDoorCheck : StaticEventHandler
 		// Every key the game has, so locked doors are tried as doors.
 		if (level.maptime == 5)
 		{
+			home = players[consoleplayer].mo.pos;
+			homeAngle = players[consoleplayer].mo.angle;
 			for (int i = 0; i < AllActorClasses.Size(); i++)
 			{
 				let k = (class<Key>)(AllActorClasses[i]);
@@ -62,6 +69,28 @@ class WadSmithDoorCheck : StaticEventHandler
 		Line l = level.Lines[openers[next]];
 		bool lift = IsLift(l);
 		since++;
+
+		// A teleporter: crossed from its front by the player, standing back at the start each time.
+		if (IsTeleport(l))
+		{
+			let mo = players[consoleplayer].mo;
+			if (phase == 0)
+			{
+				mo.SetOrigin(home, false);
+				mo.angle = homeAngle;
+				used = l.Activate(mo, Line.front, SPAC_Cross);
+				phase = 1;
+				since = 0;
+			}
+			else if (since >= 3)
+			{
+				Console.Printf("WSTELE %d %.1f %.1f %.1f %.1f %d", openers[next], home.x, home.y, mo.pos.x, mo.pos.y, used);
+				next++;
+				phase = 0;
+			}
+
+			return;
+		}
 		if (phase == 0)
 		{
 			// Walked-across lift lines are set off by crossing, switches and doors by use.
