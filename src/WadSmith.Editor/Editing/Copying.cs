@@ -25,6 +25,31 @@ public sealed class MapClip
     /// <summary>Where the middle of what was copied stood, so pastes can move it in whole floor-texture steps.</summary>
     public MapPoint Origin { get; internal set; }
 
+    /// <summary>The game (and project) it was copied from, so a paste into another can carry its pictures along; null when unknown.</summary>
+    public GameResources? From { get; set; }
+
+    /// <summary>Every picture the copy uses: wall textures, and floors and ceilings (<c>Flat</c>), once each.</summary>
+    public IReadOnlyList<(string Name, bool Flat)> Pictures()
+    {
+        var found = new HashSet<(string, bool)>();
+        foreach (var s in Sectors)
+        {
+            found.Add((s.FloorTexture.ToUpperInvariant(), true));
+            found.Add((s.CeilingTexture.ToUpperInvariant(), true));
+        }
+
+        foreach (var l in Lines)
+        {
+            foreach (var side in new[] { l.Front, l.Back })
+            {
+                if (side is null) continue;
+                foreach (var t in new[] { side.Top, side.Middle, side.Bottom }) found.Add((t.ToUpperInvariant(), false));
+            }
+        }
+
+        return [.. found.Where(p => p.Item1 is not ("" or "-"))];
+    }
+
     /// <summary>What was copied, in words: "2 rooms and 3 things".</summary>
     public string Describe()
     {
@@ -158,10 +183,13 @@ public static class Copying
     /// <summary>
     /// Pastes a copy with its middle at <paramref name="centre"/> through <paramref name="edit"/>, then joins
     /// it to the map as a dragged room is joined (corners merged, walls split and shared). Returns the
-    /// pasted rooms and things, and how many of its walls cross walls that were there.
+    /// pasted rooms and things, and how many of its walls cross walls that were there. <paramref name="rename"/> gives the new
+    /// names of pictures copied in under another name (a paste from another game); <paramref name="keep"/> chooses which of
+    /// the copy's objects to paste (null: all).
     /// </summary>
-    public static (IReadOnlyList<Element> Pasted, int Crossings) Paste(StructureEdit edit, MapGeometry before, MapClip clip, MapPoint centre, Look look)
+    public static (IReadOnlyList<Element> Pasted, int Crossings) Paste(StructureEdit edit, MapGeometry before, MapClip clip, MapPoint centre, Look look, IReadOnlyDictionary<string, string>? rename = null, Func<Thing, bool>? keep = null)
     {
+        string Name(string n) => rename is not null && rename.TryGetValue(n.ToUpperInvariant(), out var to) ? to : n;
         var vertices = new Dictionary<Vertex, Vertex>(ReferenceEqualityComparer.Instance);
         var sectors = new Dictionary<Sector, Sector>(ReferenceEqualityComparer.Instance);
         foreach (var v in clip.Vertices)
@@ -173,7 +201,7 @@ public static class Copying
 
         foreach (var s in clip.Sectors)
         {
-            var c = new Sector { FloorHeight = s.FloorHeight, CeilingHeight = s.CeilingHeight, FloorTexture = s.FloorTexture, CeilingTexture = s.CeilingTexture, Light = s.Light, Special = s.Special, Tag = s.Tag };
+            var c = new Sector { FloorHeight = s.FloorHeight, CeilingHeight = s.CeilingHeight, FloorTexture = Name(s.FloorTexture), CeilingTexture = Name(s.CeilingTexture), Light = s.Light, Special = s.Special, Tag = s.Tag };
             foreach (var (k, value) in s.Extra) c.Extra[k] = value;
             sectors[s] = edit.Add(c);
         }
@@ -191,6 +219,7 @@ public static class Copying
         var pasted = new List<Element>(sectors.Values);
         foreach (var t in clip.Things)
         {
+            if (keep is not null && !keep(t)) continue;
             var c = new Thing { X = t.X + centre.X, Y = t.Y + centre.Y, Height = t.Height, Angle = t.Angle, Type = t.Type, Special = t.Special, Tid = t.Tid };
             t.Args.CopyTo(c.Args, 0);
             foreach (var (k, value) in t.Extra) c.Extra[k] = value;
@@ -202,7 +231,7 @@ public static class Copying
 
         Side SideCopy(Side from)
         {
-            var s = new Side(sectors[from.Sector]) { OffsetX = from.OffsetX, OffsetY = from.OffsetY, Top = from.Top, Middle = from.Middle, Bottom = from.Bottom };
+            var s = new Side(sectors[from.Sector]) { OffsetX = from.OffsetX, OffsetY = from.OffsetY, Top = Name(from.Top), Middle = Name(from.Middle), Bottom = Name(from.Bottom) };
             foreach (var (k, value) in from.Extra) s.Extra[k] = value;
             return s;
         }

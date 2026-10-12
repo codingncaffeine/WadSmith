@@ -5,6 +5,7 @@ using WadSmith.Core.Projects;
 using WadSmith.Editor;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Geometry;
+using WadSmith.Editor.Model;
 
 namespace WadSmith.Tests;
 
@@ -77,6 +78,102 @@ public sealed class BorrowingTests
         Assert.True(doom.Textures.Has("STARTAN3"));
         Assert.Equal("HSTARTAN", Borrowing.FreeName(doom.Textures, "STARTAN3", heretic.Game));
         Assert.All(new[] { "STARTAN3", "SKY1", "FLOOR4_8" }, n => Assert.InRange(Borrowing.FreeName(doom.Textures, n, heretic.Game).Length, 1, 8));
+    }
+
+    private static GameResources LoadId(string id, string? folder = null) => GameResources.Load(id, folder, Games.Value, GameFiles.Require("gzdoom.pk3")) ?? throw new InvalidOperationException($"{id} was not loaded");
+
+    /// <summary>A copy of a starter room of <paramref name="from"/>'s game, its walls and floor painted, with objects of the given numbers.</summary>
+    private static MapClip Room(GameResources from, string engine, string wall, string floor, params int[] things)
+    {
+        var map = EditorMap.FromModel(StarterRoom.Create("MAP01", engine));
+        var history = new History(map);
+        history.Record("Paint", e =>
+        {
+            foreach (var l in map.Lines) e.Set(l.Front, x => x.Middle, (x, v) => x.Middle = v, wall);
+            e.Set(map.Sectors[0], x => x.FloorTexture, (x, v) => x.FloorTexture = v, floor);
+            var y = 0;
+            foreach (var type in things) e.Add(new Editor.Model.Thing { X = 0, Y = y += 40, Type = type });
+        });
+        var clip = Copying.Copy(MapGeometry.Build(map.Frame), [map.Sectors[0]]);
+        clip.From = from;
+        return clip;
+    }
+
+    private static List<string> PasteInto(EditorSession session, MapClip clip)
+    {
+        var ui = new ConcurrentQueue<Action>();
+        var told = new List<string>();
+        session.Notice += told.Add;
+        var before = session.Map.Sectors.Count(x => x.OnMap);
+        session.Paste(clip, new MapPoint(1024, 0));
+        var until = DateTime.UtcNow.AddSeconds(15);
+        while (session.Map.Sectors.Count(x => x.OnMap) == before && DateTime.UtcNow < until) Thread.Sleep(10);
+        return told;
+    }
+
+    [Fact]
+    public void ARoomPastedFromHereticBringsItsPicturesAndLeavesOutWhatDoomCallsSomethingElse()
+    {
+        var (temp, project, doom, heretic) = Setup();
+        using var _ = temp;
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        using var session = EditorSession.Open(project, "MAP01", new SessionHooks(a => a(), doom));
+        var floor = heretic.Textures.Flats.Select(x => x.Name).First(n => !doom.Textures.Has(n) && !n.StartsWith("F_SKY", StringComparison.Ordinal));
+
+        // 66 is Heretic's Gargoyle and Doom's Revenant; 14 is where a teleporter sends in both.
+        Assert.NotEqual(heretic.Things.Find(66)!.ClassName, doom.Things.Find(66)!.ClassName);
+        Assert.Equal(heretic.Things.Find(14)!.ClassName, doom.Things.Find(14)!.ClassName);
+        var told = PasteInto(session, Room(heretic, "heretic", "GRSKULL1", floor, 66, 14));
+
+        var pasted = session.Map.Sectors.Last(x => x.OnMap);
+        Assert.Equal(floor, pasted.FloorTexture);
+        Assert.Equal(heretic.Textures.GetFlat(floor)!.Pixels, doom.Textures.GetFlat(floor)!.Pixels);
+        Assert.Equal(heretic.Textures.GetWall("GRSKULL1")!.Pixels, doom.Textures.GetWall("GRSKULL1")!.Pixels);
+        Assert.Equal([14], session.Map.Things.Where(t => t.OnMap && t.Type != 1).Select(t => t.Type));
+        Assert.Contains(told, t => t.Contains("copied into this project from Heretic", StringComparison.Ordinal) && t.Contains("left out", StringComparison.Ordinal));
+        Assert.Contains(Project.Open(project.Folder).Info.Copied, c => c.Original == "GRSKULL1");
+    }
+
+    [Fact]
+    public void APictureThisGameHasItsOwnOfArrivesUnderANewNameAndThePasteUsesIt()
+    {
+        var (temp, project, doom, heretic) = Setup();
+        using var _ = temp;
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        using var session = EditorSession.Open(project, "MAP01", new SessionHooks(a => a(), doom));
+        PasteInto(session, Room(heretic, "heretic", "SKY1", "FLOOR4_8"));
+        var pasted = session.Map.Sectors.Last(x => x.OnMap);
+        var walls = session.Map.Lines.Where(l => l.OnMap && ReferenceEquals(l.Front.Sector, pasted)).ToList();
+        Assert.NotEmpty(walls);
+        Assert.All(walls, l => Assert.Equal("HSKY1", l.Front.Middle));
+        Assert.Equal(heretic.Textures.GetWall("SKY1")!.Pixels, doom.Textures.GetWall("HSKY1")!.Pixels);
+    }
+
+    [Fact]
+    public void CopyingRemembersTheGameItCameFrom()
+    {
+        var (temp, project, doom, _) = Setup();
+        using var __ = temp;
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        using var session = EditorSession.Open(project, "MAP01", new SessionHooks(a => a(), doom));
+        session.Selection.Set(session.Map.Sectors[0]);
+        Assert.True(session.CopySelection());
+        Assert.Same(doom, Copying.Clipboard!.From);
+        Copying.Clipboard = null;
+    }
+
+    [Fact]
+    public void APictureBothGamesShowAlikeIsNotCopied()
+    {
+        var (temp, project, doom, _) = Setup();
+        using var __ = temp;
+        var ultimate = LoadId(Games.Value.First(g => Path.GetFileName(g.Path).Equals("DOOM.WAD", StringComparison.OrdinalIgnoreCase)).Game.Id);
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        using var session = EditorSession.Open(project, "MAP01", new SessionHooks(a => a(), doom));
+        Assert.Equal(ultimate.Textures.GetWall("STARTAN3")!.Pixels, doom.Textures.GetWall("STARTAN3")!.Pixels);
+        PasteInto(session, Room(ultimate, "doom", "STARTAN3", "FLOOR4_8"));
+        Assert.Empty(Project.Open(project.Folder).Info.Copied);
+        Assert.Equal("STARTAN3", session.Map.Lines.Last(l => l.OnMap).Front.Middle);
     }
 
     [Fact]

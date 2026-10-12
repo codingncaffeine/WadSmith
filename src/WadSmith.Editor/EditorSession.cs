@@ -673,6 +673,7 @@ public sealed class EditorSession : IDisposable
             return false;
         }
 
+        clip.From = Resources;
         Copying.Clipboard = clip;
         Notice?.Invoke($"Copied {clip.Describe()}. Ctrl+V puts a copy where the pointer is.");
         return true;
@@ -699,12 +700,52 @@ public sealed class EditorSession : IDisposable
         Paste(clip, at);
     }
 
-    /// <summary>Pastes <paramref name="clip"/> as <see cref="Paste(MapPoint)"/> pastes what was copied.</summary>
-    private void Paste(MapClip clip, MapPoint at)
+    /// <summary>
+    /// Pastes <paramref name="clip"/> as <see cref="Paste(MapPoint)"/> pastes what was copied. A copy from another project or
+    /// game first has its pictures carried into this project on a worker (D43); its objects that mean something else in this
+    /// game (Heretic's 66 is a Gargoyle, Doom's a Revenant) are left out, and the paste says so.
+    /// </summary>
+    public void Paste(MapClip clip, MapPoint at)
+    {
+        if (clip.From is { } from && Resources is { } here && !ReferenceEquals(from, here))
+        {
+            var pictures = clip.Pictures();
+            Task.Run(() =>
+            {
+                (Dictionary<string, string> Renamed, int Copied) carried;
+                try
+                {
+                    carried = Borrowing.Carry(Project, here, from, pictures);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+                {
+                    Log.Warn($"Carrying the copy's pictures from {from.Game.Title} failed: {ex.Message}");
+                    _onUiThread(() => Notice?.Invoke($"The copy's pictures could not be brought over from {from.Game.Title}. {ex.Message}"));
+                    return;
+                }
+
+                bool Means(Thing t) => from.Game.Engine == here.Game.Engine || (here.Things.Find(t.Type) is { } ours && from.Things.Find(t.Type) is { } theirs && ours.ClassName == theirs.ClassName);
+                var left = clip.Things.Count(t => !Means(t));
+                _onUiThread(() =>
+                {
+                    PasteNow(clip, at, carried.Renamed, Means);
+                    var said = new List<string>();
+                    if (carried.Copied > 0) said.Add($"{(carried.Copied == 1 ? "A picture" : $"{carried.Copied} pictures")} the copy uses {(carried.Copied == 1 ? "was" : "were")} copied into this project from {from.Game.Title}{(carried.Renamed.Count > 0 ? $" ({carried.Renamed.Count} under a new name, as this game has its own)" : "")}.");
+                    if (left > 0) said.Add($"{(left == 1 ? "An object was" : $"{left} objects were")} left out: {(left == 1 ? "its number means" : "their numbers mean")} something else in {here.Game.Title}.");
+                    if (said.Count > 0) Notice?.Invoke(string.Join(" ", said));
+                });
+            });
+            return;
+        }
+
+        PasteNow(clip, at, null, null);
+    }
+
+    private void PasteNow(MapClip clip, MapPoint at, IReadOnlyDictionary<string, string>? rename, Func<Thing, bool>? keep)
     {
         if (_geometry.Version != Map.Version)
         {
-            _whenCaughtUp = () => Paste(clip, at);
+            _whenCaughtUp = () => PasteNow(clip, at, rename, keep);
             return;
         }
 
@@ -712,7 +753,7 @@ public sealed class EditorSession : IDisposable
         var geometry = _geometry;
         var look = Look;
         var centre = Copying.PlaceNear(clip, at);
-        History.Record("Paste", e => result = Copying.Paste(e, geometry, clip, centre, look));
+        History.Record("Paste", e => result = Copying.Paste(e, geometry, clip, centre, look, rename, keep));
         if (result.Pasted.Count > 0) Selection.Set([.. result.Pasted]);
         if (result.Crossings > 0) Notice?.Invoke($"The copy's walls cross {result.Crossings} wall{(result.Crossings == 1 ? "" : "s")} already there, which the game draws wrongly. Drag it clear, or press Ctrl+Z.");
     }

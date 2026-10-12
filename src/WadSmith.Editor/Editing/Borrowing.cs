@@ -32,6 +32,31 @@ public static class Borrowing
     }
 
     /// <summary>
+    /// Copies into <paramref name="project"/> the pictures a paste from <paramref name="from"/> uses that this game shows
+    /// otherwise or not at all: from the same game, those it lacks (copied in from another game, or the other project's own);
+    /// from another game, every one whose picture here differs. Skies stay the engine's. Returns the pictures that came in
+    /// under another name and how many were copied. Call on a worker.
+    /// </summary>
+    public static (Dictionary<string, string> Renamed, int Copied) Carry(Project project, GameResources into, GameResources from, IEnumerable<(string Name, bool Flat)> pictures)
+    {
+        var renamed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var copied = 0;
+        var same = from.Game.Id == into.Game.Id;
+        foreach (var (name, flat) in pictures.Distinct())
+        {
+            if (name is "" or "-" || name.StartsWith("F_SKY", StringComparison.OrdinalIgnoreCase)) continue;
+            var theirs = flat ? from.Textures.GetFlat(name) : from.Textures.GetWall(name);
+            if (theirs is null) continue;
+            if (into.Textures.Has(name) && (same || ((flat ? into.Textures.GetFlat(name) : into.Textures.GetWall(name)) is { } ours && ours.Width == theirs.Width && ours.Height == theirs.Height && ours.Pixels.AsSpan().SequenceEqual(theirs.Pixels)))) continue;
+            var chosen = CopyPicture(project, into, from, name, flat);
+            copied++;
+            if (!string.Equals(chosen, name, StringComparison.OrdinalIgnoreCase)) renamed[name] = chosen;
+        }
+
+        return (renamed, copied);
+    }
+
+    /// <summary>
     /// The name a copy goes by: its own when free, else with its game's letter in front (H for Heretic…), else with a number
     /// at the end; never more than 8 characters, as the games' names are.
     /// </summary>
