@@ -67,6 +67,12 @@
         <Setter Property="CornerRadius" Value="0,0,4,4" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
+    <!-- Presets beside an Inspector number (D27): a row of small segments sharing the panel's width. -->
+    <Style Selector="ToggleButton.segment.preset">
+        <Setter Property="Padding" Value="4,4" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
     <Style Selector="ToggleButton.segment.first">
         <Setter Property="CornerRadius" Value="4,0,0,4" />
     </Style>

@@ -347,6 +347,28 @@
                                         <TextBlock Text="{Binding Label}" Classes="secondary" ToolTip.Tip="{Binding Tooltip}" Margin="0,0,0,3" />
                                         <NumericUpDown Value="{Binding Value}" Increment="{Binding Step}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}"
                                                        FormatString="0.##" ToolTip.Tip="{Binding Tooltip}" />
+                                        <!-- Presets over numbers (D27): the words a player knows, lit while the number is theirs. -->
+                                        <ItemsControl ItemsSource="{Binding Presets}" IsVisible="{Binding HasPresets}" Margin="0,4,0,0">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Rows="1" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="vm:PresetChoice">
+                                                    <ToggleButton Classes="segment preset" Classes.first="{Binding IsFirst}" Classes.last="{Binding IsLast}"
+                                                                  IsChecked="{Binding IsCurrent}" ToolTip.Tip="{Binding Tooltip}">
+                                                        <StackPanel Orientation="Horizontal" Spacing="5" HorizontalAlignment="Center">
+                                                            <Border Width="5" Height="{Binding PictureHeight}" VerticalAlignment="Bottom" CornerRadius="1"
+                                                                    Background="{Binding $parent[ToggleButton].Foreground}" IsVisible="{Binding HasBar}" />
+                                                            <Border Width="10" Height="10" VerticalAlignment="Center" CornerRadius="2" BorderThickness="1"
+                                                                    BorderBrush="{DynamicResource Brush.Metal.Chisel}" Background="{Binding Swatch}" IsVisible="{Binding HasSwatch}" />
+                                                            <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Bottom" />
+                                                        </StackPanel>
+                                                    </ToggleButton>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
                                         <TextBlock Text="{Binding HintText}" Classes="secondary" FontSize="12" Margin="0,3,0,0" IsVisible="{Binding HintText.Length}" />
                                     </StackPanel>
                                 </DataTemplate>

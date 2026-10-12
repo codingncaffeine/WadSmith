@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WadSmith.Core.Games;
@@ -39,7 +40,7 @@ internal sealed partial class NumberRow : InspectorRow
     private readonly Func<string>? _hint;
     private bool _refreshing;
 
-    public NumberRow(string label, string tooltip, Func<decimal> get, Action<decimal> set, decimal step, decimal min = -32768, decimal max = 32767, Func<string>? hint = null)
+    public NumberRow(string label, string tooltip, Func<decimal> get, Action<decimal> set, decimal step, decimal min = -32768, decimal max = 32767, Func<string>? hint = null, IReadOnlyList<PresetChoice>? presets = null)
         : base(label, tooltip)
     {
         _get = get;
@@ -48,8 +49,14 @@ internal sealed partial class NumberRow : InspectorRow
         Step = step;
         Minimum = min;
         Maximum = max;
+        Presets = presets ?? [];
         Refresh();
     }
+
+    /// <summary>The named settings beside the number (D27), in order; none for most numbers.</summary>
+    public IReadOnlyList<PresetChoice> Presets { get; }
+
+    public bool HasPresets => Presets.Count > 0;
 
     public decimal Step { get; }
 
@@ -74,7 +81,78 @@ internal sealed partial class NumberRow : InspectorRow
         _refreshing = true;
         Value = _get();
         HintText = _hint?.Invoke() ?? "";
+        foreach (var p in Presets) p.Refresh();
         _refreshing = false;
+    }
+}
+
+/// <summary>
+/// One preset beside a number (D27): a word and a small picture; lit while the number is the preset's, and choosing it
+/// sets the number in one undoable edit.
+/// </summary>
+internal sealed partial class PresetChoice : ObservableObject
+{
+    private readonly Func<bool> _current;
+    private readonly Action _choose;
+    private bool _refreshing;
+
+    public PresetChoice(Preset preset, string tooltip, Func<bool> isCurrent, Action choose, bool first, bool last, double pictureHeight = 0, IBrush? swatch = null)
+    {
+        Preset = preset;
+        Tooltip = tooltip;
+        _current = isCurrent;
+        _choose = choose;
+        IsFirst = first;
+        IsLast = last;
+        PictureHeight = pictureHeight;
+        Swatch = swatch;
+        Refresh();
+    }
+
+    public Preset Preset { get; }
+
+    public string Name => Preset.Name;
+
+    public string Tooltip { get; }
+
+    public bool IsFirst { get; }
+
+    public bool IsLast { get; }
+
+    /// <summary>A room height's picture: a bar as tall as the room, against the tallest preset's.</summary>
+    public double PictureHeight { get; }
+
+    public bool HasBar => PictureHeight > 0;
+
+    /// <summary>A brightness's picture: the grey the room's light gives.</summary>
+    public IBrush? Swatch { get; }
+
+    public bool HasSwatch => Swatch is not null;
+
+    [ObservableProperty]
+    private bool _isCurrent;
+
+    partial void OnIsCurrentChanged(bool value)
+    {
+        if (_refreshing) return;
+        if (value) _choose();
+        Refresh();
+    }
+
+    public void Refresh()
+    {
+        _refreshing = true;
+        IsCurrent = _current();
+        _refreshing = false;
+    }
+
+    /// <summary>The presets of <paramref name="presets"/> as choices, each set by <paramref name="set"/> and lit while <paramref name="now"/> is its value.</summary>
+    public static IReadOnlyList<PresetChoice> For(IReadOnlyList<Preset> presets, Func<double> now, Action<double> set, Func<Preset, string> tooltip, bool bars = false, bool swatches = false)
+    {
+        var tallest = presets.Max(p => p.Value);
+        return [.. presets.Select((p, i) => new PresetChoice(p, tooltip(p), () => now() == p.Value, () => set(p.Value), i == 0, i == presets.Count - 1,
+            bars ? Math.Max(3, 16 * p.Value / tallest) : 0,
+            swatches ? new SolidColorBrush(Color.FromRgb((byte)p.Value, (byte)p.Value, (byte)p.Value)) : null))];
     }
 }
 
@@ -584,12 +662,18 @@ internal sealed partial class InspectorViewModel : ObservableObject
     private void Set<TElement, TValue>(TElement element, string label, Func<TElement, TValue> get, Action<TElement, TValue> set, TValue value)
         where TElement : Element => _session.History.Run(new SetProperty<TElement, TValue>(element, label, get, set, value));
 
+    private static string HeightTip(Preset p) => string.Create(CultureInfo.InvariantCulture, $"{p.Name}: {p.Words}. Sets the ceiling {p.Value:0} above the floor ({p.Value / PlayerHeight:0.#} players).");
+
+    private static string LightTip(Preset p) => string.Create(CultureInfo.InvariantCulture, $"{p.Name}: {p.Words}. Sets the brightness to {p.Value:0} of 255.");
+
     private void AddSector(Sector s)
     {
         string Players() => string.Create(CultureInfo.InvariantCulture, $"room is {s.CeilingHeight - s.FloorHeight:0} tall ≈ {(s.CeilingHeight - s.FloorHeight) / PlayerHeight:0.#} players");
         Rows.Add(new NumberRow("Floor height", "How high the floor is, in map units (heightfloor). The player steps up 24 at most.", () => (decimal)s.FloorHeight, v => Set(s, "Change floor height", e => e.FloorHeight, (e, x) => e.FloorHeight = x, (double)v), 8));
-        Rows.Add(new NumberRow("Ceiling height", "How high the ceiling is (heightceiling). The player is 56 tall.", () => (decimal)s.CeilingHeight, v => Set(s, "Change ceiling height", e => e.CeilingHeight, (e, x) => e.CeilingHeight = x, (double)v), 8, hint: Players));
-        Rows.Add(new NumberRow("Brightness", "0 is dark, 255 full light (lightlevel). Doom's rooms are usually around 160.", () => s.Light, v => Set(s, "Change brightness", e => e.Light, (e, x) => e.Light = x, (int)v), 16, 0, 255));
+        Rows.Add(new NumberRow("Ceiling height", "How high the ceiling is (heightceiling). The player is 56 tall.", () => (decimal)s.CeilingHeight, v => Set(s, "Change ceiling height", e => e.CeilingHeight, (e, x) => e.CeilingHeight = x, (double)v), 8, hint: Players,
+            presets: PresetChoice.For(Presets.RoomHeights, () => s.CeilingHeight - s.FloorHeight, h => Set(s, "Make the room " + Presets.Named(Presets.RoomHeights, h)!.Name.ToLowerInvariant(), e => e.CeilingHeight, (e, x) => e.CeilingHeight = x, s.FloorHeight + h), HeightTip, bars: true)));
+        Rows.Add(new NumberRow("Brightness", "0 is dark, 255 full light (lightlevel). Doom's rooms are usually around 160.", () => s.Light, v => Set(s, "Change brightness", e => e.Light, (e, x) => e.Light = x, (int)v), 16, 0, 255,
+            presets: PresetChoice.For(Presets.Brightness, () => s.Light, l => Set(s, "Make the room " + Presets.Named(Presets.Brightness, l)!.Name.ToLowerInvariant(), e => e.Light, (e, x) => e.Light = x, (int)l), LightTip, swatches: true)));
         Rows.Add(new TextRow("Light colour", "Tints everything in the room (lightcolor), as #RRGGBB in a paint program's words; #FFFFFF is plain white light. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "lightcolor", 0xFFFFFF)), text => SetRoomColour(s, "lightcolor", text, 0xFFFFFF, "Change the light colour"), texture: false));
         Rows.Add(new TextRow("Fog colour", "Fog that thickens with distance in the room, thicker the darker the room (fadecolor), as #RRGGBB; #000000 is none. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "fadecolor", 0)), text => SetRoomColour(s, "fadecolor", text, 0, "Change the fog colour"), texture: false));
         AddMatchNeighbour(s);
@@ -890,7 +974,12 @@ internal sealed partial class InspectorViewModel : ObservableObject
         });
         Rows.Add(new NumberRow("Floors at", "Sets every selected room's floor to this height.", () => (decimal)rooms.Min(r => r.FloorHeight), v => All("Change floor heights", (e, r) => e.Set(r, x => x.FloorHeight, (x, h) => x.FloorHeight = h, (double)v)), 8, hint: () => Range(r => r.FloorHeight)));
         Rows.Add(new NumberRow("Ceilings at", "Sets every selected room's ceiling to this height.", () => (decimal)rooms.Min(r => r.CeilingHeight), v => All("Change ceiling heights", (e, r) => e.Set(r, x => x.CeilingHeight, (x, h) => x.CeilingHeight = h, (double)v)), 8, hint: () => Range(r => r.CeilingHeight)));
-        Rows.Add(new NumberRow("Brightness of all", "Sets every selected room's brightness.", () => rooms.Min(r => r.Light), v => All("Change brightness", (e, r) => e.Set(r, x => x.Light, (x, l) => x.Light = l, (int)v)), 16, 0, 255, () => Range(r => r.Light)));
+        Rows.Add(new NumberRow("Room heights", "Sets every selected room's ceiling this far above its own floor.", () => (decimal)rooms.Min(r => r.CeilingHeight - r.FloorHeight), v => All("Change room heights", (e, r) => e.Set(r, x => x.CeilingHeight, (x, h) => x.CeilingHeight = h, r.FloorHeight + (double)v)), 8, 16, hint: () => Range(r => r.CeilingHeight - r.FloorHeight),
+            presets: PresetChoice.For(Presets.RoomHeights, () => rooms.Select(r => r.CeilingHeight - r.FloorHeight).Distinct().Count() == 1 ? rooms[0].CeilingHeight - rooms[0].FloorHeight : double.NaN,
+                h => All("Make the rooms " + Presets.Named(Presets.RoomHeights, h)!.Name.ToLowerInvariant(), (e, r) => e.Set(r, x => x.CeilingHeight, (x, c) => x.CeilingHeight = c, r.FloorHeight + h)), HeightTip, bars: true)));
+        Rows.Add(new NumberRow("Brightness of all", "Sets every selected room's brightness.", () => rooms.Min(r => r.Light), v => All("Change brightness", (e, r) => e.Set(r, x => x.Light, (x, l) => x.Light = l, (int)v)), 16, 0, 255, () => Range(r => r.Light),
+            presets: PresetChoice.For(Presets.Brightness, () => rooms.Select(r => r.Light).Distinct().Count() == 1 ? rooms[0].Light : double.NaN,
+                l => All("Make the rooms " + Presets.Named(Presets.Brightness, l)!.Name.ToLowerInvariant(), (e, r) => e.Set(r, x => x.Light, (x, v) => x.Light = v, (int)l)), LightTip, swatches: true)));
         Rows.Add(new NumberRow("Raise them all by", "Moves every selected room's floor and ceiling up (or down) by this much together, keeping their differences.", () => 0, v => All("Raise rooms", (e, r) =>
         {
             e.Set(r, x => x.FloorHeight, (x, h) => x.FloorHeight = h, r.FloorHeight + (double)v);
