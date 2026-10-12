@@ -242,6 +242,12 @@ internal sealed class View3D : Control
         SendCamera();
     }
 
+    /// <summary>
+    /// Where Play From Here starts the player, facing which way (the game's degrees): where the camera stands in Walk and Fly,
+    /// and the point it turns round in Orbit, facing the way it looks.
+    /// </summary>
+    internal (double X, double Y, double Angle) PlaySpot() => Mode == CameraMode.Orbit ? (_tx, _ty, (_yaw % 360 + 360) % 360) : (_x, _y, (_lookYaw % 360 + 360) % 360);
+
     /// <summary>Turns the orbit camera round a spot at height <paramref name="z"/>, from far enough to see <paramref name="span"/> across it.</summary>
     internal void LookAt(MapPoint at, double z, double span)
     {

@@ -16,6 +16,7 @@ public partial class EditorView : UserControl
         {
             if (DataContext is not EditorViewModel vm) return;
             Apply3D(vm.Show3D);
+            vm.PlaySpot = () => View3D.PlaySpot();
             vm.Problems.ShowRequested += elements => Canvas.FitTo(elements);
             vm.PropertyChanged += (_, e) =>
             {

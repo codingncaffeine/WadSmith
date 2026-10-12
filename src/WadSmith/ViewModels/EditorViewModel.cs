@@ -699,23 +699,53 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>Plays the map in the engine (F9): checks first, keeps a version, then starts it.</summary>
     [RelayCommand]
-    private Task PlayAsync() => PlayAsync(force: false);
+    private Task PlayAsync() => PlayAsync(force: false, from: null);
+
+    /// <summary>Where Play From Here starts: the 3D view's spot (set by the view).</summary>
+    public Func<(double X, double Y, double Angle)>? PlaySpot { get; set; }
+
+    /// <summary>The spot a Play waiting on the pre-flight starts from (Play From Here), so its "Fix them and play" keeps it.</summary>
+    private (double X, double Y, double Angle)? _waitingFrom;
+
+    /// <summary>Plays from where the 3D view stands (Shift+F9), when the player fits there.</summary>
+    [RelayCommand]
+    private async Task PlayFromHereAsync()
+    {
+        if (PlaySpot?.Invoke() is not { } spot)
+        {
+            Hint("Play From Here starts where the 3D view stands: turn on 3D.");
+            return;
+        }
+
+        var fit = WadSmith.Editor.Checks.Fit.At(Session.Geometry, new MapPoint(spot.X, spot.Y));
+        if (!fit.Inside || !fit.Fits)
+        {
+            Hint(!fit.Inside ? "Play From Here starts where the 3D view stands, and that is outside the map: walk or fly the view into a room first." : $"Play From Here starts where the 3D view stands, but the player does not fit there. {fit.Why}");
+            return;
+        }
+
+        await PlayAsync(force: false, from: spot).ConfigureAwait(true);
+    }
 
     /// <summary>The pre-flight's "Fix them and play": every blocking problem with a fix is fixed (one undo step each).</summary>
     [RelayCommand]
     private async Task FixAndPlayAsync()
     {
         foreach (var p in _blocking.Where(p => p.Fix is not null)) Session.History.Record(p.FixLabel!, p.Fix!);
-        await PlayAsync(force: true).ConfigureAwait(true);
+        await PlayAsync(force: true, from: _waitingFrom).ConfigureAwait(true);
     }
 
     [RelayCommand]
-    private Task PlayAnywayAsync() => PlayAsync(force: true);
+    private Task PlayAnywayAsync() => PlayAsync(force: true, from: _waitingFrom);
 
     [RelayCommand]
-    private void CancelPlay() => Preflight = null;
+    private void CancelPlay()
+    {
+        Preflight = null;
+        _waitingFrom = null;
+    }
 
-    private async Task PlayAsync(bool force)
+    private async Task PlayAsync(bool force, (double X, double Y, double Angle)? from)
     {
         if (Playing) return;
         Preflight = null;
@@ -734,6 +764,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             if (blocking.Count > 0)
             {
                 _blocking = blocking;
+                _waitingFrom = from;
                 var fixable = blocking.Count(p => p.Fix is not null);
                 Preflight = $"Before you play: {(blocking.Count == 1 ? "1 thing" : $"{blocking.Count} things")} would break the game. {string.Join(" ", blocking.Select(p => p.Sentence))}{(fixable == 0 ? "" : fixable == blocking.Count ? " WadSmith can fix " + (fixable == 1 ? "it." : "them all.") : $" WadSmith can fix {fixable} of them.")}";
                 return;
@@ -750,6 +781,9 @@ internal sealed partial class EditorViewModel : ObservableObject
             Hint(why);
             return;
         }
+
+        _waitingFrom = null;
+        if (from is { } here) request = request with { From = here, FromAddOn = WadSmith.Core.Engines.PlayFrom.Write(data) };
 
         await Session.SaveVersion("Played").ConfigureAwait(true);
         var played = Session.Map.Frame;

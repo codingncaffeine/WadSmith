@@ -8,6 +8,7 @@
 
     <UserControl.KeyBindings>
         <KeyBinding Gesture="F9" Command="{Binding PlayCommand}" />
+        <KeyBinding Gesture="Shift+F9" Command="{Binding PlayFromHereCommand}" />
         <KeyBinding Gesture="Ctrl+Z" Command="{Binding UndoCommand}" />
         <KeyBinding Gesture="Ctrl+Y" Command="{Binding RedoCommand}" />
         <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}" />
@@ -79,6 +80,8 @@
                                  ToolTip.Tip="Plays this map in GZDoom (F9). WadSmith checks it first and keeps a version; what the game says about it comes back to Problems. The arrow chooses the difficulty.">
                         <SplitButton.Flyout>
                             <MenuFlyout>
+                                <MenuItem Header="Play from here (where the 3D view stands)" Command="{Binding PlayFromHereCommand}" InputGesture="Shift+F9" />
+                                <Separator />
                                 <MenuItem Header="{Binding SkillHeaders[0]}" Command="{Binding ChooseSkillCommand}" CommandParameter="0" />
                                 <MenuItem Header="{Binding SkillHeaders[1]}" Command="{Binding ChooseSkillCommand}" CommandParameter="1" />
                                 <MenuItem Header="{Binding SkillHeaders[2]}" Command="{Binding ChooseSkillCommand}" CommandParameter="2" />

@@ -383,6 +383,23 @@ foreach (var pose in poses)
                 Console.WriteLine($"play back: {session.LastPlay.Count} findings; problems {editor.Problems.Summary}: {string.Join(" | ", editor.Problems.Rows.Select(r => r.Sentence))}");
                 Console.WriteLine($"play versions: {string.Join(", ", WadSmith.Editor.MapVersions.List(session.Project, session.Slot).Select(v => v.Reason))}");
                 Save("editor-play-back");
+
+                // Play From Here: the 3D view walking from the start, then Shift+F9's command.
+                editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
+                Pump(1.0);
+                editor.PlayFromHereCommand.Execute(null);
+                for (var i = 0; i < 100 && !editor.Playing && editor.Preflight is null; i++) Pump(0.05);
+                if (editor.Preflight is not null)
+                {
+                    // The planted texture is still there: play anyway, from here still.
+                    Console.WriteLine($"play from here: pre-flight '{editor.Preflight[..Math.Min(60, editor.Preflight.Length)]}…', playing anyway");
+                    editor.PlayAnywayCommand.Execute(null);
+                    for (var i = 0; i < 100 && !editor.Playing; i++) Pump(0.05);
+                }
+
+                for (var i = 0; i < 1200 && editor.Playing; i++) Pump(0.05);
+                var spot = editor.PlaySpot?.Invoke();
+                Console.WriteLine($"play from here: the view at {spot?.X:0} {spot?.Y:0} facing {spot?.Angle:0}; status '{editor.Status}'");
                 break;
             }
 

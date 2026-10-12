@@ -12,7 +12,7 @@ rm -f "$LOG"
 "${CMD[@]}" -nosound -nomusic +vid_fullscreen 0 +queryiwad 0 > "$WORK/engine-stdout-play.txt" 2>&1 &
 PID=$!
 for _ in $(seq 1 80); do
-  if [ -f "$LOG" ] && command grep -q "$WS_MAP" "$LOG"; then sleep 2; break; fi
+  if [ -f "$LOG" ] && command grep -q "$WS_MAP" "$LOG"; then sleep 3; break; fi
   if ! kill -0 "$PID" 2>/dev/null; then break; fi
   sleep 0.5
 done

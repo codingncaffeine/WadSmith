@@ -38,7 +38,8 @@ public sealed class PlayTests
         // The Flatpak sandbox is given the folders it needs.
         var (flatpak, sandboxed) = PlayCommand.For(new EngineInstall("GZDoom (Flatpak)", "/usr/bin/flatpak", "flatpak"), request);
         Assert.Equal("/usr/bin/flatpak", flatpak);
-        Assert.Equal(["run", "--filesystem=/games", "--filesystem=/data/engine", "--filesystem=/projects/My map", PlayCommand.FlatpakApp], sandboxed.Take(5));
+        string Folder(string path) => $"--filesystem={Path.GetDirectoryName(path)}";
+        Assert.Equal(["run", Folder("/games/DOOM2.WAD"), Folder("/data/engine/gzdoom.ini"), "--filesystem=/projects/My map", PlayCommand.FlatpakApp], sandboxed.Take(5));
     }
 
     [Fact]

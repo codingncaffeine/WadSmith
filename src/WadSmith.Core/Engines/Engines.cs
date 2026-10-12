@@ -33,8 +33,74 @@ public static class EngineLocator
     }
 }
 
-/// <summary>What to play: the base game, the files on top (the project folder, add-ons), the map, the difficulty, and where the engine keeps its settings and log.</summary>
-public sealed record PlayRequest(string Iwad, IReadOnlyList<string> Files, string Map, int Skill, string Config, string Log);
+/// <summary>
+/// What to play: the base game, the files on top (the project folder, add-ons), the map, the difficulty, where the engine
+/// keeps its settings and log; and, for Play From Here, where the player starts instead (with WadSmith's small add-on that
+/// puts them there, <see cref="PlayFrom"/>).
+/// </summary>
+public sealed record PlayRequest(string Iwad, IReadOnlyList<string> Files, string Map, int Skill, string Config, string Log, (double X, double Y, double Angle)? From = null, string? FromAddOn = null);
+
+/// <summary>
+/// Play From Here (re-check #2): an add-on of WadSmith's own, written into its data folder, whose event handler stands the
+/// player at the spot in the <c>wadsmith_from</c> setting ("x y angle", on the floor there) on the map's first tic, then says
+/// "WADSMITH FROM x y" in the log. The setting is never saved, so a plain Play starts at the map's own start. A ZScript
+/// handler works the same in GZDoom and UZDoom; the console's warp would run before the map is loaded.
+/// </summary>
+public static class PlayFrom
+{
+    public const string Setting = "wadsmith_from";
+
+    private const string Script = """
+        version "4.6"
+
+        // Written by WadSmith for Play From Here: stands the player at the spot in wadsmith_from on the first tic.
+        class WadSmithPlayFrom : StaticEventHandler
+        {
+        	bool done;
+
+        	override void WorldTick()
+        	{
+        		if (done || level.maptime < 1) return;
+        		done = true;
+        		let setting = CVar.FindCVar("wadsmith_from");
+        		if (!setting) return;
+        		Array<String> parts;
+        		setting.GetString().Split(parts, " ", TOK_SKIPEMPTY);
+        		let mo = players[consoleplayer].mo;
+        		if (parts.Size() < 3 || !mo) return;
+        		Vector2 at = (parts[0].ToDouble(), parts[1].ToDouble());
+        		mo.SetOrigin((at, level.PointInSector(at).floorplane.ZatPoint(at)), false);
+        		mo.angle = parts[2].ToDouble();
+        		mo.vel = (0, 0, 0);
+        		Console.Printf("WADSMITH FROM %.0f %.0f", mo.pos.x, mo.pos.y);
+        	}
+        }
+        """;
+
+    /// <summary>Writes the add-on (again: it is small) and returns its path.</summary>
+    public static string Write(string dataFolder)
+    {
+        var folder = Path.Combine(dataFolder, "engine");
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, "wadsmith-play.pk3");
+        var temp = path + ".tmp";
+        using (var zip = System.IO.Compression.ZipFile.Open(temp, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            void Add(string name, string text)
+            {
+                using var w = new StreamWriter(zip.CreateEntry(name).Open());
+                w.Write(text.Replace("\r\n", "\n", StringComparison.Ordinal));
+            }
+
+            Add("zscript.txt", Script);
+            Add("cvarinfo.txt", "server noarchive string wadsmith_from = \"\";\n");
+            Add("mapinfo.txt", "GameInfo\n{\n\tAddEventHandlers = \"WadSmithPlayFrom\"\n}\n");
+        }
+
+        File.Move(temp, path, overwrite: true);
+        return path;
+    }
+}
 
 /// <summary>The engine's command line for a Play (§4.5).</summary>
 public static class PlayCommand
@@ -48,12 +114,17 @@ public static class PlayCommand
         {
             // The sandbox sees only the folders it is given: the game's, the project's, and WadSmith's settings and log.
             args.Add("run");
-            foreach (var dir in new[] { r.Iwad, r.Config, r.Log }.Select(Path.GetDirectoryName).Concat(r.Files).OfType<string>().Distinct(StringComparer.Ordinal)) args.Add($"--filesystem={dir}");
+            foreach (var dir in new[] { r.Iwad, r.Config, r.Log, r.FromAddOn }.OfType<string>().Select(Path.GetDirectoryName).Concat(r.Files).OfType<string>().Distinct(StringComparer.Ordinal)) args.Add($"--filesystem={dir}");
             args.Add(FlatpakApp);
         }
 
         args.AddRange(["-iwad", r.Iwad]);
         foreach (var f in r.Files) args.AddRange(["-file", f]);
+        if (r.From is { } from && r.FromAddOn is { } addOn)
+        {
+            args.AddRange(["-file", addOn, "+set", PlayFrom.Setting, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{from.X:0.##} {from.Y:0.##} {from.Angle:0.##}")]);
+        }
+
         args.AddRange(["+map", r.Map, "-skill", r.Skill.ToString(System.Globalization.CultureInfo.InvariantCulture), "-config", r.Config, "+logfile", r.Log]);
         return (engine.Program, args);
     }
