@@ -213,6 +213,12 @@ internal sealed partial class InspectorViewModel : ObservableObject
     {
         _session = session;
         session.Selection.Changed += Rebuild;
+
+        // A room just made (a door a moment ago) is known as what it is once the map's shapes catch up.
+        session.GeometryChanged += () =>
+        {
+            if (_session.Selection.Items is [Sector s] && (Doors.Recognise(_session.Geometry, s) is not null) != (Heading == "Door")) Rebuild();
+        };
         session.Map.Changed += _ =>
         {
             foreach (var r in Rows) r.Refresh();

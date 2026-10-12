@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,7 +361,7 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
@@ -395,6 +395,28 @@ foreach (var pose in poses)
                 }
 
                 Report("before");
+                if (pose == "editor-make-door")
+                {
+                    // A corridor 64 wide east of the starter room and a room beyond it, both drawn; then D and
+                    // a click on the corridor's west end: a door there. The project is saved for the engine check.
+                    window.KeyPress(Avalonia.Input.Key.R, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.R, "r");
+                    Drag((256, -64), (384, 64), null);
+                    Drag((384, -256), (896, 256), null);
+                    Report("rooms");
+                    window.KeyPress(Avalonia.Input.Key.D, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.D, "d");
+                    Pump(0.2);
+                    window.MouseMove(At(256, 0), Avalonia.Input.RawInputModifiers.None);
+                    window.MouseDown(At(256, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(256, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(1.0);
+                    Report("door");
+                    Console.WriteLine($"draw inspector: '{editor.Inspector.Heading}', '{editor.Inspector.Summary}'");
+                    Save("editor-make-door");
+                    Wait(editor.Session.FlushAsync());
+                    Console.WriteLine($"draw project: {editor.Session.Project.Folder}");
+                    break;
+                }
+
                 if (pose == "editor-join")
                 {
                     // A room drawn apart, then dragged west until its corner snaps onto the starter room's

@@ -23,6 +23,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         ("select", "Tip: click a room, a wall or a thing to see what it is in the Inspector on the right."),
         ("edit", "Tip: change a number in the Inspector, such as a floor height, and watch the map follow."),
         ("draw", "Tip: choose Room at the top left of the map (or press R) and drag to draw a room. Drawn against another room, the two share a wall."),
+        ("door", "Tip: choose Door (or press D) and click the wall between two rooms to put a door there. Draw a short corridor between rooms first for a classic doorway."),
         ("undo", "Tip: Ctrl+Z takes back the last change and Ctrl+Y brings it back. Nothing needs saving; WadSmith keeps every change."),
         ("heights", "Tip: the view buttons at the top show floors, ceilings, heights as colours, or just the walls."),
         ("orbit", "Tip: in the 3D view, drag to turn around the map, right-drag to move it, and scroll to come closer."),
@@ -128,8 +129,18 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>What a left drag on the plan does (V selects, R draws rooms).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool))]
+    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool), nameof(IsDoorTool))]
     private Canvas.EditorTool _tool;
+
+    public bool IsDoorTool
+    {
+        get => Tool == Canvas.EditorTool.Door;
+        set
+        {
+            if (value) Tool = Canvas.EditorTool.Door;
+            else OnPropertyChanged();
+        }
+    }
 
     public bool IsSelectTool
     {
@@ -340,6 +351,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         _notice = "";
         Learned("edit");
         if (Session.History.UndoLabel == "Draw a room") Learned("draw");
+        if (Session.History.UndoLabel == "Make a door") Learned("door");
     }
 
     /// <summary>The heights legend's words, from the shapes the worker built (no scan of the map here).</summary>
@@ -410,6 +422,9 @@ internal sealed partial class EditorViewModel : ObservableObject
     {
         _hoverText = element switch
         {
+            Line l when Tool == Canvas.EditorTool.Door => l.Back is null
+                ? "Wall · solid · a door goes in a wall between two rooms"
+                : string.Create(CultureInfo.InvariantCulture, $"Wall · between two areas · {l.Length:0} long · click to make it a door"),
             Sector s => string.Create(CultureInfo.InvariantCulture, $"Area · floor {s.FloorHeight:0}, ceiling {s.CeilingHeight:0}, light {s.Light} · {s.FloorTexture}"),
             Line l => string.Create(CultureInfo.InvariantCulture, $"Wall · {(l.Back is null ? "solid" : "between two areas")} · {l.Length:0} long{(l.Special != 0 ? " · has an action" : "")} · double-click to add a corner"),
             Thing t => string.Create(CultureInfo.InvariantCulture, $"{ThingName(t.Type)} · facing {t.Angle}°"),
@@ -449,6 +464,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         if (_hoverText.Length > 0)
         {
             Status = _hoverText;
+            return;
+        }
+
+        if (Tool == Canvas.EditorTool.Door)
+        {
+            Status = "Click the wall between two rooms where the door goes: it fills the wall (up to 256 wide), flush on the corridor's side, and opens when used. Esc goes back to Select.";
             return;
         }
 

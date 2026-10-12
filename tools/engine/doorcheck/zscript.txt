@@ -1,0 +1,58 @@
+version "4.6"
+
+// Uses every wall that opens a door (a door action naming no tag) as the player would, one at a
+// time: notes the door's ceiling, uses the wall from its front, reads the ceiling 2 seconds later,
+// then waits for the door to close before the next. WadSmith checks the doors it makes with this.
+class WadSmithDoorCheck : StaticEventHandler
+{
+	Array<int> openers;
+	int next;
+	int phase;
+	int since;
+	double closed;
+	bool used;
+
+	override void WorldLoaded(WorldEvent e)
+	{
+		if (e.IsSaveGame || e.IsReopen) return;
+		for (int i = 0; i < level.Lines.Size(); i++)
+		{
+			Line l = level.Lines[i];
+			if ((l.special == 11 || l.special == 12 || l.special == 13) && l.args[0] == 0 && l.backsector) openers.Push(i);
+		}
+
+		Console.Printf("WSDOOR BEGIN %s %d", level.MapName, openers.Size());
+	}
+
+	override void WorldTick()
+	{
+		if (level.maptime < 10 || next > openers.Size()) return;
+		if (next == openers.Size())
+		{
+			Console.Printf("WSDOOR END");
+			next++;
+			return;
+		}
+
+		Line l = level.Lines[openers[next]];
+		Sector door = l.backsector;
+		since++;
+		if (phase == 0)
+		{
+			closed = door.CenterCeiling();
+			used = l.Activate(players[consoleplayer].mo, Line.front, SPAC_Use);
+			phase = 1;
+			since = 0;
+		}
+		else if (phase == 1 && since >= 70)
+		{
+			Console.Printf("WSDOOR %d %d %.1f %.1f %.1f %d", openers[next], door.Index(), door.CenterFloor(), closed, door.CenterCeiling(), used);
+			phase = 2;
+		}
+		else if (phase == 2 && (door.CenterCeiling() <= closed + 0.5 || since > 700))
+		{
+			next++;
+			phase = 0;
+		}
+	}
+}

@@ -3,6 +3,7 @@ using WadSmith.Editor.App;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
+using WadSmith.Editor.Smart;
 
 namespace WadSmith.Editor;
 
@@ -130,6 +131,31 @@ public sealed class EditorSession : IDisposable
         {
             Log.Warn($"Drawing a room in {Slot} failed: {ex.Message}");
             Notice?.Invoke($"That room could not be drawn there. {ex.Message}");
+        }
+    }
+
+    /// <summary>Makes a door in a wall between two rooms (see <see cref="Doors.Make"/>), one undo step, and selects it; says why when it cannot.</summary>
+    public void MakeDoor(Line wall)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => MakeDoor(wall);
+            return;
+        }
+
+        try
+        {
+            (Sector? Door, string? Why) result = (null, null);
+            var geometry = _geometry;
+            var look = Look;
+            History.Record("Make a door", e => result = Doors.Make(e, geometry, wall, look));
+            if (result.Door is { } door) Selection.Set(door);
+            else if (result.Why is { } why) Notice?.Invoke(why);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Log.Warn($"Making a door in {Slot} failed: {ex.Message}");
+            Notice?.Invoke($"A door could not be made there. {ex.Message}");
         }
     }
 

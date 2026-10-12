@@ -18,6 +18,9 @@ internal enum EditorTool
 
     /// <summary>Drag a rectangle to draw a room.</summary>
     Room,
+
+    /// <summary>Click a wall between two rooms to make it a door.</summary>
+    Door,
 }
 
 /// <summary>
@@ -263,7 +266,7 @@ internal sealed class MapCanvas : Control
     {
         if (Session is null) return;
         if (!_fitted) ComputeFit();
-        var hover = _hover is not null && !Session.Selection.Contains(_hover) && Tool == EditorTool.Select ? _hoverOutline : null;
+        var hover = _hover is not null && !Session.Selection.Contains(_hover) && Tool != EditorTool.Room ? _hoverOutline : null;
         // A room just drawn stays drawn as a rectangle until the picture with it arrives from the worker.
         if (_drawnIn >= 0 && _snapshot is { } shown && shown.Version >= _drawnIn) _drawnIn = -1;
         var (from, to) = _drawFrom is not null || _drawnIn < 0 ? (_drawFrom, _drawTo) : (_justDrawn.From, (MapPoint?)_justDrawn.To);
@@ -505,6 +508,13 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Door)
+        {
+            if (WallAt(e.GetPosition(this)) is { } wall) Session.MakeDoor(wall);
+            e.Handled = true;
+            return;
+        }
+
         if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Room)
         {
             _drawFrom = _drawTo = Snap(e.GetPosition(this));
@@ -606,7 +616,7 @@ internal sealed class MapCanvas : Control
             return;
         }
 
-        var hit = HitTest(p);
+        var hit = Tool == EditorTool.Door ? WallAt(p) : HitTest(p);
         if (!ReferenceEquals(hit, _hover))
         {
             _hover = hit;
@@ -717,6 +727,10 @@ internal sealed class MapCanvas : Control
                 Tool = EditorTool.Room;
                 e.Handled = true;
                 break;
+            case Key.D when e.KeyModifiers == KeyModifiers.None:
+                Tool = EditorTool.Door;
+                e.Handled = true;
+                break;
             case Key.OemPlus or Key.Add:
                 _zoom = Math.Min(_zoom * 1.4, 64);
                 InvalidateVisual();
@@ -756,6 +770,9 @@ internal sealed class MapCanvas : Control
         _cy += dy / _zoom;
         InvalidateVisual();
     }
+
+    /// <summary>The wall under the pointer, for tools that work on walls.</summary>
+    private Line? WallAt(Point p) => Session?.Geometry.LineNear(ToMap(p), 7 / _zoom);
 
     /// <summary>What a click at this spot picks: a thing, then a corner (zoomed in), then a wall, then the area.</summary>
     private Element? HitTest(Point p)
