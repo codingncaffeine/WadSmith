@@ -1230,12 +1230,13 @@ internal sealed partial class InspectorViewModel : ObservableObject
             if (l.Special == 0)
             {
                 // What a first-time mapper came here for: the opening is where a door or a window goes.
-                Rows.Add(new ActionRow("Make it a door", "Builds a door into this opening with the game's door and track textures; it opens when the player uses it and closes again. One undo step.", () => _session.MakeDoor(l)));
+                Rows.Add(new ActionRow("Make it a door", "Builds a door into this opening with the game's door and track textures, with wall either side when the opening is wider than a door; it opens when the player uses it and closes again. One undo step.", () => _session.MakeDoor(l)));
                 Rows.Add(new ActionRow("Make it a window", "Turns the middle of this opening into a window: a sill and a top the player sees over but cannot pass. One undo step.", () =>
                 {
                     var (from, to) = Doors.Centred(l, Math.Min(64, l.Length));
                     _session.MakeWindow(l, from, to);
                 }));
+                Rows.Add(new ActionRow("Wall it off", "Closes the opening with a wall, so the rooms are apart: a slab with the room's wall texture on it. One undo step.", () => _session.WallOff(l)));
             }
 
             Rows.Add(new FlagRow("Upper texture hangs from the ceiling", "The upper texture starts at the higher ceiling and runs down, instead of rising from the opening below it (upper unpegged, dontpegtop).", () => l.Flag("dontpegtop"), on => Flag(l, "dontpegtop", on, "Change texture anchoring")));

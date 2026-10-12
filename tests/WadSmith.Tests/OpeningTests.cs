@@ -61,7 +61,7 @@ public sealed class OpeningTests
         var inspector = new InspectorViewModel(o.Session);
         o.Session.Selection.Set(shared);
         Assert.Equal("Opening between two rooms", inspector.Heading);
-        Assert.Equal(["Make it a door", "Make it a window"], inspector.Rows.OfType<ActionRow>().Select(r => r.Label).Take(2));
+        Assert.Equal(["Make it a door", "Make it a window", "Wall it off"], inspector.Rows.OfType<ActionRow>().Select(r => r.Label).Take(3));
         var explained = Explaining.Explain(shared, o.Session.Geometry, o.Session.Resources)!;
         Assert.Equal("Opening between two rooms", explained.Heading);
         Assert.Contains("open into each other", explained.Text);
@@ -70,6 +70,8 @@ public sealed class OpeningTests
         o.Settle();
         Assert.Equal("Make a door", o.Session.History.UndoLabel);
         Assert.NotNull(Doors.Recognise(o.Session.Geometry, o.Session.Selection.Items.OfType<Sector>().Single()));
+        // The opening is 128 wide: a 64 door in its middle and wall either side, so five areas now.
+        Assert.Equal(5, o.Session.Map.Sectors.Count(s => s.OnMap));
         Assert.Empty(o.Told);
     }
 

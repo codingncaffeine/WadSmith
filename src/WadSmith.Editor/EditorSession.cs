@@ -1195,6 +1195,30 @@ public sealed class EditorSession : IDisposable
         History.Record("Change what the platform is", e => Platforms.SetKind(e, platform, kind, look));
     }
 
+    /// <summary>Closes the opening between two rooms with wall (a closed slab, the room's wall texture on it), one undo step; says why when it cannot.</summary>
+    public void WallOff(Line wall)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => WallOff(wall);
+            return;
+        }
+
+        try
+        {
+            (Sector? Door, string? Why) result = (null, null);
+            var geometry = _geometry;
+            var look = Look;
+            History.Record("Wall it off", e => result = Doors.Make(e, geometry, wall, look, null, fill: false, door: false));
+            if (result.Why is { } why) Notice?.Invoke(why);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Log.Warn($"Walling off in {Slot} failed: {ex.Message}");
+            Notice?.Invoke($"That opening could not be walled off. {ex.Message}");
+        }
+    }
+
     /// <summary>Makes a door in a wall between two rooms (see <see cref="Doors.Make"/>), one undo step, and selects it; says why when it cannot.</summary>
     public void MakeDoor(Line wall, (double From, double To)? span = null)
     {
@@ -1204,15 +1228,25 @@ public sealed class EditorSession : IDisposable
             return;
         }
 
-        // A click on a wall longer than a door can be: a standard door in its middle.
-        if (span is null && wall.Length > Doors.MaxWidth) span = Doors.Centred(wall);
+        // A door between two rooms is a door in a wall: on an opening wider than a door, a standard door in its middle
+        // and wall either side; a dragged stretch is the door, with wall beside it.
+        var fill = false;
+        if (span is null && wall.Length > Doors.FillsUpTo)
+        {
+            span = Doors.Centred(wall, Doors.StandardWidth);
+            fill = true;
+        }
+        else if (span is { } chosen && Math.Abs(chosen.To - chosen.From) < wall.Length - 1)
+        {
+            fill = true;
+        }
 
         try
         {
             (Sector? Door, string? Why) result = (null, null);
             var geometry = _geometry;
             var look = Look;
-            History.Record("Make a door", e => result = Doors.Make(e, geometry, wall, look, span));
+            History.Record("Make a door", e => result = Doors.Make(e, geometry, wall, look, span, fill));
             if (result.Door is { } door) Selection.Set(door);
             else if (result.Why is { } why) Notice?.Invoke(why);
         }

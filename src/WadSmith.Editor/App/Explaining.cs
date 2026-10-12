@@ -79,6 +79,10 @@ public static class Explaining
         }
 
         var (a, b) = (l.Front.Sector, back.Sector);
+        if (a.CeilingHeight <= a.FloorHeight || b.CeilingHeight <= b.FloorHeight)
+        {
+            return new("Wall between two rooms", "A closed slab: its ceiling sits on its floor, so it is solid, with a wall texture on each face. The Door tool makes these either side of a door; Wall it off makes one across an opening.");
+        }
         var step = Math.Abs(a.FloorHeight - b.FloorHeight);
         var gap = Math.Min(a.CeilingHeight, b.CeilingHeight) - Math.Max(a.FloorHeight, b.FloorHeight);
         var how = l.Flag("blocking") ? " It blocks the player, so nothing walks through it."
