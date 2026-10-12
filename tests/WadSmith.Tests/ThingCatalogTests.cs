@@ -57,6 +57,10 @@ public sealed class ThingCatalogTests
     [InlineData("doom", 14, ThingCategory.Marker)]
     [InlineData("doom", 1, ThingCategory.Start)]
     [InlineData("heretic", 66, ThingCategory.Monster)]
+    [InlineData("heretic", 80, ThingCategory.Key)]
+    [InlineData("heretic", 10, ThingCategory.Ammo)]
+    [InlineData("heretic", 85, ThingCategory.Armor)]
+    [InlineData("heretic", 75, ThingCategory.Powerup)]
     [InlineData("hexen", 107, ThingCategory.Monster)]
     [InlineData("strife", 3002, ThingCategory.Monster)]
     public void ObjectsAreSortedByKindFromTheEnginesClasses(string family, int number, ThingCategory category)

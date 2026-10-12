@@ -596,7 +596,8 @@ public sealed partial class ThingCatalog
     [GeneratedRegex("""(?m)^\s*(\d+)\s*=\s*"?([A-Za-z_][A-Za-z0-9_]*)""")]
     private static partial Regex EdNumEntry();
 
-    [GeneratedRegex(@"(?<![A-Za-z_])(?<!extend\s+)(?<!mixin\s+)class\s+([A-Za-z_]\w*)\s*(?::\s*([A-Za-z_]\w*))?[^{;]*\{")]
+    // ZScript keywords ignore case: Heretic's keys, ammunition and artifacts are declared "Class".
+    [GeneratedRegex(@"(?i)(?<![A-Za-z_])(?<!extend\s+)(?<!mixin\s+)class\s+([A-Za-z_]\w*)\s*(?::\s*([A-Za-z_]\w*))?[^{;]*\{")]
     private static partial Regex ClassHeader();
 
     [GeneratedRegex(@"(?i)\bDefault\s*\{")]
