@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The document being edited, its history and selection: everything the editor does that is not
+       drawing or windows, so it is testable headless. Mutated on the UI thread only; renderers and
+       checks read immutable snapshots. -->
+  <PropertyGroup>
+    <RootNamespace>WadSmith.Editor</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="WadSmith.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WadSmith.Core\WadSmith.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,39 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WadSmith.App.App"
+             Name="WadSmith"
+             RequestedThemeVariant="Dark">
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="/Themes/Tokens.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme>
+            <FluentTheme.Palettes>
+                <ColorPaletteResources x:Key="Dark"
+                                       Accent="#E0582A"
+                                       AltHigh="#0D090D"
+                                       RegionColor="#151012"
+                                       BaseHigh="#F1ECE8"
+                                       BaseMediumHigh="#B3A9A6"
+                                       BaseMedium="#857B78"
+                                       BaseMediumLow="#574E4D"
+                                       BaseLow="#3D3234"
+                                       ChromeAltLow="#F1ECE8"
+                                       ChromeHigh="#55484A"
+                                       ChromeMedium="#2D2527"
+                                       ChromeMediumLow="#241D1F"
+                                       ChromeLow="#1C1618"
+                                       ListLow="#241D1F"
+                                       ListMedium="#2D2527"
+                                       ErrorText="#E5484D" />
+            </FluentTheme.Palettes>
+        </FluentTheme>
+        <StyleInclude Source="/Themes/Styles.axaml" />
+    </Application.Styles>
+</Application>

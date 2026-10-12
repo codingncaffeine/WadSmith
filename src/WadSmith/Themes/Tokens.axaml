@@ -1,0 +1,99 @@
+<!--
+    The design tokens of the Forge theme. Every colour, gradient and radius in the interface comes
+    from here, so the look changes in one place.
+
+    Structure from Emutastic: layered near-black surfaces, engraved-metal toolbar segments (a
+    charcoal gradient, a one-pixel black chisel border and a one-pixel top highlight; recessed when
+    selected), small uppercase section labels, Inter. Palette from the WadSmith logo: warm black with
+    brown-tinted charcoal layers, hellfire orange for action and selection, ember for hover, rust
+    for pressed and destructive, molten cyan for focus, nukage green for success.
+-->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ===== Surfaces, darkest first ===== -->
+    <Color x:Key="Color.Base">#0D090D</Color>
+    <Color x:Key="Color.Surface1">#151012</Color>
+    <Color x:Key="Color.Surface2">#1C1618</Color>
+    <Color x:Key="Color.Surface3">#241D1F</Color>
+    <Color x:Key="Color.Raised">#2D2527</Color>
+    <Color x:Key="Color.Border.Subtle">#2A2224</Color>
+    <Color x:Key="Color.Border">#3D3234</Color>
+    <Color x:Key="Color.Border.Strong">#55484A</Color>
+
+    <!-- ===== Text ===== -->
+    <Color x:Key="Color.Text.Primary">#F1ECE8</Color>
+    <Color x:Key="Color.Text.Secondary">#B3A9A6</Color>
+    <Color x:Key="Color.Text.Tertiary">#857B78</Color>
+    <Color x:Key="Color.Text.Disabled">#574E4D</Color>
+
+    <!-- ===== Signal colours ===== -->
+    <Color x:Key="Color.Accent">#E0582A</Color>
+    <Color x:Key="Color.Accent.Hover">#E07A45</Color>
+    <Color x:Key="Color.Accent.Pressed">#B8441E</Color>
+    <Color x:Key="Color.Accent.Ink">#1A0805</Color>
+    <Color x:Key="Color.Ember">#E09859</Color>
+    <Color x:Key="Color.Rust">#973124</Color>
+    <Color x:Key="Color.Focus">#4FD2E0</Color>
+    <Color x:Key="Color.Success">#5FD35F</Color>
+    <Color x:Key="Color.Warning">#F2B33D</Color>
+    <Color x:Key="Color.Danger">#E5484D</Color>
+
+    <SolidColorBrush x:Key="Brush.Base" Color="{StaticResource Color.Base}" />
+    <SolidColorBrush x:Key="Brush.Surface1" Color="{StaticResource Color.Surface1}" />
+    <SolidColorBrush x:Key="Brush.Surface2" Color="{StaticResource Color.Surface2}" />
+    <SolidColorBrush x:Key="Brush.Surface3" Color="{StaticResource Color.Surface3}" />
+    <SolidColorBrush x:Key="Brush.Raised" Color="{StaticResource Color.Raised}" />
+    <SolidColorBrush x:Key="Brush.Border.Subtle" Color="{StaticResource Color.Border.Subtle}" />
+    <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}" />
+    <SolidColorBrush x:Key="Brush.Border.Strong" Color="{StaticResource Color.Border.Strong}" />
+    <SolidColorBrush x:Key="Brush.Text.Primary" Color="{StaticResource Color.Text.Primary}" />
+    <SolidColorBrush x:Key="Brush.Text.Secondary" Color="{StaticResource Color.Text.Secondary}" />
+    <SolidColorBrush x:Key="Brush.Text.Tertiary" Color="{StaticResource Color.Text.Tertiary}" />
+    <SolidColorBrush x:Key="Brush.Text.Disabled" Color="{StaticResource Color.Text.Disabled}" />
+    <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}" />
+    <SolidColorBrush x:Key="Brush.Accent.Hover" Color="{StaticResource Color.Accent.Hover}" />
+    <SolidColorBrush x:Key="Brush.Accent.Pressed" Color="{StaticResource Color.Accent.Pressed}" />
+    <SolidColorBrush x:Key="Brush.Accent.Ink" Color="{StaticResource Color.Accent.Ink}" />
+    <SolidColorBrush x:Key="Brush.Ember" Color="{StaticResource Color.Ember}" />
+    <SolidColorBrush x:Key="Brush.Rust" Color="{StaticResource Color.Rust}" />
+    <SolidColorBrush x:Key="Brush.Focus" Color="{StaticResource Color.Focus}" />
+    <SolidColorBrush x:Key="Brush.Success" Color="{StaticResource Color.Success}" />
+    <SolidColorBrush x:Key="Brush.Warning" Color="{StaticResource Color.Warning}" />
+    <SolidColorBrush x:Key="Brush.Danger" Color="{StaticResource Color.Danger}" />
+
+    <!-- ===== Engraved metal (toolbar segments, tabs) ===== -->
+    <LinearGradientBrush x:Key="Brush.Metal" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0.0" Color="#FF3A3232" />
+        <GradientStop Offset="0.5" Color="#FF2A2323" />
+        <GradientStop Offset="0.51" Color="#FF221C1C" />
+        <GradientStop Offset="1.0" Color="#FF161212" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="Brush.Metal.Hover" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0.0" Color="#FF443A39" />
+        <GradientStop Offset="0.5" Color="#FF332B2A" />
+        <GradientStop Offset="0.51" Color="#FF2B2423" />
+        <GradientStop Offset="1.0" Color="#FF1E1918" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="Brush.Metal.Recessed" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0.0" Color="#FF0F0B0B" />
+        <GradientStop Offset="1.0" Color="#FF1C1616" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="Brush.Metal.Chisel" Color="#FF0A0707" />
+    <SolidColorBrush x:Key="Brush.Metal.Highlight" Color="#24FFFFFF" />
+
+    <!-- The top bar: a warm gradient that reads as forged iron. -->
+    <LinearGradientBrush x:Key="Brush.TopBar" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0.0" Color="#FF1E1718" />
+        <GradientStop Offset="1.0" Color="#FF130E0F" />
+    </LinearGradientBrush>
+
+    <!-- Focus is cyan everywhere, so keyboard users always see where they are (Fluent's focus ring, recoloured). -->
+    <SolidColorBrush x:Key="SystemControlFocusVisualPrimaryBrush" Color="{StaticResource Color.Focus}" />
+    <SolidColorBrush x:Key="SystemControlFocusVisualSecondaryBrush" Color="#000000" />
+
+    <CornerRadius x:Key="Radius.Small">4</CornerRadius>
+    <CornerRadius x:Key="Radius.Medium">6</CornerRadius>
+    <CornerRadius x:Key="Radius.Large">10</CornerRadius>
+
+</ResourceDictionary>

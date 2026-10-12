@@ -1,0 +1,82 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WadSmith.App.ViewModels"
+             x:Class="WadSmith.App.Views.WelcomeView"
+             x:DataType="vm:WelcomeViewModel">
+    <ScrollViewer>
+        <StackPanel MaxWidth="1180" Margin="40,32,40,40" Spacing="6">
+            <StackPanel Orientation="Horizontal" Spacing="18">
+                <Image Source="/Assets/icon.png" Width="84" Height="84" />
+                <StackPanel VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Classes="title" Text="WadSmith" />
+                    <TextBlock Classes="secondary" FontSize="15" Text="Build maps for the games you love, then play them in GZDoom." />
+                </StackPanel>
+            </StackPanel>
+
+            <TextBlock Classes="section" Text="YOUR GAMES" Margin="0,24,0,4" />
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
+                <TextBlock Classes="secondary" Text="{Binding Status}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="820" />
+                <ProgressBar IsIndeterminate="True" Width="80" IsVisible="{Binding Scanning}" VerticalAlignment="Center" />
+            </StackPanel>
+
+            <ItemsControl ItemsSource="{Binding Games}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:GameTileViewModel">
+                        <Border Classes="card" Width="300" Margin="0,0,18,18" Padding="12" ToolTip.Tip="{Binding Location}">
+                            <StackPanel Spacing="10">
+                                <Border CornerRadius="6" ClipToBounds="True" Height="168" Background="#000000">
+                                    <Image Source="{Binding Picture}" Stretch="UniformToFill" />
+                                </Border>
+                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="primary" Content="Remix a map"
+                                            ToolTip.Tip="Start from one of this game's own maps. Your game files are never changed; your changes become a project of your own.">
+                                        <Button.Flyout>
+                                            <Flyout Placement="BottomEdgeAlignedLeft">
+                                                <ScrollViewer MaxHeight="440" Width="300">
+                                                    <ItemsControl ItemsSource="{Binding Maps}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:MapChoice">
+                                                                <Button Content="{Binding Label}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                                        Background="Transparent" Command="{Binding Tile.Remix}" CommandParameter="{Binding}" />
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                            </Flyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                    <Button Classes="metal" Content="New map" Command="{Binding NewMap}" CommandParameter="{Binding}"
+                                            ToolTip.Tip="Start with one lit room and a player start, ready to play." />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button Classes="metal" Content="Add a folder…" Command="{Binding AddFolderCommand}"
+                        ToolTip.Tip="Tell WadSmith about a folder that holds your games, if it did not find them by itself." />
+                <Button Classes="metal" Content="Open a project…" Command="{Binding OpenProjectCommand}"
+                        ToolTip.Tip="Open a WadSmith project folder." />
+            </StackPanel>
+
+            <TextBlock Classes="section" Text="RECENT" Margin="0,28,0,4" IsVisible="{Binding Recent.Count}" />
+            <ItemsControl ItemsSource="{Binding Recent}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:RecentProject">
+                        <Button Background="Transparent" HorizontalAlignment="Left" Padding="8,6"
+                                Command="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).OpenRecentCommand}" CommandParameter="{Binding}"
+                                ToolTip.Tip="{Binding Folder}">
+                            <TextBlock Text="{Binding Name}" />
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

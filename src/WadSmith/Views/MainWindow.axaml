@@ -1,0 +1,20 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:WadSmith.App.ViewModels"
+        xmlns:views="using:WadSmith.App.Views"
+        x:Class="WadSmith.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="{Binding Title}"
+        Width="1440" Height="900" MinWidth="1024" MinHeight="680"
+        Icon="/Assets/icon.png">
+
+    <Window.DataTemplates>
+        <DataTemplate DataType="vm:WelcomeViewModel"><views:WelcomeView /></DataTemplate>
+        <DataTemplate DataType="vm:EditorViewModel"><views:EditorView /></DataTemplate>
+    </Window.DataTemplates>
+
+    <!-- Large interface (D31) scales everything, so nothing is laid out twice. -->
+    <LayoutTransformControl x:Name="Scaler">
+        <ContentControl Content="{Binding Page}" />
+    </LayoutTransformControl>
+</Window>

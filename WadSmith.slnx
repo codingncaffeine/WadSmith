@@ -2,6 +2,11 @@
   <Folder Name="/src/">
     <Project Path="src/WadSmith.Core/WadSmith.Core.csproj" />
     <Project Path="src/WadSmith.Cli/WadSmith.Cli.csproj" />
+    <Project Path="src/WadSmith.Editor/WadSmith.Editor.csproj" />
+    <Project Path="src/WadSmith/WadSmith.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/WadSmith.Capture/WadSmith.Capture.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/WadSmith.Tests/WadSmith.Tests.csproj" />

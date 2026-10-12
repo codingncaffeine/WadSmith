@@ -1,0 +1,87 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WadSmith.App.ViewModels"
+             xmlns:canvas="using:WadSmith.App.Canvas"
+             x:Class="WadSmith.App.Views.EditorView"
+             x:DataType="vm:EditorViewModel">
+
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Ctrl+Z" Command="{Binding UndoCommand}" />
+        <KeyBinding Gesture="Ctrl+Y" Command="{Binding RedoCommand}" />
+        <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}" />
+    </UserControl.KeyBindings>
+
+    <Grid RowDefinitions="50,*,30">
+        <!-- Top bar -->
+        <Border Grid.Row="0" Background="{DynamicResource Brush.TopBar}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="10,0">
+                <Button Classes="metal" Content="‹ Start" Command="{Binding CloseCommand}" VerticalAlignment="Center"
+                        ToolTip.Tip="Back to the start screen. Your changes are already kept." />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0" VerticalAlignment="Center" Spacing="6">
+                    <Image Source="/Assets/icon.png" Width="24" Height="24" />
+                    <TextBlock Text="{Binding ProjectName}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock Text="·" Classes="secondary" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding MapName}" Classes="secondary" VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <ToggleButton Content="Heights as colours" IsChecked="{Binding ShowHeights}"
+                                  ToolTip.Tip="Colours every area by its floor height, blue for low and red for high, so steps, pits and platforms stand out." />
+                    <Button Classes="metal" Content="Undo" Command="{Binding UndoCommand}" ToolTip.Tip="{Binding UndoTip}" />
+                    <Button Classes="metal" Content="Redo" Command="{Binding RedoCommand}" ToolTip.Tip="{Binding RedoTip}" />
+                    <Button Classes="metal" Content="Keep a version" Command="{Binding KeepVersionCommand}"
+                            ToolTip.Tip="Keeps a copy of the map as it is now, with a picture, in the project's versions." />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Canvas and Inspector -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,4,330">
+            <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" ShowHeights="{Binding ShowHeights}" />
+            <GridSplitter Grid.Column="1" Background="{DynamicResource Brush.Border.Subtle}" ResizeDirection="Columns" />
+            <Border Grid.Column="2" Classes="panel" BorderThickness="1,0,0,0">
+                <ScrollViewer>
+                    <StackPanel Margin="18,6,18,18">
+                        <TextBlock Classes="section" Text="INSPECTOR" />
+                        <TextBlock Text="{Binding Inspector.Heading}" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Inspector.Summary}" Classes="secondary" TextWrapping="Wrap" Margin="0,4,0,14" />
+                        <ItemsControl ItemsSource="{Binding Inspector.Rows}">
+                            <ItemsControl.DataTemplates>
+                                <DataTemplate DataType="vm:NumberRow">
+                                    <StackPanel Margin="0,0,0,10">
+                                        <TextBlock Text="{Binding Label}" Classes="secondary" ToolTip.Tip="{Binding Tooltip}" Margin="0,0,0,3" />
+                                        <NumericUpDown Value="{Binding Value}" Increment="{Binding Step}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}"
+                                                       FormatString="0.##" ToolTip.Tip="{Binding Tooltip}" />
+                                        <TextBlock Text="{Binding HintText}" Classes="secondary" FontSize="12" Margin="0,3,0,0" IsVisible="{Binding HintText.Length}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:TextRow">
+                                    <StackPanel Margin="0,0,0,10">
+                                        <TextBlock Text="{Binding Label}" Classes="secondary" ToolTip.Tip="{Binding Tooltip}" Margin="0,0,0,3" />
+                                        <TextBox Text="{Binding Value}" ToolTip.Tip="{Binding Tooltip}" LostFocus="OnTextRowLostFocus" KeyDown="OnTextRowKeyDown" />
+                                    </StackPanel>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:FlagRow">
+                                    <CheckBox Content="{Binding Label}" IsChecked="{Binding Value}" ToolTip.Tip="{Binding Tooltip}" Margin="0,0,0,6" />
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:InfoRow">
+                                    <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,10" ToolTip.Tip="{Binding Tooltip}">
+                                        <TextBlock Text="{Binding Label}" Classes="secondary" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Value}" HorizontalAlignment="Right" TextWrapping="Wrap" Margin="12,0,0,0" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.DataTemplates>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- Status strip: what is under the pointer, or the coach's next tip; and whether changes are kept. -->
+        <Border Grid.Row="2" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto" Margin="12,0">
+                <TextBlock Text="{Binding Status}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="1" Text="{Binding SaveText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
