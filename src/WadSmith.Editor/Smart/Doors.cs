@@ -225,7 +225,7 @@ public static class Doors
     }
 
     /// <summary>Whether nothing but the wall itself and walls along the strip's sides lies inside the strip.</summary>
-    private static bool Clear(MapGeometry before, Line wall, MapPoint[] strip)
+    internal static bool Clear(MapGeometry before, Line wall, MapPoint[] strip)
     {
         var (x0, y0, x1, y1) = (strip.Min(p => p.X), strip.Min(p => p.Y), strip.Max(p => p.X), strip.Max(p => p.Y));
         foreach (var l in before.LinesIn(x0, y0, x1, y1))
@@ -249,7 +249,7 @@ public static class Doors
     }
 
     /// <summary>Inside the strip's rectangle by more than a hair on every side.</summary>
-    private static bool StrictlyInside(MapPoint[] r, MapPoint p)
+    internal static bool StrictlyInside(MapPoint[] r, MapPoint p)
     {
         const double Hair = 1e-6;
         for (var i = 0; i < 4; i++)
@@ -273,7 +273,7 @@ public static class Doors
         return true;
     }
 
-    private static bool Parallel(Line l, Line wall)
+    internal static bool Parallel(Line l, Line wall)
     {
         var (ax, ay) = (l.End.X - l.Start.X, l.End.Y - l.Start.Y);
         var (bx, by) = (wall.End.X - wall.Start.X, wall.End.Y - wall.Start.Y);

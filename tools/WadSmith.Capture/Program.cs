@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,12 +361,12 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
                 // one inside it.
-                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn";
+                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window";
                 view.ZoomBy(wide ? 0.3 : 0.45);
                 if (wide) view.PanBy(-90, 0);
                 Pump(0.3);
@@ -459,6 +459,39 @@ foreach (var pose in poses)
                     editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
                     Pump(1.5);
                     Save("editor-make-stairs");
+                    break;
+                }
+
+                if (pose == "editor-make-window")
+                {
+                    // A room east of the starter room with 64 between them; W and a drag along the starter room's east
+                    // wall (captured mid-drag): a window through to it. Then a room against the starter room's north
+                    // wall and a click on the wall they share: a window in a thin wall.
+                    Drag((320, -128), (576, 128), null);
+                    Drag((-128, 256), (128, 448), null);
+                    window.KeyPress(Avalonia.Input.Key.W, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.W, "w");
+                    Pump(0.2);
+                    Drag((256, -64), (256, 64), "editor-making-window");
+                    var through = editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().SingleOrDefault();
+                    var span = through is null ? null : editor.Session.Geometry.WallBoundsAt(through.Slot);
+                    Console.WriteLine($"window through: area {through?.Slot} {(span is { } sp ? $"({sp.MinX:0},{sp.MinY:0})-({sp.MaxX:0},{sp.MaxY:0})" : "")}, heading '{editor.Inspector.Heading}', '{editor.Inspector.Summary}', undo '{editor.Session.History.UndoLabel}', status '{editor.Status}'");
+                    window.MouseMove(At(0, 256), Avalonia.Input.RawInputModifiers.None);
+                    window.MouseDown(At(0, 256), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(0, 256), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(1.0);
+                    var thin = editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().SingleOrDefault();
+                    var bounds = thin is null ? null : editor.Session.Geometry.WallBoundsAt(thin.Slot);
+                    Console.WriteLine($"window thin: area {thin?.Slot} {(bounds is { } b ? $"({b.MinX:0},{b.MinY:0})-({b.MaxX:0},{b.MaxY:0})" : "")}, heading '{editor.Inspector.Heading}', sill {thin?.FloorHeight} top {thin?.CeilingHeight}, undo '{editor.Session.History.UndoLabel}'");
+                    Report("windows");
+                    Console.WriteLine($"window problems: {editor.Problems.Summary}");
+                    Wait(editor.Session.FlushAsync());
+                    Console.WriteLine($"window areas for the engine: {through?.Slot} {thin?.Slot}");
+                    Save("editor-make-window");
+                    // Each window as the player sees it from the starter room: eye height 41, facing it.
+                    var session = editor.Session;
+                    var scene = WadSmith.Editor.Scene.MapScene.Build(session.Geometry, n => session.Resources?.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, WadSmith.App.ThreeD.SpriteShapes.For(session.Resources));
+                    File.WriteAllBytes(Path.Combine(output, "editor-window-east.png"), WadSmith.App.ThreeD.Offscreen3D.RenderPng(scene, session.Resources, new WadSmith.App.ThreeD.Camera3D(96, 0, 41, 0, 0), 960, 600, inside: true));
+                    File.WriteAllBytes(Path.Combine(output, "editor-window-north.png"), WadSmith.App.ThreeD.Offscreen3D.RenderPng(scene, session.Resources, new WadSmith.App.ThreeD.Camera3D(0, 96, 41, 90, 0), 960, 600, inside: true));
                     break;
                 }
 

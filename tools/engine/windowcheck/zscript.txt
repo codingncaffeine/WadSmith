@@ -1,0 +1,165 @@
+version "4.6"
+
+// For every area listed in the wswindows variable (area numbers, space apart), from each of the two rooms
+// it opens onto: whether sight passes through it (two actors at the middle of its opening, in front of its
+// two sides, trying a few spots along each), and whether the player walks into it (steps of 4 from in front
+// of a side toward its middle, as the game moves the player, passing through monsters and things), from
+// every spot along the side where the player stands (a step back into the room works). WadSmith checks
+// the windows it makes and recognises with this.
+class WadSmithWindowCheck : StaticEventHandler
+{
+	override void WorldTick()
+	{
+		if (level.maptime != 10) return;
+		Array<String> parts;
+		String list = CVar.FindCVar("wswindows").GetString();
+		list.Split(parts, " ", TOK_SKIPEMPTY);
+		Console.Printf("WSWIN BEGIN %s %d", level.MapName, parts.Size());
+		for (int i = 0; i < parts.Size(); i++) Check(parts[i].ToInt());
+		Console.Printf("WSWIN END");
+	}
+
+	static Sector OtherOf(Line l, Sector s) { return l.frontsector == s ? l.backsector : l.frontsector; }
+
+	static Vector2 Middle(Sector s)
+	{
+		Vector2 sum = (0, 0);
+		for (int i = 0; i < s.Lines.Size(); i++) sum += s.Lines[i].v1.p + s.Lines[i].v2.p;
+		return sum / (2 * s.Lines.Size());
+	}
+
+	// A spot in front of the window's side toward a room: a share of the way along the side, at a depth
+	// beyond the side's farthest corner.
+	static Vector2 Spot(Sector window, Sector room, Vector2 into, double share, double ahead)
+	{
+		Vector2 along = (-into.y, into.x);
+		double low = 1e9, high = -1e9, depth = 0;
+		Vector2 origin = (0, 0);
+		bool first = true;
+		for (int i = 0; i < window.Lines.Size(); i++)
+		{
+			Line l = window.Lines[i];
+			if (OtherOf(l, window) != room) continue;
+			if (first) { origin = l.v1.p; first = false; }
+			for (int k = 0; k < 2; k++)
+			{
+				Vector2 p = k == 0 ? l.v1.p : l.v2.p;
+				double t = (p - origin) dot along;
+				low = min(low, t);
+				high = max(high, t);
+				depth = max(depth, (p - origin) dot into);
+			}
+		}
+
+		return origin + along * (low + (high - low) * share) + into * (depth + ahead);
+	}
+
+	static double Share(int j) { return j == 0 ? 0.5 : j == 1 ? 0.25 : j == 2 ? 0.75 : j == 3 ? 0.1 : 0.9; }
+
+	// Whether the player walks into the window from in front of a side, and whether the player stood
+	// anywhere in front of it to try.
+	static bool, bool Enter(PlayerPawn mo, Sector window, Sector room, Vector2 into)
+	{
+		bool stood = false;
+		for (int j = 0; j < 10; j++)
+		{
+			Vector2 start = Spot(window, room, into, Share(j % 5), mo.radius + (j < 5 ? 2 : 10));
+			Sector here = level.PointInSector(start);
+			mo.SetOrigin((start, here.floorplane.ZatPoint(start)), false);
+			if (!mo.TryMove(start + into * 4, 0)) continue;
+			stood = true;
+			mo.SetOrigin((start, here.floorplane.ZatPoint(start)), false);
+			Vector2 goal = Middle(window);
+			for (int step = 0; step < 64; step++)
+			{
+				Vector2 way = goal - mo.pos.xy;
+				if (way.Length() < 1) break;
+				if (!mo.TryMove(mo.pos.xy + way.Unit() * min(4, way.Length()), 0)) break;
+				if (mo.CurSector == window) return true, true;
+			}
+		}
+
+		return false, stood;
+	}
+
+	// Whether an actor in front of one side sees one in front of the other, both at the opening's middle.
+	static bool Sight(Sector window, Sector r0, Vector2 n0, Sector r1, Vector2 n1)
+	{
+		double middle = (window.CenterFloor() + window.CenterCeiling()) / 2;
+		for (int j = 0; j < 10; j++)
+		{
+			double ahead = j < 5 ? 24 : 8;
+			let a = Actor.Spawn("ZombieMan", (Spot(window, r0, n0, Share(j % 5), ahead), 0));
+			let b = Actor.Spawn("ZombieMan", (Spot(window, r1, n1, Share(j % 5), ahead), 0));
+			a.bNoGravity = true;
+			b.bNoGravity = true;
+			a.SetOrigin((a.pos.xy, middle - a.Height * 0.75), false);
+			b.SetOrigin((b.pos.xy, middle - b.Height / 2), false);
+			bool seen = a.CheckSight(b, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY);
+			a.Destroy();
+			b.Destroy();
+			if (seen) return true;
+		}
+
+		return false;
+	}
+
+	void Check(int index)
+	{
+		if (index < 0 || index >= level.Sectors.Size())
+		{
+			Console.Printf("WSWIN %d none", index);
+			return;
+		}
+
+		// Its longest wall to each room it opens onto.
+		Sector s = level.Sectors[index];
+		Array<Line> faces;
+		for (int i = 0; i < s.Lines.Size(); i++)
+		{
+			Line l = s.Lines[i];
+			if (!l.frontsector || !l.backsector) continue;
+			Sector other = OtherOf(l, s);
+			if (other == s || other.CenterCeiling() <= other.CenterFloor()) continue;
+			bool placed = false;
+			for (int k = 0; k < faces.Size(); k++)
+			{
+				if (OtherOf(faces[k], s) != other) continue;
+				if (l.delta.Length() > faces[k].delta.Length()) faces[k] = l;
+				placed = true;
+			}
+
+			if (!placed) faces.Push(l);
+		}
+
+		if (faces.Size() != 2)
+		{
+			Console.Printf("WSWIN %d rooms %d", index, faces.Size());
+			return;
+		}
+
+		// The way into each room: across its longest wall, away from the window.
+		Vector2 n[2];
+		Sector r[2];
+		for (int k = 0; k < 2; k++)
+		{
+			Vector2 d = faces[k].delta.Unit();
+			n[k] = faces[k].frontsector == s ? (-d.y, d.x) : (d.y, -d.x);
+			r[k] = OtherOf(faces[k], s);
+		}
+
+		bool sight = Sight(s, r[0], n[0], r[1], n[1]);
+
+		// The player walks through monsters and things (an imp at a window must not stop the check).
+		let mo = players[consoleplayer].mo;
+		Vector3 home = mo.pos;
+		bool thru = mo.bThruActors;
+		mo.bThruActors = true;
+		bool in0, c0, in1, c1;
+		[in0, c0] = Enter(mo, s, r[0], n[0]);
+		[in1, c1] = Enter(mo, s, r[1], n[1]);
+		mo.SetOrigin(home, false);
+		mo.bThruActors = thru;
+		Console.Printf("WSWIN %d %d %d %d %d %d %.0f %.0f", index, sight, in0, in1, c0, c1, s.CenterFloor(), s.CenterCeiling());
+	}
+}

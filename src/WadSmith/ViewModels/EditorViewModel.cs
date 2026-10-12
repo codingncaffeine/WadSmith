@@ -179,7 +179,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>What a left drag on the plan does (V selects, R draws rooms).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool), nameof(IsDoorTool), nameof(IsTeleportTool), nameof(IsStairsTool))]
+    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool), nameof(IsDoorTool), nameof(IsTeleportTool), nameof(IsStairsTool), nameof(IsWindowTool))]
     private Canvas.EditorTool _tool;
 
     public bool IsStairsTool
@@ -188,6 +188,16 @@ internal sealed partial class EditorViewModel : ObservableObject
         set
         {
             if (value) Tool = Canvas.EditorTool.Stairs;
+            else OnPropertyChanged();
+        }
+    }
+
+    public bool IsWindowTool
+    {
+        get => Tool == Canvas.EditorTool.Window;
+        set
+        {
+            if (value) Tool = Canvas.EditorTool.Window;
             else OnPropertyChanged();
         }
     }

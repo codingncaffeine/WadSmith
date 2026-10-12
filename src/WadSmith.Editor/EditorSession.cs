@@ -305,6 +305,35 @@ public sealed class EditorSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Makes a window in a wall from <paramref name="from"/> to <paramref name="to"/> along it (equal: a window of
+    /// the usual width round that point), as one undo step, and selects it; says why when it cannot be made.
+    /// </summary>
+    public void MakeWindow(Line wall, double from, double to)
+    {
+        if (!wall.OnMap) return;
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => MakeWindow(wall, from, to);
+            return;
+        }
+
+        try
+        {
+            (Sector? Window, string? Why) result = (null, null);
+            var geometry = _geometry;
+            var look = Look;
+            History.Record("Make a window", e => result = WallWindows.Make(e, geometry, wall, from, to, look));
+            if (result.Window is { } window) Selection.Set(window);
+            else if (result.Why is { } why) Notice?.Invoke(why);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Log.Warn($"Making a window in {Slot} failed: {ex.Message}");
+            Notice?.Invoke($"A window could not be made there. {ex.Message}");
+        }
+    }
+
     /// <summary>Copies the selected rooms (with their walls and things) and things; says what was copied, or what can be.</summary>
     public bool CopySelection()
     {

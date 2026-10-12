@@ -27,6 +27,9 @@ internal enum EditorTool
 
     /// <summary>Drag from the bottom of a staircase to its top.</summary>
     Stairs,
+
+    /// <summary>Drag along a wall, or click it, for a window.</summary>
+    Window,
 }
 
 /// <summary>
@@ -127,6 +130,11 @@ internal sealed class MapCanvas : Control
     private TransformEdit? _transformEdit;
     private bool _overGrip;
 
+    // A window being dragged along a wall: the wall, and where the drag started and is now (distances along it).
+    private Line? _windowWall;
+    private double _windowFrom;
+    private double _windowTo;
+
     static MapCanvas()
     {
         FocusableProperty.OverrideDefaultValue<MapCanvas>(true);
@@ -223,6 +231,7 @@ internal sealed class MapCanvas : Control
             CancelDrawing();
             CancelMove();
             if (change.GetNewValue<EditorTool>() != EditorTool.Teleport && Session is { } leaving) leaving.TeleportPad = null;
+            _windowWall = null;
             _snap = null;
             InvalidateVisual();
             return;
@@ -368,6 +377,7 @@ internal sealed class MapCanvas : Control
 
         if (_drawFrom is { } a && _drawTo is { } b && (a.X != b.X || a.Y != b.Y)) DrawSize(context, a, b);
         DrawGrips(context);
+        DrawWindowDrag(context);
     }
 
     /// <summary>The room's size beside it, in map units, so rooms can be drawn to measure.</summary>
@@ -566,6 +576,42 @@ internal sealed class MapCanvas : Control
     }
 
     private void CancelMove() => EndMove(keep: false);
+
+    /// <summary>
+    /// How far along a wall the point under the pointer is, from the wall's start: on the grid along a straight
+    /// up-down or across wall, in whole eighths along a slanted one, never off the wall.
+    /// </summary>
+    private double AlongWall(Line wall, Point p)
+    {
+        var m = ToMap(p);
+        var (dx, dy) = (wall.End.X - wall.Start.X, wall.End.Y - wall.Start.Y);
+        var length = Math.Sqrt(dx * dx + dy * dy);
+        var t = Math.Clamp(((m.X - wall.Start.X) * dx + (m.Y - wall.Start.Y) * dy) / length, 0, length);
+        var step = GridStep();
+        if (dy == 0) t = Math.Abs(Math.Round((wall.Start.X + Math.Sign(dx) * t) / step) * step - wall.Start.X);
+        else if (dx == 0) t = Math.Abs(Math.Round((wall.Start.Y + Math.Sign(dy) * t) / step) * step - wall.Start.Y);
+        else t = Math.Round(t / 8) * 8;
+        return Math.Clamp(t, 0, length);
+    }
+
+    /// <summary>The status strip's sentence while a window is dragged along a wall.</summary>
+    private string DescribeWindow()
+    {
+        var width = Math.Abs(_windowTo - _windowFrom);
+        return width < 1
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Let go for a window {WadSmith.Editor.Smart.WallWindows.DefaultWidth:0} wide here, or drag along the wall for another width · Esc to stop")
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Window {width:0} wide · let go to make it, Esc to stop");
+    }
+
+    /// <summary>The stretch of wall a window is being dragged along (screen pixels).</summary>
+    private void DrawWindowDrag(DrawingContext context)
+    {
+        if (_windowWall is not { } wall || Math.Abs(_windowTo - _windowFrom) < 1) return;
+        var length = wall.Length;
+        MapPoint At(double t) => new(wall.Start.X + (wall.End.X - wall.Start.X) * t / length, wall.Start.Y + (wall.End.Y - wall.Start.Y) * t / length);
+        var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x5A, 0xC8, 0xFA)), 6, lineCap: PenLineCap.Round);
+        context.DrawLine(pen, ToScreen(At(_windowFrom)), ToScreen(At(_windowTo)));
+    }
 
     /// <summary>The handles' places on the control, from the selection's box (empty when the selection has none).</summary>
     private List<(Grip Grip, Point At)> Grips()
@@ -821,6 +867,22 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Window)
+        {
+            if (WallAt(e.GetPosition(this)) is { } wall)
+            {
+                _windowWall = wall;
+                _windowFrom = _windowTo = AlongWall(wall, e.GetPosition(this));
+                _drawPress = e.GetPosition(this);
+                e.Pointer.Capture(this);
+                Placing?.Invoke(DescribeWindow());
+                InvalidateVisual();
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Door)
         {
             if (WallAt(e.GetPosition(this)) is { } wall) Session.MakeDoor(wall);
@@ -925,6 +987,14 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (Tool == EditorTool.Window && _windowWall is { } held)
+        {
+            _windowTo = AlongWall(held, p);
+            Placing?.Invoke(DescribeWindow());
+            InvalidateVisual();
+            return;
+        }
+
         if (Tool == EditorTool.Stairs)
         {
             var at = Snap(p);
@@ -989,7 +1059,7 @@ internal sealed class MapCanvas : Control
             return;
         }
 
-        var hit = Tool == EditorTool.Door ? WallAt(p) : HitTest(p);
+        var hit = Tool is EditorTool.Door or EditorTool.Window ? WallAt(p) : HitTest(p);
         if (!ReferenceEquals(hit, _hover) || _overGrip)
         {
             _overGrip = false;
@@ -1041,6 +1111,18 @@ internal sealed class MapCanvas : Control
             if (_moveGesture != 0) EndMove(keep: true);
             else if (_narrowOnClick && Session is { } s) s.Selection.Set(clicked);
             _narrowOnClick = false;
+            return;
+        }
+
+        if (Tool == EditorTool.Window && _windowWall is { } windowed && e.InitialPressMouseButton == MouseButton.Left && Session is { } glazing)
+        {
+            e.Pointer.Capture(null);
+            var let = e.GetPosition(this);
+            var (start, end) = Math.Abs(let.X - _drawPress.X) + Math.Abs(let.Y - _drawPress.Y) > 4 ? (_windowFrom, _windowTo) : (_windowFrom, _windowFrom);
+            _windowWall = null;
+            Placing?.Invoke(null);
+            InvalidateVisual();
+            glazing.MakeWindow(windowed, start, end);
             return;
         }
 
@@ -1128,6 +1210,12 @@ internal sealed class MapCanvas : Control
                 InvalidateVisual();
                 e.Handled = true;
                 break;
+            case Key.Escape when _windowWall is not null:
+                _windowWall = null;
+                Placing?.Invoke(null);
+                InvalidateVisual();
+                e.Handled = true;
+                break;
             case Key.Escape when _moveGesture != 0:
                 CancelMove();
                 _pressed = null;
@@ -1159,6 +1247,10 @@ internal sealed class MapCanvas : Control
                 break;
             case Key.S when e.KeyModifiers == KeyModifiers.None:
                 Tool = EditorTool.Stairs;
+                e.Handled = true;
+                break;
+            case Key.W when e.KeyModifiers == KeyModifiers.None:
+                Tool = EditorTool.Window;
                 e.Handled = true;
                 break;
             // Turning and mirroring the selection (on the plan only, so typing a capital in a field never does it).

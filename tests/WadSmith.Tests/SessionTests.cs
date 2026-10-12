@@ -147,4 +147,36 @@ public sealed class SessionTests
         Assert.Equal(0, typed.Value);
         DrawingTests.AssertSound(session.Map);
     }
+
+    [Fact]
+    public void AWindowMadeInTheSessionIsAWindowInTheInspector()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var ui = new FakeUi();
+        using var session = EditorSession.Open(project, "MAP01", ui.Post);
+        var inspector = new WadSmith.App.ViewModels.InspectorViewModel(session);
+        session.DrawRoom([new(320, -128), new(320, 128), new(576, 128), new(576, -128)]);
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        var east = session.Map.Lines.Single(l => l.OnMap && l.Start.X == 256 && l.End.X == 256);
+        session.MakeWindow(east, 224, 288);
+        var window = Assert.Single(session.Selection.Items.OfType<Sector>());
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        Assert.Equal("Window", inspector.Heading);
+        Assert.Contains("64 tall", inspector.Summary);
+        Assert.Equal(40, inspector.Rows.OfType<WadSmith.App.ViewModels.NumberRow>().First(r => r.Label == "Sill height").Value);
+
+        var blocks = inspector.Rows.OfType<WadSmith.App.ViewModels.FlagRow>().Single(r => r.Label == "Nothing walks or flies through");
+        blocks.Value = true;
+        Assert.Equal("Block the window", session.History.UndoLabel);
+        Assert.All(session.Map.Lines.Where(l => l.OnMap && l.Back is not null && (l.Front.Sector == window || l.Back.Sector == window)), l => Assert.True(l.Flag("blocking")));
+
+        // Open again and lowered to a step, it is a way through: the Inspector says what it is now.
+        blocks.Value = false;
+        inspector.Rows.OfType<WadSmith.App.ViewModels.NumberRow>().First(r => r.Label == "Sill height").Value = 16;
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        Assert.Equal("Room area", inspector.Heading);
+        DrawingTests.AssertSound(session.Map);
+    }
 }

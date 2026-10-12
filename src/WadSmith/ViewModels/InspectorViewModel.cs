@@ -216,7 +216,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
-        [Sector s] => Doors.Recognise(_session.Geometry, s) is not null ? "door" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : "room",
+        [Sector s] => Doors.Recognise(_session.Geometry, s) is not null ? "door" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : "room",
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : "thing",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
@@ -303,6 +303,14 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 _summaryOf = () => Lifts.Recognise(_session.Geometry, s) is { } lift ? Describe(lift) : "No longer a lift.";
                 Summary = _summaryOf();
                 AddLift(s);
+                Rows.Add(new HeadingRow("ITS AREA"));
+                AddSector(s);
+                break;
+            case Sector s when WallWindows.Recognise(_session.Geometry, s) is not null:
+                Heading = "Window";
+                _summaryOf = () => WallWindows.Recognise(_session.Geometry, s) is { } window ? Describe(window) : "No longer a window: the player can climb into it, or it is closed.";
+                Summary = _summaryOf();
+                AddWindow(s);
                 Rows.Add(new HeadingRow("ITS AREA"));
                 AddSector(s);
                 break;
@@ -472,6 +480,25 @@ internal sealed partial class InspectorViewModel : ObservableObject
             on => Change(l => (l.Settings, on), on ? "Let monsters use the lift" : "Keep monsters off the lift")));
         Rows.Add(new InfoRow("Goes down to", "The lowest floor beside it, as the game does it.", () => Now() is { } l ? string.Create(CultureInfo.InvariantCulture, $"{l.GoesDownTo:0}, {area.FloorHeight - l.GoesDownTo:0} down") : "—"));
         Rows.Add(new InfoRow("Set off from", "The walls that set it off: switches used from below, lines walked across at the top.", () => Now() is { } l ? string.Join(", ", Triggers.Ways(l.Triggers)) : "—"));
+    }
+
+    private void AddWindow(Sector area)
+    {
+        WallWindow? Now() => WallWindows.Recognise(_session.Geometry, area);
+        string Above() => Now() is { } w ? string.Create(CultureInfo.InvariantCulture, $"{area.FloorHeight - w.Rooms.Min(r => r.FloorHeight):0} above the lower floor") : "";
+        string Tall() => string.Create(CultureInfo.InvariantCulture, $"the opening is {area.CeilingHeight - area.FloorHeight:0} tall");
+        Rows.Add(new NumberRow("Sill height", "The bottom of the opening: the window area's floor (heightfloor). More than 24 above a floor, the player cannot climb in.", () => (decimal)area.FloorHeight, v => Set(area, "Change the sill height", e => e.FloorHeight, (e, x) => e.FloorHeight = x, (double)v), 8, hint: Above));
+        Rows.Add(new NumberRow("Top height", "The top of the opening: the window area's ceiling (heightceiling).", () => (decimal)area.CeilingHeight, v => Set(area, "Change the window's top", e => e.CeilingHeight, (e, x) => e.CeilingHeight = x, (double)v), 8, hint: Tall));
+        Rows.Add(new FlagRow("Nothing walks or flies through", "Its walls stop players and monsters, flying ones too; shots and sight still pass (blocking).", () => Now()?.Blocks == true, on =>
+        {
+            if (Now() is { } w) _session.History.Record(on ? "Block the window" : "Unblock the window", e => w.Faces.ToList().ForEach(l => e.Flag(l, "blocking", on)));
+        }));
+    }
+
+    private static string Describe(WallWindow w)
+    {
+        var sill = w.Sill - w.Rooms.Min(r => r.FloorHeight);
+        return string.Create(CultureInfo.InvariantCulture, $"An opening {w.Top - w.Sill:0} tall between two rooms, its sill {sill:0} above the lower floor{(w.Blocks ? "; nothing walks or flies through it" : "")}. The player sees through it and cannot climb in.");
     }
 
     private static string Compass(int angle) => (((angle % 360) + 360) % 360) switch
