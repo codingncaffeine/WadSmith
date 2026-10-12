@@ -180,6 +180,33 @@ async Task RealPerfAsync()
     canvas.FitMap();
     canvas.ZoomBy(8);
     await Measure("heights, 8x closer").ConfigureAwait(true);
+
+    // Soak: keep panning (floors view, zooming in and out a little) and watch resident memory.
+    var soak = double.Parse(args.FirstOrDefault(a => a.StartsWith("--soak=", StringComparison.Ordinal))?["--soak=".Length..] ?? "0", CultureInfo.InvariantCulture);
+    if (soak > 0)
+    {
+        ((EditorViewModel)vm.Page).ViewMode = WadSmith.App.Canvas.MapViewMode.Floors;
+        canvas.FitMap();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var next = 0.0;
+        var frame = 0;
+        while (clock.Elapsed.TotalSeconds < soak)
+        {
+            var dir = frame % 40 < 20 ? 1 : -1;
+            canvas.PanBy(6 * dir, 4 * dir);
+            if (frame % 400 == 0) canvas.ZoomBy(frame % 800 == 0 ? 3 : 1 / 3.0);
+            frame++;
+            if (clock.Elapsed.TotalSeconds >= next)
+            {
+                var rss = File.ReadLines("/proc/self/status").First(l => l.StartsWith("VmRSS:", StringComparison.Ordinal)).Split(' ', StringSplitOptions.RemoveEmptyEntries)[1];
+                Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"soak: {clock.Elapsed.TotalSeconds:0} s, resident {long.Parse(rss, CultureInfo.InvariantCulture) / 1024} MB, managed heap {GC.GetTotalMemory(false) / (1024 * 1024)} MB, {frame} frames"));
+                next += 30;
+            }
+
+            await Task.Delay(16).ConfigureAwait(true);
+        }
+    }
+
     await vm.CloseEditorAsync().ConfigureAwait(true);
 
     // Close the window and give the render thread time to stop before the process exits, or the
@@ -232,6 +259,23 @@ foreach (var pose in poses)
         case "welcome":
             Save("welcome");
             break;
+        case "crash-edit":
+        {
+            // Phase 2's crash proof: an edit, then the process killed outright after --crash-after seconds.
+            var after = double.Parse(args.FirstOrDefault(a => a.StartsWith("--crash-after=", StringComparison.Ordinal))?["--crash-after=".Length..] ?? "1.0", CultureInfo.InvariantCulture);
+            var project = WadSmith.Core.Projects.Project.Create(Path.Combine(profile, "crash-project"), "Crash", "doom2");
+            project.SaveMap(WadSmith.Editor.StarterRoom.Create("MAP01", "doom"));
+            Wait(vm.OpenEditorAsync(project, "MAP01"));
+            var session = ((EditorViewModel)vm.Page).Session;
+            Pump(1.5);
+            var room = session.Map.Sectors[0];
+            session.History.Run(new WadSmith.Editor.Editing.SetProperty<WadSmith.Editor.Model.Sector, double>(room, "Change floor height", x => x.FloorHeight, (x, v) => x.FloorHeight = v, 777));
+            Console.WriteLine($"crash-edit: edited; killing in {after} s; map file {Path.Combine(project.Folder, "maps", "MAP01.wad")}");
+            Pump(after);
+            System.Diagnostics.Process.GetCurrentProcess().Kill();
+            break;
+        }
+
         case "preferences":
             vm.OpenPreferencesCommand.Execute(null);
             Pump(0.3);

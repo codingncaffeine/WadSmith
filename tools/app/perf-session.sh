@@ -8,7 +8,7 @@ WORK="${WADSMITH_NESTED_WORK:?}"
 case "${XDG_CONFIG_HOME:-}" in "$WORK"/*) ;; *) echo "perf-session: XDG_CONFIG_HOME is not private, refusing" > "$WORK/session.txt"; exit 99;; esac
 export DOTNET_ROOT="$WS_DOTNET_ROOT" PATH="$WS_DOTNET_ROOT:$PATH"
 [ "${WS_BACKEND:-wayland}" = "x11" ] && export WADSMITH_WAYLAND=0
-"$DOTNET_ROOT/dotnet" "$WS_CAPTURE" "$WORK/out" --real ${WS_GAMES:+"--games=$WS_GAMES"} perf > "$WORK/perf.txt" 2>&1 &
+"$DOTNET_ROOT/dotnet" "$WS_CAPTURE" "$WORK/out" --real ${WS_GAMES:+"--games=$WS_GAMES"} --soak="${WS_SOAK:-0}" perf > "$WORK/perf.txt" 2>&1 &
 PID=$!
 for _ in $(seq 1 240); do
   command grep -q "perf: measuring" "$WORK/perf.txt" 2>/dev/null && break

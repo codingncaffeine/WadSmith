@@ -81,3 +81,51 @@ public sealed class GameLookTests
         Assert.Equal(4, flat.Level(9).Width);
     }
 }
+
+/// <summary>Phase 2's proof that the editor opens every map of every base game here.</summary>
+public sealed class EveryMapOpensTests
+{
+    public static TheoryData<string, string> GameMaps() => UdmfTests.GameMaps();
+
+    [Theory]
+    [MemberData(nameof(GameMaps))]
+    public void EveryMapBuildsItsShapesAndPicture(string fileName, string game)
+    {
+        var wad = WadContainer.Open(GameFiles.Require(fileName));
+        var look = new MapLook(null);
+        foreach (var lumps in MapLocator.Find(wad))
+        {
+            var map = EditorMap.FromModel(MapConversion.Read(lumps, game));
+            var geometry = MapGeometry.Build(map.Frame);
+            var picture = CanvasSnapshot.Take(geometry, look, MapViewMode.Floors);
+            // Every closed area gets an outline. Closed, decided apart from the tracer: leaving out walls
+            // with the area on both sides (a deliberate trick), at least three walls remain and each
+            // corner has as many of them arriving as leaving. Unclosed areas (control areas and other
+            // tricks in the original maps) are left to the checks.
+            var untraced = map.Sectors.Where(s => Closed(map, s) && geometry.Loops(s).Count == 0).Select(s => $"#{s.Slot}").ToList();
+            Assert.True(untraced.Count == 0, $"{fileName} {lumps.Name}: no outline for closed areas " + string.Join(", ", untraced));
+            Assert.Equal(map.Lines.Count, picture.Walls.Counts.Sum());
+        }
+    }
+
+    private static bool Closed(EditorMap map, Sector s)
+    {
+        var edges = new List<(Vertex From, Vertex To)>();
+        foreach (var l in map.Lines)
+        {
+            if (l.Front.Sector == s && l.Back?.Sector == s) continue;
+            if (l.Front.Sector == s) edges.Add((l.Start, l.End));
+            if (l.Back?.Sector == s) edges.Add((l.End, l.Start));
+        }
+
+        if (edges.Count < 3) return false;
+        var balance = new Dictionary<Vertex, int>();
+        foreach (var (from, to) in edges)
+        {
+            balance[from] = balance.GetValueOrDefault(from) + 1;
+            balance[to] = balance.GetValueOrDefault(to) - 1;
+        }
+
+        return balance.Values.All(v => v == 0);
+    }
+}
