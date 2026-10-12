@@ -58,6 +58,7 @@ public static class Problems
         StuckInWalls(geometry, resources, found);
         TeleportsNowhere(geometry, found);
         TagsNowhere(geometry, found);
+        LowDoors(geometry, found);
         DoorTracks(geometry, found);
         if (look == Look.For("doom"))
         {
@@ -298,6 +299,63 @@ public static class Problems
 
         if (nowhere.Count == 0) return;
         found.Add(new Problem("teleport-nowhere", Severity.Warning, $"{Count(nowhere.Count, "A teleporter sends", "teleporters send")} nowhere: no arrival spot has {(nowhere.Count == 1 ? "its" : "their")} id or stands in an area with {(nowhere.Count == 1 ? "its" : "their")} tag.", nowhere));
+    }
+
+    private const double PlayerHeight = 56;
+
+    /// <summary>The areas beside an area (across its two-sided walls), from the frame.</summary>
+    private static IEnumerable<int> Beside(MapGeometry g, int area)
+    {
+        var f = g.Frame;
+        if (g.WallBoundsAt(area) is not { } b) yield break;
+        foreach (var i in g.LineSlotsIn(b.MinX, b.MinY, b.MaxX, b.MaxY))
+        {
+            var l = f.Lines[i];
+            if (l.Element is null || l.Back < 0) continue;
+            var (front, back) = (f.Sides[l.Front].Sector, f.Sides[l.Back].Sector);
+            if (front == area && back != area) yield return back;
+            else if (back == area && front != area) yield return front;
+        }
+    }
+
+    /// <summary>
+    /// Doors that open less than the player's height: the game opens a door to 4 below the lowest ceiling beside it.
+    /// Only doors opened from their own walls (doors opened by tag are as often machinery as a way through), at least as
+    /// wide as the player (32), that start shut and that the player walks up to (from a room the player stands in, its
+    /// floor within 24), and the ceilings of open areas beside that no action moves (a shut door beside is opened first
+    /// in play, a ceiling an action raises is raised).
+    /// </summary>
+    private static void LowDoors(MapGeometry g, List<Problem> found)
+    {
+        var f = g.Frame;
+        var doors = new HashSet<int>();
+        foreach (var l in f.Lines)
+        {
+            if (l.Element is null || l.Special is not (Doors.DoorOpen or Doors.DoorRaise or Doors.DoorLockedRaise)) continue;
+            if (l.Args[0] == 0 && l.Back >= 0) doors.Add(f.Sides[l.Back].Sector);
+        }
+
+        var moved = new HashSet<int>();
+        foreach (var l in f.Lines)
+        {
+            if (l.Element is not null && l.Special != 0 && l.Args[0] != 0 && Switches.NamesAreas(l.Special)) moved.Add(l.Args[0]);
+        }
+
+        var low = new List<(Element Door, double Opens)>();
+        foreach (var d in doors)
+        {
+            var door = f.Sectors[d];
+            if (door.Element is null || door.CeilingHeight > door.FloorHeight || g.WallBoundsAt(d) is not { } box || Math.Max(box.MaxX - box.MinX, box.MaxY - box.MinY) < 2 * PlayerRadius) continue;
+            var open = Beside(g, d).Select(s => f.Sectors[s]).Where(s => s.CeilingHeight > s.FloorHeight && (s.Tag == 0 || !moved.Contains(s.Tag))).ToList();
+            if (!open.Any(s => door.FloorHeight - s.FloorHeight <= 24 && s.CeilingHeight - s.FloorHeight >= PlayerHeight)) continue;
+            var ceilings = open.Select(s => s.CeilingHeight).ToList();
+            var opens = ceilings.Min() - 4 - door.FloorHeight;
+            if (opens < PlayerHeight) low.Add((door.Element, opens));
+        }
+
+        if (low.Count == 0) return;
+        var least = low.Min(x => x.Opens);
+        found.Add(new Problem("door-too-low", Severity.Warning, string.Create(CultureInfo.InvariantCulture, $"{Count(low.Count, "A door opens", "doors open")} only {(low.Count == 1 ? $"{least:0}" : $"as little as {least:0}")} high, and the player is 56 tall: a door opens to 4 below the lowest ceiling beside it, so raise that ceiling."), [.. low.Select(x => x.Door)]));
     }
 
     /// <summary>Walls whose action works on the areas with a tag (a switch, a line walked over) when no area has that tag.</summary>

@@ -48,7 +48,9 @@ public sealed class ProblemTests(ITestOutputHelper output)
 
     /// <summary>
     /// Every rule runs over every map of the Doom-format games (as remixed: translated) without failing; what they find
-    /// is printed. The games as shipped can be finished, so no key in them is out of reach (the control for that rule).
+    /// is printed. The games as shipped can be finished, so no key in them is out of reach (the control for that rule),
+    /// and no door their players walk through opens too low; Freedoom has such doors (GZDoom opens Freedoom 2 MAP22's
+    /// area 266 from 72 to 92, 20 high, as the rule says).
     /// </summary>
     [Theory]
     [MemberData(nameof(DoorTests.DoomFormatGames), MemberType = typeof(DoorTests))]
@@ -67,6 +69,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
 
         output.WriteLine($"{fileName}: {maps} maps in {System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms (with reading); maps with each problem: {string.Join(", ", counts.Select(kv => $"{kv.Key} {kv.Value}"))}");
         Assert.DoesNotContain(counts.Keys, k => k.StartsWith("key-out-of-reach", StringComparison.Ordinal));
+        if (!fileName.StartsWith("freedoom", StringComparison.OrdinalIgnoreCase)) Assert.DoesNotContain("door-too-low", counts.Keys);
     }
 
     [Fact]
@@ -239,6 +242,34 @@ public sealed class ProblemTests(ITestOutputHelper output)
         history.Record("Move", e => e.Set(key, t => t.X, (t, v) => t.X = v, 64.0));
         Assert.Empty(Check(map));
         history.Record("Move", e => e.Set(key, t => t.X, (t, v) => t.X = v, 290.0));
+        Assert.Empty(Check(map));
+    }
+
+    [Fact]
+    public void ADoorBesideALowCeilingIsSaid()
+    {
+        // The door opens to 4 below the corridor's ceiling: 52 with the corridor 56 tall, too low for the player.
+        var (map, history, rooms) = LockedCloset();
+        history.Record("Key and low ceiling", e =>
+        {
+            e.Add(new Thing { X = 64, Y = 64, Type = 13 });
+            e.Set(rooms[1], s => s.CeilingHeight, (s, v) => s.CeilingHeight = v, 56.0);
+        });
+        var problem = Only(map, "door-too-low");
+        Assert.Contains("52", problem.Sentence);
+
+        // A ceiling an action raises in play does not count; nor does one high enough.
+        var raise = ActionCatalog.Find("Ceiling_RaiseByValue")!.Number;
+        history.Record("Raise it in play", e =>
+        {
+            e.Set(rooms[1], s => s.Tag, (s, v) => s.Tag = v, 9);
+            e.Set(map.Lines[0], l => l.Special, (l, v) => l.Special = v, raise);
+            e.Set(map.Lines[0], l => l.Args[0], (l, v) => l.Args[0] = v, 9);
+            e.Flag(map.Lines[0], "playercross", true);
+        });
+        Assert.DoesNotContain(Check(map), p => p.Rule == "door-too-low");
+        history.Undo();
+        history.Record("Higher", e => e.Set(rooms[1], s => s.CeilingHeight, (s, v) => s.CeilingHeight = v, 64.0));
         Assert.Empty(Check(map));
     }
 
