@@ -56,6 +56,12 @@ public sealed class SceneBatch(string texture, SurfaceKind kind)
 /// <summary>An object standing in the 3D view: where its feet are, which way it faces, and its area's light.</summary>
 public readonly record struct SceneThing(Thing Element, float X, float Y, float Z, int Type, int Angle, int Light);
 
+/// <summary>
+/// A light the 3D view shows: where it hangs, its colour (0–1 each; negative takes light away), how far it reaches as
+/// GZDoom draws it (twice its size argument), and whether it is soft (lights each surface by the way it faces).
+/// </summary>
+public readonly record struct SceneLight(float X, float Y, float Z, float R, float G, float B, float Reach, bool Soft);
+
 /// <summary>A sprite's picture as the 3D view needs it: size in pixels, the foot point (Doom's offsets) and its scale.</summary>
 public readonly record struct SpriteShape(int Width, int Height, int OffsetX, int OffsetY, double ScaleX, double ScaleY);
 
@@ -86,14 +92,18 @@ public sealed class SpriteBatch(int type)
 /// </summary>
 public sealed class MapScene
 {
-    private MapScene(long version, IReadOnlyList<SceneBatch> batches, IReadOnlyList<SpriteBatch> sprites, IReadOnlyList<SceneThing> things, (double MinX, double MinY, double MinZ, double MaxX, double MaxY, double MaxZ) bounds)
+    private MapScene(long version, IReadOnlyList<SceneBatch> batches, IReadOnlyList<SpriteBatch> sprites, IReadOnlyList<SceneThing> things, IReadOnlyList<SceneLight> lights, (double MinX, double MinY, double MinZ, double MaxX, double MaxY, double MaxZ) bounds)
     {
         Version = version;
         Batches = batches;
         Sprites = sprites;
         Things = things;
+        Lights = lights;
         Bounds = bounds;
     }
+
+    /// <summary>The map's point lights (GZDoom's dynamic lights), steady at their first reach.</summary>
+    public IReadOnlyList<SceneLight> Lights { get; }
 
     public long Version { get; }
 
@@ -311,6 +321,7 @@ public sealed class MapScene
         }
 
         var things = new List<SceneThing>();
+        var lights = new List<SceneLight>();
         var sprites = new Dictionary<int, SpriteBatch>();
         foreach (var t in f.Things)
         {
@@ -319,6 +330,13 @@ public sealed class MapScene
             var z = (area?.FloorHeight ?? 0) + t.Height;
             var light = Math.Clamp(area?.Light ?? 160, 0, 255);
             things.Add(new SceneThing(t.Element, (float)t.X, (float)t.Y, (float)z, t.Type, t.Angle, light));
+            if (Smart.Lights.Kind(t.Type) is not null && t.Args[3] > 0)
+            {
+                var sign = Smart.Lights.Subtracts(t.Type) ? -1f : 1f;
+                // GZDoom draws a light out to twice its size argument (measured: a reach-256 light fades to nothing 513 units out).
+                lights.Add(new SceneLight((float)t.X, (float)t.Y, (float)z, sign * t.Args[0] / 255f, sign * t.Args[1] / 255f, sign * t.Args[2] / 255f, 2f * t.Args[3], t.Type is >= 9830 and <= 9834));
+            }
+
             if (sprite?.Invoke(t.Type) is not { } shape) continue;
             if (!sprites.TryGetValue(t.Type, out var batch)) sprites[t.Type] = batch = new SpriteBatch(t.Type);
             batch.Owners.Add(t.Element);
@@ -343,7 +361,7 @@ public sealed class MapScene
 
         var (x0, y0, x1, y1) = geometry.Extent();
         if (minZ > maxZ) (minZ, maxZ) = (0, 128);
-        return new MapScene(f.Version, [.. batches.Values.Where(b => b.VertexCount > 0)], [.. sprites.Values], things, (x0, y0, minZ, x1, y1, maxZ));
+        return new MapScene(f.Version, [.. batches.Values.Where(b => b.VertexCount > 0)], [.. sprites.Values], things, lights, (x0, y0, minZ, x1, y1, maxZ));
 
         double Height(string texture) => texture is "-" or "" ? 128 : wallSize(texture)?.Height ?? 128;
 

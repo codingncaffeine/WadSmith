@@ -104,6 +104,8 @@
                                   ToolTip.Tip="Drag along a wall (or click it) for a window: through a thick wall to the room behind, or in a wall two rooms share, which becomes a wall closed but for the window (W)." />
                     <ToggleButton Classes="segment" Content="Teleport" IsChecked="{Binding IsTeleportTool}"
                                   ToolTip.Tip="Click a room to step on, then the spot the player arrives at: stepping onto the room sends them there (T)." />
+                    <ToggleButton Classes="segment" Content="Light" IsChecked="{Binding IsLightTool}"
+                                  ToolTip.Tip="Click in a room for a light, which the 3D view shows; its colour, reach and flicker are in the Inspector (L)." />
                     <ToggleButton Classes="segment last" Content="Stairs" IsChecked="{Binding IsStairsTool}"
                                   ToolTip.Tip="Drag from the bottom of a staircase to its top: steps that climb from one floor to the other, never more than the player can step up (S)." />
                 </StackPanel>

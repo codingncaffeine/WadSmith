@@ -314,6 +314,20 @@ public sealed class EditorSession : IDisposable
         }
     }
 
+    /// <summary>Places a new light at a point inside a room (see <see cref="Lights.New"/>), one undo step, and selects it; says why when the point is outside.</summary>
+    public void PlaceLight(MapPoint at)
+    {
+        if (_geometry.SectorAt(at) is null)
+        {
+            Notice?.Invoke("A light goes inside a room.");
+            return;
+        }
+
+        var light = Lights.New(at, Engine);
+        History.Record("Place a light", e => e.Add(light));
+        Selection.Set(light);
+    }
+
     /// <summary>The colour of the key waiting to be placed (the click on the map that comes next), or null.</summary>
     public string? KeyToPlace
     {

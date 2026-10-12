@@ -36,6 +36,9 @@ internal enum EditorTool
 
     /// <summary>Click where the key for a locked door goes.</summary>
     Key,
+
+    /// <summary>Click in a room for a light.</summary>
+    Light,
 }
 
 /// <summary>
@@ -908,6 +911,13 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (props.IsLeftButtonPressed && Session is { } lighting && Tool == EditorTool.Light)
+        {
+            lighting.PlaceLight(Snap(e.GetPosition(this)));
+            e.Handled = true;
+            return;
+        }
+
         if (props.IsLeftButtonPressed && Session is { } keying && Tool == EditorTool.Key)
         {
             if (keying.KeyToPlace is { } colour)
@@ -1341,6 +1351,10 @@ internal sealed class MapCanvas : Control
                 break;
             case Key.W when e.KeyModifiers == KeyModifiers.None:
                 Tool = EditorTool.Window;
+                e.Handled = true;
+                break;
+            case Key.L when e.KeyModifiers == KeyModifiers.None:
+                Tool = EditorTool.Light;
                 e.Handled = true;
                 break;
             case Key.J when e.KeyModifiers == KeyModifiers.None && _moveGesture == 0:

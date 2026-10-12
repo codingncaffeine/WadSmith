@@ -71,6 +71,9 @@ internal sealed unsafe class SceneRenderer : IDisposable
         uniform int overlay;
         uniform int useAlpha;
         uniform vec4 tint;
+        uniform int lightCount;
+        uniform vec4 lights[32];
+        uniform vec4 lightColours[32];
         out vec4 colour;
         void main()
         {
@@ -98,7 +101,22 @@ internal sealed unsafe class SceneRenderer : IDisposable
             // Each area at its own brightness; inside the map (fade 1) also darker with distance, more so in
             // dark rooms, as Doom lights. Never black, so the editor stays readable.
             float shade = clamp(0.22 + vLight * 0.9 - fade * vDistance / 3072.0 * (1.15 - vLight), 0.16, 1.0);
-            colour = vec4(c.rgb * shade, 1.0);
+
+            // The map's lights add their colour, fading to nothing at their reach (subtractive ones take it away); a soft
+            // one lights each surface by the way it faces it, as GZDoom does (the surface's facing from its own slope).
+            vec3 lit = vec3(shade);
+            vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
+            if (dot(n, eye - vWorld) < 0.0) n = -n;
+            for (int i = 0; i < lightCount; i++)
+            {
+                vec3 toLight = lights[i].xyz - vWorld;
+                float d = length(toLight);
+                float fall = max(0.0, 1.0 - d / lights[i].w);
+                if (lightColours[i].w > 0.5) fall *= max(0.0, dot(n, toLight / max(d, 0.001)));
+                lit += lightColours[i].rgb * fall;
+            }
+
+            colour = vec4(c.rgb * clamp(lit, 0.0, 1.6), 1.0);
         }
         """;
 
@@ -130,6 +148,14 @@ internal sealed unsafe class SceneRenderer : IDisposable
     private readonly List<(int Vao, int Vbo, int Count, int Type)> _spriteBatches = [];
     private readonly Dictionary<(string Name, SurfaceKind Kind), (int Id, int Width, int Height)> _textures = [];
     private readonly List<(int Vao, int Vbo, int Count, SurfaceKind Kind, string Texture)> _batches = [];
+    private const int MaxLights = 32;
+    private readonly int _uLightCount;
+    private readonly int _uLights;
+    private readonly int _uLightColours;
+    private readonly int _sLightCount;
+    private readonly int _sLights;
+    private readonly int _sLightColours;
+    private SceneLight[] _lights = [];
     private int _framebuffer;
     private int _colour;
     private int _depth;
@@ -161,6 +187,12 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _sOverlay = gl.Uniform(_sprites, "overlay");
         _sUseAlpha = gl.Uniform(_sprites, "useAlpha");
         _sTint = gl.Uniform(_sprites, "tint");
+        _uLightCount = gl.Uniform(_program, "lightCount");
+        _uLights = gl.Uniform(_program, "lights");
+        _uLightColours = gl.Uniform(_program, "lightColours");
+        _sLightCount = gl.Uniform(_sprites, "lightCount");
+        _sLights = gl.Uniform(_sprites, "lights");
+        _sLightColours = gl.Uniform(_sprites, "lightColours");
         RendererName = gl.Text(Gl.Renderer);
     }
 
@@ -228,6 +260,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
             _gl.DeleteBuffers(1, &vbo);
         }
 
+        _lights = [.. scene.Lights];
         _batches.Clear();
         foreach (var batch in scene.Batches)
         {
@@ -281,6 +314,24 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _gl.BindVertexArray(0);
     }
 
+    /// <summary>Hands the program the lights nearest the camera (at most <see cref="MaxLights"/>), for the program in use.</summary>
+    private void SetLights(Camera3D camera, int count, int positions, int colours)
+    {
+        var near = _lights.Length <= MaxLights ? _lights : [.. _lights.OrderBy(l => (l.X - camera.X) * (l.X - camera.X) + (l.Y - camera.Y) * (l.Y - camera.Y)).Take(MaxLights)];
+        var p = stackalloc float[MaxLights * 4];
+        var c = stackalloc float[MaxLights * 4];
+        for (var i = 0; i < near.Length; i++)
+        {
+            (p[i * 4], p[i * 4 + 1], p[i * 4 + 2], p[i * 4 + 3]) = (near[i].X, near[i].Y, near[i].Z, near[i].Reach);
+            (c[i * 4], c[i * 4 + 1], c[i * 4 + 2], c[i * 4 + 3]) = (near[i].R, near[i].G, near[i].B, near[i].Soft ? 1 : 0);
+        }
+
+        _gl.Uniform1i(count, near.Length);
+        if (near.Length == 0) return;
+        _gl.Uniform4fv(positions, near.Length, p);
+        _gl.Uniform4fv(colours, near.Length, c);
+    }
+
     /// <summary>Draws the scene from the camera into <paramref name="target"/> (BGRA, top row first, width × 4 bytes a row).</summary>
     /// <param name="camera">Where to look from.</param>
     /// <param name="width">The picture's width in pixels.</param>
@@ -308,6 +359,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _gl.Uniform1i(_uPicture, 0);
         _gl.Uniform1f(_uFade, inside ? 1f : 0f);
         _gl.Uniform1i(_uOverlay, 0);
+        SetLights(camera, _uLightCount, _uLights, _uLightColours);
         _gl.ActiveTexture(Gl.Texture0);
 
         foreach (var (vao, _, count, kind, texture) in _batches)
@@ -332,6 +384,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
             _gl.Uniform1i(_sPicture, 0);
             _gl.Uniform1f(_sFade, inside ? 1f : 0f);
             _gl.Uniform1i(_sSky, 0);
+            SetLights(camera, _sLightCount, _sLights, _sLightColours);
             _gl.Uniform1i(_sOverlay, 0);
             foreach (var (vao, _, count, type) in _spriteBatches)
             {

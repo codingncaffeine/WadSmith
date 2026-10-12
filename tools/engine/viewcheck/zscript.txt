@@ -1,6 +1,7 @@
 version "4.6"
 
-// Stands the player at the spot in the wsview variable ("x y angle", eye at the player's height) and keeps
+// Stands the player at the spot in the wsview variable ("x y angle", or "x y angle z pitch" to hold the view
+// at a height looking up or down, as for a picture of the floor from above) and keeps
 // them there, so a screenshot taken a moment later shows what the player sees from there. Prints WSVIEW DONE
 // after 16 seconds. WadSmith compares its own 3D view with the engine's with this.
 class WadSmithView : StaticEventHandler
@@ -14,10 +15,12 @@ class WadSmithView : StaticEventHandler
 		if (level.maptime >= 5 && level.maptime < 560)
 		{
 			Vector2 at = (parts[0].ToDouble(), parts[1].ToDouble());
-			mo.SetOrigin((at, level.PointInSector(at).floorplane.ZatPoint(at)), false);
+			double z = parts.Size() >= 4 ? parts[3].ToDouble() : level.PointInSector(at).floorplane.ZatPoint(at);
+			mo.bNoGravity = parts.Size() >= 4;
+			mo.SetOrigin((at, z), false);
 			mo.vel = (0, 0, 0);
 			mo.angle = parts[2].ToDouble();
-			mo.pitch = 0;
+			mo.pitch = parts.Size() >= 5 ? parts[4].ToDouble() : 0;
 		}
 
 		if (level.maptime == 560) Console.Printf("WSVIEW DONE");

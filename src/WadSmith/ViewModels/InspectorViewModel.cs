@@ -224,7 +224,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
     {
         [Sector s] => Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room",
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : l.Special == 0 ? "wall" : "wall with an action",
-        [Thing t] => Teleports.IsArrival(t) ? "arrival" : "thing",
+        [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : "thing",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
         [var one] => one.GetType().Name,
         var many => many.Count.ToString(CultureInfo.InvariantCulture),
@@ -421,6 +421,12 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 }
 
                 break;
+            case Thing t when Lights.Recognise(t) is not null:
+                Heading = "Light";
+                _summaryOf = () => Lights.Recognise(t) is { } light ? Describe(light) : "No longer a light.";
+                Summary = _summaryOf();
+                AddLight(t);
+                break;
             case Thing t when Keys.ColourOf(t.Type) is { } colour:
                 Heading = _session.Resources?.Things.Find(t.Type)?.Name ?? $"The {colour} key";
                 _summaryOf = () => Keys.DoorsOpenedBy(_session.Geometry, t.Type).Select(l => l.Args[0] != 0 ? (object)l.Args[0] : l.Back?.Sector ?? (object)l).Distinct().Count() switch
@@ -531,6 +537,52 @@ internal sealed partial class InspectorViewModel : ObservableObject
             on => Change(l => (l.Settings, on), on ? "Let monsters use the lift" : "Keep monsters off the lift")));
         Rows.Add(new InfoRow("Goes down to", "The lowest floor beside it, as the game does it.", () => Now() is { } l ? string.Create(CultureInfo.InvariantCulture, $"{l.GoesDownTo:0}, {area.FloorHeight - l.GoesDownTo:0} down") : "—"));
         Rows.Add(new InfoRow("Set off from", "The walls that set it off: switches used from below, lines walked across at the top.", () => Now() is { } l ? string.Join(", ", Triggers.Ways(l.Triggers)) : "—"));
+    }
+
+    private void AddLight(Thing t)
+    {
+        void Arg(string label, int index, int value) => _session.History.Record(label, e => e.Set(t, x => x.Args[index], (x, v) => x.Args[index] = v, value));
+        void Colour((int R, int G, int B) c) => _session.History.Record("Change the light's colour", e =>
+        {
+            e.Set(t, x => x.Args[0], (x, v) => x.Args[0] = v, c.R);
+            e.Set(t, x => x.Args[1], (x, v) => x.Args[1] = v, c.G);
+            e.Set(t, x => x.Args[2], (x, v) => x.Args[2] = v, c.B);
+        });
+        int Preset() => Lights.Colours.ToList().FindIndex(c => (c.R, c.G, c.B) == (t.Args[0], t.Args[1], t.Args[2])) is var i and >= 0 ? i : Lights.Colours.Count;
+        string[] kinds = ["Steady", "Pulsing", "Flickering", "Flickering at random"];
+        Rows.Add(new ChoiceRow("Colour", "Its colour (the first three arguments: red, green, blue).", [.. Lights.Colours.Select(c => c.Name), "Other"], Preset, v =>
+        {
+            if (v < Lights.Colours.Count) Colour((Lights.Colours[v].R, Lights.Colours[v].G, Lights.Colours[v].B));
+        }));
+        Rows.Add(new TextRow("Exact colour", "Its colour as #RRGGBB, as in a paint program.", () => Lights.Hex((t.Args[0], t.Args[1], t.Args[2])), text =>
+        {
+            if (Lights.ParseHex(text) is { } c) Colour(c);
+        }));
+        Rows.Add(new NumberRow("Reach", "How far it lights, in map units (its radius, the fourth argument).", () => t.Args[3], v => Arg("Change the light's reach", 3, (int)v), 16, 0, 1024));
+        Rows.Add(new ChoiceRow("Shines", "Steadily, or pulsing or flickering between its reach and its second reach (the light's kind).", kinds, () => (int)(Lights.Kind(t.Type) ?? LightKind.Steady), v =>
+        {
+            var type = Lights.TypeOf((LightKind)v, Lights.Recognise(t)?.Soft ?? true);
+            _session.History.Record("Change how the light shines", e => e.Set(t, x => x.Type, (x, value) => x.Type = value, type));
+        }));
+        Rows.Add(new NumberRow("Second reach", "The other reach a pulsing or flickering light goes to (the fifth argument).", () => t.Args[4], v => Arg("Change the light's second reach", 4, (int)v), 16, 0, 1024));
+        Rows.Add(new NumberRow("Height above floor", "How high it hangs above the floor (height).", () => (decimal)t.Height, v => Set(t, "Change the light's height", e => e.Height, (e, x) => e.Height = x, (double)v), 8));
+        Rows.Add(new FlagRow("Soft edge", "Fades smoothly and lights each surface by the way it faces (an attenuated light), as GZDoom recommends.", () => Lights.Recognise(t)?.Soft == true, on =>
+        {
+            var type = Lights.TypeOf(Lights.Kind(t.Type) ?? LightKind.Steady, on);
+            _session.History.Record(on ? "Soften the light" : "Harden the light", e => e.Set(t, x => x.Type, (x, value) => x.Type = value, type));
+        }));
+    }
+
+    private static string Describe(Light l)
+    {
+        var name = Lights.Colours.FirstOrDefault(c => (c.R, c.G, c.B) == l.Colour).Name?.ToLowerInvariant() ?? Lights.Hex(l.Colour);
+        var how = l.Kind switch
+        {
+            LightKind.Pulsing => string.Create(CultureInfo.InvariantCulture, $", pulsing between {l.Reach} and {l.SecondReach}"),
+            LightKind.Flickering or LightKind.RandomFlicker => string.Create(CultureInfo.InvariantCulture, $", flickering between {l.Reach} and {l.SecondReach}"),
+            _ => "",
+        };
+        return string.Create(CultureInfo.InvariantCulture, $"A {name} light reaching {l.Reach}{how}, {l.Height:0} above the floor. The 3D view shows it; GZDoom draws it in the game.");
     }
 
     /// <summary>For a locked door: place its key when the map has none of that colour, else select the key.</summary>

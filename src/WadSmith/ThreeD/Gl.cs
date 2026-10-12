@@ -89,6 +89,7 @@ internal sealed unsafe class Gl
     public readonly delegate* unmanaged<int, float, float, void> Uniform2f;
     public readonly delegate* unmanaged<int, float, float, float, void> Uniform3f;
     public readonly delegate* unmanaged<int, float, float, float, float, void> Uniform4f;
+    public readonly delegate* unmanaged<int, int, float*, void> Uniform4fv;
     public readonly delegate* unmanaged<int, int, byte, float*, void> UniformMatrix4fv;
     public readonly delegate* unmanaged<int, int*, void> GenTextures;
     public readonly delegate* unmanaged<int, int, void> BindTexture;
@@ -155,6 +156,7 @@ internal sealed unsafe class Gl
         Uniform2f = (delegate* unmanaged<int, float, float, void>)F("glUniform2f");
         Uniform3f = (delegate* unmanaged<int, float, float, float, void>)F("glUniform3f");
         Uniform4f = (delegate* unmanaged<int, float, float, float, float, void>)F("glUniform4f");
+        Uniform4fv = (delegate* unmanaged<int, int, float*, void>)F("glUniform4fv");
         UniformMatrix4fv = (delegate* unmanaged<int, int, byte, float*, void>)F("glUniformMatrix4fv");
         GenTextures = (delegate* unmanaged<int, int*, void>)F("glGenTextures");
         BindTexture = (delegate* unmanaged<int, int, void>)F("glBindTexture");

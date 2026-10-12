@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,7 +361,7 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
@@ -459,6 +459,35 @@ foreach (var pose in poses)
                     editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
                     Pump(1.5);
                     Save("editor-make-stairs");
+                    break;
+                }
+
+                if (pose == "editor-make-light")
+                {
+                    // L and a click in the starter room; the Inspector's colour red and a reach of 256; the room
+                    // darkened to 96 so the light shows. Then the 3D view from the south of the room, facing north.
+                    window.KeyPress(Avalonia.Input.Key.L, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.L, "l");
+                    Pump(0.2);
+                    Console.WriteLine($"light tool: {editor.Tool}, status '{editor.Status}'");
+                    window.MouseMove(At(0, 64), Avalonia.Input.RawInputModifiers.None);
+                    window.MouseDown(At(0, 64), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(0, 64), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.8);
+                    var light = editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Thing>().SingleOrDefault();
+                    Console.WriteLine($"light placed: {light?.Type} at ({light?.X},{light?.Y}) height {light?.Height}, heading '{editor.Inspector.Heading}', '{editor.Inspector.Summary}'");
+                    editor.Inspector.Rows.OfType<ChoiceRow>().Single(r => r.Label == "Colour").Value = 2;
+                    editor.Inspector.Rows.OfType<NumberRow>().Single(r => r.Label == "Reach").Value = 256;
+                    Pump(0.5);
+                    Console.WriteLine($"light changed: '{editor.Inspector.Summary}', args {string.Join(",", light?.Args ?? [])}, undo '{editor.Session.History.UndoLabel}'");
+                    var room = editor.Session.Map.Sectors[0];
+                    editor.Session.History.Record("Darken", e => e.Set(room, x => x.Light, (x, v) => x.Light = v, 96));
+                    Pump(1.0);
+                    Wait(editor.Session.FlushAsync());
+                    Save("editor-make-light");
+                    var session = editor.Session;
+                    var scene = WadSmith.Editor.Scene.MapScene.Build(session.Geometry, n => session.Resources?.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, WadSmith.App.ThreeD.SpriteShapes.For(session.Resources));
+                    Console.WriteLine($"light scene: {scene.Lights.Count} lights");
+                    File.WriteAllBytes(Path.Combine(output, "editor-light-3d.png"), WadSmith.App.ThreeD.Offscreen3D.RenderPng(scene, session.Resources, new WadSmith.App.ThreeD.Camera3D(0, -200, 41, 90, 0), 960, 600, inside: true));
                     break;
                 }
 
