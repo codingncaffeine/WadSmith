@@ -25,12 +25,15 @@ internal sealed partial class CommandPaletteViewModel : ObservableObject
     private readonly IReadOnlyList<EditorCommand> _all;
     private readonly List<string> _recent;
     private readonly Action _close;
+    private readonly Action? _ran;
 
-    public CommandPaletteViewModel(IReadOnlyList<EditorCommand> all, List<string> recent, Action close)
+    /// <summary>The palette over <paramref name="all"/>; <paramref name="ran"/> is told when a command is run from it, before it runs.</summary>
+    public CommandPaletteViewModel(IReadOnlyList<EditorCommand> all, List<string> recent, Action close, Action? ran = null)
     {
         _all = all;
         _recent = recent;
         _close = close;
+        _ran = ran;
         Refresh();
     }
 
@@ -110,7 +113,9 @@ internal sealed partial class CommandPaletteViewModel : ObservableObject
         _recent.Remove(command.Name);
         _recent.Insert(0, command.Name);
         if (_recent.Count > 8) _recent.RemoveAt(_recent.Count - 1);
-        if (command.Available) command.Run();
+        if (!command.Available) return;
+        _ran?.Invoke();
+        command.Run();
     }
 
     [RelayCommand]

@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WadSmith.Editor;
@@ -6,35 +7,51 @@ using WadSmith.Editor.Model;
 
 namespace WadSmith.App.ViewModels;
 
+/// <summary>A chapter of the Guide offered by name: in the Guide menu and on a finished chapter's card.</summary>
+internal sealed record GuideLink(string Title, string Tip, ICommand Open);
+
 /// <summary>
-/// The guided first map while it runs (§3.9): the open step, what to do, the control it points at, and the checks that
-/// finish each step, read from the map on a worker after every change. It never blocks the editor: the user can do
-/// anything meanwhile, skip a step or stop.
+/// A Guide chapter while it runs (§3.9): the open step, what to do, the control it points at, and the checks that finish
+/// each step, read from the map on a worker after every change. It never blocks the editor: the user can do anything
+/// meanwhile, skip a step or stop.
 /// </summary>
 internal sealed partial class GuideViewModel : ObservableObject
 {
     private readonly EditorSession _session;
     private readonly Func<string, string> _keyed;
     private readonly Action _stopped;
+    private readonly Func<IEnumerable<string>> _standing;
     private readonly (string Monster, string Weapon) _examples;
-    private readonly LatestOnWorker<Reading> _facts;
-    private IReadOnlyDictionary<Side, (string Top, string Middle, string Bottom)> _wallsAtStep = new Dictionary<Side, (string, string, string)>();
-    private GuideFacts? _atStep;
-    private bool _saw3D;
-    private bool _played;
+    private readonly LatestOnWorker<Reading> _checks;
+    private readonly HashSet<string> _happened = [];
+    private MapFrame? _atStep;
 
-    // One reading of the map for a step; the walls come with the first reading after the step begins.
-    private sealed record Reading(EditorSession Session, int Step, GuideFacts Facts, IReadOnlyDictionary<Side, (string Top, string Middle, string Bottom)>? Walls);
+    // One check of the open step against the map.
+    private sealed record Reading(EditorSession Session, int Step, bool Done);
 
-    public GuideViewModel(EditorSession session, Func<string, string> keyed, Action stopped)
+    /// <summary>
+    /// Runs <paramref name="chapter"/> on the session's map. <paramref name="standing"/> says what holds in the editor now, such as
+    /// classic names switched on, which a step sees as having happened; <paramref name="open"/> opens a chapter by id for the
+    /// finished card's links.
+    /// </summary>
+    public GuideViewModel(EditorSession session, GuideChapter chapter, Func<string, string> keyed, Func<IEnumerable<string>> standing, Action stopped, Action<string> open)
     {
         _session = session;
+        Chapter = chapter;
         _keyed = keyed;
+        _standing = standing;
         _stopped = stopped;
-        _examples = GuidedMap.Examples(session.Engine);
-        _facts = new(MainViewModel.PostToUi, Arrived, "the guided map's checks");
+        _examples = GuideBook.Examples(session.Engine);
+        _checks = new(MainViewModel.PostToUi, Arrived, "the Guide's checks");
+        var next = chapter.Id == GuideBook.FirstMap ? GuideBook.AfterFirstMap : GuideBook.After(chapter) is { } after ? [after] : [];
+        Next = [.. next.Select(c => new GuideLink(chapter.Id == GuideBook.FirstMap ? c.Title : "Next: " + c.Title, c.Summary, new RelayCommand(() => open(c.Id))))];
         Begin(0);
     }
+
+    public GuideChapter Chapter { get; }
+
+    /// <summary>The chapters the finished card offers.</summary>
+    public IReadOnlyList<GuideLink> Next { get; }
 
     /// <summary>The open step's number, from 0.</summary>
     [ObservableProperty]
@@ -52,71 +69,59 @@ internal sealed partial class GuideViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(Target), nameof(StepLabel))]
     private bool _finished;
 
-    public string StepLabel => Finished ? "Your first map" : $"Step {Index + 1} of {GuidedMap.Steps.Count}";
+    private bool IsFirstMap => Chapter.Id == GuideBook.FirstMap;
+
+    public string StepLabel => Finished
+        ? IsFirstMap ? "Your first map" : Chapter.Title
+        : $"{(IsFirstMap ? "" : Chapter.Title + " · ")}Step {Index + 1} of {Chapter.Steps.Count}";
 
     /// <summary>The control the open step points at.</summary>
-    public GuideTarget Target => Finished ? GuideTarget.None : GuidedMap.Steps[Index].Target;
+    public GuideTarget Target => Finished ? GuideTarget.None : Chapter.Steps[Index].Target;
 
-    /// <summary>The map changed: the open step's check runs again on a worker.</summary>
+    /// <summary>The map changed, or something happened: the open step's check runs again on a worker.</summary>
     public void MapChanged()
     {
         if (Finished) return;
         var session = _session;
         var step = Index;
         var frame = session.Geometry.Frame;
-        var walls = _wallsAtStep;
-        var baseline = _atStep is null;
+        // The map as the step began is the frame the first check after it sees.
+        _atStep ??= frame;
+        var start = _atStep;
+        var happened = new HashSet<string>(_happened);
         var resources = session.Resources;
-        _facts.Request(() =>
-        {
-            var before = baseline ? GuidedMap.Walls(frame) : walls;
-            return new Reading(session, step, GuidedMap.Facts(frame, resources, before), baseline ? before : null);
-        });
+        var s = Chapter.Steps[step];
+        _checks.Request(() => new Reading(session, step, GuideBook.Done(s, frame, start, resources, happened)));
     }
 
     private void Arrived(Reading r)
     {
         if (!ReferenceEquals(r.Session, _session) || r.Step != Index || Finished) return;
-        if (_atStep is null)
-        {
-            // The first reading after a step begins is what the step compares with.
-            if (r.Walls is null) return;
-            _wallsAtStep = r.Walls;
-            _atStep = r.Facts;
-        }
-
-        if (GuidedMap.Done(GuidedMap.Steps[Index], r.Facts, _atStep, _saw3D, _played)) Next();
+        if (r.Done) Advance();
     }
 
-    /// <summary>The 3D view filled the window (the "See it in 3D" step).</summary>
-    public void Saw3D()
+    /// <summary>Something a step may wait for happened in the editor (<see cref="GuideEvents"/>).</summary>
+    public void Happened(string what)
     {
-        _saw3D = true;
-        MapChanged();
-    }
-
-    /// <summary>Play started the engine (the last step).</summary>
-    public void Played()
-    {
-        _played = true;
+        if (Finished || !_happened.Add(what)) return;
         MapChanged();
     }
 
     /// <summary>Goes on to the next step without doing this one.</summary>
     [RelayCommand]
-    private void Skip() => Next();
+    private void Skip() => Advance();
 
     /// <summary>Ends the guide; the map stays as it is.</summary>
     [RelayCommand]
     private void Stop() => _stopped();
 
-    private void Next()
+    private void Advance()
     {
-        if (Index + 1 >= GuidedMap.Steps.Count)
+        if (Index + 1 >= Chapter.Steps.Count)
         {
             Finished = true;
-            Title = $"You made a {GameName()} map.";
-            Text = _keyed("Everything in it can be changed, and nothing needs saving. Try next: select a room and make it a lift, draw stairs with the Stairs tool{or:Stairs tool}, lock a door with a key, or make a room a secret. Ctrl+K finds anything else.");
+            Title = IsFirstMap ? $"You made a {GameName()} map." : "Done.";
+            Text = _keyed(Chapter.TryIt);
             return;
         }
 
@@ -126,23 +131,19 @@ internal sealed partial class GuideViewModel : ObservableObject
     private void Begin(int step)
     {
         Index = step;
-        var s = GuidedMap.Steps[step];
-        Title = s.Title;
-        Text = _keyed(s.Text.Replace("{monster}", _examples.Monster, StringComparison.Ordinal).Replace("{weapon}", _examples.Weapon, StringComparison.Ordinal));
-        // What the map holds as the step begins is read on a worker and becomes what the step compares with.
+        Title = Chapter.Steps[step].Title;
+        Text = Written(Chapter.Steps[step]);
         _atStep = null;
-        _saw3D = false;
-        _played = false;
+        _happened.Clear();
+        _happened.UnionWith(_standing());
         MapChanged();
     }
 
     /// <summary>The keys or the names changed in Preferences: the open step's text is written again.</summary>
-    public void Rewrite()
-    {
-        if (Finished) return;
-        var s = GuidedMap.Steps[Index];
-        Text = _keyed(s.Text.Replace("{monster}", _examples.Monster, StringComparison.Ordinal).Replace("{weapon}", _examples.Weapon, StringComparison.Ordinal));
-    }
+    public void Rewrite() => Text = Finished ? _keyed(Chapter.TryIt) : Written(Chapter.Steps[Index]);
+
+    private string Written(GuideStep s) =>
+        _keyed(s.Text.Replace("{monster}", _examples.Monster, StringComparison.Ordinal).Replace("{weapon}", _examples.Weapon, StringComparison.Ordinal));
 
     private string GameName() => _session.Engine switch
     {

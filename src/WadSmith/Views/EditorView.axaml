@@ -60,7 +60,7 @@
                                       ToolTip.Tip="Shows each area's floor as it looks in the game, lit by its brightness." />
                         <ToggleButton Classes="segment" Content="Ceilings" IsChecked="{Binding IsCeilings}"
                                       ToolTip.Tip="Shows each area's ceiling texture, as if looking up through the map." />
-                        <ToggleButton Classes="segment" Content="Heights" IsChecked="{Binding ShowHeights}"
+                        <ToggleButton Classes="segment" Content="Heights" Classes.guide="{Binding Marks.Heights}" IsChecked="{Binding ShowHeights}"
                                       ToolTip.Tip="Colours every area by its floor height, blue for low and red for high, so steps, pits and platforms stand out." />
                         <ToggleButton Classes="segment last" Content="Lines" IsChecked="{Binding IsLines}"
                                       ToolTip.Tip="Shows only the walls, in the colours of the game's automap." />
@@ -93,7 +93,7 @@
                     <Button Classes="metal" Content="Redo" Command="{Binding RedoCommand}" ToolTip.Tip="{Binding RedoTip}" />
                     <Button Classes="metal" Content="Keep a version" Command="{Binding KeepVersionCommand}"
                             ToolTip.Tip="Keeps a copy of the map as it is now, with a picture, in the project's versions." />
-                    <Button Classes="metal" Content="Preferences" Command="{Binding OpenPreferencesCommand}"
+                    <Button Classes="metal" Content="Preferences" Classes.guide="{Binding Marks.Preferences}" Command="{Binding OpenPreferencesCommand}"
                             ToolTip.Tip="Larger text, tips, the title bar and where your games are (Ctrl+,)." />
                 </StackPanel>
             </Grid>
@@ -117,9 +117,9 @@
                                   ToolTip.Tip="{Binding Faces.Window.Tip}" />
                     <ToggleButton Classes="segment tool" Content="{Binding Faces.Teleport.Label}" IsChecked="{Binding IsTeleportTool}"
                                   ToolTip.Tip="{Binding Faces.Teleport.Tip}" />
-                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Light.Label}" IsChecked="{Binding IsLightTool}"
+                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Light.Label}" Classes.guide="{Binding Marks.Light}" IsChecked="{Binding IsLightTool}"
                                   ToolTip.Tip="{Binding Faces.Light.Tip}" />
-                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Stairs.Label}" IsChecked="{Binding IsStairsTool}"
+                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Stairs.Label}" Classes.guide="{Binding Marks.Stairs}" IsChecked="{Binding IsStairsTool}"
                                   ToolTip.Tip="{Binding Faces.Stairs.Tip}" />
                     <ToggleButton Classes="segment tool last" Content="{Binding Faces.Measure.Label}" IsChecked="{Binding IsMeasureTool}"
                                   ToolTip.Tip="{Binding Faces.Measure.Tip}" />
@@ -170,11 +170,11 @@
                                   ToolTip.Tip="Turn around the map like a model on a table." />
                     <ToggleButton Classes="segment" Content="Fly" IsChecked="{Binding IsFly}"
                                   ToolTip.Tip="Move freely through the map: drag to look, WASD to move, Q and E to go down and up, Shift for speed." />
-                    <ToggleButton Classes="segment last" Content="Walk" IsChecked="{Binding IsWalk}"
+                    <ToggleButton Classes="segment last" Content="Walk" Classes.guide="{Binding Marks.Walk}" IsChecked="{Binding IsWalk}"
                                   ToolTip.Tip="Walk as the player does: eye height, up steps, stopped by walls. Drag to look, WASD to move, Shift to run." />
                 </StackPanel>
             </Panel>
-            <!-- The guided first map (§3.9): the open step beside the map, never in the way of it. -->
+            <!-- The Guide (§3.9): the open step beside the map, never in the way of it. -->
             <Border Grid.ColumnSpan="3" IsVisible="{Binding Guide, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Right" VerticalAlignment="Bottom"
                     Margin="12" Padding="16,12" MaxWidth="420" CornerRadius="6" Background="{DynamicResource Brush.Surface1}"
                     BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1">
@@ -182,11 +182,23 @@
                     <TextBlock Classes="section" Text="{Binding StepLabel}" />
                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
-                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                    <ItemsControl ItemsSource="{Binding Next}" IsVisible="{Binding Finished}" Margin="0,6,0,0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:GuideLink">
+                                <Button Classes="metal" Content="{Binding Title}" Command="{Binding Open}" ToolTip.Tip="{Binding Tip}" Margin="0,0,8,6" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
                         <Button Classes="metal" Content="Skip this step" Command="{Binding SkipCommand}" IsVisible="{Binding !Finished}"
                                 ToolTip.Tip="Goes on to the next step without this one. Your map stays as it is." />
                         <Button Classes="metal" Content="Stop the guide" Command="{Binding StopCommand}" IsVisible="{Binding !Finished}"
-                                ToolTip.Tip="Ends the guide; your map stays as it is. Ctrl+K and “Guided first map” start it again." />
+                                ToolTip.Tip="Ends the guide; your map stays as it is. The Guide button at the bottom right starts it again." />
                         <Button Classes="primary" Content="Keep going" Command="{Binding StopCommand}" IsVisible="{Binding Finished}"
                                 ToolTip.Tip="Closes the guide. Your map is yours to change." />
                     </StackPanel>
@@ -345,13 +357,28 @@
         </StackPanel>
 
 
-        <!-- Status strip: what is under the pointer, or the coach's next tip; the problems; whether changes are kept. -->
+        <!-- Status strip: what is under the pointer, or the coach's next tip; the Guide; the problems; whether changes are kept. -->
         <Border Grid.Row="3" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,1,0,0">
-            <Grid ColumnDefinitions="*,Auto,Auto" Margin="12,0">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="12,0">
                 <TextBlock Text="{Binding Status}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                <ToggleButton Grid.Column="1" Classes="segment first last" Content="{Binding Problems.Summary}" IsChecked="{Binding ShowProblems}" Padding="10,1" Margin="16,2,0,2"
+                <!-- The Guide (§3.9): its chapters, each a few hands-on minutes on this map. -->
+                <Button Grid.Column="1" Classes="metal" Content="Guide" Padding="10,1" Margin="16,2,0,2" VerticalAlignment="Center"
+                        ToolTip.Tip="Short hands-on chapters on this map: rooms and heights, doors and keys, lifts and stairs, textures, monsters, lights, secrets, map settings, and classic names for veterans.">
+                    <Button.Flyout>
+                        <MenuFlyout Placement="TopEdgeAlignedRight" ItemsSource="{Binding GuideMenu}">
+                            <MenuFlyout.ItemContainerTheme>
+                                <ControlTheme TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" x:DataType="vm:GuideLink">
+                                    <Setter Property="Header" Value="{Binding Title}" />
+                                    <Setter Property="Command" Value="{Binding Open}" />
+                                    <Setter Property="ToolTip.Tip" Value="{Binding Tip}" />
+                                </ControlTheme>
+                            </MenuFlyout.ItemContainerTheme>
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
+                <ToggleButton Grid.Column="2" Classes="segment first last" Content="{Binding Problems.Summary}" IsChecked="{Binding ShowProblems}" Padding="10,1" Margin="16,2,0,2"
                               ToolTip.Tip="Things that would break or spoil the map, checked as you work, each with a way to see it and often a one-click fix." />
-                <TextBlock Grid.Column="2" Text="{Binding SaveText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
+                <TextBlock Grid.Column="3" Text="{Binding SaveText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
             </Grid>
         </Border>
 

@@ -75,6 +75,8 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.Selection.Changed += () => Learned("select");
         session.GeometryChanged += UpdateHeights;
         session.GeometryChanged += () => Guide?.MapChanged();
+        _mapSeen = (session.MapEntry.Title, session.MapEntry.Music);
+        session.MapSettingsChanged += MapSettingsSeen;
         session.GeometryChanged += CameraMoved;
         _profiles = new LatestOnWorker<(EditorSession Session, ElevationProfile Profile)>(MainViewModel.PostToUi, r =>
         {
@@ -226,7 +228,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             if (value == MapLayout.ThreeD)
             {
                 _before3D = Layout;
-                Guide?.Saw3D();
+                Guide?.Happened(GuideEvents.ThreeD);
             }
 
             _services.Settings.Current.Layout = value;
@@ -299,7 +301,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             return;
         }
 
-        Palette = new CommandPaletteViewModel(Commands(), _recentCommands, () => Palette = null);
+        Palette = new CommandPaletteViewModel(Commands(), _recentCommands, () => Palette = null, () => Guide?.Happened(GuideEvents.Palette));
         Learned("palette");
     }
 
@@ -379,7 +381,6 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Walk in 3D", "View", "", "player view|first person|camera|gravity", () => CameraMode = ThreeD.CameraMode.Walk),
             new("The game's view", "View", "G in 3D", "gzdoom picture|engine view|screenshot", () => EngineView = !EngineView),
             new("Command palette", "View", "Ctrl+K", "find a command|search|actions", () => OpenPaletteCommand.Execute(null), Also: "Ctrl+Shift+P"),
-            new("Guided first map", "View", "", "tutorial|help|learn|guide|how do i", () => StartGuideCommand.Execute(null), () => Guide is null),
 
             new("Inspector", "Panels", "", "properties|details", () => ShowInspector = true),
             new("Textures shelf", "Panels", "", "textures|flats|wall pictures", () => ShowTextures = true),
@@ -396,6 +397,8 @@ internal sealed partial class EditorViewModel : ObservableObject
             var skill = i;
             list.Add(new($"Play on {skills[i]}", "Play", "", "difficulty|skill", () => Skill = skill));
         }
+
+        list.AddRange(GuideCommands());
 
         list.Add(new("Preferences", "WadSmith", K("Ctrl+,", "F5"), "settings|options|tips|larger text|classic names|keys", () => OpenPreferencesCommand.Execute(null)));
         list.Add(new("Back to the start screen", "WadSmith", "", "close|other map|home", () => CloseCommand.Execute(null)));
@@ -466,26 +469,66 @@ internal sealed partial class EditorViewModel : ObservableObject
     }
 
 
-    /// <summary>The guided first map while it runs; null when it is not running.</summary>
+    /// <summary>The Guide chapter running now; null when none is.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Marks))]
     private GuideViewModel? _guide;
 
-    /// <summary>Which control the guide's open step outlines.</summary>
+    /// <summary>Which control the Guide's open step outlines.</summary>
     public GuideMarks Marks => GuideMarks.For(Guide?.Target ?? GuideTarget.None);
 
-    /// <summary>Starts the guided first map on this map (§3.9).</summary>
+    /// <summary>The Guide's chapters, for the Guide menu.</summary>
+    public IReadOnlyList<GuideLink> GuideMenu => _guideMenu ??= [.. GuideBook.Chapters.Select(c => new GuideLink(c.Title, c.Summary, new RelayCommand(() => StartGuide(c.Id))))];
+
+    private IReadOnlyList<GuideLink>? _guideMenu;
+
+    // The map's name and music when last seen, so the Guide hears which one changed.
+    private (string Title, string? Music) _mapSeen;
+
+    /// <summary>
+    /// Starts a Guide chapter on this map (§3.9): the guided first map with no id. A chapter already running gives way to
+    /// another; the same one is left as it is.
+    /// </summary>
     [RelayCommand]
-    private void StartGuide()
+    private void StartGuide(string? chapter)
     {
-        if (Guide is not null) return;
-        var guide = new GuideViewModel(Session, Keyed, () => Guide = null);
+        var wanted = GuideBook.Chapter(chapter);
+        if (Guide?.Chapter == wanted) return;
+        var guide = new GuideViewModel(Session, wanted, Keyed, Standing, () => Guide = null, id => StartGuide(id));
         guide.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(GuideViewModel.Target)) OnPropertyChanged(nameof(Marks));
+            if (e.PropertyName == nameof(GuideViewModel.Target) && ReferenceEquals(Guide, guide)) OnPropertyChanged(nameof(Marks));
         };
         Guide = guide;
     }
+
+    /// <summary>One palette entry per Guide chapter; the first map keeps its own name.</summary>
+    private IEnumerable<EditorCommand> GuideCommands() => GuideBook.Chapters.Select(c => new EditorCommand(
+        c.Id == GuideBook.FirstMap ? c.Title : "Guide: " + c.Title, "Guide", "", "tutorial|help|learn|guide|how do i|" + c.Summary.ToLowerInvariant(),
+        () => StartGuide(c.Id), () => Guide?.Chapter.Id != c.Id));
+
+    /// <summary>What holds in the editor now that a Guide step may ask for.</summary>
+    private IEnumerable<string> Standing()
+    {
+        if (_services.Settings.Current.ClassicNames) yield return GuideEvents.ClassicNames;
+        if (_services.Settings.Current.DoomBuilderKeys) yield return GuideEvents.BuilderKeys;
+    }
+
+    private void MapSettingsSeen()
+    {
+        var now = (Session.MapEntry.Title, Session.MapEntry.Music);
+        if (now.Title != _mapSeen.Title) Guide?.Happened(GuideEvents.MapName);
+        if (now.Music != _mapSeen.Music) Guide?.Happened(GuideEvents.MapMusic);
+        _mapSeen = now;
+    }
+
+    partial void OnSkillChanged(int value) => Guide?.Happened(GuideEvents.Difficulty);
+
+    partial void OnCameraModeChanged(ThreeD.CameraMode value)
+    {
+        if (value == ThreeD.CameraMode.Walk) Guide?.Happened(GuideEvents.Walk);
+    }
+
     /// <summary>The classic names or the keys changed in Preferences: every label, tooltip, tip and key follows at once.</summary>
     internal void VeteranChanged()
     {
@@ -496,6 +539,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         OnPropertyChanged(nameof(ClassicKeys));
         Inspector.Rebuild();
         Guide?.Rewrite();
+        foreach (var s in Standing()) Guide?.Happened(s);
         UpdateStatus();
     }
 
@@ -863,6 +907,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     partial void OnViewModeChanged(Canvas.MapViewMode value)
     {
+        if (value == Canvas.MapViewMode.Heights) Guide?.Happened(GuideEvents.Heights);
         if (value != Canvas.MapViewMode.Floors) Learned("heights");
     }
 
@@ -1263,7 +1308,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             foreach (var a in arguments) start.ArgumentList.Add(a);
             using var process = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException("the engine did not start");
             Playing = true;
-            Guide?.Played();
+            Guide?.Happened(GuideEvents.Played);
             Hint($"Playing {Session.Slot} in {engine.Name}… WadSmith keeps your changes meanwhile; what the game says comes back to Problems when it closes.");
             await process.WaitForExitAsync(_services.ShuttingDown).ConfigureAwait(true);
         }

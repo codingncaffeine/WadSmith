@@ -945,10 +945,29 @@ foreach (var pose in poses)
                 for (var i = 0; i < 6; i++) editor.Guide!.SkipCommand.Execute(null);
                 Pump(0.3);
                 Pump(0.3);
-                editor.Guide!.Played();
+                editor.Guide!.Happened(WadSmith.Editor.App.GuideEvents.Played);
                 Pump(0.8);
                 Console.WriteLine($"guide: {editor.Guide?.StepLabel} {editor.Guide?.Title}");
                 Save("editor-guide-done");
+
+                // A chapter from the finished card, on its second step (the Inspector outlined), then its own finished card.
+                editor.Guide!.Next.First(l => l.Title == "Doors, keys and switches").Open.Execute(null);
+                editor.Guide!.SkipCommand.Execute(null);
+                Pump(0.5);
+                Console.WriteLine($"guide: {editor.Guide?.StepLabel} {editor.Guide?.Title}; marks inspector {editor.Marks.Inspector}");
+                Save("editor-guide-chapter");
+                for (var i = 0; i < 3; i++) editor.Guide!.SkipCommand.Execute(null);
+                Pump(0.5);
+                Console.WriteLine($"guide: {editor.Guide?.StepLabel} {editor.Guide?.Title}; next {string.Join(", ", editor.Guide!.Next.Select(l => l.Title))}");
+                Save("editor-guide-chapter-done");
+
+                // The Guide menu, opened from its button.
+                editor.Guide = null;
+                var guideButton = window.GetVisualDescendants().OfType<Avalonia.Controls.Button>().First(b => b.Content is "Guide");
+                guideButton.Flyout!.ShowAt(guideButton);
+                Pump(0.5);
+                Save("editor-guide-menu");
+                guideButton.Flyout.Hide();
                 break;
             }
 
