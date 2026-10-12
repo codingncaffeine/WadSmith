@@ -23,6 +23,9 @@ public static class MapTranslation
         (0x00800000, "firstsideonly"), (0x01000000, "blockprojectiles"), (0x02000000, "blockuse"),
     ];
 
+    /// <summary>GZDoom's ML_ line flag bits and their UDMF names, for the repairs interpreter.</summary>
+    internal static IReadOnlyList<(int Bit, string Field)> LineFlagNamesTable => LineFlagNames;
+
     private const int MlSpacMask = 0x1C00;
     private const int MlRepeat = 0x0200;
     private const int MlMonstersCanActivate = 0x2000;

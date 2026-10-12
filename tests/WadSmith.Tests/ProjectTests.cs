@@ -107,3 +107,17 @@ public sealed class ProjectTests
         Assert.Contains(problems, p => p.Message == "Line 0 ends at a corner that does not exist.");
     }
 }
+
+public sealed class StressMapTests
+{
+    [Fact]
+    public void TheStressGridIsStructurallySoundAndEveryRoomIsClosed()
+    {
+        var m = Cli.Commands.StressGenCommand.Build(6);
+        Assert.Equal(2 * 6 * 7, m.Lines.Count);
+        Assert.Empty(MapValidator.Check(m));
+        var geometry = new Editor.Geometry.MapGeometry(Editor.Model.EditorMap.FromModel(m));
+        foreach (var s in geometry.Map.Sectors) Assert.Single(geometry.Loops(s));
+        Assert.Same(geometry.Map.Sectors[0], geometry.SectorAt(new Editor.Geometry.MapPoint(64, 64)));
+    }
+}

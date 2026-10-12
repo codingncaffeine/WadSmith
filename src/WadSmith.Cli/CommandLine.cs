@@ -41,6 +41,7 @@ public static class CommandLine
         new Commands.Render2dCommand(),
         new Commands.ValidateCommand(),
         new Commands.RemixCommand(),
+        new Commands.StressGenCommand(),
     ];
 
     public static int Run(IReadOnlyList<string> args, TextWriter output, TextWriter error)

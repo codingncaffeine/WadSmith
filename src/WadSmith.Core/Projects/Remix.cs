@@ -31,8 +31,12 @@ public static class Remix
         var xlat = lumps.Format == MapFormat.Doom ? XlatTranslator.Load(engine, XlatTranslator.PathFor(model.Namespace)) : null;
         var zdoom = MapTranslation.ToZDoom(model, xlat, notes);
 
+        // The fixes GZDoom gives the original map (D40); an edited copy has a new checksum, so they come along here.
+        var checksum = MapChecksum.Compute(lumps);
+        if (CompatibilityRepairs.Load(engine)?.Apply(zdoom, checksum, notes) == true) notes.Add($"GZDoom's own repairs for {lumps.Name} were applied, as the engine applies them to the original.");
+
         var project = Project.Create(projectFolder, projectName ?? $"{lumps.Name} remix", game.Id);
-        project.SaveMap(zdoom, origin: new MapOrigin { Kind = "remix", Game = game.Id, Map = lumps.Name, Checksum = MapChecksum.Compute(lumps) });
+        project.SaveMap(zdoom, origin: new MapOrigin { Kind = "remix", Game = game.Id, Map = lumps.Name, Checksum = checksum });
         return project;
     }
 }

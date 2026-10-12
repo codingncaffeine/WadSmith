@@ -21,6 +21,7 @@ internal sealed class TranslateCommand : ICommand
 
           --map=NAME          The map to convert (MAP01, E1M1 …).
           --out=FILE.wad      Write the converted map as a WAD.
+          --repairs           Also apply GZDoom's own repairs for this original map, as a remix does.
           --compare=LOG       Compare with an engine dump (tools/engine/dump-map.sh) and list
                               every difference; fails when there is one.
           --game=ID           The base game whose rules apply; normally worked out from the file.
@@ -32,6 +33,7 @@ internal sealed class TranslateCommand : ICommand
         var mapName = args.Option("map") ?? throw new UsageException("translate needs --map=NAME.");
         var outPath = args.Option("out");
         var comparePath = args.Option("compare");
+        var withRepairs = args.Flag("repairs");
         var gameId = args.Option("game");
         var enginePath = args.Option("engine-data") ?? EngineData.Find();
         args.RejectUnread();
@@ -62,8 +64,9 @@ internal sealed class TranslateCommand : ICommand
             var engineFiles = new ResourceStack([ResourceContainer.Open(enginePath)]);
             var compat = EngineCompatibility.Load(engineFiles);
             var checksum = MapChecksum.Compute(lumps);
-            var patched = compat.HasRepairs(checksum) || compat.HasBehaviourSwitches(checksum);
-            if (compat.HasRepairs(checksum)) output.WriteLine($"  Note: GZDoom repairs this map ({checksum}) when it loads the original; the translation does not include those repairs.");
+            var patched = (compat.HasRepairs(checksum) && !withRepairs) || compat.HasBehaviourSwitches(checksum);
+            if (withRepairs && CompatibilityRepairs.Load(engineFiles)?.Apply(zdoom, checksum, notes) == true) output.WriteLine("  GZDoom's own repairs for this map were applied.");
+            if (compat.HasRepairs(checksum) && !withRepairs) output.WriteLine($"  Note: GZDoom repairs this map ({checksum}) when it loads the original; the translation does not include those repairs.");
             if (compat.HasBehaviourSwitches(checksum)) output.WriteLine($"  Note: GZDoom switches some behaviour for this map ({checksum}); the translation does not carry those switches.");
             foreach (var n in notes) output.WriteLine($"  Note: {n}");
 

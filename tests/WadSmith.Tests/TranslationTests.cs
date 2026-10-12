@@ -189,3 +189,62 @@ public sealed class TranslationDetailTests
         Assert.True(s.Extra.TryGet("dropactors", out var v) && v.AsBool());
     }
 }
+
+public sealed class RepairTests
+{
+    private static ResourceStack Engine() => new([ResourceContainer.Open(GameFiles.Require("gzdoom.pk3"))]);
+
+    /// <summary>A map big enough for every index the repairs name.</summary>
+    private static MapModel Big()
+    {
+        var m = new MapModel { Name = "MAP01", Namespace = "zdoom" };
+        for (var i = 0; i < 8000; i++)
+        {
+            m.Vertices.Add(new MapVertex { X = i, Y = 0 });
+            m.Sectors.Add(new MapSector { CeilingHeight = 128 });
+            m.Sides.Add(new MapSide { Sector = i });
+            m.Sides.Add(new MapSide { Sector = i });
+            m.Lines.Add(new MapLine { V1 = i, V2 = (i + 1) % 8000, Front = 2 * i, Back = 2 * i + 1 });
+            m.Things.Add(new MapThing { X = i, Type = 3001 });
+        }
+
+        return m;
+    }
+
+    [Fact]
+    public void EveryRepairTheEngineShipsIsReadable()
+    {
+        var engine = Engine();
+        var repairs = CompatibilityRepairs.Load(engine)!;
+        var checksums = EngineCompatibility.Load(engine).RepairedMaps;
+        Assert.True(checksums.Count > 150, $"only {checksums.Count} repaired maps were listed");
+        var unreadable = new List<string>();
+        foreach (var checksum in checksums)
+        {
+            var notes = new List<string>();
+            Assert.True(repairs.Apply(Big(), checksum, notes), $"{checksum} was listed but not found");
+            unreadable.AddRange(notes.Where(n => n.Contains("could not be read", StringComparison.Ordinal)).Select(n => $"{checksum}: {n}"));
+        }
+
+        Assert.Empty(unreadable);
+    }
+
+    [Fact]
+    public void ARepairChangesWhatItSays()
+    {
+        // Doom II MAP15: the unreachable secret in area 147 is removed.
+        var m = Big();
+        m.Sectors[147].Special = 1024;
+        var notes = new List<string>();
+        Assert.True(CompatibilityRepairs.Load(Engine())!.Apply(m, "1A540BA717BF9EC85F8522594C352F2A", notes));
+        Assert.Equal(0, m.Sectors[147].Special);
+        Assert.Equal("METAL", m.Sides[m.Lines[94].Back].Top);
+    }
+
+    [Fact]
+    public void AMapTheEngineDoesNotRepairIsLeftAlone()
+    {
+        var m = Big();
+        Assert.False(CompatibilityRepairs.Load(Engine())!.Apply(m, "00000000000000000000000000000000", []));
+    }
+}

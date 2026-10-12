@@ -63,6 +63,9 @@ public sealed class Scanner
 
     public string Source => _source;
 
+    /// <summary>Reads 'single-quoted' text as a string token too (ZScript's name literals).</summary>
+    public bool AllowNameLiterals { get; init; }
+
     public int Line => _peeked?.Line ?? _line;
 
     public Token Peek() => _peeked ??= Read();
@@ -144,11 +147,12 @@ public sealed class Scanner
         var c = _s[_pos];
         var line = _line;
 
-        if (c == '"')
+        if (c == '"' || (c == '\'' && AllowNameLiterals))
         {
+            var quote = c;
             _pos++;
             var sb = new StringBuilder();
-            while (_pos < _s.Length && _s[_pos] != '"')
+            while (_pos < _s.Length && _s[_pos] != quote)
             {
                 var ch = _s[_pos++];
                 if (ch == '\\' && _pos < _s.Length)

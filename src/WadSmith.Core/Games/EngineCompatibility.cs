@@ -41,6 +41,9 @@ public sealed partial class EngineCompatibility
 
     public int Count => _flagged.Count + _repaired.Count;
 
+    /// <summary>Every map checksum the engine repairs.</summary>
+    public IReadOnlyCollection<string> RepairedMaps => _repaired;
+
     /// <summary>
     /// The line flags a game's MAPINFO <c>gamedefaults</c> turns on for every line of every map
     /// (Strife's clipped middle textures, for one), as GZDoom's ML_ bits.
