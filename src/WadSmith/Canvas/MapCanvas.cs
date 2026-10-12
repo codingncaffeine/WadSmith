@@ -36,6 +36,12 @@ internal sealed class MapCanvas : Control
     private readonly LatestOnWorker<(EditorSession Session, CanvasSnapshot Picture)> _pictures;
     private readonly LatestOnWorker<(EditorSession Session, long Generation, SelectionOverlay Outline)> _outlines;
     private readonly LatestOnWorker<(EditorSession Session, long Gesture, MoveSet Set)> _gathers;
+    private readonly LatestOnWorker<(EditorSession Session, bool Add, IReadOnlyList<Element> Picked)> _boxes;
+
+    /// <summary>A box being drawn over empty space with the Select tool (screen points), and whether it adds to the selection.</summary>
+    private Point? _boxFrom;
+    private Point? _boxTo;
+    private bool _boxAdd;
     private CanvasSnapshot? _snapshot;
     private MapLook _look = new(null);
     private SelectionOverlay? _selection;
@@ -109,6 +115,12 @@ internal sealed class MapCanvas : Control
             Follow(_lastPointer, _free);
             if (_endWhenGathered) EndMove(keep: true);
         }, "what a drag moves");
+        _boxes = new(ViewModels.MainViewModel.PostToUi, r =>
+        {
+            if (!ReferenceEquals(r.Session, Session)) return;
+            if (r.Add) r.Session.Selection.Set([.. r.Session.Selection.Items, .. r.Picked]);
+            else r.Session.Selection.Set([.. r.Picked]);
+        }, "a box selection");
     }
 
     public EditorSession? Session
@@ -264,6 +276,13 @@ internal sealed class MapCanvas : Control
         }
 
         context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview, move));
+        if (_boxFrom is { } b0 && _boxTo is { } b1)
+        {
+            var box = new Rect(b0, b1).Normalize();
+            context.FillRectangle(new SolidColorBrush(Color.FromArgb(0x24, 0xE0, 0x58, 0x2A)), box);
+            context.DrawRectangle(new Pen(new SolidColorBrush(Color.FromRgb(0xE0, 0x58, 0x2A)), 1, new DashStyle([4, 3], 0)), box);
+        }
+
         if (_drawFrom is { } a && _drawTo is { } b && (a.X != b.X || a.Y != b.Y)) DrawSize(context, a, b);
     }
 
@@ -297,6 +316,26 @@ internal sealed class MapCanvas : Control
         if (Session?.Geometry.VertexNear(m, 8 / _zoom) is { } v) return new MapPoint(v.X, v.Y);
         var step = GridStep();
         return new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step);
+    }
+
+    /// <summary>
+    /// Where a corner added to a wall at the pointer goes: the nearest point on the wall, on the grid
+    /// along a straight up-down or across wall, never on either end.
+    /// </summary>
+    private MapPoint CornerOn(Line wall, Point p)
+    {
+        var m = ToMap(p);
+        var (ax, ay, bx, by) = (wall.Start.X, wall.Start.Y, wall.End.X, wall.End.Y);
+        var (dx, dy) = (bx - ax, by - ay);
+        var t = Math.Clamp(((m.X - ax) * dx + (m.Y - ay) * dy) / Math.Max(dx * dx + dy * dy, 1e-9), 0, 1);
+        var on = new MapPoint(ax + dx * t, ay + dy * t);
+        var step = GridStep();
+        MapPoint snapped = dx == 0 ? new(ax, Math.Round(on.Y / step) * step) : dy == 0 ? new(Math.Round(on.X / step) * step, ay) : new(Math.Round(on.X), Math.Round(on.Y));
+        bool Between(MapPoint q) => dx == 0 || dy == 0
+            ? Math.Min(ax, bx) <= q.X && q.X <= Math.Max(ax, bx) && Math.Min(ay, by) <= q.Y && q.Y <= Math.Max(ay, by) && !(q.X == ax && q.Y == ay) && !(q.X == bx && q.Y == by)
+            : !(q.X == ax && q.Y == ay) && !(q.X == bx && q.Y == by);
+        if (Between(snapped)) return snapped;
+        return t is > 0 and < 1 ? on : new MapPoint((ax + bx) / 2, (ay + by) / 2);
     }
 
     private MapPoint? Nearest(IEnumerable<MapPoint> points)
@@ -482,13 +521,27 @@ internal sealed class MapCanvas : Control
             _pressAt = e.GetPosition(this);
             _pressed = null;
             _narrowOnClick = false;
-            if ((e.KeyModifiers & KeyModifiers.Shift) != 0)
+            var shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+
+            // A double-click on a wall adds a corner there, ready to drag.
+            if (e.ClickCount == 2 && hit is Line wall && !shift)
             {
-                if (hit is not null) Session.Selection.Toggle(hit);
+                Session.AddCorner(wall, CornerOn(wall, e.GetPosition(this)));
+                e.Handled = true;
+                return;
             }
-            else if (hit is null)
+
+            if (hit is null)
             {
-                Session.Selection.Clear();
+                // Empty space: a drag draws a box that selects what is inside (Shift adds to the selection).
+                if (!shift) Session.Selection.Clear();
+                _boxFrom = _boxTo = e.GetPosition(this);
+                _boxAdd = shift;
+                e.Pointer.Capture(this);
+            }
+            else if (shift)
+            {
+                Session.Selection.Toggle(hit);
             }
             else
             {
@@ -539,6 +592,13 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (_boxFrom is not null)
+        {
+            _boxTo = p;
+            InvalidateVisual();
+            return;
+        }
+
         if (_pressed is not null && _pressAt is { } pressed && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && Math.Abs(p.X - pressed.X) + Math.Abs(p.Y - pressed.Y) > 4)
         {
             BeginMove(p);
@@ -564,6 +624,19 @@ internal sealed class MapCanvas : Control
         {
             _panFrom = null;
             e.Pointer.Capture(null);
+            return;
+        }
+
+        if (_boxFrom is { } from && _boxTo is { } to && e.InitialPressMouseButton == MouseButton.Left)
+        {
+            _boxFrom = _boxTo = null;
+            e.Pointer.Capture(null);
+            InvalidateVisual();
+            if (Math.Abs(to.X - from.X) + Math.Abs(to.Y - from.Y) <= 4 || Session is not { } boxed) return;
+            var (c0, c1) = (ToMap(from), ToMap(to));
+            var geometry = boxed.Geometry;
+            var add = _boxAdd;
+            _boxes.Request(() => (boxed, add, BoxSelection.Pick(geometry, Math.Min(c0.X, c1.X), Math.Min(c0.Y, c1.Y), Math.Max(c0.X, c1.X), Math.Max(c0.Y, c1.Y))));
             return;
         }
 
@@ -616,6 +689,11 @@ internal sealed class MapCanvas : Control
                 break;
             case Key.Escape when _drawFrom is not null:
                 CancelDrawing();
+                e.Handled = true;
+                break;
+            case Key.Escape when _boxFrom is not null:
+                _boxFrom = _boxTo = null;
+                InvalidateVisual();
                 e.Handled = true;
                 break;
             case Key.Escape when _moveGesture != 0:

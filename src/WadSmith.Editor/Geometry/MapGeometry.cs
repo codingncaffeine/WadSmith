@@ -122,6 +122,22 @@ public sealed class MapGeometry
         return found;
     }
 
+    /// <summary>The places of every area with an outline whose bounds meet the box given, each once.</summary>
+    public IReadOnlyList<int> SectorSlotsIn(double minX, double minY, double maxX, double maxY)
+    {
+        var found = new List<int>();
+        var seen = new HashSet<int>();
+        foreach (var i in _sectors.Near(minX, minY, maxX, maxY))
+        {
+            if (!seen.Add(i) || _loops[i].Length == 0) continue;
+            var b = _bounds[i];
+            if (b.MaxX < minX || b.MinX > maxX || b.MaxY < minY || b.MinY > maxY) continue;
+            found.Add(i);
+        }
+
+        return found;
+    }
+
     /// <summary>The places of every object inside the box given, each once.</summary>
     public IReadOnlyList<int> ThingSlotsIn(double minX, double minY, double maxX, double maxY)
     {
@@ -138,15 +154,18 @@ public sealed class MapGeometry
     }
 
     /// <summary>Every corner inside the box given, each once.</summary>
-    public IReadOnlyList<Vertex> VerticesIn(double minX, double minY, double maxX, double maxY)
+    public IReadOnlyList<Vertex> VerticesIn(double minX, double minY, double maxX, double maxY) => [.. VertexSlotsIn(minX, minY, maxX, maxY).Select(i => Frame.Vertices[i].Element!)];
+
+    /// <summary>The places of every corner inside the box given, each once.</summary>
+    public IReadOnlyList<int> VertexSlotsIn(double minX, double minY, double maxX, double maxY)
     {
-        var found = new List<Vertex>();
+        var found = new List<int>();
         var seen = new HashSet<int>();
         foreach (var i in _vertices.Near(minX, minY, maxX, maxY))
         {
             var v = Frame.Vertices[i];
             if (v.Element is null || !seen.Add(i) || v.X < minX || v.X > maxX || v.Y < minY || v.Y > maxY) continue;
-            found.Add(v.Element);
+            found.Add(i);
         }
 
         return found;

@@ -133,6 +133,15 @@ public sealed class EditorSession : IDisposable
         }
     }
 
+    /// <summary>Adds a corner to a wall at a point on it, splitting the wall in two, and selects the corner (to drag it).</summary>
+    public void AddCorner(Line wall, MapPoint at)
+    {
+        if (!wall.OnMap) return;
+        var corner = new Vertex { X = at.X, Y = at.Y };
+        History.Record("Add a corner", e => Walls.Split(e, wall, e.Add(corner)));
+        Selection.Set(corner);
+    }
+
     /// <summary>
     /// Deletes the selection so the map stays whole (see <see cref="Deleting"/>), as one undo step, and
     /// says what stayed and why. Waits for the map's shapes like <see cref="DrawRoom"/>.

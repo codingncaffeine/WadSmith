@@ -26,7 +26,7 @@ if (args.Length < 1)
 
 var output = Path.GetFullPath(args[0]);
 Directory.CreateDirectory(output);
-var size = args.Skip(1).FirstOrDefault(a => a.Contains('x', StringComparison.Ordinal) && !a.StartsWith("--", StringComparison.Ordinal)) ?? "1440x900";
+var size = args.Skip(1).FirstOrDefault(a => System.Text.RegularExpressions.Regex.IsMatch(a, "^[0-9]+x[0-9]+$")) ?? "1440x900";
 var width = double.Parse(size.Split('x')[0], CultureInfo.InvariantCulture);
 var height = double.Parse(size.Split('x')[1], CultureInfo.InvariantCulture);
 var games = args.FirstOrDefault(a => a.StartsWith("--games=", StringComparison.Ordinal))?["--games=".Length..];
@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,7 +361,7 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
@@ -414,6 +414,27 @@ foreach (var pose in poses)
 
                 Drag((256, -256), (768, 256), pose == "editor-draw" ? "editor-drawing" : null);
                 Report("beside");
+                if (pose == "editor-box")
+                {
+                    // V, a box dragged from empty space round the new room selects it; a double-click on the
+                    // starter room's west wall adds a corner there, selected.
+                    window.KeyPress(Avalonia.Input.Key.V, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.V, "v");
+                    Pump(0.2);
+                    Drag((232, -320), (800, 320), "editor-boxing");
+                    Report("boxed");
+                    Console.WriteLine($"draw picked: {string.Join(", ", editor.Session.Selection.Items.Select(i => i.GetType().Name))}");
+                    window.MouseDown(At(-256, 40), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(-256, 40), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.1);
+                    window.MouseDown(At(-256, 40), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(-256, 40), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.8);
+                    Report("corner");
+                    if (editor.Session.Selection.Items.FirstOrDefault() is WadSmith.Editor.Model.Vertex added) Console.WriteLine($"draw added corner at ({added.X}, {added.Y})");
+                    Save("editor-box");
+                    break;
+                }
+
                 if (pose == "editor-delete")
                 {
                     // V, a click in the new room, the Delete key: the room goes and the shared wall is the
