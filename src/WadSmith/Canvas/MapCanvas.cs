@@ -1277,7 +1277,7 @@ internal sealed class MapCanvas : Control
                 // Pressing on something selected keeps the selection, so all of it can be dragged; a click
                 // without a drag then selects just that.
                 if (Session.Selection.Contains(hit)) _narrowOnClick = Session.Selection.Count > 1;
-                else Session.Selection.Set(hit);
+                else Session.Selection.Pick(hit, ToMap(e.GetPosition(this)));
                 _pressed = hit;
                 e.Pointer.Capture(this);
             }
@@ -1469,7 +1469,7 @@ internal sealed class MapCanvas : Control
             _pressAt = null;
             e.Pointer.Capture(null);
             if (_moveGesture != 0) EndMove(keep: true);
-            else if (_narrowOnClick && Session is { } s) s.Selection.Set(clicked);
+            else if (_narrowOnClick && Session is { } s) s.Selection.Pick(clicked, ToMap(e.GetPosition(this)));
             _narrowOnClick = false;
             return;
         }

@@ -1,3 +1,4 @@
+using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
 
 namespace WadSmith.Editor.Editing;
@@ -16,6 +17,9 @@ public sealed class Selection
 
     public event Action? Changed;
 
+    /// <summary>Where on the map the click that picked the selection landed (see <see cref="Pick"/>), for tools that work round a point on what is selected; null when it was selected another way.</summary>
+    public MapPoint? At { get; private set; }
+
     public IEnumerable<T> OfType<T>()
         where T : Element => _items.OfType<T>();
 
@@ -23,6 +27,7 @@ public sealed class Selection
 
     public void Set(params Element[] elements)
     {
+        At = null;
         _items.Clear();
         _set.Clear();
         foreach (var e in elements)
@@ -33,8 +38,20 @@ public sealed class Selection
         Changed?.Invoke();
     }
 
+    /// <summary>Selects one element clicked at <paramref name="at"/> on the map, keeping the point as <see cref="At"/>.</summary>
+    public void Pick(Element e, MapPoint at)
+    {
+        _items.Clear();
+        _set.Clear();
+        _items.Add(e);
+        _set.Add(e);
+        At = at;
+        Changed?.Invoke();
+    }
+
     public void Toggle(Element e)
     {
+        At = null;
         if (_set.Remove(e)) _items.Remove(e);
         else if (_set.Add(e)) _items.Add(e);
         Changed?.Invoke();
@@ -43,6 +60,7 @@ public sealed class Selection
     public void Clear()
     {
         if (_items.Count == 0) return;
+        At = null;
         _items.Clear();
         _set.Clear();
         Changed?.Invoke();
@@ -53,6 +71,7 @@ public sealed class Selection
     {
         var removed = _items.RemoveAll(e => !e.OnMap);
         if (removed == 0) return;
+        At = null;
         _set.RemoveWhere(e => !e.OnMap);
         Changed?.Invoke();
     }

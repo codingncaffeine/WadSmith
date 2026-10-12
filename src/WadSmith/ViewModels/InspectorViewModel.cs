@@ -570,8 +570,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 if (l.Special == 0)
                 {
                     Rows.Add(l.Back is null
-                        ? new ActionRow("Make it the exit switch", "The player uses this wall to end the map; it gets the game's exit switch texture (Exit_Normal).", () => _session.History.Record("Make the exit", e => Exits.Make(e, l, false, _session.Look)))
-                        : new ActionRow("End the map when walked across", "Crossing this wall ends the map and goes on to the next one (Exit_Normal).", () => _session.History.Record("Make the exit", e => Exits.Make(e, l, false, _session.Look))));
+                        ? new ActionRow("Make it the exit switch", "A piece of this wall as wide as the switch picture (64) becomes the exit switch, where you clicked it (its middle when it was not clicked), and the rest stays wall; a short wall becomes the switch whole. The player uses the switch to end the map (Exit_Normal).", () => _session.MakeExit(l, false, _session.Selection.At))
+                        : new ActionRow("End the map when walked across", "Crossing this wall ends the map and goes on to the next one (Exit_Normal).", () => _session.MakeExit(l, false)));
                 }
 
                 break;

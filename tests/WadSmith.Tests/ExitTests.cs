@@ -6,6 +6,7 @@ using WadSmith.Core.Projects;
 using WadSmith.Core.Translation;
 using WadSmith.Editor;
 using WadSmith.Editor.Editing;
+using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
 using WadSmith.Editor.Smart;
 
@@ -46,19 +47,54 @@ public sealed class ExitTests
         var history = new History(map);
         var before = Udmf(map.ToModel());
         var wall = map.Lines[0];
-        history.Record("Make the exit", e => Exits.Make(e, wall, false, Look.For("doom")));
-        Assert.True(Exits.IsExit(wall));
-        Assert.Equal((Exits.Normal, "SW1EXIT", true), (wall.Special, wall.Front.Middle, wall.Flag("playeruse")));
-        Assert.Equal("uses it", Exits.How(wall));
-        history.Record("Change where the exit goes", e => Exits.GoTo(e, wall, true));
-        Assert.Equal(Exits.Secret, wall.Special);
-        history.Record("Take the exit away", e => Exits.Clear(e, wall));
-        Assert.False(Exits.IsExit(wall));
-        Assert.False(wall.Flag("playeruse"));
+        Line? made = null;
+        history.Record("Make the exit", e => made = Exits.Make(e, wall, false, Look.For("doom")));
+
+        // The west wall is 512 long: the middle 64 of it is the switch, and the rest stays wall, its texture running on past the switch.
+        var exit = Assert.IsType<Line>(made);
+        Assert.True(Exits.IsExit(exit));
+        Assert.Equal((Exits.Normal, "SW1EXIT", true), (exit.Special, exit.Front.Middle, exit.Flag("playeruse")));
+        var west = map.Lines.Where(l => l.OnMap && l.Start.X == -256 && l.End.X == -256).OrderBy(l => l.Start.Y).ToList();
+        Assert.Equal([(-256.0, -32.0, 0, "STARTAN3", 0.0), (-32.0, 32.0, Exits.Normal, "SW1EXIT", 0.0), (32.0, 256.0, 0, "STARTAN3", 288.0)], west.Select(l => (l.Start.Y, l.End.Y, l.Special, l.Front.Middle, l.Front.OffsetX)));
+        Assert.Same(exit, west[1]);
+        Assert.Equal("uses it", Exits.How(exit));
+        history.Record("Change where the exit goes", e => Exits.GoTo(e, exit, true));
+        Assert.Equal(Exits.Secret, exit.Special);
+        history.Record("Take the exit away", e => Exits.Clear(e, exit));
+        Assert.False(Exits.IsExit(exit));
+        Assert.False(exit.Flag("playeruse"));
         history.Undo();
         history.Undo();
         history.Undo();
         Assert.Equal(before, Udmf(map.ToModel()));
+    }
+
+    [Fact]
+    public void TheExitSwitchGoesWhereTheWallWasClickedAndAShortWallIsAllSwitch()
+    {
+        // Clicked three quarters of the way up the west wall: the switch is the 64 round the click.
+        var map = EditorMap.FromModel(StarterRoom.Create("MAP01", "doom"));
+        var history = new History(map);
+        Line? made = null;
+        history.Record("Make the exit", e => made = Exits.Make(e, map.Lines[0], false, Look.For("doom"), new MapPoint(-250, 200)));
+        Assert.Equal((168.0, 232.0), (made!.Start.Y, made.End.Y));
+        Assert.Equal(6, map.Lines.Count(l => l.OnMap));
+        history.Undo();
+        Assert.Equal(4, map.Lines.Count(l => l.OnMap));
+
+        // Clicked at the very end: the switch stops at the corner.
+        history.Record("Make the exit", e => made = Exits.Make(e, map.Lines[0], false, Look.For("doom"), new MapPoint(-256, 250)));
+        Assert.Equal((192.0, 256.0), (made!.Start.Y, made.End.Y));
+        Assert.Equal(5, map.Lines.Count(l => l.OnMap));
+
+        // A wall not much wider than the switch picture is the switch whole.
+        var (small, smallHistory, _) = MovingTests.Drawn((0, 0, 80, 128));
+        var shortWall = small.Lines.First(l => l.OnMap && l.Length == 80);
+        var walls = small.Lines.Count(l => l.OnMap);
+        smallHistory.Record("Make the exit", e => made = Exits.Make(e, shortWall, false, Look.For("doom"), new MapPoint(10, 0)));
+        Assert.Same(shortWall, made);
+        Assert.Equal(walls, small.Lines.Count(l => l.OnMap));
+        Assert.Equal("SW1EXIT", shortWall.Front.Middle);
     }
 
     [Fact]
@@ -86,8 +122,13 @@ public sealed class ExitTests
         inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Make it the exit switch").Command.Execute(null);
         Assert.Equal("Exit switch", inspector.Heading);
         Assert.Equal("Ends the map when the player uses it, going on to the next map.", inspector.Summary);
+
+        // The selection moved to the piece that is the switch, 64 of the 512 wall, so the Inspector shows the switch itself.
+        var piece = Assert.IsType<Line>(session.Selection.Items.Single());
+        Assert.NotSame(wall, piece);
+        Assert.Equal((64.0, 0, "STARTAN3"), (piece.Length, wall.Special, wall.Front.Middle));
         inspector.Rows.OfType<ChoiceRow>().Single(r => r.Label == "Goes to").Value = 1;
-        Assert.Equal(Exits.Secret, wall.Special);
+        Assert.Equal(Exits.Secret, piece.Special);
         Assert.Contains("the secret map", inspector.Summary);
         inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Not an exit").Command.Execute(null);
         Assert.Equal("Solid wall", inspector.Heading);

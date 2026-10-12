@@ -23,12 +23,12 @@ public sealed class ProblemTests(ITestOutputHelper output)
 
     private static IReadOnlyList<Problem> Check(EditorMap map) => Problems.Check(MapGeometry.Build(map.Frame), Freedoom.Value, Look.For("doom"), "doom");
 
-    /// <summary>The starter room with an exit switch: nothing to report.</summary>
+    /// <summary>The starter room with an exit switch near the north end of its west wall (a 64 piece of it): nothing to report.</summary>
     private static (EditorMap Map, History History) Clean()
     {
         var map = EditorMap.FromModel(StarterRoom.Create("MAP01", "doom"));
         var history = new History(map);
-        history.Record("Make the exit", e => Exits.Make(e, map.Lines[0], false, Look.For("doom")));
+        history.Record("Make the exit", e => Exits.Make(e, map.Lines[0], false, Look.For("doom"), new MapPoint(-256, 200)));
         return (map, history);
     }
 

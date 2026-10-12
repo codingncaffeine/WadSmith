@@ -1007,6 +1007,15 @@ public sealed class EditorSession : IDisposable
         else if (made.Why is { } why) Notice?.Invoke(why);
     }
 
+    /// <summary>Makes a wall the exit (see <see cref="Exits.Make"/>), one undo step, and selects what became it: on a solid wall, the piece that is the switch, round <paramref name="at"/> when given.</summary>
+    public void MakeExit(Line wall, bool secret, MapPoint? at = null)
+    {
+        Line? made = null;
+        var look = Look;
+        History.Record("Make the exit", e => made = Exits.Make(e, wall, secret, look, at));
+        if (made is { } exit) Selection.Set(exit);
+    }
+
     /// <summary>Makes a room a teleport pad sending to a spot (see <see cref="Teleports.Make"/>), one undo step, and selects the arrival spot; says why when it cannot.</summary>
     public void MakeTeleporter(Sector pad, MapPoint at, int angle)
     {

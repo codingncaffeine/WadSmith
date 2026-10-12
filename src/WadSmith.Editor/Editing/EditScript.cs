@@ -34,7 +34,7 @@ public static class EditScript
         teleport X Y TOX TOY        the room at the point sends to the second point
         secret X Y                  the room at the point becomes a secret
         switch X Y WALLX WALLY      a switch on the wall nearest the second point for the door or lift at the first
-        exit X Y                    the wall nearest the point becomes the exit switch
+        exit X Y                    the wall nearest the point gets the exit switch, a piece of it round the point
         split X Y X Y …             a line across a room splits it
         join X Y X Y …              the rooms at the points join into the first
         start X Y [ANGLE]           the player's start
@@ -168,7 +168,7 @@ public static class EditScript
                 break;
             case "exit":
                 var exitWall = Wall(1);
-                Record("Make the exit", e => Exits.Make(e, exitWall, false, l));
+                Record("Make the exit", e => Exits.Make(e, exitWall, false, l, P(1)));
                 made = "the exit switch";
                 break;
             case "split":

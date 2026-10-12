@@ -1,4 +1,5 @@
 using WadSmith.Editor.Editing;
+using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
 
 namespace WadSmith.Editor.Smart;
@@ -18,30 +19,35 @@ public static class Exits
     public static string How(Line l) => l.Flag("playeruse") ? "uses it" : l.Flag("playercross") ? "walks across it" : l.Flag("impact") ? "shoots it" : "sets it off";
 
     /// <summary>
-    /// Makes a wall an exit through <paramref name="edit"/>: a solid wall becomes the exit switch (the
-    /// game's exit switch texture, used to end the map); a wall between rooms ends the map when walked
-    /// across. <paramref name="secret"/> goes on to the secret map instead of the next one.
+    /// Makes a wall an exit through <paramref name="edit"/> and returns the exit: on a solid wall, a piece as wide as
+    /// the switch picture (see <see cref="Switches.Piece"/>) round <paramref name="at"/>, the wall's middle when null,
+    /// becomes the exit switch (the game's exit switch texture, used to end the map) and the rest stays the wall it was,
+    /// a short wall becoming the switch whole; a wall between rooms ends the map when walked across.
+    /// <paramref name="secret"/> goes on to the secret map instead of the next one.
     /// </summary>
-    public static void Make(StructureEdit edit, Line wall, bool secret, Look look)
+    public static Line Make(StructureEdit edit, Line wall, bool secret, Look look, MapPoint? at = null)
     {
-        edit.Set(wall, l => l.Special, (l, v) => l.Special = v, secret ? Secret : Normal);
+        var exit = wall.Back is null ? Switches.Piece(edit, wall, at) : wall;
+        edit.Set(exit, l => l.Special, (l, v) => l.Special = v, secret ? Secret : Normal);
         for (var i = 0; i < 5; i++)
         {
             var k = i;
-            edit.Set(wall, l => l.Args[k], (l, v) => l.Args[k] = v, 0);
+            edit.Set(exit, l => l.Args[k], (l, v) => l.Args[k] = v, 0);
         }
 
-        if (wall.Back is null)
+        if (exit.Back is null)
         {
-            edit.Flag(wall, "playeruse", true);
-            edit.Set(wall.Front, s => s.Middle, (s, v) => s.Middle = v, look.ExitSwitch);
-            edit.Set(wall.Front, s => s.OffsetX, (s, v) => s.OffsetX = v, 0);
-            edit.Set(wall.Front, s => s.OffsetY, (s, v) => s.OffsetY = v, 0);
+            edit.Flag(exit, "playeruse", true);
+            edit.Set(exit.Front, s => s.Middle, (s, v) => s.Middle = v, look.ExitSwitch);
+            edit.Set(exit.Front, s => s.OffsetX, (s, v) => s.OffsetX = v, 0);
+            edit.Set(exit.Front, s => s.OffsetY, (s, v) => s.OffsetY = v, 0);
         }
         else
         {
-            edit.Flag(wall, "playercross", true);
+            edit.Flag(exit, "playercross", true);
         }
+
+        return exit;
     }
 
     /// <summary>Makes an exit go to the next map or the secret one.</summary>

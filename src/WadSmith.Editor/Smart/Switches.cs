@@ -55,6 +55,23 @@ public static class Switches
     }
 
     /// <summary>
+    /// The piece of <paramref name="wall"/> a switch takes, cut out through <paramref name="edit"/>: <see cref="Width"/>
+    /// wide round <paramref name="at"/> (the wall's middle when null), kept on the wall; the whole wall when it is not
+    /// much wider than the switch. The wall's texture runs on across the pieces either side.
+    /// </summary>
+    public static Line Piece(StructureEdit edit, Line wall, MapPoint? at)
+    {
+        var length = wall.Length;
+        if (length <= Width + 16) return wall;
+        var (dx, dy) = ((wall.End.X - wall.Start.X) / length, (wall.End.Y - wall.Start.Y) / length);
+        var t = at is { } p ? (p.X - wall.Start.X) * dx + (p.Y - wall.Start.Y) * dy : length / 2;
+        var from = Math.Clamp(Math.Round(t - Width / 2), 0, length - Width);
+        Vertex Corner(double d) => edit.Add(new Vertex { X = wall.Start.X + dx * d, Y = wall.Start.Y + dy * d });
+        if (from + Width < length - 1e-6) Walls.Split(edit, wall, Corner(from + Width));
+        return from > 1e-6 ? Walls.Split(edit, wall, Corner(from)) : wall;
+    }
+
+    /// <summary>
     /// Makes a switch on <paramref name="wall"/> at <paramref name="at"/> that works <paramref name="target"/> (a door
     /// or a lift) the way its own walls do, through <paramref name="edit"/>: a piece of the wall <see cref="Width"/>
     /// wide round the point (the whole wall when it is not much wider) gets the action by the target's tag, used
@@ -74,18 +91,7 @@ public static class Switches
         else if (Lifts.Recognise(before, target) is { } lift) action = (Lifts.DownWaitUpStayLip, [tag, lift.Settings.Fast ? Lifts.FastSpeed : Lifts.NormalSpeed, lift.Settings.Delay, 0, 0]);
         else return (null, "A switch opens a door or lowers a lift: select a door or a lift first.");
 
-        // The piece of the wall the switch takes: round the point, on the wall, the whole wall when short.
-        var length = wall.Length;
-        var piece = wall;
-        if (length > Width + 16)
-        {
-            var (dx, dy) = ((wall.End.X - wall.Start.X) / length, (wall.End.Y - wall.Start.Y) / length);
-            var t = (at.X - wall.Start.X) * dx + (at.Y - wall.Start.Y) * dy;
-            var from = Math.Clamp(Math.Round(t - Width / 2), 0, length - Width);
-            Vertex Corner(double d) => edit.Add(new Vertex { X = wall.Start.X + dx * d, Y = wall.Start.Y + dy * d });
-            if (from + Width < length - 1e-6) Walls.Split(edit, wall, Corner(from + Width));
-            if (from > 1e-6) piece = Walls.Split(edit, wall, Corner(from));
-        }
+        var piece = Piece(edit, wall, at);
 
         if (target.Tag != tag) edit.Set(target, s => s.Tag, (s, v) => s.Tag = v, tag);
         edit.Set(piece, x => x.Special, (x, v) => x.Special = v, action.Special);

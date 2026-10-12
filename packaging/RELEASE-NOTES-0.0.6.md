@@ -9,6 +9,7 @@
 ## What's Fixed
 
 - **A door between two rooms is a door in a wall** — On an opening wider than a door, the Door tool now makes a standard door in the middle and closes the rest with wall either side; a dragged stretch is the door, with wall beside it. "Wall it off" on an opening closes it entirely. A first map used to end with a door standing alone in a gap.
+- **The exit switch is a switch, not a wall of them** — "Make it the exit switch" now takes a piece of the wall as wide as the switch picture, where you clicked the wall (its middle when it was selected another way), and the rest stays wall; the Guide's exit step says so. The whole wall used to be tiled with exit switches.
 - **Where two rooms meet is an opening, and it says so** — Rooms drawn against each other open into each other; the plan now draws that line dashed, the tutorial explains it as it happens, "What is this?" and the Inspector name it an opening and offer "Make it a door" and "Make it a window" right there, and drawing a shape along walls already there is answered with how rooms and doors work.
 - **Back in the Guide** — A Back button returns to the step before, to read it again.
 - **A room drawn against a slanted wall shares it** — A corner that landed a hair off an existing wall used to leave two walls lying along each other, so no door could go between the rooms. Now the corner goes onto the wall and the rooms share that stretch.
