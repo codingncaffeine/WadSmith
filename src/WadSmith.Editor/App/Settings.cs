@@ -137,6 +137,15 @@ public sealed class SettingsStore
     /// <summary>Waits for the last save to reach the disk (at exit).</summary>
     public bool Flush(TimeSpan timeout) => _writer.Wait(timeout);
 
+    /// <summary>Where the last save stands, for a report when a flush times out: a writer waiting to run, running, or done.</summary>
+    public string WriterState
+    {
+        get
+        {
+            lock (_gate) return $"{_writer.Status}, {(_pending is null ? "nothing pending" : "a save pending")}";
+        }
+    }
+
     private void WriteLoop()
     {
         while (true)

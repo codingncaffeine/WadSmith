@@ -34,7 +34,7 @@ public sealed class PreferencesTests
         prefs.ShowTipsAgainCommand.Execute(null);
         prefs.RemoveFolderCommand.Execute(prefs.GameFolders[0]);
         prefs.CloseCommand.Execute(null);
-        Assert.True(services.Settings.Flush(TimeSpan.FromSeconds(5)));
+        Assert.True(services.Settings.Flush(TimeSpan.FromSeconds(5)), $"the settings did not reach the disk in 5 s: writer {services.Settings.WriterState}");
 
         Assert.Equal([true], scaled);
         Assert.True(closed);
