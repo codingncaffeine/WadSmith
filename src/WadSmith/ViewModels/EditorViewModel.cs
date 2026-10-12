@@ -10,6 +10,15 @@ using WadSmith.Editor.Model;
 
 namespace WadSmith.App.ViewModels;
 
+/// <summary>What the editor's right-hand panel shows.</summary>
+internal enum SidePanel
+{
+    Inspector,
+    Textures,
+    Objects,
+    Versions,
+}
+
 /// <summary>
 /// A map open for editing: the canvas, the Inspector, undo and redo, the save state in plain words,
 /// and the status strip, which describes what is under the pointer or, when nothing is, gives the
@@ -43,9 +52,10 @@ internal sealed partial class EditorViewModel : ObservableObject
         _main = main;
         Session = session;
         _hoverText = message ?? "";
-        _showVersions = showVersions;
-        if (showVersions) _ = RefreshVersionsAsync();
         Inspector = new InspectorViewModel(session);
+        TextureShelf = ShelfViewModel.Textures(session.Resources);
+        ObjectShelf = ShelfViewModel.Objects(session.Resources);
+        if (showVersions) Panel = SidePanel.Versions;
         session.History.Moved += OnHistoryMoved;
         session.StateChanged += _ => UpdateSaveText();
         session.Selection.Changed += () => Learned("select");
@@ -70,19 +80,45 @@ internal sealed partial class EditorViewModel : ObservableObject
     /// <summary>The kept copies of the map, newest first, while the Versions panel is open.</summary>
     public ObservableCollection<VersionItem> Versions { get; } = [];
 
-    /// <summary>Whether the right-hand panel shows the versions instead of the Inspector.</summary>
+    /// <summary>The game's textures, to drag onto walls, floors and ceilings.</summary>
+    public ShelfViewModel TextureShelf { get; }
+
+    /// <summary>The game's monsters, items and decorations, to drag onto the map.</summary>
+    public ShelfViewModel ObjectShelf { get; }
+
+    /// <summary>What the right-hand panel shows.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowInspector))]
-    private bool _showVersions;
+    [NotifyPropertyChangedFor(nameof(ShowInspector), nameof(ShowTextures), nameof(ShowObjects), nameof(ShowVersions))]
+    private SidePanel _panel;
 
     public bool ShowInspector
     {
-        get => !ShowVersions;
-        set
-        {
-            if (value) ShowVersions = false;
-            else OnPropertyChanged();
-        }
+        get => Panel == SidePanel.Inspector;
+        set => Show(SidePanel.Inspector, value);
+    }
+
+    public bool ShowTextures
+    {
+        get => Panel == SidePanel.Textures;
+        set => Show(SidePanel.Textures, value);
+    }
+
+    public bool ShowObjects
+    {
+        get => Panel == SidePanel.Objects;
+        set => Show(SidePanel.Objects, value);
+    }
+
+    public bool ShowVersions
+    {
+        get => Panel == SidePanel.Versions;
+        set => Show(SidePanel.Versions, value);
+    }
+
+    private void Show(SidePanel panel, bool on)
+    {
+        if (on) Panel = panel;
+        else OnPropertyChanged(panel switch { SidePanel.Textures => nameof(ShowTextures), SidePanel.Objects => nameof(ShowObjects), SidePanel.Versions => nameof(ShowVersions), _ => nameof(ShowInspector) });
     }
 
     [ObservableProperty]
@@ -169,6 +205,13 @@ internal sealed partial class EditorViewModel : ObservableObject
         UpdateStatus();
     }
 
+    /// <summary>Called by the canvas while something from a shelf is held over the plan (null when it leaves).</summary>
+    public void Hint(string? text)
+    {
+        _drawingText = text ?? "";
+        UpdateStatus();
+    }
+
     /// <summary>Called by the canvas while the selection is being moved (null when the move ends).</summary>
     public void Moving((int Corners, int Things, double Dx, double Dy)? move)
     {
@@ -207,9 +250,20 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     private double _gridStep = 64;
 
-    partial void OnShowVersionsChanged(bool value)
+    partial void OnPanelChanged(SidePanel value)
     {
-        if (value) _ = RefreshVersionsAsync();
+        switch (value)
+        {
+            case SidePanel.Versions:
+                _ = RefreshVersionsAsync();
+                break;
+            case SidePanel.Textures:
+                TextureShelf.Open();
+                break;
+            case SidePanel.Objects:
+                ObjectShelf.Open();
+                break;
+        }
     }
 
     private async Task RefreshVersionsAsync()

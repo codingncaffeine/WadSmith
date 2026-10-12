@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,7 +361,7 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
@@ -395,6 +395,47 @@ foreach (var pose in poses)
                 }
 
                 Report("before");
+                if (pose == "editor-shelves")
+                {
+                    // The Textures shelf, then a wall texture dropped on the starter room's south wall with real
+                    // drag events; the Objects shelf, then an Imp dropped in the room.
+                    void DropOn((double X, double Y) at, WadSmith.App.ViewModels.ShelfDrop drop)
+                    {
+                        var data = new Avalonia.Input.DataTransfer();
+                        data.Add(Avalonia.Input.DataTransferItem.Create(WadSmith.App.ViewModels.ShelfDrop.Format, drop));
+                        foreach (var kind in new[] { Avalonia.Input.Raw.RawDragEventType.DragEnter, Avalonia.Input.Raw.RawDragEventType.DragOver, Avalonia.Input.Raw.RawDragEventType.Drop })
+                        {
+                            window.DragDrop(At(at.X, at.Y), kind, data, Avalonia.Input.DragDropEffects.Copy, Avalonia.Input.RawInputModifiers.None);
+                            Pump(0.1);
+                        }
+
+                        Pump(0.5);
+                    }
+
+                    editor.ShowTextures = true;
+                    for (var i = 0; i < 200 && editor.TextureShelf.Tiles.Count == 0; i++) Pump(0.05);
+                    Console.WriteLine($"shelf textures: {editor.TextureShelf.Note}");
+                    Save("editor-shelf-textures");
+                    var brick = editor.TextureShelf.Tiles.First(t => t.Group == "Walls" && t.Label.StartsWith("BRICK", StringComparison.Ordinal));
+                    DropOn((0, -250), brick.Drop);
+                    var south = editor.Session.Map.Lines.Single(l => l.OnMap && l.Start.Y == -256 && l.End.Y == -256);
+                    Console.WriteLine($"shelf wall: {south.Front.Middle} (dropped {brick.Label}), undo '{editor.Session.History.UndoLabel}'");
+
+                    editor.ShowObjects = true;
+                    for (var i = 0; i < 200 && editor.ObjectShelf.Tiles.Count == 0; i++) Pump(0.05);
+                    Console.WriteLine($"shelf objects: {editor.ObjectShelf.Note}; groups {string.Join(", ", editor.ObjectShelf.Groups)}");
+                    editor.ObjectShelf.Group = 1;
+                    Pump(0.3);
+                    Save("editor-shelf-objects");
+                    var imp = editor.ObjectShelf.Tiles.First(t => t.Label == "Imp");
+                    DropOn((128, 128), imp.Drop);
+                    Console.WriteLine($"shelf imps on the shelf: {string.Join(", ", editor.ObjectShelf.Tiles.Where(t => t.Label == "Imp").Select(t => t.Drop.Thing))}; dropped {imp.Drop.Thing}");
+                    var placed = editor.Session.Map.Things.Where(t => t.OnMap && t.Type == imp.Drop.Thing).ToList();
+                    Console.WriteLine($"shelf thing: {placed.Count} imp(s) at {string.Join(" ", placed.Select(t => $"({t.X},{t.Y})"))}, undo '{editor.Session.History.UndoLabel}'");
+                    Save("editor-shelves");
+                    break;
+                }
+
                 if (pose == "editor-make-door")
                 {
                     // A corridor 64 wide east of the starter room and a room beyond it, both drawn; then D and

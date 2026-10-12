@@ -24,6 +24,7 @@ public partial class EditorView : UserControl
         Canvas.HoverChanged += (element, at) => (DataContext as EditorViewModel)?.Hover(element, at);
         Canvas.Drawing += (size, step) => (DataContext as EditorViewModel)?.Drawing(size, step);
         Canvas.Moving += move => (DataContext as EditorViewModel)?.Moving(move);
+        Canvas.DropHint += hint => (DataContext as EditorViewModel)?.Hint(hint);
     }
 
     /// <summary>Shows or hides the 3D view beside the plan; hidden, it does no work.</summary>
@@ -33,6 +34,15 @@ public partial class EditorView : UserControl
         Split3D.IsVisible = show;
         Pane3D.IsVisible = show;
         View3D.IsVisible = show;
+    }
+
+    /// <summary>A shelf picture pressed: it is dragged onto the map (the canvas takes the drop).</summary>
+    private async void OnShelfTilePressed(object? sender, PointerPressedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not ShelfTile tile || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        var data = new DataTransfer();
+        data.Add(DataTransferItem.Create(ShelfDrop.Format, tile.Drop));
+        await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Copy).ConfigureAwait(true);
     }
 
     private void OnTextRowLostFocus(object? sender, RoutedEventArgs e) => ((sender as Control)?.DataContext as TextRow)?.Commit();

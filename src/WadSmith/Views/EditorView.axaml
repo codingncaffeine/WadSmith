@@ -13,6 +13,40 @@
         <KeyBinding Gesture="Delete" Command="{Binding DeleteCommand}" />
     </UserControl.KeyBindings>
 
+    <UserControl.DataTemplates>
+        <!-- A shelf: search, a group, and the pictures to drag onto the map. -->
+        <DataTemplate DataType="vm:ShelfViewModel">
+            <Grid RowDefinitions="Auto,Auto,Auto,*">
+                <TextBox Text="{Binding Search}" PlaceholderText="Search by name…" />
+                <ComboBox Grid.Row="1" ItemsSource="{Binding Groups}" SelectedIndex="{Binding Group}" HorizontalAlignment="Stretch" Margin="0,8,0,0" />
+                <TextBlock Grid.Row="2" Text="{Binding Note}" Classes="secondary" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,6" />
+                <ScrollViewer Grid.Row="3">
+                    <ItemsControl ItemsSource="{Binding Tiles}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:ShelfTile">
+                                <Border Width="92" Margin="0,0,6,6" Padding="4" CornerRadius="4" Background="{DynamicResource Brush.Surface1}"
+                                        BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="1" Cursor="Hand"
+                                        ToolTip.Tip="{Binding Tooltip}" PointerPressed="OnShelfTilePressed">
+                                    <StackPanel Spacing="3">
+                                        <Border Height="64" Background="#0A0708" CornerRadius="3" ClipToBounds="True">
+                                            <Image Source="{Binding Picture}" Stretch="None" RenderOptions.BitmapInterpolationMode="None" />
+                                        </Border>
+                                        <TextBlock Text="{Binding Label}" FontSize="11" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </DataTemplate>
+    </UserControl.DataTemplates>
+
     <Grid RowDefinitions="50,*,30">
         <!-- Top bar -->
         <Border Grid.Row="0" Background="{DynamicResource Brush.TopBar}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1">
@@ -49,7 +83,7 @@
         </Border>
 
         <!-- Canvas and Inspector -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,4,330">
+        <Grid Grid.Row="1" ColumnDefinitions="*,4,356">
             <Grid x:Name="MapViews" ColumnDefinitions="*,4,*">
             <Panel>
                 <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" Tool="{Binding Tool}" />
@@ -101,9 +135,15 @@
                 <StackPanel Orientation="Horizontal" Margin="18,12,18,2">
                     <ToggleButton Classes="segment first" Content="Inspector" IsChecked="{Binding ShowInspector}"
                                   ToolTip.Tip="What you selected and its settings." />
+                    <ToggleButton Classes="segment" Content="Textures" IsChecked="{Binding ShowTextures}"
+                                  ToolTip.Tip="The game's textures. Drag one onto a wall, a floor or a ceiling." />
+                    <ToggleButton Classes="segment" Content="Objects" IsChecked="{Binding ShowObjects}"
+                                  ToolTip.Tip="The game's monsters, items and decorations. Drag one onto the map to place it." />
                     <ToggleButton Classes="segment last" Content="Versions" IsChecked="{Binding ShowVersions}"
                                   ToolTip.Tip="Copies of this map WadSmith kept for you. Go back to any of them." />
                 </StackPanel>
+                <ContentControl Grid.Row="1" Content="{Binding TextureShelf}" IsVisible="{Binding ShowTextures}" Margin="18,8,12,8" />
+                <ContentControl Grid.Row="1" Content="{Binding ObjectShelf}" IsVisible="{Binding ShowObjects}" Margin="18,8,12,8" />
                 <ScrollViewer Grid.Row="1" IsVisible="{Binding ShowVersions}">
                     <StackPanel Margin="18,10,18,18" Spacing="10">
                         <TextBlock Text="{Binding VersionsNote}" Classes="secondary" TextWrapping="Wrap" />

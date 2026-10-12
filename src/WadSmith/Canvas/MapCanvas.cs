@@ -95,6 +95,10 @@ internal sealed class MapCanvas : Control
     public MapCanvas()
     {
         ClipToBounds = true;
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnDragOver);
+        AddHandler(DragDrop.DropEvent, OnDrop);
+        AddHandler(DragDrop.DragLeaveEvent, (_, _) => ClearHover());
         _pictures = new(ViewModels.MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, Session) || r.Picture.Mode != Mode || (_snapshot is not null && _snapshot.Mode == Mode && r.Picture.Version < _snapshot.Version)) return;
@@ -151,6 +155,9 @@ internal sealed class MapCanvas : Control
 
     /// <summary>Raised while a room is being drawn, with its size in map units (null when the drawing ends).</summary>
     public event Action<(double Width, double Height)?, double>? Drawing;
+
+    /// <summary>Raised while something from a shelf is held over the plan, with what a drop there would do (null when it leaves).</summary>
+    public event Action<string?>? DropHint;
 
     /// <summary>Raised while the selection is being moved, with what moves and how far (null when the move ends).</summary>
     public event Action<(int Corners, int Things, double Dx, double Dy)?>? Moving;
@@ -768,6 +775,65 @@ internal sealed class MapCanvas : Control
     {
         _cx -= dx / _zoom;
         _cy += dy / _zoom;
+        InvalidateVisual();
+    }
+
+    /// <summary>A shelf picture held over the plan: the wall or room under it lights up, and the status says what a drop does.</summary>
+    private void OnDragOver(object? sender, DragEventArgs e)
+    {
+        if (Session is null || e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) is not { } drop)
+        {
+            e.DragEffects = DragDropEffects.None;
+            return;
+        }
+
+        e.DragEffects = DragDropEffects.Copy;
+        var p = e.GetPosition(this);
+        Element? target = drop.Texture is null ? null : WallAt(p) is { } w ? w : Session.Geometry.SectorAt(ToMap(p));
+        if (!ReferenceEquals(target, _hover))
+        {
+            _hover = target;
+            _hoverOutline = target is null ? null : SelectionOverlay.Take([target], Session.Geometry, _look);
+            InvalidateVisual();
+        }
+
+        DropHint?.Invoke(drop.Texture is null
+            ? $"Let go to place {drop.Label} here."
+            : target switch
+            {
+                Line { Back: null } => $"Let go to put {drop.Label} on this wall.",
+                Line => $"Let go to put {drop.Label} on the upper and lower parts of this wall, on this side.",
+                Sector => $"Let go to put {drop.Label} on this room's {(Mode == MapViewMode.Ceilings ? "ceiling" : "floor")}.",
+                _ => "Drop it on a wall or in a room.",
+            });
+    }
+
+    private void OnDrop(object? sender, DragEventArgs e)
+    {
+        DropHint?.Invoke(null);
+        ClearHover();
+        if (Session is not { } session || e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) is not { } drop) return;
+        var p = e.GetPosition(this);
+        if (drop.Texture is { } texture)
+        {
+            session.Paint(texture, ToMap(p), 7 / _zoom, Mode == MapViewMode.Ceilings);
+        }
+        else
+        {
+            var m = ToMap(p);
+            var step = GridStep();
+            session.PlaceThing(drop.Thing, (e.KeyModifiers & KeyModifiers.Shift) != 0 ? m : new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step));
+        }
+
+        Focus();
+        e.Handled = true;
+    }
+
+    private void ClearHover()
+    {
+        if (_hover is null) return;
+        _hover = null;
+        _hoverOutline = null;
         InvalidateVisual();
     }
 

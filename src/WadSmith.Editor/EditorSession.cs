@@ -134,6 +134,63 @@ public sealed class EditorSession : IDisposable
         }
     }
 
+    /// <summary>The game family of the project ("doom", "heretic", "hexen", "strife").</summary>
+    public string Engine => Core.Games.GameCatalog.Get(Project.Info.Game)?.Engine ?? "doom";
+
+    /// <summary>
+    /// Puts a texture where it was dropped: on the face of the wall within <paramref name="radius"/> of
+    /// the point, the face toward the point (the wall itself on a solid wall, its upper and lower parts
+    /// between two rooms); else on the floor of the area there, or its ceiling when
+    /// <paramref name="ceiling"/>. One undo step; selects what was painted. Returns a sentence when
+    /// there was nothing there.
+    /// </summary>
+    public string? Paint(string texture, MapPoint at, double radius, bool ceiling)
+    {
+        if (_geometry.LineNear(at, radius) is { OnMap: true } wall)
+        {
+            var cross = (wall.End.X - wall.Start.X) * (at.Y - wall.Start.Y) - (wall.End.Y - wall.Start.Y) * (at.X - wall.Start.X);
+            var face = cross > 0 && wall.Back is { } back ? back : wall.Front;
+            if (wall.Opposite(face) is null)
+            {
+                History.Record("Put a texture on a wall", e => e.Set(face, s => s.Middle, (s, v) => s.Middle = v, texture));
+            }
+            else
+            {
+                History.Record("Put a texture on a wall", e =>
+                {
+                    e.Set(face, s => s.Top, (s, v) => s.Top = v, texture);
+                    e.Set(face, s => s.Bottom, (s, v) => s.Bottom = v, texture);
+                });
+            }
+
+            Selection.Set(face);
+            return null;
+        }
+
+        if (_geometry.SectorAt(at) is { OnMap: true } area)
+        {
+            if (ceiling) History.Record("Put a texture on a ceiling", e => e.Set(area, s => s.CeilingTexture, (s, v) => s.CeilingTexture = v, texture));
+            else History.Record("Put a texture on a floor", e => e.Set(area, s => s.FloorTexture, (s, v) => s.FloorTexture = v, texture));
+            Selection.Set(area);
+            return null;
+        }
+
+        return "Drop it on a wall or in a room.";
+    }
+
+    /// <summary>
+    /// Places an object of <paramref name="type"/> at a point, facing north, on every difficulty and in
+    /// every game mode (and for every class in Hexen), one undo step, and selects it.
+    /// </summary>
+    public Thing PlaceThing(int type, MapPoint at)
+    {
+        var thing = new Thing { X = at.X, Y = at.Y, Type = type, Angle = 90 };
+        foreach (var f in Smart.Things.Everywhere(Engine)) thing.SetFlag(f, true);
+        History.Record("Place a thing", e => e.Add(thing));
+        Selection.Set(thing);
+        return thing;
+    }
+
     /// <summary>Makes a door in a wall between two rooms (see <see cref="Doors.Make"/>), one undo step, and selects it; says why when it cannot.</summary>
     public void MakeDoor(Line wall)
     {
