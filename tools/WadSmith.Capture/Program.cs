@@ -730,6 +730,26 @@ foreach (var pose in poses)
                     Report("triangle");
                     Save("editor-draw-shape");
 
+                    // A round room south of the starter room: Ctrl held from the press, ] twice (20 sides), let go.
+                    window.MouseMove(At(-128, -512), Avalonia.Input.RawInputModifiers.Control);
+                    window.MouseDown(At(-128, -512), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.Control);
+                    for (var k = 1; k <= 10; k++)
+                    {
+                        window.MouseMove(At(-128 + 384 * k / 10.0, -512 + 256 * k / 10.0), Avalonia.Input.RawInputModifiers.LeftMouseButton | Avalonia.Input.RawInputModifiers.Control);
+                        Pump(0.02);
+                    }
+
+                    window.KeyPress(Avalonia.Input.Key.OemCloseBrackets, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.BracketRight, "]");
+                    window.KeyPress(Avalonia.Input.Key.OemCloseBrackets, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.BracketRight, "]");
+                    Pump(0.2);
+                    Console.WriteLine($"draw round status: '{editor.Status}'");
+                    Save("editor-drawing-round");
+                    window.MouseUp(At(256, -256), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.Control);
+                    Pump(0.8);
+                    Report("round");
+                    var roundRoom = editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Sector>().FirstOrDefault();
+                    Console.WriteLine($"draw round: {editor.Session.Map.Lines.Count(l => l.OnMap && (l.Front.Sector == roundRoom || l.Back?.Sector == roundRoom))} walls round the new room");
+
                     // A line from the starter room's west wall round to its north wall, finished with Enter: the
                     // corner it cuts off becomes a room of its own.
                     foreach (var (x, y) in new[] { (-256.0, 64.0), (-64.0, 64.0), (-64.0, 256.0) }) Click(x, y);

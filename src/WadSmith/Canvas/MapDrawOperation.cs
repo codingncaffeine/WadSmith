@@ -145,7 +145,7 @@ internal sealed class SelectionOverlay
 /// A room being drawn: the rectangle between two corners in map units (null before the drag starts),
 /// the point the pointer snaps to, and the grid step it snaps to.
 /// </summary>
-internal sealed record DrawPreview(MapPoint? From, MapPoint? To, MapPoint? Snap, double Step, IReadOnlyList<MapPoint>? Corners = null);
+internal sealed record DrawPreview(MapPoint? From, MapPoint? To, MapPoint? Snap, double Step, IReadOnlyList<MapPoint>? Corners = null, IReadOnlyList<MapPoint>? Round = null);
 
 /// <summary>
 /// What is being moved and by how much (or turned, resized or mirrored: <paramref name="Placement"/>): its
@@ -286,7 +286,19 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
         if (preview is null) return;
         float Sx(double x) => (float)((x - view.Cx) * view.Zoom + view.Width / 2);
         float Sy(double y) => (float)(view.Height / 2 - (y - view.Cy) * view.Zoom);
-        if (preview is { From: { } a, To: { } b })
+        if (preview is { Round: { Count: > 2 } round })
+        {
+            // A round room being drawn: its corners on the ellipse in the dragged box.
+            using var path = new SKPath();
+            path.MoveTo(Sx(round[0].X), Sy(round[0].Y));
+            foreach (var p in round.Skip(1)) path.LineTo(Sx(p.X), Sy(p.Y));
+            path.Close();
+            using var fill = new SKPaint { Style = SKPaintStyle.Fill, Color = Accent.WithAlpha(0x38), IsAntialias = true };
+            using var edge = new SKPaint { Style = SKPaintStyle.Stroke, Color = Accent, StrokeWidth = 2, IsAntialias = true };
+            canvas.DrawPath(path, fill);
+            canvas.DrawPath(path, edge);
+        }
+        else if (preview is { From: { } a, To: { } b })
         {
             var rect = SKRect.Create(Math.Min(Sx(a.X), Sx(b.X)), Math.Min(Sy(a.Y), Sy(b.Y)), Math.Abs(Sx(b.X) - Sx(a.X)), Math.Abs(Sy(b.Y) - Sy(a.Y)));
             using var fill = new SKPaint { Style = SKPaintStyle.Fill, Color = Accent.WithAlpha(0x38), IsAntialias = true };

@@ -136,6 +136,10 @@ internal sealed class MapCanvas : Control
     private TransformEdit? _transformEdit;
     private bool _overGrip;
 
+    // A room drawn round (Ctrl while dragging), and with how many sides ([ and ] change them).
+    private bool _round;
+    private int _sides = Shapes.DefaultSides;
+
     // A window being dragged along a wall: the wall, and where the drag started and is now (distances along it).
     private Line? _windowWall;
     private double _windowFrom;
@@ -367,7 +371,8 @@ internal sealed class MapCanvas : Control
         // A room just drawn stays drawn as a rectangle until the picture with it arrives from the worker.
         if (_drawnIn >= 0 && _snapshot is { } shown && shown.Version >= _drawnIn) _drawnIn = -1;
         var (from, to) = _drawFrom is not null || _drawnIn < 0 ? (_drawFrom, _drawTo) : (_justDrawn.From, (MapPoint?)_justDrawn.To);
-        var preview = Tool is EditorTool.Room or EditorTool.Stairs || _drawnIn >= 0 ? new DrawPreview(_corners.Count > 0 ? null : from, _corners.Count > 0 ? null : to, Tool == EditorTool.Room ? _drawFrom is null || _corners.Count > 0 ? _snap : _drawTo : null, Tool == EditorTool.Room ? GridStep() : 0, _corners.Count > 0 ? [.. _corners] : null) : null;
+        var round = Tool == EditorTool.Room && _round && _corners.Count == 0 && _drawFrom is { } r0 && _drawTo is { } r1 && r0.X != r1.X && r0.Y != r1.Y ? Shapes.Ellipse(r0, r1, _sides) : null;
+        var preview = Tool is EditorTool.Room or EditorTool.Stairs || _drawnIn >= 0 ? new DrawPreview(_corners.Count > 0 ? null : from, _corners.Count > 0 ? null : to, Tool == EditorTool.Room ? _drawFrom is null || _corners.Count > 0 ? _snap : _drawTo : null, Tool == EditorTool.Room ? GridStep() : 0, _corners.Count > 0 ? [.. _corners] : null, round) : null;
         MovePreview? move = null;
         if (_moveGesture != 0)
         {
@@ -602,6 +607,13 @@ internal sealed class MapCanvas : Control
         return Math.Clamp(t, 0, length);
     }
 
+    /// <summary>The status strip's sentence while a round room is dragged.</summary>
+    private string DescribeRound()
+    {
+        var (w, h) = _drawFrom is { } a && _drawTo is { } b ? (Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y)) : (0, 0);
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Round room {w:0} × {h:0}, {_sides} sides · [ and ] for fewer or more sides; let go of Ctrl for a rectangle, Esc to stop");
+    }
+
     /// <summary>The status strip's sentence while a window is dragged along a wall.</summary>
     private string DescribeWindow()
     {
@@ -790,6 +802,8 @@ internal sealed class MapCanvas : Control
         if (_drawFrom is null && _corners.Count == 0) return;
         _drawFrom = _drawTo = null;
         _corners.Clear();
+        if (_round) Placing?.Invoke(null);
+        _round = false;
         Drawing?.Invoke(null, GridStep());
         CornersChanged?.Invoke(null);
         InvalidateVisual();
@@ -973,6 +987,7 @@ internal sealed class MapCanvas : Control
             if (_corners.Count == 0)
             {
                 _drawFrom = _drawTo = Snap(_drawPress);
+                _round = (e.KeyModifiers & KeyModifiers.Control) != 0;
                 Drawing?.Invoke((0, 0), GridStep());
             }
 
@@ -1075,7 +1090,9 @@ internal sealed class MapCanvas : Control
             if (_drawFrom is { } from2 && _corners.Count == 0)
             {
                 _drawTo = at;
+                _round = (e.KeyModifiers & KeyModifiers.Control) != 0;
                 Drawing?.Invoke((Math.Abs(at.X - from2.X), Math.Abs(at.Y - from2.Y)), GridStep());
+                if (_round) Placing?.Invoke(DescribeRound());
             }
 
             if (_corners.Count > 0) CornersChanged?.Invoke((_corners.Count, at.DistanceTo(_corners[^1])));
@@ -1223,7 +1240,9 @@ internal sealed class MapCanvas : Control
 
         var session = drawing;
         MapPoint[] box = [new(a.X, a.Y), new(a.X, b.Y), new(b.X, b.Y), new(b.X, a.Y)];
-        session.DrawRoom(box);
+        if (_round) Placing?.Invoke(null);
+        session.DrawRoom(_round ? Shapes.Ellipse(a, b, _sides) : box);
+        _round = false;
         _drawnIn = session.Map.Version;
         _justDrawn = (a, b);
     }
@@ -1247,6 +1266,19 @@ internal sealed class MapCanvas : Control
                 break;
             case Key.Home:
                 FitMap();
+                e.Handled = true;
+                break;
+            // While a round room is dragged: fewer or more sides (Ctrl may still be held for the round shape).
+            case Key.OemOpenBrackets when _drawFrom is not null && _round:
+                _sides = Math.Max(Shapes.MinSides, _sides - 2);
+                Placing?.Invoke(DescribeRound());
+                InvalidateVisual();
+                e.Handled = true;
+                break;
+            case Key.OemCloseBrackets when _drawFrom is not null && _round:
+                _sides = Math.Min(Shapes.MaxSides, _sides + 2);
+                Placing?.Invoke(DescribeRound());
+                InvalidateVisual();
                 e.Handled = true;
                 break;
             case Key.Escape when _drawFrom is not null || _corners.Count > 0:
