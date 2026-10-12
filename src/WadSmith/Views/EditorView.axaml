@@ -244,8 +244,11 @@
                                         <ItemsControl ItemsSource="{Binding Items}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate DataType="vm:ReportItem">
-                                                    <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="0,2">
                                                         <TextBlock Text="{Binding Text}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                                        <!-- The Balance meter: a half is exactly enough ammunition for the monsters. -->
+                                                        <ProgressBar Grid.Row="1" Minimum="0" Maximum="100" Value="{Binding Percent}" IsVisible="{Binding HasMeter}" Height="6" MinHeight="6" Margin="0,4,0,2"
+                                                                     ToolTip.Tip="The ammunition placed against the monsters' health: the middle is exactly enough, the right end twice that." />
                                                         <Button Grid.Column="1" Classes="metal" Content="Show" Padding="8,1" Margin="8,0,0,0" Command="{Binding Show}"
                                                                 IsVisible="{Binding Show, Converter={x:Static ObjectConverters.IsNotNull}}"
                                                                 ToolTip.Tip="Centres the plan and the 3D view on it." />

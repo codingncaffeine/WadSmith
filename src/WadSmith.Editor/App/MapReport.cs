@@ -6,8 +6,11 @@ using WadSmith.Editor.Smart;
 
 namespace WadSmith.Editor.App;
 
-/// <summary>One line of a map's explanation, with the spot its Show button centres on (none for a plain fact).</summary>
-public sealed record ReportLine(string Text, MapPoint? At = null);
+/// <summary>
+/// One line of a map's explanation, with the spot its Show button centres on (none for a plain fact) and, for the Balance
+/// meter, how full its bar is (0 to 1; a half is exactly enough).
+/// </summary>
+public sealed record ReportLine(string Text, MapPoint? At = null, double? Meter = null);
 
 /// <summary>A titled group of lines.</summary>
 public sealed record ReportSection(string Heading, IReadOnlyList<ReportLine> Lines);
@@ -107,6 +110,16 @@ public static class MapReporting
             int Of(params ThingCategory[] kinds) => on.Count(t => Category(t.Type) is { } c && kinds.Contains(c));
             meets.Add(new(string.Create(CultureInfo.InvariantCulture,
                 $"{name}: {Count(Of(ThingCategory.Monster), "monster")}, {Count(Of(ThingCategory.Weapon), "weapon")}, {Of(ThingCategory.Ammo)} ammunition, {Of(ThingCategory.Health)} health, {Of(ThingCategory.Armor)} armour, {Count(Of(ThingCategory.Powerup), "power-up")}.")));
+        }
+
+        // The Balance meter (D29): the ammunition against the monsters' health, per difficulty.
+        if (resources is not null && Checks.Balance.Read(things, resources.Things, resources.Game.Engine) is { } balance)
+        {
+            meets.AddRange(balance.Select(b => new ReportLine(b.Sentence, Meter: b.Monsters == 0 ? null : Math.Min(b.Ratio, 2) / 2)));
+        }
+        else
+        {
+            meets.Add(new("The Balance meter knows the Doom family's weapons so far, so it says nothing about ammunition here."));
         }
 
         sections.Add(new("WHAT THE PLAYER MEETS", meets));

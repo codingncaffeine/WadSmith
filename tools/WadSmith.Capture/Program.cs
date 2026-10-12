@@ -1079,6 +1079,9 @@ foreach (var pose in poses)
                 Console.WriteLine($"explain: {editor.Report?.Summary}");
                 foreach (var s in editor.Report?.Sections ?? []) Console.WriteLine($"explain: {s.Heading}: {string.Join(" | ", s.Items.Select(i => i.Text))}");
                 Save("editor-explain");
+                foreach (var sv in window.GetVisualDescendants().OfType<Avalonia.Controls.ScrollViewer>().Where(s => s.FindAncestorOfType<Avalonia.Controls.ItemsControl>() is null && s.Content is Avalonia.Controls.ItemsControl { ItemsSource: System.Collections.Generic.IReadOnlyList<WadSmith.App.ViewModels.ReportSectionView> })) sv.ScrollToEnd();
+                Pump(0.3);
+                Save("editor-explain-end");
                 editor.Report!.Sections.SelectMany(s => s.Items).First(i => i.Show is not null && i.Text.Contains("secret", StringComparison.Ordinal)).Show!.Execute(null);
                 Pump(1.5);
                 Save("editor-explain-show");

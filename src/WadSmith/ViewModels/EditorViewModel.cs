@@ -515,7 +515,7 @@ internal sealed partial class EditorViewModel : ObservableObject
     {
         if (!ReferenceEquals(r.Session, Session)) return;
         Report = new ReportView(r.Report.Summary, [.. r.Report.Sections.Select(s => new ReportSectionView(s.Heading, [.. s.Lines.Select(l =>
-            new ReportItem(l.Text, l.At is { } at ? new RelayCommand(() => PlaceRequested?.Invoke(at, 640)) : null))]))]);
+            new ReportItem(l.Text, l.At is { } at ? new RelayCommand(() => PlaceRequested?.Invoke(at, 640)) : null, l.Meter))]))]);
     }
 
     /// <summary>A game's own map opened to learn from (D28): what it shows and the way back; null for the user's own maps.</summary>

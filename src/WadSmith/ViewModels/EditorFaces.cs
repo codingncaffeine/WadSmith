@@ -35,7 +35,12 @@ internal sealed record PeekInfo(string Heading, string Says, Editor.Smart.Landma
 }
 
 /// <summary>A line of "Explain this map" with its Show button's command (none for a plain fact).</summary>
-internal sealed record ReportItem(string Text, System.Windows.Input.ICommand? Show);
+internal sealed record ReportItem(string Text, System.Windows.Input.ICommand? Show, double? Meter = null)
+{
+    public bool HasMeter => Meter is not null;
+
+    public double Percent => (Meter ?? 0) * 100;
+}
 
 /// <summary>A section of "Explain this map".</summary>
 internal sealed record ReportSectionView(string Heading, IReadOnlyList<ReportItem> Items);

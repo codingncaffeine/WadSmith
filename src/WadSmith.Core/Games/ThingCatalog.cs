@@ -28,9 +28,11 @@ public enum ThingCategory
 
 /// <summary>
 /// An object a map can place, as the engine defines it: its number in maps, its name, the sprite and
-/// frame it shows when it appears, its size, its kind, and the lump of the sound it is known by (a monster's sight, a pickup's).
+/// frame it shows when it appears, its size, its kind, the lump of the sound it is known by (a monster's sight, a pickup's), and for the Balance meter (D29) a
+/// monster's health, how much a pickup gives, the ammunition it is (the class under Ammo: Clip for a box of bullets) and
+/// what a weapon gives with it.
 /// </summary>
-public sealed record ThingType(int Number, string ClassName, string Name, string? Sprite, char Frame, double Radius, double Height, double ScaleX, double ScaleY, bool OnCeiling, ThingCategory Category = ThingCategory.Decoration, string? Sound = null);
+public sealed record ThingType(int Number, string ClassName, string Name, string? Sprite, char Frame, double Radius, double Height, double ScaleX, double ScaleY, bool OnCeiling, ThingCategory Category = ThingCategory.Decoration, string? Sound = null, int? Health = null, int Amount = 0, string? AmmoType = null, int AmmoGive = 0);
 
 /// <summary>
 /// The objects of one game family, read from the engine's own data (gzdoom.pk3): the MAPINFO
@@ -145,10 +147,22 @@ public sealed partial class ThingCatalog
                 ThingCategory.Decoration => Inherited(classes, className, c => c.ActiveSound),
                 _ => null,
             };
-            types[number] = new ThingType(number, declared, name, sprite, frame, radius, height, scaleX, scaleY, ceiling, category, sound is null ? null : sounds.LumpFor(sound));
+            var ammoType = category == ThingCategory.Ammo ? AmmoClass(classes, className) : category == ThingCategory.Weapon ? Inherited(classes, className, c => c.AmmoTypeName) : null;
+            types[number] = new ThingType(number, declared, name, sprite, frame, radius, height, scaleX, scaleY, ceiling, category, sound is null ? null : sounds.LumpFor(sound), Inherited(classes, className, c => c.Health), Inherited(classes, className, c => c.Amount) ?? 0, ammoType, Inherited(classes, className, c => c.AmmoGive) ?? 0);
         }
 
         return new ThingCatalog(types);
+    }
+
+    /// <summary>The ammunition a pickup is: the class in its chain whose parent is Ammo (a box of bullets is Clip).</summary>
+    private static string? AmmoClass(Dictionary<string, ActorClass> classes, string name)
+    {
+        for (var c = classes.GetValueOrDefault(name); c is not null; c = c.Parent is null ? null : classes.GetValueOrDefault(c.Parent))
+        {
+            if (string.Equals(c.Parent, "Ammo", StringComparison.OrdinalIgnoreCase)) return c.Name;
+        }
+
+        return null;
     }
 
     /// <summary>The kind of object a class is: the nearest of its ancestors that says, else whether it shows a sprite.</summary>
@@ -202,6 +216,14 @@ public sealed partial class ThingCatalog
         public string? ActiveSound { get; set; }
 
         public string? PickupSound { get; set; }
+
+        public int? Health { get; set; }
+
+        public int? Amount { get; set; }
+
+        public int? AmmoGive { get; set; }
+
+        public string? AmmoTypeName { get; set; }
 
         /// <summary>State lines in order, with labels as "Label:" entries.</summary>
         public List<string> States { get; } = [];
@@ -483,6 +505,10 @@ public sealed partial class ThingCatalog
                         case "SEESOUND": c.SeeSound = value.Trim('"'); break;
                         case "ACTIVESOUND": c.ActiveSound = value.Trim('"'); break;
                         case "INVENTORY.PICKUPSOUND": c.PickupSound = value.Trim('"'); break;
+                        case "HEALTH": c.Health = (int?)Number(value); break;
+                        case "INVENTORY.AMOUNT": c.Amount = (int?)Number(value); break;
+                        case "WEAPON.AMMOGIVE" or "WEAPON.AMMOGIVE1": c.AmmoGive = (int?)Number(value); break;
+                        case "WEAPON.AMMOTYPE" or "WEAPON.AMMOTYPE1": c.AmmoTypeName = value.Trim('"'); break;
                     }
                 }
             }
