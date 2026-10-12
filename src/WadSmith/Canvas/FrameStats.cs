@@ -11,6 +11,7 @@ internal static class FrameStats
 {
     private static readonly ConcurrentQueue<double> Draws = new();
     private static readonly ConcurrentQueue<double> Snapshots = new();
+    private static readonly ConcurrentQueue<double> Frames3D = new();
 
     public static bool Enabled { get; set; } = Environment.GetEnvironmentVariable("WADSMITH_FRAME_STATS") == "1";
 
@@ -21,10 +22,17 @@ internal static class FrameStats
 
     public static void Snapshot(double ms) => Add(Snapshots, ms);
 
+    /// <summary>One 3D view picture, drawn and read back on its render thread.</summary>
+    public static void Frame3D(double ms) => Add(Frames3D, ms);
+
+    /// <summary>"p50 x ms, p95 y ms, max z ms over n" for the 3D view's pictures.</summary>
+    public static string Report3D() => Describe(Frames3D);
+
     public static void Reset()
     {
         Draws.Clear();
         Snapshots.Clear();
+        Frames3D.Clear();
     }
 
     /// <summary>"draw p50 x ms, p95 y ms, max z ms over n frames; snapshot …".</summary>

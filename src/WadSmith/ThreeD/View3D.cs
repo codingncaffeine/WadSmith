@@ -203,6 +203,16 @@ internal sealed class View3D : Control
         _renderer.Target(bitmaps, width, height);
     }
 
+    /// <summary>Whether a picture has been shown (for tools that wait for the first one).</summary>
+    internal bool HasPicture => _shown is not null;
+
+    /// <summary>Turns the orbit camera (for tools that measure drawing).</summary>
+    internal void TurnBy(double degrees)
+    {
+        _yaw += degrees;
+        SendCamera();
+    }
+
     /// <summary>Turns to look at the whole map from above and to the south-west.</summary>
     public void Frame()
     {

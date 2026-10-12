@@ -181,6 +181,23 @@ async Task RealPerfAsync()
     canvas.ZoomBy(8);
     await Measure("heights, 8x closer").ConfigureAwait(true);
 
+    // The 3D view beside the plan: the camera turning round the whole map, every picture timed on its render thread.
+    var view3d = window.GetVisualDescendants().OfType<WadSmith.App.ThreeD.View3D>().FirstOrDefault();
+    if (view3d is not null)
+    {
+        for (var i = 0; i < 400 && !view3d.HasPicture; i++) await Task.Delay(50).ConfigureAwait(true);
+        await Task.Delay(500).ConfigureAwait(true);
+        WadSmith.App.Canvas.FrameStats.Reset();
+        var turning = System.Diagnostics.Stopwatch.StartNew();
+        for (var f = 0; f < 240; f++)
+        {
+            view3d.TurnBy(1.5);
+            await Task.Delay(16).ConfigureAwait(true);
+        }
+
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"perf, 3D turning round the whole map: {WadSmith.App.Canvas.FrameStats.Report3D()} (render thread); {240 / turning.Elapsed.TotalSeconds:0} turns a second"));
+    }
+
     // Soak: keep panning (floors view, zooming in and out a little) and watch resident memory.
     var soak = double.Parse(args.FirstOrDefault(a => a.StartsWith("--soak=", StringComparison.Ordinal))?["--soak=".Length..] ?? "0", CultureInfo.InvariantCulture);
     if (soak > 0)

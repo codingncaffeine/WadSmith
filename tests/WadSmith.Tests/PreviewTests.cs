@@ -7,7 +7,7 @@ namespace WadSmith.Tests;
 
 public sealed class PreviewTests
 {
-    private static string Golden(string name)
+    internal static string Golden(string name)
     {
         // The goldens sit beside the test sources; walk up from the test binary to find them.
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

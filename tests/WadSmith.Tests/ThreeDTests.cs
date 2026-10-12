@@ -79,4 +79,54 @@ public sealed class ThreeDTests
 
         Assert.True(magenta > picture.Width * picture.Height / 8, $"only {magenta} checker pixels");
     }
+
+    public static TheoryData<string> GoldenSpots() => ["overview", "start"];
+
+    /// <summary>
+    /// Freedoom 2's MAP01 from fixed camera spots against stored pictures (Freedoom only: pictures of
+    /// commercial games never enter the repository, D10). GPUs differ in edges and smoothing, so the
+    /// pictures must agree on average and nearly everywhere rather than exactly. Set
+    /// WADSMITH_WRITE_GOLDENS=1 to rewrite them after an intended change.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(GoldenSpots))]
+    public void Freedoom2Map01LooksAsItDid(string spot)
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "The 3D view's windowless OpenGL comes to Windows with its own build (Phase 13).");
+        var r = Freedoom.Value;
+        var wad = Core.Containers.WadContainer.Open(GameFiles.Require("freedoom2.wad"));
+        var lumps = Core.Maps.MapLocator.Find(wad).First(l => l.Name == "MAP01");
+        var map = EditorMap.FromModel(Core.Maps.MapConversion.Read(lumps, "doom"));
+        var scene = MapScene.Build(MapGeometry.Build(map.Frame), n => r.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, SpriteShapes.For(r));
+        var start = scene.Things.First(t => t.Type == 1);
+        var camera = spot == "overview" ? Offscreen3D.Overview(scene, 1.6) : new Camera3D(start.X, start.Y, start.Z + 41, start.Angle, 0);
+        var png = Offscreen3D.RenderPng(scene, r, camera, 320, 200, inside: spot != "overview");
+        var file = PreviewTests.Golden($"freedoom2-MAP01-3d-{spot}.png");
+        if (Environment.GetEnvironmentVariable("WADSMITH_WRITE_GOLDENS") == "1")
+        {
+            File.WriteAllBytes(file, png);
+            return;
+        }
+
+        using var drawn = SKBitmap.Decode(png);
+        using var golden = SKBitmap.Decode(File.ReadAllBytes(file));
+        Assert.Equal((golden.Width, golden.Height), (drawn.Width, drawn.Height));
+        long total = 0;
+        var far = 0;
+        for (var y = 0; y < drawn.Height; y++)
+        {
+            for (var x = 0; x < drawn.Width; x++)
+            {
+                var a = drawn.GetPixel(x, y);
+                var b = golden.GetPixel(x, y);
+                var d = Math.Abs(a.Red - b.Red) + Math.Abs(a.Green - b.Green) + Math.Abs(a.Blue - b.Blue);
+                total += d;
+                if (d > 120) far++;
+            }
+        }
+
+        var pixels = drawn.Width * drawn.Height;
+        var mean = total / (3.0 * pixels);
+        Assert.True(mean < 1.5 && far < pixels / 50, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{spot}: mean difference {mean:0.00} per channel, {far} of {pixels} pixels far off"));
+    }
 }

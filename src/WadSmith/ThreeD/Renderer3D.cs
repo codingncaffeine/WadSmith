@@ -141,6 +141,7 @@ internal sealed unsafe class Renderer3D : IDisposable
                 if (highlight is { } h) renderer.Highlight(h.Surfaces, h.Sprites);
                 if (scene is null || bitmaps is null || width < 1 || height < 1) continue;
 
+                var started = System.Diagnostics.Stopwatch.GetTimestamp();
                 var bitmap = bitmaps[next];
                 next = (next + 1) % bitmaps.Length;
                 using (var fb = bitmap.Lock())
@@ -159,6 +160,7 @@ internal sealed unsafe class Renderer3D : IDisposable
                     }
                 }
 
+                Canvas.FrameStats.Frame3D(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                 FrameReady?.Invoke(bitmap);
             }
         }
