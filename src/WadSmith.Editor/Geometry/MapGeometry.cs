@@ -33,6 +33,11 @@ public sealed class MapGeometry
         Frame = frame;
         (_loops, _bounds) = TraceOutlines(frame);
         _extent = ExtentOf(frame);
+        foreach (var sector in frame.Sectors)
+        {
+            if (sector.Element is null) continue;
+            FloorRange = FloorRange is { } r ? (Math.Min(r.Min, sector.FloorHeight), Math.Max(r.Max, sector.FloorHeight)) : (sector.FloorHeight, sector.FloorHeight);
+        }
 
         _lines = SpatialGrid.Build(_extent, frame.Lines.Count, i =>
         {
@@ -51,6 +56,9 @@ public sealed class MapGeometry
     public MapFrame Frame { get; }
 
     public long Version => Frame.Version;
+
+    /// <summary>The lowest and highest floor of any area; null for a map without areas.</summary>
+    public (double Min, double Max)? FloorRange { get; }
 
     /// <summary>Traces outlines and indexes everything; whole-map work, so call it on a worker.</summary>
     public static MapGeometry Build(MapFrame frame) => new(frame);

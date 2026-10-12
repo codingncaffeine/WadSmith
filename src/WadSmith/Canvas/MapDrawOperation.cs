@@ -23,7 +23,7 @@ internal sealed class SelectionOverlay
 
     public List<SKPath> Areas { get; } = [];
 
-    public static SelectionOverlay Take(IReadOnlyList<Element> items, MapGeometry geometry)
+    public static SelectionOverlay Take(IReadOnlyList<Element> items, MapGeometry geometry, MapLook look)
     {
         var o = new SelectionOverlay();
         var f = geometry.Frame;
@@ -42,7 +42,7 @@ internal sealed class SelectionOverlay
                     o.Points.Add(((float)v.X, (float)v.Y));
                     break;
                 case Thing when slot < f.Things.Count && f.Things[slot] is { Element: not null } t:
-                    o.Things.Add(((float)t.X, (float)t.Y, 16));
+                    o.Things.Add(((float)t.X, (float)t.Y, look.Radius(t.Type)));
                     break;
                 case Sector:
                     var loops = geometry.LoopsAt(slot);
@@ -59,7 +59,7 @@ internal sealed class SelectionOverlay
 }
 
 /// <summary>Draws the map on the render thread through a Skia lease.</summary>
-internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, bool showHeights) : ICustomDrawOperation
+internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view) : ICustomDrawOperation
 {
     private static readonly SKColor Background = new(0x0A, 0x07, 0x08);
     private static readonly SKColor GridMinor = new(0x1C, 0x15, 0x16);
@@ -117,7 +117,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
 
         canvas.Save();
         canvas.Concat(in m);
-        if (showHeights) DrawHeights(canvas, snapshot.Heights.Visible(left, bottom, right, top), !dense);
+        if (snapshot.Areas is { } areas) DrawAreas(canvas, areas, areas.Visible(left, bottom, right, top), dense, lease.GrContext is not null);
         using var paint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeCap = SKStrokeCap.Round };
 
         // Openings first, then steps, then solid walls on top: the automap's order.
@@ -169,28 +169,25 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
         }
     }
 
-    /// <summary>Areas coloured by floor height: deep blue for the lowest, through green, to warm red for the highest.</summary>
-    private void DrawHeights(SKCanvas canvas, (List<int> Cells, int Shapes, bool All) visible, bool smooth)
+    /// <summary>
+    /// The areas: textures (sharp up close, smoothed further out, their average colour far out) or
+    /// height colours. Textured areas are filled without edge smoothing, so neighbours meet without a
+    /// seam; the walls drawn on top cover the edges.
+    /// </summary>
+    private void DrawAreas(SKCanvas canvas, CellPaths areas, (List<int> Cells, int Shapes, bool All) visible, bool dense, bool gpu)
     {
-        using var fill = new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = smooth };
-        for (var g = 0; g < snapshot!.HeightShades.Length; g++)
-        {
-            fill.Color = HeightColour(snapshot.HeightShades[g]).WithAlpha(0x8C);
-            snapshot.Heights.Draw(canvas, g, fill, visible);
-        }
+        var heights = snapshot!.Mode == MapViewMode.Heights;
+        var texel = view.Zoom;
+        var detail = texel >= 1 ? AreaDetail.Sharp : texel * 64 >= 4 ? AreaDetail.Smooth : AreaDetail.Average;
+        var smooth = heights && !dense;
+
+        // Without a GPU, smoothing every pixel costs four times as much; a texture shrunk to the zoom
+        // and drawn plainly looks the same at a quarter of the cost.
+        var level = detail == AreaDetail.Smooth && !gpu ? Math.Clamp((int)Math.Floor(Math.Log2(1 / texel)), 0, 4) : 0;
+        areas.DrawAll(canvas, g => snapshot.PaintFor(g, detail, smooth, level), visible);
     }
 
-    internal static SKColor HeightColour(double t)
-    {
-        t = Math.Clamp(t, 0, 1);
-        // A perceptually even ramp (blue, teal, green, yellow, orange, red) that colour-blind viewers can still order by lightness.
-        SKColor[] stops = [new(0x2B, 0x3A, 0x8C), new(0x1F, 0x86, 0x8C), new(0x4C, 0xAF, 0x50), new(0xD8, 0xC2, 0x3A), new(0xE8, 0x8A, 0x2E), new(0xD6, 0x3A, 0x2E)];
-        var f = t * (stops.Length - 1);
-        var i = Math.Min((int)f, stops.Length - 2);
-        var k = f - i;
-        byte Mix(byte a, byte b) => (byte)(a + (b - a) * k);
-        return new SKColor(Mix(stops[i].Red, stops[i + 1].Red), Mix(stops[i].Green, stops[i + 1].Green), Mix(stops[i].Blue, stops[i + 1].Blue));
-    }
+    internal static SKColor HeightColour(double t) => HeightRamp.At(t);
 
     private static void DrawOverlay(SKCanvas canvas, SelectionOverlay o, SKColor colour, float px, float width, byte fillAlpha)
     {
@@ -230,16 +227,68 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
 
         using var ring = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = 1.4f, IsAntialias = true };
         using var tick = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = 1.4f, IsAntialias = true };
+        using var sprite = new SKPaint { IsAntialias = false };
         foreach (var t in picture.Things)
         {
             var x = Sx(t.X);
             var y = Sy(t.Y);
-            if (x < -20 || y < -20 || x > view.Width + 20 || y > view.Height + 20) continue;
             var r = (float)Math.Max(3, t.Radius * view.Zoom);
+            if (x < -r - 20 || y < -r - 20 || x > view.Width + r + 20 || y > view.Height + r + 20) continue;
             ring.Color = tick.Color = t.Type is >= 1 and <= 4 or 11 ? PlayerStart : ThingColour;
-            canvas.DrawCircle(x, y, r, ring);
             var a = t.Angle * Math.PI / 180;
+
+            // The object's own sprite, fitted to the space it takes up but never smaller than 14 pixels,
+            // so items stay recognisable when the whole map is in view; the ring keeps its true size.
+            if (t.Sprite is { } image && r >= 3)
+            {
+                var scale = Math.Max(2 * r, 14) / Math.Max(image.Width, image.Height);
+                var w = image.Width * scale;
+                var h = image.Height * scale;
+                var sampling = scale >= 1 ? new SKSamplingOptions(SKFilterMode.Nearest) : new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
+                canvas.DrawImage(image, new SKRect(x - w / 2, y - h / 2, x + w / 2, y + h / 2), sampling, sprite);
+                ring.Color = ring.Color.WithAlpha(0x70);
+                canvas.DrawCircle(x, y, r, ring);
+                canvas.DrawLine(x + (float)(Math.Cos(a) * r), y - (float)(Math.Sin(a) * r), x + (float)(Math.Cos(a) * r * 1.35), y - (float)(Math.Sin(a) * r * 1.35), tick);
+                continue;
+            }
+
+            canvas.DrawCircle(x, y, r, ring);
             canvas.DrawLine(x, y, x + (float)(Math.Cos(a) * r * 1.4), y - (float)(Math.Sin(a) * r * 1.4), tick);
         }
+    }
+}
+
+/// <summary>
+/// The heights view's colours: a perceptually even ramp (blue, teal, green, yellow, orange, red) that
+/// colour-blind viewers can still order by lightness. The canvas and the legend both read it.
+/// </summary>
+internal static class HeightRamp
+{
+    public static readonly SKColor[] Stops = [new(0x2B, 0x3A, 0x8C), new(0x1F, 0x86, 0x8C), new(0x4C, 0xAF, 0x50), new(0xD8, 0xC2, 0x3A), new(0xE8, 0x8A, 0x2E), new(0xD6, 0x3A, 0x2E)];
+
+    /// <summary>How strongly areas are tinted over the canvas background.</summary>
+    public const byte Alpha = 0x8C;
+
+    /// <summary>The colour at <paramref name="t"/> from 0 (lowest floor) to 1 (highest).</summary>
+    public static SKColor At(double t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        var f = t * (Stops.Length - 1);
+        var i = Math.Min((int)f, Stops.Length - 2);
+        var k = f - i;
+        byte Mix(byte a, byte b) => (byte)(a + (b - a) * k);
+        return new SKColor(Mix(Stops[i].Red, Stops[i + 1].Red), Mix(Stops[i].Green, Stops[i + 1].Green), Mix(Stops[i].Blue, Stops[i + 1].Blue));
+    }
+
+    /// <summary>The ramp as a left-to-right brush, for the legend.</summary>
+    public static LinearGradientBrush Brush()
+    {
+        var brush = new LinearGradientBrush { StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative) };
+        for (var i = 0; i < Stops.Length; i++)
+        {
+            brush.GradientStops.Add(new GradientStop(Color.FromRgb(Stops[i].Red, Stops[i].Green, Stops[i].Blue), i / (double)(Stops.Length - 1)));
+        }
+
+        return brush;
     }
 }

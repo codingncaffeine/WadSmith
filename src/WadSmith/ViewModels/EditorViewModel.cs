@@ -20,7 +20,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         ("select", "Tip: click a room, a wall or a thing to see what it is in the Inspector on the right."),
         ("edit", "Tip: change a number in the Inspector, such as a floor height, and watch the map follow."),
         ("undo", "Tip: Ctrl+Z takes back the last change and Ctrl+Y brings it back. Nothing needs saving; WadSmith keeps every change."),
-        ("heights", "Tip: Heights as colours shows the high and low parts of the map at a glance."),
+        ("heights", "Tip: the view buttons at the top show floors, ceilings, heights as colours, or just the walls."),
     ];
 
     private readonly AppServices _services;
@@ -36,6 +36,8 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.History.Moved += OnHistoryMoved;
         session.StateChanged += _ => UpdateSaveText();
         session.Selection.Changed += () => Learned("select");
+        session.GeometryChanged += UpdateHeights;
+        UpdateHeights();
         UpdateSaveText();
         UpdateStatus();
     }
@@ -54,18 +56,69 @@ internal sealed partial class EditorViewModel : ObservableObject
     [ObservableProperty]
     private string _saveText = "";
 
+    /// <summary>How the map is painted (D45); floors by default.</summary>
     [ObservableProperty]
-    private bool _showHeights;
+    [NotifyPropertyChangedFor(nameof(ShowHeights), nameof(IsFloors), nameof(IsCeilings), nameof(IsLines))]
+    private Canvas.MapViewMode _viewMode;
+
+    public bool ShowHeights
+    {
+        get => ViewMode == Canvas.MapViewMode.Heights;
+        set
+        {
+            if (value) ViewMode = Canvas.MapViewMode.Heights;
+            else OnPropertyChanged();
+        }
+    }
+
+    public bool IsFloors
+    {
+        get => ViewMode == Canvas.MapViewMode.Floors;
+        set
+        {
+            if (value) ViewMode = Canvas.MapViewMode.Floors;
+            else OnPropertyChanged();
+        }
+    }
+
+    public bool IsCeilings
+    {
+        get => ViewMode == Canvas.MapViewMode.Ceilings;
+        set
+        {
+            if (value) ViewMode = Canvas.MapViewMode.Ceilings;
+            else OnPropertyChanged();
+        }
+    }
+
+    public bool IsLines
+    {
+        get => ViewMode == Canvas.MapViewMode.Lines;
+        set
+        {
+            if (value) ViewMode = Canvas.MapViewMode.Lines;
+            else OnPropertyChanged();
+        }
+    }
 
     [ObservableProperty]
     private string _undoTip = "Nothing to undo";
 
     [ObservableProperty]
+    private string _heightsLow = "";
+
+    [ObservableProperty]
+    private string _heightsHigh = "";
+
+    [ObservableProperty]
+    private string _heightsNote = "";
+
+    [ObservableProperty]
     private string _redoTip = "Nothing to redo";
 
-    partial void OnShowHeightsChanged(bool value)
+    partial void OnViewModeChanged(Canvas.MapViewMode value)
     {
-        if (value) Learned("heights");
+        if (value != Canvas.MapViewMode.Floors) Learned("heights");
     }
 
     private void OnHistoryMoved()
@@ -75,6 +128,24 @@ internal sealed partial class EditorViewModel : ObservableObject
         UndoTip = Session.History.UndoLabel is { } u ? $"Undo: {u} (Ctrl+Z)" : "Nothing to undo";
         RedoTip = Session.History.RedoLabel is { } r ? $"Redo: {r} (Ctrl+Y)" : "Nothing to redo";
         Learned("edit");
+    }
+
+    /// <summary>The heights legend's words, from the shapes the worker built (no scan of the map here).</summary>
+    private void UpdateHeights()
+    {
+        const double PlayerHeight = 56;
+        if (Session.Geometry.FloorRange is not { } r)
+        {
+            (HeightsLow, HeightsHigh, HeightsNote) = ("", "", "No areas yet.");
+            return;
+        }
+
+        HeightsLow = string.Create(CultureInfo.InvariantCulture, $"Lowest {r.Min:0}");
+        HeightsHigh = string.Create(CultureInfo.InvariantCulture, $"Highest {r.Max:0}");
+        var span = r.Max - r.Min;
+        HeightsNote = span == 0
+            ? string.Create(CultureInfo.InvariantCulture, $"Every floor is at {r.Min:0}.")
+            : string.Create(CultureInfo.InvariantCulture, $"{span:0} units apart, about {span / PlayerHeight:0.#} times the player's height.");
     }
 
     private void UpdateSaveText()
@@ -124,13 +195,16 @@ internal sealed partial class EditorViewModel : ObservableObject
         {
             Sector s => string.Create(CultureInfo.InvariantCulture, $"Area · floor {s.FloorHeight:0}, ceiling {s.CeilingHeight:0}, light {s.Light} · {s.FloorTexture}"),
             Line l => string.Create(CultureInfo.InvariantCulture, $"Wall · {(l.Back is null ? "solid" : "between two areas")} · {l.Length:0} long{(l.Special != 0 ? " · has an action" : "")}"),
-            Thing t => string.Create(CultureInfo.InvariantCulture, $"Thing · type {t.Type} · facing {t.Angle}°"),
+            Thing t => string.Create(CultureInfo.InvariantCulture, $"{ThingName(t.Type)} · facing {t.Angle}°"),
             Vertex v => string.Create(CultureInfo.InvariantCulture, $"Corner at {v.X:0}, {v.Y:0}"),
             _ => "",
         };
         if (element is not null) Learned("zoom");
         UpdateStatus();
     }
+
+    /// <summary>The object's name from the game's own definitions, or its number when the game does not define it.</summary>
+    public string ThingName(int type) => Session.Resources?.Things.Find(type)?.Name ?? string.Create(CultureInfo.InvariantCulture, $"Object type {type}");
 
     /// <summary>Called by the canvas when the view zooms or pans.</summary>
     public void Navigated() => Learned("zoom");

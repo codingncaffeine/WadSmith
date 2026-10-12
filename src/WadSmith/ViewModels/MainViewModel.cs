@@ -34,7 +34,7 @@ internal sealed partial class MainViewModel : ObservableObject
     /// <summary>Reads a project's map on a worker and opens it in the editor.</summary>
     public async Task OpenEditorAsync(Project project, string slot)
     {
-        var session = await Task.Run(() => EditorSession.Open(project, slot, PostToUi)).ConfigureAwait(true);
+        var session = await Task.Run(() => EditorSession.Open(project, slot, PostToUi, Services.ResourcesFor(project))).ConfigureAwait(true);
         OpenEditor(session);
     }
 

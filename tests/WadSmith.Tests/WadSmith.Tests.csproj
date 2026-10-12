@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\src\WadSmith.Core\WadSmith.Core.csproj" />
     <ProjectReference Include="..\..\src\WadSmith.Cli\WadSmith.Cli.csproj" />
     <ProjectReference Include="..\..\src\WadSmith.Editor\WadSmith.Editor.csproj" />
+    <ProjectReference Include="..\..\src\WadSmith\WadSmith.csproj" />
   </ItemGroup>
 
 </Project>

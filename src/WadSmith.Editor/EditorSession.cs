@@ -36,9 +36,10 @@ public sealed class EditorSession : IDisposable
     private Task _lastSave = Task.CompletedTask;
     private bool _disposed;
 
-    private EditorSession(Project project, string slot, EditorMap map, MapGeometry geometry, Action<Action> onUiThread)
+    private EditorSession(Project project, string slot, EditorMap map, MapGeometry geometry, GameResources? resources, Action<Action> onUiThread)
     {
         Project = project;
+        Resources = resources;
         Slot = slot;
         Map = map;
         History = new History(map);
@@ -62,6 +63,9 @@ public sealed class EditorSession : IDisposable
     }
 
     public Project Project { get; }
+
+    /// <summary>The project's game, opened for its textures, sprites and object names; null when it was not found.</summary>
+    public GameResources? Resources { get; }
 
     public string Slot { get; }
 
@@ -91,11 +95,12 @@ public sealed class EditorSession : IDisposable
     /// <param name="project">The project.</param>
     /// <param name="slot">The map to open.</param>
     /// <param name="onUiThread">Runs an action on the UI thread (the app passes its dispatcher).</param>
+    /// <param name="resources">The project's game opened for textures, sprites and object names, when found.</param>
     /// <remarks>Reads and indexes the whole map: call it on a worker, then hand the session to the UI thread.</remarks>
-    public static EditorSession Open(Project project, string slot, Action<Action> onUiThread)
+    public static EditorSession Open(Project project, string slot, Action<Action> onUiThread, GameResources? resources = null)
     {
         var map = EditorMap.FromModel(project.LoadMap(slot));
-        var session = new EditorSession(project, slot, map, MapGeometry.Build(map.Frame), onUiThread);
+        var session = new EditorSession(project, slot, map, MapGeometry.Build(map.Frame), resources, onUiThread);
         session.SaveVersion("Opened");
         return session;
     }

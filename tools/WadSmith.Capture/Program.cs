@@ -91,7 +91,7 @@ string MapWork(WadSmith.Core.Projects.Project project)
     var copy = Lap();
     var geometry = WadSmith.Editor.Geometry.MapGeometry.Build(map.Frame);
     var shapes = Lap();
-    _ = WadSmith.App.Canvas.CanvasSnapshot.Take(geometry);
+    _ = WadSmith.App.Canvas.CanvasSnapshot.Take(geometry, new WadSmith.App.Canvas.MapLook(null), WadSmith.App.Canvas.MapViewMode.Floors);
     var picture = Lap();
 
     var history = new WadSmith.Editor.Editing.History(map);
@@ -174,7 +174,7 @@ async Task RealPerfAsync()
     canvas.FitMap();
     canvas.ZoomBy(8);
     await Measure("8x closer").ConfigureAwait(true);
-    ((EditorViewModel)vm.Page).ShowHeights = true;
+    ((EditorViewModel)vm.Page).ViewMode = WadSmith.App.Canvas.MapViewMode.Heights;
     canvas.FitMap();
     await Measure("heights, whole map").ConfigureAwait(true);
     canvas.FitMap();
@@ -232,7 +232,7 @@ foreach (var pose in poses)
         case "welcome":
             Save("welcome");
             break;
-        case "editor" or "editor-heights" or "editor-selected":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -257,7 +257,13 @@ foreach (var pose in poses)
             }
 
             var editor = (EditorViewModel)vm.Page;
-            editor.ShowHeights = pose == "editor-heights";
+            editor.ViewMode = pose switch
+            {
+                "editor-heights" => WadSmith.App.Canvas.MapViewMode.Heights,
+                "editor-ceilings" => WadSmith.App.Canvas.MapViewMode.Ceilings,
+                "editor-lines" => WadSmith.App.Canvas.MapViewMode.Lines,
+                _ => WadSmith.App.Canvas.MapViewMode.Floors,
+            };
             if (pose == "editor-selected")
             {
                 var sector = editor.Session.Map.Sectors.OrderByDescending(s => s.CeilingHeight - s.FloorHeight).First();
@@ -268,6 +274,9 @@ foreach (var pose in poses)
                 editor.Session.Selection.Clear();
             }
 
+            var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
+            view.FitMap();
+            if (pose == "editor-zoomed") view.ZoomBy(3.5);
             Save(pose);
             break;
         case "perf":
@@ -301,7 +310,7 @@ foreach (var pose in poses)
             canvas.FitMap();
             canvas.ZoomBy(8);
             Measure("8x closer", "perf-zoomed");
-            ((EditorViewModel)vm.Page).ShowHeights = true;
+            ((EditorViewModel)vm.Page).ViewMode = WadSmith.App.Canvas.MapViewMode.Heights;
             canvas.FitMap();
             Measure("heights, whole map", "perf-heights");
             canvas.FitMap();

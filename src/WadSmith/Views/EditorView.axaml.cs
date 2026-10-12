@@ -10,6 +10,7 @@ public partial class EditorView : UserControl
     public EditorView()
     {
         InitializeComponent();
+        HeightsRamp.Background = WadSmith.App.Canvas.HeightRamp.Brush();
         Canvas.HoverChanged += (element, at) => (DataContext as EditorViewModel)?.Hover(element, at);
     }
 

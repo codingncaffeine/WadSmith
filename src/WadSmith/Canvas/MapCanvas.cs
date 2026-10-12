@@ -18,11 +18,12 @@ namespace WadSmith.App.Canvas;
 internal sealed class MapCanvas : Control
 {
     public static readonly StyledProperty<EditorSession?> SessionProperty = AvaloniaProperty.Register<MapCanvas, EditorSession?>(nameof(Session));
-    public static readonly StyledProperty<bool> ShowHeightsProperty = AvaloniaProperty.Register<MapCanvas, bool>(nameof(ShowHeights));
+    public static readonly StyledProperty<MapViewMode> ModeProperty = AvaloniaProperty.Register<MapCanvas, MapViewMode>(nameof(Mode));
 
     private readonly LatestOnWorker<(EditorSession Session, CanvasSnapshot Picture)> _pictures;
     private readonly LatestOnWorker<(EditorSession Session, long Generation, SelectionOverlay Outline)> _outlines;
     private CanvasSnapshot? _snapshot;
+    private MapLook _look = new(null);
     private SelectionOverlay? _selection;
     private SelectionOverlay? _hoverOutline;
     private long _outlineGeneration;
@@ -36,7 +37,6 @@ internal sealed class MapCanvas : Control
 
     static MapCanvas()
     {
-        AffectsRender<MapCanvas>(ShowHeightsProperty);
         FocusableProperty.OverrideDefaultValue<MapCanvas>(true);
     }
 
@@ -45,7 +45,7 @@ internal sealed class MapCanvas : Control
         ClipToBounds = true;
         _pictures = new(ViewModels.MainViewModel.PostToUi, r =>
         {
-            if (!ReferenceEquals(r.Session, Session) || (_snapshot is not null && r.Picture.Version < _snapshot.Version)) return;
+            if (!ReferenceEquals(r.Session, Session) || r.Picture.Mode != Mode || (_snapshot is not null && _snapshot.Mode == Mode && r.Picture.Version < _snapshot.Version)) return;
             _snapshot = r.Picture;
             InvalidateVisual();
         }, "the map picture");
@@ -63,10 +63,11 @@ internal sealed class MapCanvas : Control
         set => SetValue(SessionProperty, value);
     }
 
-    public bool ShowHeights
+    /// <summary>How the map is painted: floors, ceilings, heights or lines only.</summary>
+    public MapViewMode Mode
     {
-        get => GetValue(ShowHeightsProperty);
-        set => SetValue(ShowHeightsProperty, value);
+        get => GetValue(ModeProperty);
+        set => SetValue(ModeProperty, value);
     }
 
     /// <summary>Raised when the element under the pointer changes (null over empty space).</summary>
@@ -75,6 +76,12 @@ internal sealed class MapCanvas : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == ModeProperty)
+        {
+            RequestPicture();
+            return;
+        }
+
         if (change.Property != SessionProperty) return;
         if (change.OldValue is EditorSession old)
         {
@@ -89,6 +96,7 @@ internal sealed class MapCanvas : Control
         _fitted = false;
         if (change.NewValue is EditorSession s)
         {
+            _look = new MapLook(s.Resources);
             s.GeometryChanged += OnGeometryChanged;
             s.Selection.Changed += OnSelectionChanged;
             RequestPicture();
@@ -103,17 +111,19 @@ internal sealed class MapCanvas : Control
     {
         RequestPicture();
         OnSelectionChanged();
-        if (_hover is not null && Session is { } s) _hoverOutline = SelectionOverlay.Take([_hover], s.Geometry);
+        if (_hover is not null && Session is { } s) _hoverOutline = SelectionOverlay.Take([_hover], s.Geometry, _look);
     }
 
     private void RequestPicture()
     {
         if (Session is not { } session) return;
         var geometry = session.Geometry;
+        var look = _look;
+        var mode = Mode;
         _pictures.Request(() =>
         {
             var started = System.Diagnostics.Stopwatch.GetTimestamp();
-            var picture = CanvasSnapshot.Take(geometry);
+            var picture = CanvasSnapshot.Take(geometry, look, mode);
             FrameStats.Snapshot(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             return (session, picture);
         });
@@ -133,7 +143,8 @@ internal sealed class MapCanvas : Control
 
         var items = session.Selection.Items.ToArray();
         var geometry = session.Geometry;
-        _outlines.Request(() => (session, generation, SelectionOverlay.Take(items, geometry)));
+        var look = _look;
+        _outlines.Request(() => (session, generation, SelectionOverlay.Take(items, geometry, look)));
         InvalidateVisual();
     }
 
@@ -162,7 +173,7 @@ internal sealed class MapCanvas : Control
         if (Session is null) return;
         if (!_fitted) ComputeFit();
         var hover = _hover is not null && !Session.Selection.Contains(_hover) ? _hoverOutline : null;
-        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), ShowHeights));
+        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height)));
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -225,7 +236,7 @@ internal sealed class MapCanvas : Control
         if (!ReferenceEquals(hit, _hover))
         {
             _hover = hit;
-            _hoverOutline = hit is null || Session is null ? null : SelectionOverlay.Take([hit], Session.Geometry);
+            _hoverOutline = hit is null || Session is null ? null : SelectionOverlay.Take([hit], Session.Geometry, _look);
             InvalidateVisual();
         }
 

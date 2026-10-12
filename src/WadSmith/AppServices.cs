@@ -1,3 +1,6 @@
+using WadSmith.Core.Games;
+using WadSmith.Core.Projects;
+using WadSmith.Editor;
 using WadSmith.Editor.App;
 
 namespace WadSmith.App;
@@ -18,6 +21,30 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
 
     /// <summary>GZDoom's own data file, needed to remix classic maps; null when GZDoom is not installed.</summary>
     public string? EngineData { get; } = EngineDataFinder();
+
+    /// <summary>The games the last scan found (the welcome screen scans at start).</summary>
+    public IReadOnlyList<FoundGame>? Games
+    {
+        get => Volatile.Read(ref _games);
+        set => Volatile.Write(ref _games, value);
+    }
+
+    private IReadOnlyList<FoundGame>? _games;
+
+    /// <summary>The project's game opened for drawing; scans the game folders first when no scan has finished. Call on a worker.</summary>
+    public GameResources? ResourcesFor(Project project)
+    {
+        var games = Games ?? GameLocator.Scan(GameLocator.StandardFolders(Environment.GetEnvironmentVariable).Concat(Settings.Current.GameFolders).Distinct(), cancel: ShuttingDown);
+        try
+        {
+            return GameResources.Load(project.Info.Game, project.Folder, games, EngineData);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Core.CorruptDataException)
+        {
+            Log.Warn($"The game files for {project.Info.Name} could not be read: {ex.Message}");
+            return null;
+        }
+    }
 
     public void Shutdown() => _shutdown.Cancel();
 

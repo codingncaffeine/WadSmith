@@ -14,35 +14,56 @@ internal enum WallStyle
     Solid,
 }
 
+/// <summary>How far in the view is, which decides how area pictures are sampled.</summary>
+internal enum AreaDetail
+{
+    /// <summary>Texels larger than pixels: sharp, as the game draws them.</summary>
+    Sharp,
+
+    /// <summary>Texels smaller than pixels: smoothed.</summary>
+    Smooth,
+
+    /// <summary>Too far out for detail: each texture's average colour.</summary>
+    Average,
+}
+
+/// <summary>One group of areas painted alike: a texture at a brightness, or a solid colour.</summary>
+internal sealed record AreaStyle(FlatPicture? Flat, byte Light, SKColor Solid);
+
 /// <summary>
 /// The map's picture for the render thread, built on a worker from one <see cref="MapGeometry"/> and
-/// its frame: wall paths by style, area fills by floor height, corners and things, grouped into cells
-/// so a frame draws only what it can see. Read-only once built; the UI thread never builds one.
+/// its frame for one view mode: wall paths by style, area paths grouped by how they are painted,
+/// corners and things, grouped into cells so a frame draws only what it can see. Read-only once
+/// built, except the paints, which the render thread makes on first use and keeps.
 /// </summary>
 internal sealed class CanvasSnapshot
 {
-    public readonly record struct ThingMark(float X, float Y, float Angle, int Type, float Radius);
+    public readonly record struct ThingMark(float X, float Y, float Angle, int Type, float Radius, SKImage? Sprite);
 
-    private CanvasSnapshot(long version, CellPaths walls, CellPaths heights, double[] heightShades, float[] vertices, ThingMark[] things)
+    private readonly Dictionary<(int Group, AreaDetail Detail, bool Smooth, int Level), SKPaint> _paints = [];
+
+    private CanvasSnapshot(long version, MapViewMode mode, CellPaths walls, CellPaths? areas, AreaStyle[] styles, float[] vertices, ThingMark[] things)
     {
         Version = version;
+        Mode = mode;
         Walls = walls;
-        Heights = heights;
-        HeightShades = heightShades;
+        Areas = areas;
+        AreaStyles = styles;
         Vertices = vertices;
         Things = things;
     }
 
     public long Version { get; }
 
+    public MapViewMode Mode { get; }
+
     /// <summary>The walls, one group per <see cref="WallStyle"/>.</summary>
     public CellPaths Walls { get; }
 
-    /// <summary>The areas, one group per floor height band, lowest first.</summary>
-    public CellPaths Heights { get; }
+    /// <summary>The areas, one group per <see cref="AreaStyles"/> entry; null in the Lines view.</summary>
+    public CellPaths? Areas { get; }
 
-    /// <summary>Per height group, where it sits from the lowest floor (0) to the highest (1).</summary>
-    public double[] HeightShades { get; }
+    public AreaStyle[] AreaStyles { get; }
 
     /// <summary>x, y of every corner.</summary>
     public float[] Vertices { get; }
@@ -50,7 +71,7 @@ internal sealed class CanvasSnapshot
     public ThingMark[] Things { get; }
 
     /// <summary>Builds the picture: whole-map work, so call it on a worker.</summary>
-    public static CanvasSnapshot Take(MapGeometry geometry)
+    public static CanvasSnapshot Take(MapGeometry geometry, MapLook look, MapViewMode mode)
     {
         var f = geometry.Frame;
 
@@ -64,7 +85,7 @@ internal sealed class CanvasSnapshot
             segments.Add(((float)a.X, (float)a.Y, (float)b.X, (float)b.Y, (int)StyleOf(f, l)));
         }
 
-        var walls = CellPaths.Build(4, segments.Count, SKPathFillType.Winding, i => segments[i].Style, i =>
+        var walls = CellPaths.Build(4, segments.Count, i => segments[i].Style, i =>
         {
             var s = segments[i];
             return (Math.Min(s.X1, s.X2), Math.Min(s.Y1, s.Y2), Math.Max(s.X1, s.X2), Math.Max(s.Y1, s.Y2));
@@ -75,39 +96,76 @@ internal sealed class CanvasSnapshot
             path.LineTo(s.X2, s.Y2);
         });
 
-        // Areas, grouped by floor height (one group per height, or 64 bands when there are more).
-        // Outlines run with their area on the right, so outer loops and holes wind opposite ways and
-        // many areas can share one non-zero path without a hole being filled.
-        var sectors = new List<int>();
-        double min = double.MaxValue, max = double.MinValue;
-        for (var s = 0; s < f.Sectors.Count; s++)
+        var (areas, styles) = mode == MapViewMode.Lines ? (null, []) : BuildAreas(geometry, look, mode);
+
+        var verts = new List<float>(f.Vertices.Count * 2);
+        foreach (var v in f.Vertices)
         {
-            if (f.Sectors[s].Element is null || geometry.LoopsAt(s).Count == 0) continue;
-            sectors.Add(s);
-            min = Math.Min(min, f.Sectors[s].FloorHeight);
-            max = Math.Max(max, f.Sectors[s].FloorHeight);
+            if (v.Element is null) continue;
+            verts.Add((float)v.X);
+            verts.Add((float)v.Y);
         }
 
-        var heights = sectors.Select(s => f.Sectors[s].FloorHeight).Distinct().Order().ToArray();
-        var span = Math.Max(max - min, 1);
-        double[] shades;
-        Func<double, int> groupOfHeight;
-        if (heights.Length <= 64)
+        var things = f.Things.Where(t => t.Element is not null).Select(t => new ThingMark((float)t.X, (float)t.Y, t.Angle, t.Type, look.Radius(t.Type), look.Sprite(t.Type))).ToArray();
+        return new CanvasSnapshot(f.Version, mode, walls, areas, styles, [.. verts], things);
+    }
+
+    /// <summary>
+    /// The areas grouped by how they are painted: by texture and brightness for Floors and Ceilings,
+    /// by floor height for Heights. Outlines run with their area on the right, so outer loops and
+    /// holes wind opposite ways and many areas can share one non-zero path without a hole being filled.
+    /// </summary>
+    private static (CellPaths Areas, AreaStyle[] Styles) BuildAreas(MapGeometry geometry, MapLook look, MapViewMode mode)
+    {
+        var f = geometry.Frame;
+        var sectors = new List<int>();
+        for (var s = 0; s < f.Sectors.Count; s++)
         {
-            shades = [.. heights.Select(h => (h - min) / span)];
-            groupOfHeight = h => Array.BinarySearch(heights, h);
+            if (f.Sectors[s].Element is not null && geometry.LoopsAt(s).Count > 0) sectors.Add(s);
+        }
+
+        var styles = new List<AreaStyle>();
+        var groupOf = new int[sectors.Count];
+        if (mode == MapViewMode.Heights)
+        {
+            var (min, max) = geometry.FloorRange ?? (0, 0);
+            var span = Math.Max(max - min, 1);
+            var heights = sectors.Select(s => f.Sectors[s].FloorHeight).Distinct().Order().ToArray();
+            var bands = heights.Length <= 64 ? heights.Length : 64;
+            for (var g = 0; g < bands; g++)
+            {
+                var shade = heights.Length <= 64 ? (heights[g] - min) / span : g / 63.0;
+                styles.Add(new AreaStyle(null, 255, HeightRamp.At(shade).WithAlpha(HeightRamp.Alpha)));
+            }
+
+            for (var i = 0; i < sectors.Count; i++)
+            {
+                var h = f.Sectors[sectors[i]].FloorHeight;
+                groupOf[i] = heights.Length <= 64 ? Array.BinarySearch(heights, h) : (int)Math.Round((h - min) / span * 63);
+            }
         }
         else
         {
-            shades = [.. Enumerable.Range(0, 64).Select(i => i / 63.0)];
-            groupOfHeight = h => (int)Math.Round((h - min) / span * 63);
+            var index = new Dictionary<(string Flat, int Light), int>();
+            for (var i = 0; i < sectors.Count; i++)
+            {
+                var sector = f.Sectors[sectors[i]];
+                var name = mode == MapViewMode.Ceilings ? sector.CeilingTexture : sector.FloorTexture;
+                var light = Math.Clamp(sector.Light, 0, 255);
+                if (!index.TryGetValue((name, light), out var g))
+                {
+                    g = index[(name, light)] = styles.Count;
+                    styles.Add(new AreaStyle(look.Flat(name), Shown(light), new SKColor(0x2A, 0x2A, 0x2E)));
+                }
+
+                groupOf[i] = g;
+            }
         }
 
-        var areas = CellPaths.Build(shades.Length, sectors.Count, SKPathFillType.Winding, i => groupOfHeight(f.Sectors[sectors[i]].FloorHeight), i =>
+        var areas = CellPaths.Build(styles.Count, sectors.Count, i => groupOf[i], i =>
         {
-            var loops = geometry.LoopsAt(sectors[i]);
             float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
-            foreach (var loop in loops)
+            foreach (var loop in geometry.LoopsAt(sectors[i]))
             {
                 foreach (var p in loop)
                 {
@@ -120,17 +178,47 @@ internal sealed class CanvasSnapshot
 
             return (x0, y0, x1, y1);
         }, (i, path) => AddLoops(path, geometry.LoopsAt(sectors[i])));
+        return (areas, [.. styles]);
+    }
 
-        var verts = new List<float>(f.Vertices.Count * 2);
-        foreach (var v in f.Vertices)
+    /// <summary>
+    /// How bright an area is drawn from its light level: dark rooms stay readable from above (the
+    /// darkest is drawn at a third of full brightness), and the order of brightness is kept.
+    /// </summary>
+    internal static byte Shown(int light) => (byte)Math.Round(85 + 170 * (light / 255.0));
+
+    /// <summary>
+    /// The paint for one area group at one level of detail; made on the render thread the first time,
+    /// then kept. <paramref name="level"/> above 0 draws a smaller copy of the texture without
+    /// smoothing (fast without a GPU); 0 with <see cref="AreaDetail.Smooth"/> uses true mipmaps.
+    /// </summary>
+    public SKPaint PaintFor(int group, AreaDetail detail, bool smooth, int level = 0)
+    {
+        if (_paints.TryGetValue((group, detail, smooth, level), out var paint)) return paint;
+        var style = AreaStyles[group];
+        paint = new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = smooth };
+        if (Mode == MapViewMode.Heights)
         {
-            if (v.Element is null) continue;
-            verts.Add((float)v.X);
-            verts.Add((float)v.Y);
+            paint.Color = style.Solid;
+        }
+        else if (style.Flat is { } flat && detail != AreaDetail.Average)
+        {
+            var sampling = detail == AreaDetail.Sharp || level > 0 ? new SKSamplingOptions(SKFilterMode.Nearest) : new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
+
+            // Floors line up with the map's grid as in the game: texture x is map x, texture y is minus map y.
+            var image = flat.Level(level);
+            var stretch = flat.Image.Width / (float)image.Width;
+            paint.Shader = image.ToShader(SKShaderTileMode.Repeat, SKShaderTileMode.Repeat, sampling, SKMatrix.CreateScale(stretch, -stretch));
+            paint.ColorFilter = SKColorFilter.CreateBlendMode(new SKColor(style.Light, style.Light, style.Light), SKBlendMode.Modulate);
+        }
+        else
+        {
+            var c = style.Flat?.Average ?? style.Solid;
+            paint.Color = new SKColor((byte)(c.Red * style.Light / 255), (byte)(c.Green * style.Light / 255), (byte)(c.Blue * style.Light / 255));
         }
 
-        var things = f.Things.Where(t => t.Element is not null).Select(t => new ThingMark((float)t.X, (float)t.Y, t.Angle, t.Type, 16)).ToArray();
-        return new CanvasSnapshot(f.Version, walls, areas, shades, [.. verts], things);
+        _paints[(group, detail, smooth, level)] = paint;
+        return paint;
     }
 
     /// <summary>Appends an area's loops to a path as closed figures.</summary>
@@ -160,8 +248,8 @@ internal sealed class CanvasSnapshot
 
 /// <summary>
 /// Shapes split into a grid of cells by where their middles fall: per cell its bounds and one path per
-/// group, plus one path per group for the whole map (drawn when every cell is on screen), so a frame
-/// draws only the cells it can see.
+/// group it holds, plus one path per group for the whole map (drawn when every cell is on screen), so
+/// a frame draws only the cells it can see.
 /// </summary>
 internal sealed class CellPaths
 {
@@ -172,8 +260,8 @@ internal sealed class CellPaths
         MaxX = new float[cells];
         MaxY = new float[cells];
         Counts = new int[cells];
-        Paths = new SKPath?[cells][];
-        for (var i = 0; i < cells; i++) Paths[i] = new SKPath?[groups];
+        Cells = new List<(int Group, SKPath Path)>[cells];
+        for (var i = 0; i < cells; i++) Cells[i] = [];
         Whole = new SKPath?[groups];
     }
 
@@ -188,8 +276,8 @@ internal sealed class CellPaths
     /// <summary>Shapes per cell.</summary>
     public int[] Counts { get; }
 
-    /// <summary>Per cell, per group; null where a cell has nothing of that group.</summary>
-    public SKPath?[][] Paths { get; }
+    /// <summary>Per cell, a path for each group it holds, in group order.</summary>
+    public List<(int Group, SKPath Path)>[] Cells { get; }
 
     /// <summary>Per group, every shape of the group.</summary>
     public SKPath?[] Whole { get; }
@@ -197,7 +285,7 @@ internal sealed class CellPaths
     public int CellCount => Counts.Length;
 
     /// <summary>About 256 shapes per cell, at most 64 by 64 cells.</summary>
-    public static CellPaths Build(int groups, int count, SKPathFillType fill, Func<int, int> groupOf, Func<int, (float MinX, float MinY, float MaxX, float MaxY)> boundsOf, Action<int, SKPath> append)
+    public static CellPaths Build(int groups, int count, Func<int, int> groupOf, Func<int, (float MinX, float MinY, float MaxX, float MaxY)> boundsOf, Action<int, SKPath> append)
     {
         var side = Math.Clamp((int)Math.Sqrt(count / 256.0), 1, 64);
         var bounds = new (float MinX, float MinY, float MaxX, float MaxY)[count];
@@ -222,8 +310,18 @@ internal sealed class CellPaths
             var cx = Math.Clamp((int)(((b.MinX + b.MaxX) / 2 - x0) / w), 0, side - 1);
             var cy = Math.Clamp((int)(((b.MinY + b.MaxY) / 2 - y0) / h), 0, side - 1);
             var c = cy * side + cx;
-            append(i, cells.Paths[c][g] ??= new SKPath { FillType = fill });
-            append(i, cells.Whole[g] ??= new SKPath { FillType = fill });
+            var list = cells.Cells[c];
+            var at = list.FindIndex(e => e.Group >= g);
+            if (at < 0 || list[at].Group != g)
+            {
+                var entry = (g, new SKPath { FillType = SKPathFillType.Winding });
+                if (at < 0) list.Add(entry);
+                else list.Insert(at, entry);
+                at = at < 0 ? list.Count - 1 : at;
+            }
+
+            append(i, list[at].Path);
+            append(i, cells.Whole[g] ??= new SKPath { FillType = SKPathFillType.Winding });
             if (cells.Counts[c] == 0)
             {
                 (cells.MinX[c], cells.MinY[c], cells.MaxX[c], cells.MaxY[c]) = b;
@@ -271,7 +369,29 @@ internal sealed class CellPaths
 
         foreach (var c in visible.Cells)
         {
-            if (Paths[c][group] is { } path) canvas.DrawPath(path, paint);
+            foreach (var (g, path) in Cells[c])
+            {
+                if (g == group) canvas.DrawPath(path, paint);
+            }
+        }
+    }
+
+    /// <summary>Draws every group, each with its own paint, lowest group first.</summary>
+    public void DrawAll(SKCanvas canvas, Func<int, SKPaint> paintFor, (List<int> Cells, int Shapes, bool All) visible)
+    {
+        if (visible.All)
+        {
+            for (var g = 0; g < Whole.Length; g++)
+            {
+                if (Whole[g] is { } whole) canvas.DrawPath(whole, paintFor(g));
+            }
+
+            return;
+        }
+
+        foreach (var c in visible.Cells)
+        {
+            foreach (var (g, path) in Cells[c]) canvas.DrawPath(path, paintFor(g));
         }
     }
 }

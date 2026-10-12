@@ -194,8 +194,11 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 AddLine(l);
                 break;
             case Thing t:
-                Heading = t.Type is >= 1 and <= 4 ? $"Player {t.Type} start" : "Thing";
-                Summary = t.Type is >= 1 and <= 4 ? "Where the player appears." : $"Editor number {t.Type}.";
+                var known = _session.Resources?.Things.Find(t.Type);
+                Heading = known?.Name ?? (t.Type is >= 1 and <= 4 ? $"Player {t.Type} start" : "Thing");
+                Summary = t.Type is >= 1 and <= 4 or 11
+                    ? "Where the player appears."
+                    : known is null ? $"Editor number {t.Type}; the game does not define it." : $"Editor number {t.Type}, {known.Radius:0} units across the middle and {known.Height:0} tall.";
                 AddThing(t);
                 break;
             case Vertex v:

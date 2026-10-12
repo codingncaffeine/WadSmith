@@ -44,6 +44,36 @@
         <Setter Property="Background" Value="{DynamicResource Brush.Metal.Recessed}" />
     </Style>
 
+    <!-- Segmented choice (one of several views): metal segments, the chosen one lit in the accent. -->
+    <Style Selector="ToggleButton.segment">
+        <Setter Property="Background" Value="{DynamicResource Brush.Metal}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Metal.Chisel}" />
+        <Setter Property="BorderThickness" Value="1,1,0,1" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="Padding" Value="11,6" />
+    </Style>
+    <Style Selector="ToggleButton.segment.first">
+        <Setter Property="CornerRadius" Value="4,0,0,4" />
+    </Style>
+    <Style Selector="ToggleButton.segment.last">
+        <Setter Property="CornerRadius" Value="0,4,4,0" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="ToggleButton.segment:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Brush.Metal.Hover}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Metal.Chisel}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+    </Style>
+    <Style Selector="ToggleButton.segment:checked /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Metal.Chisel}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent.Ink}" />
+    </Style>
+    <Style Selector="ToggleButton.segment:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent.Hover}" />
+    </Style>
+
     <!-- The one main action on a screen: hellfire orange. -->
     <Style Selector="Button.primary">
         <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />

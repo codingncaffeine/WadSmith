@@ -24,8 +24,16 @@
                     <TextBlock Text="{Binding MapName}" Classes="secondary" VerticalAlignment="Center" />
                 </StackPanel>
                 <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                    <ToggleButton Content="Heights as colours" IsChecked="{Binding ShowHeights}"
-                                  ToolTip.Tip="Colours every area by its floor height, blue for low and red for high, so steps, pits and platforms stand out." />
+                    <StackPanel Orientation="Horizontal" Spacing="0" Margin="0,0,10,0">
+                        <ToggleButton Classes="segment first" Content="Floors" IsChecked="{Binding IsFloors}"
+                                      ToolTip.Tip="Shows each area's floor as it looks in the game, lit by its brightness." />
+                        <ToggleButton Classes="segment" Content="Ceilings" IsChecked="{Binding IsCeilings}"
+                                      ToolTip.Tip="Shows each area's ceiling texture, as if looking up through the map." />
+                        <ToggleButton Classes="segment" Content="Heights" IsChecked="{Binding ShowHeights}"
+                                      ToolTip.Tip="Colours every area by its floor height, blue for low and red for high, so steps, pits and platforms stand out." />
+                        <ToggleButton Classes="segment last" Content="Lines" IsChecked="{Binding IsLines}"
+                                      ToolTip.Tip="Shows only the walls, in the colours of the game's automap." />
+                    </StackPanel>
                     <Button Classes="metal" Content="Undo" Command="{Binding UndoCommand}" ToolTip.Tip="{Binding UndoTip}" />
                     <Button Classes="metal" Content="Redo" Command="{Binding RedoCommand}" ToolTip.Tip="{Binding RedoTip}" />
                     <Button Classes="metal" Content="Keep a version" Command="{Binding KeepVersionCommand}"
@@ -36,7 +44,26 @@
 
         <!-- Canvas and Inspector -->
         <Grid Grid.Row="1" ColumnDefinitions="*,4,330">
-            <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" ShowHeights="{Binding ShowHeights}" />
+            <Panel>
+                <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" />
+
+                <!-- Heights legend: the colour ramp with the lowest and highest floor. -->
+                <Border IsVisible="{Binding ShowHeights}" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12" Padding="12,9,12,10"
+                        CornerRadius="6" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="1"
+                        ToolTip.Tip="Areas are coloured by floor height: blue for the lowest, red for the highest. The player is 56 units tall and steps up 24.">
+                    <StackPanel Width="230" Spacing="5">
+                        <TextBlock Text="Floor heights" FontWeight="SemiBold" />
+                        <Border Height="12" CornerRadius="3" Background="#0A0708" ClipToBounds="True">
+                            <Border x:Name="HeightsRamp" Opacity="0.55" />
+                        </Border>
+                        <Grid ColumnDefinitions="*,*">
+                            <TextBlock Text="{Binding HeightsLow}" Classes="secondary" FontSize="12" />
+                            <TextBlock Grid.Column="1" Text="{Binding HeightsHigh}" Classes="secondary" FontSize="12" HorizontalAlignment="Right" />
+                        </Grid>
+                        <TextBlock Text="{Binding HeightsNote}" Classes="secondary" FontSize="12" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </Panel>
             <GridSplitter Grid.Column="1" Background="{DynamicResource Brush.Border.Subtle}" ResizeDirection="Columns" />
             <Border Grid.Column="2" Classes="panel" BorderThickness="1,0,0,0">
                 <ScrollViewer>

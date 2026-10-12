@@ -107,6 +107,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
             return;
         }
 
+        _services.Games = found;
         Games.Clear();
         foreach (var g in found.Where(g => g.Game.IsBaseGame && g.Game.Supported).GroupBy(g => g.Game.Id).Select(g => g.First()).OrderBy(g => g.Game.Title, StringComparer.Ordinal))
         {
@@ -245,7 +246,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
             var session = await Task.Run(() =>
             {
                 var (project, slot) = work();
-                return EditorSession.Open(project, slot, MainViewModel.PostToUi);
+                return EditorSession.Open(project, slot, MainViewModel.PostToUi, _services.ResourcesFor(project));
             }).ConfigureAwait(true);
             _main.OpenEditor(session);
         }
