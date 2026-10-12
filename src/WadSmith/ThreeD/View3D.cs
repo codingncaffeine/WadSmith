@@ -53,7 +53,7 @@ internal sealed class View3D : Control
     private Point? _lastPointer;
 
     /// <summary>A height drag (Ctrl+left on a floor or ceiling): the surface, its gesture, how much is applied, where it began and a pixel's worth there.</summary>
-    private (SurfaceTarget Target, long Gesture, double Applied, Point From, double UnitsPerPixel)? _heightDrag;
+    private (SurfaceTarget Target, long Gesture, double Applied, Point From, double UnitsPerPixel, string Name)? _heightDrag;
 
     /// <summary>A texture drag (Ctrl+left on a wall face): the face, its gesture, how much is applied, where it began and a pixel's worth there.</summary>
     private (Editor.Model.Side Face, long Gesture, double AppliedX, double AppliedY, Point From, double UnitsPerPixel)? _textureDrag;
@@ -206,6 +206,9 @@ internal sealed class View3D : Control
         _renderer?.Hover(([], []));
     }
 
+    /// <summary>A floor or ceiling as the height notices name it: a platform's top and underside by those names.</summary>
+    private static string SurfaceName(SceneHit hit) => hit.Platform ? (hit.Kind == HitKind.Floor ? "The platform's top" : "The platform's underside") : hit.Kind == HitKind.Ceiling ? "Ceiling" : "Floor";
+
     private static string DropWords(ViewModels.ShelfDrop drop, SceneHit? hit)
     {
         if (drop.Prefab is not null) return "Prefabs go on the plan: drop it there.";
@@ -243,7 +246,7 @@ internal sealed class View3D : Control
         }
 
         const double step = 8;
-        session.PlaceThing(drop.Thing, shift ? new MapPoint(floor.X, floor.Y) : new MapPoint(Math.Round(floor.X / step) * step, Math.Round(floor.Y / step) * step));
+        session.PlaceThing(drop.Thing, shift ? new MapPoint(floor.X, floor.Y) : new MapPoint(Math.Round(floor.X / step) * step, Math.Round(floor.Y / step) * step), floor.Platform ? floor.Z : null);
     }
 
     private void OnDragOver(object? sender, DragEventArgs e)
@@ -537,7 +540,7 @@ internal sealed class View3D : Control
         {
             // Ctrl+drag on a floor or ceiling moves it (§3.4): a pixel is worth what the view shows at that distance.
             var unitsPerPixel = 2 * surface.Distance * Math.Tan(Current.Fov * Math.PI / 360) / Math.Max(Bounds.Height, 1) / Current.Stretch;
-            _heightDrag = (surface.Target, Editor.Editing.History.NewGesture(), 0, e.GetPosition(this), unitsPerPixel);
+            _heightDrag = (surface.Target, Editor.Editing.History.NewGesture(), 0, e.GetPosition(this), unitsPerPixel, SurfaceName(surface));
             _wheel = null;
             e.Pointer.Capture(this);
             e.Handled = true;
@@ -577,7 +580,7 @@ internal sealed class View3D : Control
             {
                 var now = session.RaiseSurface(drag.Target, snapped - drag.Applied, drag.Gesture);
                 _heightDrag = drag with { Applied = snapped };
-                if (now is { } h) session.Tell($"{(drag.Target.Ceiling ? "Ceiling" : "Floor")} at {h:0} · let go to keep it (Shift moves by 1).");
+                if (now is { } h) session.Tell($"{drag.Name} at {h:0} · let go to keep it (Shift moves by 1).");
             }
 
             return;
@@ -640,7 +643,7 @@ internal sealed class View3D : Control
         {
             _heightDrag = null;
             e.Pointer.Capture(null);
-            if (drag.Applied == 0 && Session is { } s) s.Tell($"Ctrl+drag moves a {(drag.Target.Ceiling ? "ceiling" : "floor")} up or down; Ctrl+scroll steps it by 8.");
+            if (drag.Applied == 0 && Session is { } s) s.Tell($"Ctrl+drag moves {(drag.Name.StartsWith("The", StringComparison.Ordinal) ? "" : "a ")}{drag.Name.ToLowerInvariant()} up or down; Ctrl+scroll steps it by 8.");
             return;
         }
 
@@ -676,7 +679,7 @@ internal sealed class View3D : Control
             {
                 if (_wheel is not { } w || !ReferenceEquals(w.Element, surface.Element) || w.Ceiling != surface.Target.Ceiling) _wheel = (surface.Element, surface.Target.Ceiling, Editor.Editing.History.NewGesture());
                 var step = (e.KeyModifiers & KeyModifiers.Shift) != 0 ? 1 : 8;
-                if (session.RaiseSurface(surface.Target, Math.Sign(e.Delta.Y) * step, _wheel.Value.Gesture) is { } now) session.Tell($"{(surface.Target.Ceiling ? "Ceiling" : "Floor")} at {now:0} · Ctrl+scroll moves it by 8, with Shift by 1; Ctrl+drag follows the pointer.");
+                if (session.RaiseSurface(surface.Target, Math.Sign(e.Delta.Y) * step, _wheel.Value.Gesture) is { } now) session.Tell($"{SurfaceName(surface)} at {now:0} · Ctrl+scroll moves it by 8, with Shift by 1; Ctrl+drag follows the pointer.");
             }
 
             e.Handled = true;

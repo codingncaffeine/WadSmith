@@ -120,6 +120,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
         uniform int overlay;
         uniform int useAlpha;
         uniform vec4 tint;
+        uniform float opacity;
         uniform int lightCount;
         uniform vec4 lights[32];
         uniform vec4 lightColours[32];
@@ -190,7 +191,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
                 shown = mix(vFade.rgb, shown, exp2(-density * vDistance));
             }
 
-            colour = vec4(shown, 1.0);
+            colour = vec4(shown, opacity);
         }
         """;
 
@@ -223,6 +224,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
     private readonly int _uOverlay;
     private readonly int _uUseAlpha;
     private readonly int _uTint;
+    private readonly int _uOpacity;
     private readonly int _sOverlay;
     private readonly int _sUseAlpha;
     private readonly int _sTint;
@@ -234,7 +236,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
     private readonly List<(int Vao, int Vbo, int Count, int Type)> _hoverSprites = [];
     private readonly List<(int Vao, int Vbo, int Count, int Type)> _spriteBatches = [];
     private readonly Dictionary<(string Name, SurfaceKind Kind), (int Id, int Width, int Height)> _textures = [];
-    private readonly List<(int Vao, int Vbo, int Count, SurfaceKind Kind, string Texture)> _batches = [];
+    private readonly List<(int Vao, int Vbo, int Count, SurfaceKind Kind, string Texture, float Opacity)> _batches = [];
     private const int MaxLights = 32;
     private readonly int _uLightCount;
     private readonly int _uLights;
@@ -277,6 +279,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _uOverlay = gl.Uniform(_program, "overlay");
         _uUseAlpha = gl.Uniform(_program, "useAlpha");
         _uTint = gl.Uniform(_program, "tint");
+        _uOpacity = gl.Uniform(_program, "opacity");
         _sOverlay = gl.Uniform(_sprites, "overlay");
         _sUseAlpha = gl.Uniform(_sprites, "useAlpha");
         _sTint = gl.Uniform(_sprites, "tint");
@@ -286,6 +289,14 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _sLightCount = gl.Uniform(_sprites, "lightCount");
         _sLights = gl.Uniform(_sprites, "lights");
         _sLightColours = gl.Uniform(_sprites, "lightColours");
+
+        // Both programs share the fragment shader: sprites are always drawn opaque (a uniform left at 0 would read back as
+        // see-through pixels). The scene program's opacity is set per batch.
+        gl.UseProgram(_sprites);
+        gl.Uniform1f(gl.Uniform(_sprites, "opacity"), 1f);
+        gl.UseProgram(_program);
+        gl.Uniform1f(_uOpacity, 1f);
+        gl.UseProgram(0);
         RendererName = gl.Text(Gl.Renderer);
     }
 
@@ -388,7 +399,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
             _gl.VertexAttribPointer(3, 1, Gl.Float, 0, stride, 6 * sizeof(float));
             _gl.EnableVertexAttribArray(4);
             _gl.VertexAttribPointer(4, 1, Gl.Float, 0, stride, 7 * sizeof(float));
-            _batches.Add((vao, vbo, batch.VertexCount, batch.Kind, batch.Texture));
+            _batches.Add((vao, vbo, batch.VertexCount, batch.Kind, batch.Texture, batch.Opacity));
         }
 
         foreach (var b in _spriteBatches)
@@ -479,8 +490,10 @@ internal sealed unsafe class SceneRenderer : IDisposable
         SetLights(camera, _uLightCount, _uLights, _uLightColours);
         _gl.ActiveTexture(Gl.Texture0);
 
-        foreach (var (vao, _, count, kind, texture) in _batches)
+        _gl.Uniform1f(_uOpacity, 1f);
+        foreach (var (vao, _, count, kind, texture, opacity) in _batches)
         {
+            if (opacity < 1) continue;
             var (id, w, h) = TextureFor(texture, kind);
             _gl.BindTexture(Gl.Texture2D, id);
             _gl.Uniform2f(_uTextureSize, w, h);
@@ -515,6 +528,31 @@ internal sealed unsafe class SceneRenderer : IDisposable
                 _gl.BindVertexArray(vao);
                 _gl.DrawArrays(Gl.Triangles, 0, count);
             }
+        }
+
+        // See-through platforms (water) over everything solid, sprites included, without hiding what is behind them.
+        if (_batches.Exists(b => b.Opacity < 1))
+        {
+            _gl.Enable(Gl.CullFaceMode);
+            _gl.UseProgram(_program);
+            _gl.Enable(Gl.Blend);
+            _gl.BlendFunc(Gl.SrcAlpha, Gl.OneMinusSrcAlpha);
+            _gl.DepthMask(0);
+            foreach (var (vao, _, count, kind, texture, opacity) in _batches)
+            {
+                if (opacity >= 1) continue;
+                var (id, w, h) = TextureFor(texture, kind);
+                _gl.BindTexture(Gl.Texture2D, id);
+                _gl.Uniform2f(_uTextureSize, w, h);
+                _gl.Uniform1i(_uSky, kind == SurfaceKind.Sky ? 1 : 0);
+                _gl.Uniform1f(_uOpacity, opacity);
+                _gl.BindVertexArray(vao);
+                _gl.DrawArrays(Gl.Triangles, 0, count);
+            }
+
+            _gl.Uniform1f(_uOpacity, 1f);
+            _gl.DepthMask(1);
+            _gl.Disable(Gl.Blend);
         }
 
         // The selection, tinted in the accent colour over what was drawn (same triangles, same depth); then the hovered

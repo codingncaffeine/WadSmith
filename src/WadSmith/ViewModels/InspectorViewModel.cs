@@ -230,7 +230,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
-        [Sector s] => Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room",
+        [Sector s] when Platforms.ControlOf(_session.Geometry, s) is not null => "platform control",
+        [Sector s] => (Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room") + $" {Platforms.Of(_session.Geometry, s).Count}",
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : "thing",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
@@ -338,6 +339,11 @@ internal sealed partial class InspectorViewModel : ObservableObject
 
         switch (items[0])
         {
+            case Sector s when Platforms.ControlOf(_session.Geometry, s) is { } held:
+                Heading = held.Kind == PlatformKind.Water ? "Water's control room" : "Platform's control room";
+                Summary = "This little room outside the map is where the game reads a platform from: its floor is the platform's bottom, its ceiling the top. Change the platform here or in the room it stands in.";
+                AddPlatform(held, control: true);
+                break;
             case Sector s when Doors.Recognise(_session.Geometry, s) is not null:
                 Heading = "Door";
                 _summaryOf = () => Doors.Recognise(_session.Geometry, s) is { } d ? Describe(d) : "No longer a door.";
@@ -385,6 +391,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Heading = "Room area";
                 Summary = "Its floor, ceiling and light.";
                 AddSector(s);
+                AddPlatforms(s);
                 Rows.Add(new ActionRow("Make it a secret", "Finding it counts toward the secrets at the end of the map, and the walls into it show as solid walls on the in-game map so they do not give it away.", () => _session.MakeSecret(s)));
                 Rows.Add(new ActionRow("Save as a prefab", "Keeps a copy of this room, its walls and the things in it in this project, under Objects, Prefabs, to drag onto any of its maps.", _session.SavePrefab));
                 Rows.Add(new ActionRow("Draw new rooms like this one", "New rooms take its floor and ceiling pictures, heights, light and the texture of its walls (the Look in the Textures panel).", () => LookLike?.Invoke(s)));
@@ -737,6 +744,40 @@ internal sealed partial class InspectorViewModel : ObservableObject
             () => Entry().Next == ends ? slots.Count + 1 : Index(slots, Entry().Next), i => _session.ChangeMapSettings(m => m with { Next = i == 0 ? null : i == slots.Count + 1 ? ends : slots[i - 1] })));
 
         if (defaults is { Switches.Count: > 0 }) Rows.Add(new InfoRow("Plays like the original", "GZDoom turns a few behaviour switches on for the original map (compat_ settings); the remix asks for the same ones in its zmapinfo.txt, so it plays the same.", () => string.Join(", ", defaults.Switches)));
+    }
+
+    /// <summary>A room's platforms and water (GZDoom's 3D floors), each with its settings, and the ways to add one.</summary>
+    private void AddPlatforms(Sector room)
+    {
+        var platforms = Platforms.Of(_session.Geometry, room);
+        foreach (var p in platforms) AddPlatform(p, control: false);
+        if (platforms.Count == 0) Rows.Add(new HeadingRow("PLATFORMS AND WATER"));
+        Rows.Add(new ActionRow("Add a floating platform", string.Create(CultureInfo.InvariantCulture, $"A solid slab across the whole room that the player walks under and stands on (GZDoom's 3D floor, Sector_Set3DFloor). The room needs to be {EditorSession.PlatformRoomHeight:0} tall."), () => _session.AddPlatform(room, PlatformKind.Solid)));
+        Rows.Add(new ActionRow("Fill it with water", "See-through water across the whole room that the player swims in, its surface 32 above the floor (GZDoom's 3D floor, swimmable).", () => _session.AddPlatform(room, PlatformKind.Water)));
+    }
+
+    /// <summary>
+    /// A platform's settings (in the room it stands in, or on its control room): what it is, its bottom and top, how
+    /// see-through it is, its pictures, and taking it away. Each is one undo step on the control room or its wall.
+    /// </summary>
+    private void AddPlatform(Platform p, bool control)
+    {
+        var (c, line) = (p.Control, p.ControlLine);
+        Rows.Add(new HeadingRow(p.Kind == PlatformKind.Water ? "WATER" : "PLATFORM"));
+        Rows.Add(new ChoiceRow("It is", "What the player does with it: stands on it and walks under it, swims in it, or passes through it (the 3D floor's type).", ["Solid", "Water", "Passable"],
+            () => Math.Clamp((int)p.Kind - 1, 0, 2), i => _session.SetPlatformKind(p, (PlatformKind)(i + 1))));
+        Rows.Add(new NumberRow("Bottom", "The height of its underside (its control room's floor).", () => (decimal)c.FloorHeight, v => Set(c, "Change the platform's bottom", e => e.FloorHeight, (e, x) => e.FloorHeight = x, (double)v), 8,
+            hint: () => string.Create(CultureInfo.InvariantCulture, $"{c.FloorHeight - p.Room.FloorHeight:0} above the floor")));
+        Rows.Add(new NumberRow("Top", "The height of its top, where the player stands (its control room's ceiling).", () => (decimal)c.CeilingHeight, v => Set(c, "Change the platform's top", e => e.CeilingHeight, (e, x) => e.CeilingHeight = x, (double)v), 8,
+            hint: () => string.Create(CultureInfo.InvariantCulture, $"{c.CeilingHeight - c.FloorHeight:0} thick, {p.Room.CeilingHeight - c.CeilingHeight:0} under the ceiling")));
+        Rows.Add(new NumberRow("See-through", "How much shows through it, in percent: 0 is solid-looking (the special's alpha).", () => Math.Round((255 - p.Alpha) * 100m / 255), v =>
+            _session.History.Record("Change how see-through the platform is", e => Platforms.SetAlpha(e, p, (int)Math.Round(255 - (double)v * 255 / 100))), 10, 0, 100, () => "%"));
+        Rows.Add(new TextRow("Top texture", "The picture on its top (its control room's ceiling picture, as GZDoom draws it).", () => c.CeilingTexture, v => Set(c, "Change the platform's top texture", e => e.CeilingTexture, (e, x) => e.CeilingTexture = x, v)));
+        Rows.Add(new TextRow("Underside texture", "The picture on its underside (its control room's floor picture).", () => c.FloorTexture, v => Set(c, "Change the platform's underside texture", e => e.FloorTexture, (e, x) => e.FloorTexture = x, v)));
+        Rows.Add(new TextRow("Side texture", "The picture on its sides, seen from the rooms beside it (its control wall's middle texture).", () => line.Front.Middle, v => Set(line.Front, "Change the platform's side texture", e => e.Middle, (e, x) => e.Middle = x, v)));
+        if (control) Rows.Add(new ActionRow("Select the room it stands in", "Selects the room the platform spans.", () => _session.Selection.Set(p.Room)));
+        else Rows.Add(new ActionRow("Select its control room", "Selects the little room outside the map the game reads the platform from.", () => _session.Selection.Set(c)));
+        Rows.Add(new ActionRow(p.Kind == PlatformKind.Water ? "Drain the water" : "Remove the platform", "Takes it away with its control room; the room keeps its tag.", () => _session.RemovePlatform(p)));
     }
 
     /// <summary>

@@ -742,13 +742,15 @@ public sealed class EditorSession : IDisposable
 
     /// <summary>
     /// Places an object of <paramref name="type"/> at a point, facing north, on every difficulty and in
-    /// every game mode (and for every class in Hexen), one undo step, and selects it.
+    /// every game mode (and for every class in Hexen), one undo step, and selects it. With <paramref name="standAt"/> (the top
+    /// of a platform in the 3D view) it stands that high, as a height above the floor (GZDoom puts it on the floor otherwise).
     /// </summary>
-    public Thing PlaceThing(int type, MapPoint at)
+    public Thing PlaceThing(int type, MapPoint at, double? standAt = null)
     {
+        var height = standAt is { } z && _geometry.AreaAt(at) is { } area ? Math.Max(0, Math.Round(z - SlopePlane.FloorAt(area, at))) : 0;
         Thing New(MapPoint p, int angle)
         {
-            var t = new Thing { X = p.X, Y = p.Y, Type = type, Angle = angle };
+            var t = new Thing { X = p.X, Y = p.Y, Type = type, Angle = angle, Height = height };
             foreach (var f in Smart.Things.Everywhere(Engine)) t.SetFlag(f, true);
             return t;
         }
@@ -1039,6 +1041,87 @@ public sealed class EditorSession : IDisposable
         var geometry = _geometry;
         History.Record("Make a lift", e => why = Lifts.Make(e, geometry, area));
         if (why is not null) Notice?.Invoke(why);
+    }
+
+    /// <summary>The room height a floating platform needs: the player (56) under it, the slab (16) and the player again on top.</summary>
+    public const double PlatformRoomHeight = 2 * Walker.PlayerHeight + 16;
+
+    /// <summary>
+    /// Adds a platform to a room (GZDoom's 3D floor, see <see cref="Platforms.Add"/>), one undo step: a solid slab 16 thick
+    /// the player walks under and stands on, or water from the floor up 32 the player swims in. Says why when it cannot.
+    /// </summary>
+    public void AddPlatform(Sector room, PlatformKind kind)
+    {
+        if (!room.OnMap) return;
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => AddPlatform(room, kind);
+            return;
+        }
+
+        var geometry = _geometry;
+        if (Grouping.Holds(geometry, room))
+        {
+            Notice?.Invoke("That room is locked: unlock it with nothing selected, under Groups, to change it.");
+            return;
+        }
+
+        if (Platforms.ControlOf(geometry, room) is not null)
+        {
+            Notice?.Invoke("This room holds a platform for another room; select that room to add one there.");
+            return;
+        }
+
+        var height = room.CeilingHeight - room.FloorHeight;
+        double bottom, top;
+        if (kind == PlatformKind.Water)
+        {
+            // Below the floor, so the water's underside never meets it; its surface 32 up (or under the ceiling in a low room).
+            (bottom, top) = (room.FloorHeight - 8, room.FloorHeight + Math.Min(32, Math.Max(8, height - 8)));
+        }
+        else
+        {
+            if (height < PlatformRoomHeight)
+            {
+                Notice?.Invoke(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"A floating platform needs a room at least {PlatformRoomHeight:0} tall: 56 under it for the player, 16 for the platform and 56 above it. This room is {height:0} tall; raise its ceiling first."));
+                return;
+            }
+
+            bottom = room.FloorHeight + Math.Min(64, height - PlatformRoomHeight + Walker.PlayerHeight);
+            top = bottom + 16;
+        }
+
+        var look = Look;
+        var shared = room.Tag != 0 ? geometry.SectorsTagged(room.Tag).Count - 1 : 0;
+        History.Record(kind == PlatformKind.Water ? "Fill the room with water" : "Add a platform", e => Platforms.Add(e, geometry, room, bottom, top, kind, look));
+        Selection.Set(room);
+        Notice?.Invoke((kind == PlatformKind.Water
+                ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Water fills the room up to {top:0}; the player swims in it.")
+                : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"A platform spans the room from {bottom:0} to {top:0}: the player walks under it and stands on it."))
+            + " Its little control room sits outside the map, north-west, where the game reads it from."
+            + (shared > 0 ? $" The room shares its tag with {shared} other room{(shared == 1 ? "" : "s")}, so {(shared == 1 ? "that one has" : "they have")} it too." : ""));
+    }
+
+    /// <summary>Takes a platform away (its control room goes), one undo step.</summary>
+    public void RemovePlatform(Platform platform)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => RemovePlatform(platform);
+            return;
+        }
+
+        var (geometry, look) = (_geometry, Look);
+        History.Record(platform.Kind == PlatformKind.Water ? "Drain the water" : "Remove the platform", e => Platforms.Remove(e, geometry, platform, look));
+        Selection.Prune();
+    }
+
+    /// <summary>Makes a platform solid, water or passable, one undo step.</summary>
+    public void SetPlatformKind(Platform platform, PlatformKind kind)
+    {
+        if (platform.Kind == kind) return;
+        var look = Look;
+        History.Record("Change what the platform is", e => Platforms.SetKind(e, platform, kind, look));
     }
 
     /// <summary>Makes a door in a wall between two rooms (see <see cref="Doors.Make"/>), one undo step, and selects it; says why when it cannot.</summary>

@@ -109,6 +109,9 @@ public sealed class ThreeDTests
         }
 
         using var drawn = SKBitmap.Decode(png);
+
+        // Nothing reads back see-through (a sprite drawn with its opacity left at 0 came out as a white shape).
+        Assert.Equal(0, drawn.Pixels.Count(p => p.Alpha != 255));
         using var golden = SKBitmap.Decode(File.ReadAllBytes(file));
         Assert.Equal((golden.Width, golden.Height), (drawn.Width, drawn.Height));
         long total = 0;

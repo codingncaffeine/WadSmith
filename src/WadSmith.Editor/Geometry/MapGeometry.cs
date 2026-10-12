@@ -31,6 +31,8 @@ public sealed class MapGeometry
     private readonly Dictionary<(int Arg, int Value), List<int>> _byArg = [];
     private readonly Dictionary<int, List<int>> _sectorsByTag = [];
     private readonly Dictionary<int, List<int>> _thingsByTid = [];
+    private readonly List<PlatformFrame> _platforms = [];
+    private readonly Dictionary<int, List<int>> _platformsByRoom = [];
 
     private MapGeometry(MapFrame frame)
     {
@@ -88,7 +90,32 @@ public sealed class MapGeometry
             if (!_thingsByTid.TryGetValue(t.Tid, out var list)) _thingsByTid[t.Tid] = list = [];
             list.Add(i);
         }
+
+        // Platforms (GZDoom's 3D floors): each wall with Sector_Set3DFloor puts its room's slab into every area with its tag.
+        // Without the line-id flag (type 8) the tag's high byte is the fifth argument, as GZDoom reads it; the Vavoom kind
+        // (type 0, the control's floor and ceiling the other way round) is not drawn.
+        for (var i = 0; i < frame.Lines.Count; i++)
+        {
+            var l = frame.Lines[i];
+            if (l.Element is null || l.Special != PlatformFrame.Special || (l.Args[1] & 3) == 0 || l.Front < 0) continue;
+            var control = frame.Sides[l.Front].Sector;
+            if (control < 0 || frame.Sectors[control] is not { Element: not null } c) continue;
+            var tag = (l.Args[1] & 8) != 0 ? l.Args[0] : l.Args[0] + 256 * l.Args[4];
+            foreach (var room in SectorsTagged(tag))
+            {
+                if (room == control) continue;
+                if (!_platformsByRoom.TryGetValue(room, out var list)) _platformsByRoom[room] = list = [];
+                list.Add(_platforms.Count);
+                _platforms.Add(new PlatformFrame(room, control, i, c.FloorHeight, c.CeilingHeight, l.Args[1] & 3, l.Args[2], l.Args[3]));
+            }
+        }
     }
+
+    /// <summary>Every platform in the map, one per room it stands in.</summary>
+    public IReadOnlyList<PlatformFrame> Platforms => _platforms;
+
+    /// <summary>The platforms standing in the room at <paramref name="slot"/>.</summary>
+    public IEnumerable<PlatformFrame> PlatformsIn(int slot) => _platformsByRoom.TryGetValue(slot, out var list) ? list.Select(i => _platforms[i]) : [];
 
     /// <summary>The highest id (tid) any object has (a new id above it is free).</summary>
     public int HighestTid { get; }
@@ -632,4 +659,17 @@ internal sealed class SpatialGrid
     private int Col(double x) => Math.Clamp((int)Math.Floor((x - _x0) / _cell), 0, _cols - 1);
 
     private int Row(double y) => Math.Clamp((int)Math.Floor((y - _y0) / _cell), 0, _rows - 1);
+}
+
+/// <summary>
+/// A platform as the map's shapes know it (GZDoom's 3D floor, Sector_Set3DFloor): the room it stands in, its control room
+/// and control wall (places in the frame), the slab's bottom and top (the control room's floor and ceiling), its type
+/// (1 solid, 2 water, 3 passable), flags and alpha (255 opaque) — the special's arguments.
+/// </summary>
+public readonly record struct PlatformFrame(int Room, int Control, int Line, double Bottom, double Top, int Kind, int Flags, int Alpha)
+{
+    public const int Special = 160;
+
+    /// <summary>The player stands on it and cannot walk through it.</summary>
+    public bool Solid => Kind == 1;
 }

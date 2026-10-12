@@ -41,15 +41,20 @@ public enum HitKind
 /// A surface met by a ray through the 3D view (<see cref="MapScene.Hit"/>): the element (a face, an area, an object), which
 /// surface of it, whether it shows the sky, and where along the ray.
 /// </summary>
-public readonly record struct SceneHit(Element Element, HitKind Kind, WallPart Part, bool Sky, double Distance, double X, double Y, double Z)
+public readonly record struct SceneHit(Element Element, HitKind Kind, WallPart Part, bool Sky, double Distance, double X, double Y, double Z, bool Platform = false)
 {
-    /// <summary>The surface a texture dropped here goes on.</summary>
-    public SurfaceTarget Target => new(Element, Part, Kind == HitKind.Ceiling);
+    /// <summary>
+    /// The surface a texture dropped here goes on. A platform's surfaces belong to its control room: the top is the control
+    /// room's ceiling and the underside its floor, as GZDoom draws them.
+    /// </summary>
+    public SurfaceTarget Target => new(Element, Part, Platform ? Kind == HitKind.Floor : Kind == HitKind.Ceiling);
 
     /// <summary>The surface in words: "the upper part of a wall", "a floor", "an object".</summary>
     public string Words => Kind switch
     {
         HitKind.Wall => Part switch { WallPart.Top => "the upper part of this wall", WallPart.Bottom => "the lower part of this wall", _ => "this wall" },
+        HitKind.Floor when Platform => "the top of this platform",
+        HitKind.Ceiling when Platform => "the underside of this platform",
         HitKind.Floor => Sky ? "this floor (open sky)" : "this floor",
         HitKind.Ceiling => Sky ? "this ceiling (open sky)" : "this ceiling",
         _ => "this object",
@@ -64,9 +69,12 @@ public readonly record struct SurfaceTarget(Element Element, WallPart Part, bool
 /// pixels from the picture's top-left, the light level (0–255) of the surface, and the area's light colour and fog
 /// colour, each a 24-bit RGB number (white light and no fog unless the area says otherwise).
 /// </summary>
-public sealed class SceneBatch(string texture, SurfaceKind kind)
+public sealed class SceneBatch(string texture, SurfaceKind kind, float opacity = 1f)
 {
     public const int Stride = 8;
+
+    /// <summary>How opaque the batch is drawn: 1 for everything but see-through platforms (water), which are drawn last.</summary>
+    public float Opacity { get; } = opacity;
 
     public string Texture { get; } = texture;
 
@@ -80,7 +88,10 @@ public sealed class SceneBatch(string texture, SurfaceKind kind)
     /// <summary>For wall triangles, the wall the face belongs to, in triangle order; empty for floors and ceilings.</summary>
     public List<Line> Walls { get; } = [];
 
-    /// <summary>Which surface each triangle is, in triangle order: a wall's part (<see cref="WallPart"/>), or 0 for a floor and 1 for a ceiling.</summary>
+    /// <summary>
+    /// Which surface each triangle is, in triangle order: a wall's part (<see cref="WallPart"/>), or 0 for a floor, 1 for a
+    /// ceiling, 2 for a platform's top (its control room's ceiling) and 3 for its underside (its control room's floor).
+    /// </summary>
     public List<byte> Parts { get; } = [];
 
     public int VertexCount => Vertices.Count / Stride;
@@ -248,8 +259,9 @@ public sealed class MapScene
                 bestT = t;
                 var tri = i / (s * 3);
                 var part = b.Parts[tri];
-                var kind = b.Kind == SurfaceKind.Wall ? HitKind.Wall : part == 1 ? HitKind.Ceiling : HitKind.Floor;
-                best = new SceneHit(b.Owners[tri], kind, b.Kind == SurfaceKind.Wall ? (WallPart)part : WallPart.Middle, b.Kind == SurfaceKind.Sky, t, origin.X + direction.X * t, origin.Y + direction.Y * t, origin.Z + direction.Z * t);
+                var wall = b.Kind == SurfaceKind.Wall;
+                var kind = wall ? HitKind.Wall : part is 1 or 3 ? HitKind.Ceiling : HitKind.Floor;
+                best = new SceneHit(b.Owners[tri], kind, wall ? (WallPart)part : WallPart.Middle, b.Kind == SurfaceKind.Sky, t, origin.X + direction.X * t, origin.Y + direction.Y * t, origin.Z + direction.Z * t, !wall && part >= 2);
             }
         }
 
@@ -289,7 +301,7 @@ public sealed class MapScene
             return ([], sprites);
         }
 
-        var part = hit.Kind == HitKind.Wall ? (byte)hit.Part : hit.Kind == HitKind.Ceiling ? (byte)1 : (byte)0;
+        var part = hit.Kind == HitKind.Wall ? (byte)hit.Part : (byte)((hit.Kind == HitKind.Ceiling ? 1 : 0) + (hit.Platform ? 2 : 0));
         foreach (var b in Batches)
         {
             if ((b.Kind == SurfaceKind.Wall) != (hit.Kind == HitKind.Wall)) continue;
@@ -369,13 +381,16 @@ public sealed class MapScene
 
         // Groups hidden for clarity: their rooms, the faces seen from them, and their objects are left out.
         bool Hidden(KeyValuePair<string, WadSmith.Core.Maps.Udmf.UdmfValue>[] extra) => hidden is { Count: > 0 } && Editing.Grouping.GroupIn(extra) is { } name && hidden.Contains(name);
-        var batches = new Dictionary<(string, SurfaceKind), SceneBatch>();
-        SceneBatch Batch(string texture, SurfaceKind kind)
+        var batches = new Dictionary<(string, SurfaceKind, float), SceneBatch>();
+        SceneBatch Batch(string texture, SurfaceKind kind, float opacity = 1f)
         {
-            var key = (texture.ToUpperInvariant(), kind);
-            if (!batches.TryGetValue(key, out var b)) batches[key] = b = new SceneBatch(key.Item1, kind);
+            var key = (texture.ToUpperInvariant(), kind, opacity);
+            if (!batches.TryGetValue(key, out var b)) batches[key] = b = new SceneBatch(key.Item1, kind, opacity);
             return b;
         }
+
+        // The triangles of rooms with platforms, kept for the platforms' tops and undersides.
+        var platformRooms = new Dictionary<int, IReadOnlyList<MapPoint>>();
 
         double minZ = double.MaxValue, maxZ = double.MinValue;
 
@@ -389,6 +404,7 @@ public sealed class MapScene
             minZ = Math.Min(minZ, sector.FloorHeight);
             maxZ = Math.Max(maxZ, sector.CeilingHeight);
             var triangles = Triangulator.Triangulate(loops);
+            if (geometry.PlatformsIn(s).Any()) platformRooms[s] = triangles;
             var light = Math.Clamp(sector.Light, 0, 255);
             var tint = Tint.Of(sector.Extra);
             var (floorLight, ceilingLight) = (Tint.Light(light, sector.Extra, "lightfloor", "lightfloorabsolute"), Tint.Light(light, sector.Extra, "lightceiling", "lightceilingabsolute"));
@@ -487,6 +503,65 @@ public sealed class MapScene
             }
         }
 
+        // Platforms (GZDoom's 3D floors): a slab over the whole room between the control room's floor and ceiling. Measured
+        // in GZDoom: its top shows the control room's ceiling picture, its underside the control room's floor picture, and
+        // its sides (seen from the rooms beside it) the control wall's picture. The top is lit as the room, the underside
+        // and sides as the control room. A slab drawn from inside too (water) shows both ways.
+        foreach (var p in geometry.Platforms)
+        {
+            var room = f.Sectors[p.Room];
+            var c = f.Sectors[p.Control];
+            if (c.Element is not { } owner || Hidden(room.Extra) || !platformRooms.TryGetValue(p.Room, out var triangles) || p.Top <= p.Bottom) continue;
+            var control = f.Lines[p.Line];
+            var controlSide = f.Sides[control.Front];
+            var opacity = Math.Clamp(p.Alpha, 0, 255) / 255f;
+            if (opacity <= 0) continue;
+            var inside = (control.Args[1] & 4) != 0;
+            var top = Batch(c.CeilingTexture, SurfaceKind.Floor, opacity);
+            var under = Batch(c.FloorTexture, SurfaceKind.Ceiling, opacity);
+            var (topLight, underLight) = (Math.Clamp(room.Light, 0, 255), Math.Clamp(c.Light, 0, 255));
+            var (topTint, underTint) = (Tint.Of(room.Extra), Tint.Of(c.Extra));
+            var (onTop, onUnder) = (FlatTransform.Of(c.Extra, true), FlatTransform.Of(c.Extra, false));
+            for (var i = 0; i < triangles.Count; i += 3)
+            {
+                Face(top, onTop, p.Top, topLight, topTint, 2, triangles[i], triangles[i + 1], triangles[i + 2]);
+                Face(under, onUnder, p.Bottom, underLight, underTint, 3, triangles[i + 2], triangles[i + 1], triangles[i]);
+                if (!inside) continue;
+                Face(top, onTop, p.Top, topLight, topTint, 2, triangles[i + 2], triangles[i + 1], triangles[i]);
+                Face(under, onUnder, p.Bottom, underLight, underTint, 3, triangles[i], triangles[i + 1], triangles[i + 2]);
+            }
+
+            void Face(SceneBatch batch, FlatTransform placed, double z, int light, Tint tint, byte part, MapPoint a, MapPoint b, MapPoint d)
+            {
+                batch.Owners.Add(owner);
+                batch.Parts.Add(part);
+                foreach (var q in (MapPoint[])[a, b, d])
+                {
+                    var (u, v) = placed.Texel(q.X, q.Y);
+                    batch.Add(q.X, q.Y, z, u, v, light, tint);
+                }
+            }
+
+            // The sides, on the walls between the room and a room without this platform, facing that room.
+            if (controlSide.Middle is "-" or "" || geometry.WallBoundsAt(p.Room) is not { } wb) continue;
+            foreach (var li in geometry.LineSlotsIn(wb.MinX, wb.MinY, wb.MaxX, wb.MaxY))
+            {
+                var l = f.Lines[li];
+                if (l.Element is not { } wall || l.Back < 0) continue;
+                var (fs, bs) = (f.Sides[l.Front], f.Sides[l.Back]);
+                if ((fs.Sector == p.Room) == (bs.Sector == p.Room)) continue;
+                var beside = fs.Sector == p.Room ? bs.Sector : fs.Sector;
+                if (beside < 0 || geometry.PlatformsIn(beside).Any(o => o.Line == p.Line)) continue;
+                var (a, b) = (f.Vertices[l.V1], f.Vertices[l.V2]);
+                var (from, to) = fs.Sector == p.Room ? (new MapPoint(b.X, b.Y), new MapPoint(a.X, a.Y)) : (new MapPoint(a.X, a.Y), new MapPoint(b.X, b.Y));
+                var there = f.Sectors[beside];
+                var z0 = Math.Max(p.Bottom, Math.Min(room.FloorHeight, there.FloorHeight));
+                var z1 = Math.Min(p.Top, Math.Max(room.CeilingHeight, there.CeilingHeight));
+                if (z1 <= z0) continue;
+                Quad(controlSide.Middle, from, to, (z0, z0), (z1, z1), p.Top, controlSide, from.DistanceTo(to), underLight, Tint.Of(there.Extra), wall, WallPart.Middle, opacity);
+            }
+        }
+
         var things = new List<SceneThing>();
         var lights = new List<SceneLight>();
         var sprites = new Dictionary<int, SpriteBatch>();
@@ -514,7 +589,8 @@ public sealed class MapScene
 
         var (x0, y0, x1, y1) = geometry.Extent();
         if (minZ > maxZ) (minZ, maxZ) = (0, 128);
-        return new MapScene(f.Version, [.. batches.Values.Where(b => b.VertexCount > 0)], [.. sprites.Values], things, lights, (x0, y0, minZ, x1, y1, maxZ));
+        // See-through batches last, so what lies behind them is drawn first.
+        return new MapScene(f.Version, [.. batches.Values.Where(b => b.VertexCount > 0).OrderBy(b => b.Opacity < 1 ? 1 : 0)], [.. sprites.Values], things, lights, (x0, y0, minZ, x1, y1, maxZ));
 
         double Height(string texture) => texture is "-" or "" ? 128 : wallSize(texture)?.Height ?? 128;
 
@@ -524,11 +600,11 @@ public sealed class MapScene
             : (SlopePlane.FloorAt(area, from), SlopePlane.FloorAt(area, to));
 
         // A wall part from z0 to z1 (each at the wall's two ends) whose texture's top row sits at height top (before the side's offsets).
-        void Quad(string texture, MapPoint from, MapPoint to, (double From, double To) z0, (double From, double To) z1, double top, SideFrame side, double length, int light, Tint tint, Line wall, WallPart part)
+        void Quad(string texture, MapPoint from, MapPoint to, (double From, double To) z0, (double From, double To) z1, double top, SideFrame side, double length, int light, Tint tint, Line wall, WallPart part, float opacity = 1f)
         {
             if ((z1.From <= z0.From && z1.To <= z0.To) || side.Element is not { } face) return;
             z1 = (Math.Max(z1.From, z0.From), Math.Max(z1.To, z0.To));
-            var batch = Batch(texture is "" ? "-" : texture, SurfaceKind.Wall);
+            var batch = Batch(texture is "" ? "-" : texture, SurfaceKind.Wall, opacity);
             batch.Owners.Add(face);
             batch.Owners.Add(face);
             batch.Walls.Add(wall);

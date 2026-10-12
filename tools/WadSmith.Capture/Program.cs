@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -906,6 +906,97 @@ foreach (var pose in poses)
                     File.WriteAllBytes(Path.Combine(output, "slope-ramp-ours.png"), rampOurs);
                     File.WriteAllBytes(Path.Combine(output, "slope-flat-ours.png"), flatOurs);
                     Console.WriteLine($"slope measured: ramp ours against the engine's ramp {Diff(rampOurs, "ramp"):0.0} per channel; flat against flat {Diff(flatOurs, "flat"):0.0}; controls: flat ours against the engine's ramp {Diff(flatOurs, "ramp"):0.0}, ramp ours against the engine's flat {Diff(rampOurs, "flat"):0.0}");
+                }
+
+                break;
+            }
+
+            if (pose == "editor-platform")
+            {
+                // A floating platform added to the starter room through the Inspector, seen walking under it; then our view of
+                // the platform calibration room (WS_PLATCAL: platform.wad, with GZDoom's view.png in below/ and above/) against the
+                // engine's from the same two spots, with the room drawn without its platform as the control.
+                var session = editor.Session;
+                var view3d = window.GetVisualDescendants().OfType<WadSmith.App.ThreeD.View3D>().First();
+                for (var i = 0; i < 200 && (view3d.SceneVersion < 0 || !view3d.HasPicture); i++) Pump(0.05);
+                var told = new List<string>();
+                session.Notice += told.Add;
+                var room = session.Map.Sectors[0];
+                session.Selection.Set(room);
+                Pump(0.5);
+                editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Add a floating platform").Command.Execute(null);
+                Pump(1.0);
+                var added = WadSmith.Editor.Smart.Platforms.Of(session.Geometry, room);
+                Console.WriteLine($"platform added: {added.Count} ({string.Join(", ", added.Select(p => $"{p.Kind} {p.Bottom:0}–{p.Top:0}, control wall args {string.Join(",", p.ControlLine.Args)}"))}); undo '{session.History.UndoLabel}'; told '{told.LastOrDefault()}'");
+                Console.WriteLine($"platform rows: {string.Join(" | ", editor.Inspector.Rows.Select(r => r.Label))}");
+                Console.WriteLine($"platform problems {editor.Problems.Summary}: {string.Join(" | ", editor.Problems.Rows.Select(r => r.Sentence))}");
+                editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
+                Pump(1.5);
+                Save("editor-platform");
+                if (added.Count == 1)
+                {
+                    session.Selection.Set(added[0].Control);
+                    Pump(0.5);
+                    Console.WriteLine($"platform control selected: heading '{editor.Inspector.Heading}'");
+                }
+
+                if (Environment.GetEnvironmentVariable("WS_PLATCAL") is { } folder)
+                {
+                    var resources = session.Resources;
+                    var lumps = WadSmith.Core.Maps.MapLocator.Find(WadSmith.Core.Containers.WadContainer.Open(Path.Combine(folder, "platform.wad"))).First();
+                    var calMap = WadSmith.Editor.Model.EditorMap.FromModel(WadSmith.Core.Maps.MapConversion.Read(lumps, "doom"));
+                    WadSmith.Editor.Scene.MapScene Scene() => WadSmith.Editor.Scene.MapScene.Build(WadSmith.Editor.Geometry.MapGeometry.Build(calMap.Frame), n => resources?.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null, WadSmith.App.ThreeD.SpriteShapes.For(resources));
+                    var with = Scene();
+                    Console.WriteLine($"platcal platforms: {WadSmith.Editor.Geometry.MapGeometry.Build(calMap.Frame).Platforms.Count}");
+
+                    // The control: the same room with the platform's special taken off.
+                    var controlWall = calMap.Lines.Single(l => l.Special == WadSmith.Editor.Smart.Platforms.Special);
+                    new WadSmith.Editor.Editing.History(calMap).Record("control", e => e.Set(controlWall, l => l.Special, (l, v) => l.Special = v, 0));
+                    var without = Scene();
+
+                    double Diff(byte[] png, string name)
+                    {
+                        using var ours = SkiaSharp.SKBitmap.Decode(png);
+                        using var theirs = SkiaSharp.SKBitmap.Decode(Path.Combine(folder, name, "view.png"));
+                        double total = 0;
+                        var count = 0;
+                        for (var y = 60; y < 580; y += 8)
+                        {
+                            for (var x = 200; x < 824; x += 8)
+                            {
+                                double ar = 0, ag = 0, ab = 0, br = 0, bg = 0, bb = 0;
+                                for (var j = 0; j < 8; j++)
+                                {
+                                    for (var i = 0; i < 8; i++)
+                                    {
+                                        var (a, b) = (ours.GetPixel(x + i, y + j), theirs.GetPixel(x + i, y + j));
+                                        (ar, ag, ab, br, bg, bb) = (ar + a.Red, ag + a.Green, ab + a.Blue, br + b.Red, bg + b.Green, bb + b.Blue);
+                                    }
+                                }
+
+                                total += (Math.Abs(ar - br) + Math.Abs(ag - bg) + Math.Abs(ab - bb)) / 3.0 / 64;
+                                count++;
+                            }
+                        }
+
+                        return total / count;
+                    }
+
+                    // The engine's two spots: standing at (0, −200) looking north (eye 41), and held with the feet at 150 looking
+                    // down 45° (GZDoom's pitch down is positive, ours negative).
+                    var below = new WadSmith.App.ThreeD.Camera3D(0, -200, WadSmith.Editor.Scene.Walker.EyeHeight, 90, 0);
+                    var above = new WadSmith.App.ThreeD.Camera3D(0, -200, 150 + WadSmith.Editor.Scene.Walker.EyeHeight, 90, -45);
+                    var shots = new Dictionary<string, byte[]>
+                    {
+                        ["below"] = WadSmith.App.ThreeD.Offscreen3D.RenderPng(with, resources, below, 1024, 640, inside: true),
+                        ["above"] = WadSmith.App.ThreeD.Offscreen3D.RenderPng(with, resources, above, 1024, 640, inside: true),
+                        ["below-without"] = WadSmith.App.ThreeD.Offscreen3D.RenderPng(without, resources, below, 1024, 640, inside: true),
+                        ["above-without"] = WadSmith.App.ThreeD.Offscreen3D.RenderPng(without, resources, above, 1024, 640, inside: true),
+                        ["below-unstretched"] = WadSmith.App.ThreeD.Offscreen3D.RenderPng(with, resources, below with { Stretch = 1 }, 1024, 640, inside: true),
+                        ["above-unstretched"] = WadSmith.App.ThreeD.Offscreen3D.RenderPng(with, resources, above with { Stretch = 1 }, 1024, 640, inside: true),
+                    };
+                    foreach (var (name, png) in shots) File.WriteAllBytes(Path.Combine(output, $"platcal-{name}-ours.png"), png);
+                    Console.WriteLine($"platcal measured: below ours against the engine's {Diff(shots["below"], "below"):0.0} per channel, above {Diff(shots["above"], "above"):0.0}; controls without the platform: below {Diff(shots["below-without"], "below"):0.0}, above {Diff(shots["above-without"], "above"):0.0}; drawn without the pixel stretch: below {Diff(shots["below-unstretched"], "below"):0.0}, above {Diff(shots["above-unstretched"], "above"):0.0}");
                 }
 
                 break;
