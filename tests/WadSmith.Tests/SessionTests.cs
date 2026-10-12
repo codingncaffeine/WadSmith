@@ -204,4 +204,40 @@ public sealed class SessionTests
         Assert.Equal(0, room.Special);
         Assert.DoesNotContain(session.Map.Lines, l => l.OnMap && l.Flag("secret"));
     }
+
+    [Fact]
+    public void ALockedDoorOffersItsKeyAndTheKeyKnowsItsDoor()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var ui = new FakeUi();
+        using var session = EditorSession.Open(project, "MAP01", ui.Post);
+        var inspector = new WadSmith.App.ViewModels.InspectorViewModel(session);
+        string? asked = null;
+        inspector.KeyFor += colour => asked = colour;
+        session.DrawRoom([new(256, -64), new(256, 64), new(384, 64), new(384, -64)]);
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        session.MakeDoor(session.Map.Lines.Single(l => l.OnMap && l.Back is not null));
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version && inspector.Heading == "Door", TimeSpan.FromSeconds(10));
+        Assert.DoesNotContain(inspector.Rows, r => r.Label.StartsWith("Place the", StringComparison.Ordinal));
+
+        // Locked with the red key: the Inspector offers to place it, and the key placed opens the door.
+        inspector.Rows.OfType<WadSmith.App.ViewModels.ChoiceRow>().Single(r => r.Label == "Locked with").Value = 1;
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Place the red key…").Command.Execute(null);
+        Assert.Equal("red", asked);
+        session.PlaceKey("red", new Editor.Geometry.MapPoint(-128, 0));
+        var key = Assert.Single(session.Selection.Items.OfType<Thing>());
+        Assert.Equal(13, key.Type);
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        Assert.Contains("Opens", inspector.Summary);
+        inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Select the doors it opens").Command.Execute(null);
+        Assert.All(session.Selection.Items, e => Assert.Equal(Editor.Smart.Doors.DoorLockedRaise, Assert.IsType<Line>(e).Special));
+        Assert.Equal(2, session.Selection.Count);
+
+        // A key outside every room is refused.
+        session.PlaceKey("red", new Editor.Geometry.MapPoint(2000, 2000));
+        Assert.Single(session.Map.Things, t => t.OnMap && t.Type == 13);
+    }
 }

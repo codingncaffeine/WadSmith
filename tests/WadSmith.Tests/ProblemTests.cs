@@ -46,7 +46,10 @@ public sealed class ProblemTests(ITestOutputHelper output)
         Assert.Empty(Check(map));
     }
 
-    /// <summary>Every rule runs over every map of the Doom-format games (as remixed: translated) without failing; what they find is printed.</summary>
+    /// <summary>
+    /// Every rule runs over every map of the Doom-format games (as remixed: translated) without failing; what they find
+    /// is printed. The games as shipped can be finished, so no key in them is out of reach (the control for that rule).
+    /// </summary>
     [Theory]
     [MemberData(nameof(DoorTests.DoomFormatGames), MemberType = typeof(DoorTests))]
     public void EveryMapOfEveryGameCanBeChecked(string fileName)
@@ -63,6 +66,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
         }
 
         output.WriteLine($"{fileName}: {maps} maps in {System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms (with reading); maps with each problem: {string.Join(", ", counts.Select(kv => $"{kv.Key} {kv.Value}"))}");
+        Assert.DoesNotContain(counts.Keys, k => k.StartsWith("key-out-of-reach", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -203,6 +207,75 @@ public sealed class ProblemTests(ITestOutputHelper output)
         // Once an area has the tag, the switch works on it.
         history.Record("Tag", e => e.Set(map.Sectors[0], s => s.Tag, (s, v) => s.Tag = v, 7));
         Assert.Empty(Check(map));
+    }
+
+    /// <summary>A hall with the start and the exit, and a long room east of it behind a door locked with the red key.</summary>
+    private static (EditorMap Map, History History, List<Sector> Rooms) LockedCloset()
+    {
+        var (map, history, rooms) = MovingTests.Drawn((0, 0, 256, 256), (256, 96, 640, 160));
+        var wall = map.Lines.Single(l => l.OnMap && l.Back is not null);
+        Sector? door = null;
+        history.Record("Make a door", e => door = Doors.Make(e, MapGeometry.Build(map.Frame), wall, Look.For("doom")).Door);
+        var made = Doors.Recognise(MapGeometry.Build(map.Frame), door!)!;
+        history.Record("Lock it", e => Doors.Change(e, made, made.Settings with { Lock = 129 }, false, false));
+        history.Record("Start and exit", e =>
+        {
+            e.Add(new Thing { X = 128, Y = 128, Type = 1 });
+            Exits.Make(e, map.Lines.First(l => l.OnMap && l.Back is null && l.Front.Sector == rooms[0]), false, Look.For("doom"));
+        });
+        return (map, history, rooms);
+    }
+
+    [Fact]
+    public void AKeyBehindTheDoorItOpensIsSaid()
+    {
+        var (map, history, _) = LockedCloset();
+        var key = new Thing { X = 600, Y = 128, Type = 13 };
+        history.Record("Key", e => e.Add(key));
+        var problem = Only(map, "key-out-of-reach-red");
+        Assert.Contains(key, problem.Show);
+
+        // In the hall it is fine; so is a key just inside the door, picked up through it as the game does.
+        history.Record("Move", e => e.Set(key, t => t.X, (t, v) => t.X = v, 64.0));
+        Assert.Empty(Check(map));
+        history.Record("Move", e => e.Set(key, t => t.X, (t, v) => t.X = v, 290.0));
+        Assert.Empty(Check(map));
+    }
+
+    [Fact]
+    public void ADoorMetBeforeItsKeyOpensOnceTheKeyIsFound()
+    {
+        // The walk meets the red door first, then finds the red key in a room north of the hall.
+        var (map, history, rooms) = LockedCloset();
+        var geometry = MapGeometry.Build(map.Frame);
+        history.Record("Side room", e => ShapeDrawing.Draw(e, geometry, [new(0, 256), new(0, 512), new(256, 512), new(256, 256)], Look.For("doom")));
+        history.Record("Keys", e =>
+        {
+            e.Add(new Thing { X = 600, Y = 128, Type = 5 });
+            e.Add(new Thing { X = 128, Y = 480, Type = 13 });
+        });
+        Assert.Empty(Check(map));
+    }
+
+    [Fact]
+    public void AKeyBehindAnotherDoorWhoseKeyIsReachableIsFine()
+    {
+        var (map, history, _) = LockedCloset();
+        history.Record("Keys", e =>
+        {
+            e.Add(new Thing { X = 600, Y = 128, Type = 5 });
+            e.Add(new Thing { X = 64, Y = 64, Type = 13 });
+        });
+        Assert.Empty(Check(map));
+
+        // Swap them round: the red key now waits behind its own door, and so the blue one with it.
+        history.Undo();
+        history.Record("Keys", e =>
+        {
+            e.Add(new Thing { X = 64, Y = 64, Type = 5 });
+            e.Add(new Thing { X = 600, Y = 128, Type = 13 });
+        });
+        Only(map, "key-out-of-reach-red");
     }
 
     [Fact]

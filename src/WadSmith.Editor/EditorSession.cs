@@ -314,6 +314,34 @@ public sealed class EditorSession : IDisposable
         }
     }
 
+    /// <summary>The colour of the key waiting to be placed (the click on the map that comes next), or null.</summary>
+    public string? KeyToPlace
+    {
+        get => _keyToPlace;
+        set
+        {
+            _keyToPlace = value;
+            KeyToPlaceChanged?.Invoke();
+        }
+    }
+
+    private string? _keyToPlace;
+
+    /// <summary>Raised when <see cref="KeyToPlace"/> changes.</summary>
+    public event Action? KeyToPlaceChanged;
+
+    /// <summary>Places the keycard of a colour at a point inside a room (one undo step) and selects it; says why when the point is outside.</summary>
+    public void PlaceKey(string colour, MapPoint at)
+    {
+        if (_geometry.SectorAt(at) is null)
+        {
+            Notice?.Invoke("A key goes inside a room, where the player can pick it up.");
+            return;
+        }
+
+        PlaceThing(Keys.Doom.First(k => k.Colour == colour).Card, at);
+    }
+
     /// <summary>The door or lift waiting for its switch (the click on a wall that comes next).</summary>
     public Sector? SwitchTarget
     {

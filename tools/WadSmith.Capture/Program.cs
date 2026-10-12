@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,12 +361,12 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
                 // one inside it.
-                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms";
+                var wide = pose is "editor-join" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key";
                 view.ZoomBy(wide ? 0.3 : 0.45);
                 if (wide) view.PanBy(-90, 0);
                 Pump(0.3);
@@ -459,6 +459,35 @@ foreach (var pose in poses)
                     editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
                     Pump(1.5);
                     Save("editor-make-stairs");
+                    break;
+                }
+
+                if (pose == "editor-key")
+                {
+                    // A door into a small room east of the starter room, locked with the red key in the Inspector;
+                    // "Place the red key…" and a click in the starter room; then the key put behind its own door.
+                    Drag((256, -64), (512, 64), null);
+                    window.KeyPress(Avalonia.Input.Key.D, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.D, "d");
+                    Pump(0.2);
+                    window.MouseDown(At(256, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(256, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(1.0);
+                    editor.Inspector.Rows.OfType<ChoiceRow>().Single(r => r.Label == "Locked with").Value = 1;
+                    Pump(0.6);
+                    editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Place the red key…").Command.Execute(null);
+                    Pump(0.3);
+                    Console.WriteLine($"key waiting: tool {editor.Tool}, status '{editor.Status}'");
+                    window.MouseMove(At(-128, -128), Avalonia.Input.RawInputModifiers.None);
+                    window.MouseDown(At(-128, -128), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(-128, -128), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(1.0);
+                    var key = editor.Session.Selection.Items.OfType<WadSmith.Editor.Model.Thing>().SingleOrDefault();
+                    Console.WriteLine($"key placed: {key?.Type} at ({key?.X},{key?.Y}), heading '{editor.Inspector.Heading}', '{editor.Inspector.Summary}', tool {editor.Tool}; {editor.Problems.Summary}");
+                    Save("editor-key");
+                    if (key is not null) editor.Session.History.Record("Move", e => e.Set(key, t => t.X, (t, v) => t.X = v, 480.0));
+                    if (key is not null) editor.Session.History.Record("Move", e => e.Set(key, t => t.Y, (t, v) => t.Y = v, 0.0));
+                    Pump(1.5);
+                    Console.WriteLine($"key behind its door: {editor.Problems.Summary}; {string.Join(" | ", editor.Problems.Rows.Select(p => p.Sentence))}");
                     break;
                 }
 

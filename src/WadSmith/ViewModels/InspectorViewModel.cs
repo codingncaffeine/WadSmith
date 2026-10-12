@@ -216,10 +216,13 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>Raised when the user asks for a switch that works a door or a lift: the editor then waits for the wall.</summary>
     public event Action<Sector>? SwitchFor;
 
+    /// <summary>Raised when the user asks to place the key for a locked door (its colour): the editor then waits for the spot.</summary>
+    public event Action<string>? KeyFor;
+
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
-        [Sector s] => Doors.Recognise(_session.Geometry, s) is not null ? "door" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room",
+        [Sector s] => Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room",
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : "thing",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
@@ -299,6 +302,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 _summaryOf = () => Doors.Recognise(_session.Geometry, s) is { } d ? Describe(d) : "No longer a door.";
                 Summary = _summaryOf();
                 AddDoor(s);
+                AddDoorKey(s);
                 Rows.Add(new ActionRow("Add a switch that opens it", "Click a solid wall next: a piece of it becomes a switch the player uses to open this door from there (the door gets a tag; its own walls still open it).", () => SwitchFor?.Invoke(s)));
                 Rows.Add(new HeadingRow("ITS AREA"));
                 AddSector(s);
@@ -417,6 +421,21 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 }
 
                 break;
+            case Thing t when Keys.ColourOf(t.Type) is { } colour:
+                Heading = _session.Resources?.Things.Find(t.Type)?.Name ?? $"The {colour} key";
+                _summaryOf = () => Keys.DoorsOpenedBy(_session.Geometry, t.Type).Select(l => l.Args[0] != 0 ? (object)l.Args[0] : l.Back?.Sector ?? (object)l).Distinct().Count() switch
+                {
+                    0 => $"No door is locked with the {colour} key yet: lock one in its Inspector (Locked with).",
+                    1 => $"Opens the door locked with the {colour} key.",
+                    var n => $"Opens the {n} doors locked with the {colour} key.",
+                };
+                Summary = _summaryOf();
+                Rows.Add(new ActionRow("Select the doors it opens", "Selects every wall whose door this key opens.", () =>
+                {
+                    if (Keys.DoorsOpenedBy(_session.Geometry, t.Type) is { Count: > 0 } doors) _session.Selection.Set([.. doors]);
+                }));
+                AddThing(t);
+                break;
             case Thing t:
                 var known = _session.Resources?.Things.Find(t.Type);
                 Heading = known?.Name ?? (t.Type is >= 1 and <= 4 ? $"Player {t.Type} start" : "Thing");
@@ -512,6 +531,15 @@ internal sealed partial class InspectorViewModel : ObservableObject
             on => Change(l => (l.Settings, on), on ? "Let monsters use the lift" : "Keep monsters off the lift")));
         Rows.Add(new InfoRow("Goes down to", "The lowest floor beside it, as the game does it.", () => Now() is { } l ? string.Create(CultureInfo.InvariantCulture, $"{l.GoesDownTo:0}, {area.FloorHeight - l.GoesDownTo:0} down") : "—"));
         Rows.Add(new InfoRow("Set off from", "The walls that set it off: switches used from below, lines walked across at the top.", () => Now() is { } l ? string.Join(", ", Triggers.Ways(l.Triggers)) : "—"));
+    }
+
+    /// <summary>For a locked door: place its key when the map has none of that colour, else select the key.</summary>
+    private void AddDoorKey(Sector area)
+    {
+        if (_session.Look != Look.For("doom") || Doors.Recognise(_session.Geometry, area) is not { Settings.Lock: not 0 } door || Keys.ColourOfLock(door.Settings.Lock) is not { } colour) return;
+        var keys = Keys.OfColour(_session.Geometry, colour);
+        if (keys.Count == 0) Rows.Add(new ActionRow($"Place the {colour} key…", $"Click the map next where the {colour} keycard goes: somewhere the player reaches before this door.", () => KeyFor?.Invoke(colour)));
+        else Rows.Add(new ActionRow($"Select its key", $"Selects the {colour} key{(keys.Count > 1 ? "s" : "")} that open{(keys.Count > 1 ? "" : "s")} this door.", () => _session.Selection.Set([.. Keys.OfColour(_session.Geometry, colour)])));
     }
 
     private void AddSwitch(Line wall)

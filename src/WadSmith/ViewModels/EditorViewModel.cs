@@ -63,6 +63,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.GeometryChanged += UpdateHeights;
         session.TeleportPadChanged += UpdateStatus;
         session.SwitchTargetChanged += UpdateStatus;
+        session.KeyToPlaceChanged += UpdateStatus;
+        Inspector.KeyFor += colour =>
+        {
+            Tool = Canvas.EditorTool.Key;
+            Session.KeyToPlace = colour;
+        };
         Inspector.SwitchFor += target =>
         {
             Tool = Canvas.EditorTool.Switch;
@@ -614,6 +620,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         if (Tool == Canvas.EditorTool.Stairs)
         {
             Status = "Drag from the bottom of the stairs to the top: the steps climb from the floor where you start to the floor where you end, 16 a step where nothing else decides. Esc goes back to Select.";
+            return;
+        }
+
+        if (Tool == Canvas.EditorTool.Key)
+        {
+            Status = Session.KeyToPlace is { } colour ? $"Click where the {colour} key goes, somewhere the player reaches before the door. Esc goes back to Select." : "";
             return;
         }
 

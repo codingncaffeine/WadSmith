@@ -33,6 +33,9 @@ internal enum EditorTool
 
     /// <summary>Click a door or a lift, then the wall where its switch goes.</summary>
     Switch,
+
+    /// <summary>Click where the key for a locked door goes.</summary>
+    Key,
 }
 
 /// <summary>
@@ -236,6 +239,7 @@ internal sealed class MapCanvas : Control
             if (change.GetNewValue<EditorTool>() != EditorTool.Teleport && Session is { } leaving) leaving.TeleportPad = null;
             _windowWall = null;
             if (change.GetNewValue<EditorTool>() != EditorTool.Switch && Session is { } unswitching) unswitching.SwitchTarget = null;
+            if (change.GetNewValue<EditorTool>() != EditorTool.Key && Session is { } unkeyed) unkeyed.KeyToPlace = null;
             _snap = null;
             InvalidateVisual();
             return;
@@ -886,6 +890,19 @@ internal sealed class MapCanvas : Control
                 Tool = EditorTool.Select;
             }
 
+            e.Handled = true;
+            return;
+        }
+
+        if (props.IsLeftButtonPressed && Session is { } keying && Tool == EditorTool.Key)
+        {
+            if (keying.KeyToPlace is { } colour)
+            {
+                keying.KeyToPlace = null;
+                keying.PlaceKey(colour, Snap(e.GetPosition(this)));
+            }
+
+            Tool = EditorTool.Select;
             e.Handled = true;
             return;
         }
