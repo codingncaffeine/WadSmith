@@ -6,6 +6,8 @@
 
 ## What's Fixed
 
+- **Where two rooms meet is an opening, and it says so** — Rooms drawn against each other open into each other; the plan now draws that line dashed, the tutorial explains it as it happens, "What is this?" and the Inspector name it an opening and offer "Make it a door" and "Make it a window" right there, and drawing a shape along walls already there is answered with how rooms and doors work.
+- **Back in the Guide** — A Back button returns to the step before, to read it again.
 - **A room drawn against a slanted wall shares it** — A corner that landed a hair off an existing wall used to leave two walls lying along each other, so no door could go between the rooms. Now the corner goes onto the wall and the rooms share that stretch.
 - **The guided first map checks the rooms touch** — Its room step waits for a room that shares a wall with the first and says what to do when the new room does not; what WadSmith refuses shows on the Guide's card, not only in the status bar.
 - **The Guide's buttons stay readable** — With a long game name the button row ran off the card; it wraps now.
