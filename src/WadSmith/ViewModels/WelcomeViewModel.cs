@@ -70,6 +70,42 @@ internal sealed partial class WelcomeViewModel : ObservableObject
 
     public ObservableCollection<GameTileViewModel> Games { get; } = [];
 
+    /// <summary>Whether the Guide's invitations show on the tiles ("Guided first map", D34); the chapter stays in the Guide menu and Ctrl+K.</summary>
+    public bool GuidePrompts => _services.Settings.Current.GuidePrompts;
+
+    /// <summary>Whether the one quiet question (§3.2 step 5) is still to be asked.</summary>
+    public bool AskExperience => !_services.Settings.Current.AskedAboutExperience;
+
+    /// <summary>Shows the teaching layer's settings again after they changed (Preferences closed, the question answered).</summary>
+    public void TeachingChanged()
+    {
+        OnPropertyChanged(nameof(GuidePrompts));
+        OnPropertyChanged(nameof(AskExperience));
+    }
+
+    /// <summary>
+    /// "Have you made Doom maps before?" (§3.2, D34), asked once. Yes turns the coach and the Guide's invitations off, tooltips
+    /// to brief and classic names on; No leaves the teaching on. Either way the editor is the same, and Preferences → Teaching
+    /// changes any of it later.
+    /// </summary>
+    [RelayCommand]
+    private void AnswerExperience(string answer)
+    {
+        var settings = _services.Settings.Current;
+        settings.AskedAboutExperience = true;
+        if (answer == "yes")
+        {
+            settings.CoachTips = false;
+            settings.GuidePrompts = false;
+            settings.Tooltips = TooltipLength.Brief;
+            settings.ClassicNames = true;
+            _services.Words.Classic = true;
+        }
+
+        _services.Settings.Save();
+        TeachingChanged();
+    }
+
     public ObservableCollection<RecentProject> Recent { get; } = [];
 
     [ObservableProperty]

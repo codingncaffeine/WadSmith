@@ -16,6 +16,13 @@
                     <CheckBox Content="Larger text and controls" IsChecked="{Binding LargeInterface}"
                               ToolTip.Tip="Makes everything a quarter bigger: easier to read on a small or far-away screen, such as a handheld or a TV." />
 
+                    <StackPanel Spacing="2">
+                        <CheckBox Content="Use the desktop's own title bar" IsChecked="{Binding UseSystemTitleBar}"
+                                  ToolTip.Tip="Your desktop draws the window's title bar and its buttons instead of WadSmith." />
+                        <TextBlock Text="Takes effect the next time WadSmith starts." Classes="secondary" FontSize="12" Margin="28,0,0,0" />
+                    </StackPanel>
+
+                    <TextBlock Classes="section" Text="TEACHING" Margin="0,12,0,0" />
                     <StackPanel Spacing="4">
                         <CheckBox Content="Show tips in the status bar" IsChecked="{Binding CoachTips}"
                                   ToolTip.Tip="A short tip at the bottom of the editor about the next thing worth trying. Each one stops once you have done what it teaches." />
@@ -26,17 +33,25 @@
                         </StackPanel>
                     </StackPanel>
 
+                    <CheckBox Content="Invite me to the Guide" IsChecked="{Binding GuidePrompts}"
+                              ToolTip.Tip="The Guided first map button on each game of the start screen. The Guide button and Ctrl+K open every chapter either way." />
+
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="Tooltips" VerticalAlignment="Center" />
+                        <ComboBox SelectedIndex="{Binding Tooltips}" MinWidth="200"
+                                  ToolTip.Tip="How much a tooltip says: all of it, only its first sentence, or none at all. Nothing else changes.">
+                            <ComboBoxItem Content="Full" />
+                            <ComboBoxItem Content="Brief: the first sentence" />
+                            <ComboBoxItem Content="Off" />
+                        </ComboBox>
+                    </StackPanel>
+
                     <CheckBox Content="Celebrate your firsts" IsChecked="{Binding Celebrations}"
                               ToolTip.Tip="A small card the first time your map comes back from the game. Nothing else changes when it is off." />
 
                     <CheckBox Content="Play an object's sound when pointing at it on the shelf" IsChecked="{Binding ShelfSounds}"
                               ToolTip.Tip="Pointing at a monster on the Objects shelf plays the sound it makes when it sees you; an item plays its pickup sound. Quietly, and only the last one pointed at." />
 
-                    <StackPanel Spacing="2">
-                        <CheckBox Content="Use the desktop's own title bar" IsChecked="{Binding UseSystemTitleBar}"
-                                  ToolTip.Tip="Your desktop draws the window's title bar and its buttons instead of WadSmith." />
-                        <TextBlock Text="Takes effect the next time WadSmith starts." Classes="secondary" FontSize="12" Margin="28,0,0,0" />
-                    </StackPanel>
 
                     <TextBlock Classes="section" Text="IF YOU HAVE MAPPED BEFORE" Margin="0,12,0,0" />
                     <CheckBox Content="Show classic names" IsChecked="{Binding ClassicNames}"

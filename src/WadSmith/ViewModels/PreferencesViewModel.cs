@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using WadSmith.Editor.App;
 
 namespace WadSmith.App.ViewModels;
 
@@ -69,6 +70,32 @@ internal sealed partial class PreferencesViewModel : ObservableObject
         set
         {
             _services.Settings.Current.ShelfSounds = value;
+            _services.Settings.Save();
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Whether the Guide invites (the "Guided first map" button on each game, D34).</summary>
+    public bool GuidePrompts
+    {
+        get => _services.Settings.Current.GuidePrompts;
+        set
+        {
+            if (value == GuidePrompts) return;
+            _services.Settings.Current.GuidePrompts = value;
+            _services.Settings.Save();
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>How much a tooltip says (D34): 0 all of it, 1 its first sentence, 2 nothing.</summary>
+    public int Tooltips
+    {
+        get => (int)_services.Settings.Current.Tooltips;
+        set
+        {
+            if (value < 0 || value == Tooltips) return;
+            _services.Settings.Current.Tooltips = (TooltipLength)value;
             _services.Settings.Save();
             OnPropertyChanged();
         }

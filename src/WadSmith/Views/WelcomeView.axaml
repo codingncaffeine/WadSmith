@@ -17,6 +17,20 @@
                         ToolTip.Tip="Larger text, tips, the title bar and where your games are (Ctrl+,)." />
             </Grid>
 
+            <!-- The one quiet question (§3.2 step 5, D34), asked once. -->
+            <Border Classes="card" IsVisible="{Binding AskExperience}" Padding="16,14" Margin="0,22,0,0" MaxWidth="820" HorizontalAlignment="Left">
+                <StackPanel Spacing="8">
+                    <TextBlock FontWeight="SemiBold" FontSize="15" Text="Have you made Doom maps before?" />
+                    <TextBlock Classes="secondary" TextWrapping="Wrap" Text="Your answer only sets how much WadSmith teaches as you go: tips in the status bar, the Guide's invitations, how long tooltips are and the classic names. The editor is the same either way, and Preferences → Teaching changes any of it later." />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Classes="metal" Content="Yes, I have" Command="{Binding AnswerExperienceCommand}" CommandParameter="yes"
+                                ToolTip.Tip="Tips and the Guide's invitations off, short tooltips, classic names (sector, linedef, thing). Everything else stays." />
+                        <Button Classes="metal" Content="No, I'm new" Command="{Binding AnswerExperienceCommand}" CommandParameter="no"
+                                ToolTip.Tip="WadSmith teaches as you go: tips, the Guide and full tooltips, in plain words." />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <TextBlock Classes="section" Text="YOUR GAMES" Margin="0,24,0,4" />
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
                 <TextBlock Classes="secondary" Text="{Binding Status}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="820" />
@@ -70,6 +84,7 @@
                                             ToolTip.Tip="Start with one lit room and a player start, ready to play." />
                                 </StackPanel>
                                 <Button Classes="metal" Content="Guided first map · 10 minutes" Command="{Binding GuidedMap}" CommandParameter="{Binding}" HorizontalAlignment="Stretch"
+                                        IsVisible="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).GuidePrompts}"
                                         ToolTip.Tip="A new map, and seven short steps beside it: a room, a door, a texture, a monster and a weapon, a way out, then Play. You can skip or stop at any time." />
                             </StackPanel>
                         </Border>
