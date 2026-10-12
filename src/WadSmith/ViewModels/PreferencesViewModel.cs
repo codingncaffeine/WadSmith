@@ -30,6 +30,9 @@ internal sealed partial class PreferencesViewModel : ObservableObject
     /// <summary>Asks the user for a folder (set by the window); null result when they cancel.</summary>
     public Func<string, Task<string?>>? PickFolder { get; set; }
 
+    /// <summary>Asks the user for a game file (set by the window); null result when they cancel.</summary>
+    public Func<string, Task<string?>>? PickFile { get; set; }
+
     /// <summary>Raised when Preferences close after the game folders changed, so the games are looked for again.</summary>
     public event Action? FoldersChanged;
 
@@ -170,7 +173,21 @@ internal sealed partial class PreferencesViewModel : ObservableObject
     {
         if (PickFolder is null) return;
         var folder = await PickFolder("Choose the folder your games are in").ConfigureAwait(true);
-        if (folder is null || _services.Settings.Current.GameFolders.Contains(folder, StringComparer.Ordinal)) return;
+        if (folder is not null) AddFolder(folder);
+    }
+
+    /// <summary>The user picks a game file: its folder is added (the folders around it are looked in too).</summary>
+    [RelayCommand]
+    private async Task AddGameFileAsync()
+    {
+        if (PickFile is null) return;
+        var file = await PickFile("Pick a game file: DOOM.WAD, DOOM2.WAD, HERETIC.WAD, HEXEN.WAD, STRIFE1.WAD, or a ZIP holding one").ConfigureAwait(true);
+        if (file is not null && Path.GetDirectoryName(file) is { Length: > 0 } folder) AddFolder(folder);
+    }
+
+    private void AddFolder(string folder)
+    {
+        if (_services.Settings.Current.GameFolders.Contains(folder, StringComparer.Ordinal)) return;
         _services.Settings.Current.GameFolders.Add(folder);
         _services.Settings.Save();
         GameFolders.Add(new GameFolderRow(folder));

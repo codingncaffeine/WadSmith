@@ -77,8 +77,12 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Button Classes="metal" Content="Pick a game file…" Command="{Binding AddGameFileCommand}" HorizontalAlignment="Left"
+                            ToolTip.Tip="Point WadSmith at a game file (DOOM2.WAD, a ZIP holding one…). Its folder is looked in, and the folders beside and above it." />
                     <Button Classes="metal" Content="Add a folder…" Command="{Binding AddFolderCommand}" HorizontalAlignment="Left"
                             ToolTip.Tip="Tell WadSmith about a folder that holds your games." />
+                    </StackPanel>
 
                     <TextBlock Classes="section" Text="ABOUT" Margin="0,12,0,0" />
                     <StackPanel Orientation="Horizontal" Spacing="18">

@@ -32,6 +32,8 @@
             </Border>
 
             <TextBlock Classes="section" Text="YOUR GAMES" Margin="0,24,0,4" />
+            <!-- The question a first map starts with, asked over the games found (D53). -->
+            <TextBlock Text="Which base game would you like your map to use?" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,6" IsVisible="{Binding !NoGames}" />
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
                 <TextBlock Classes="secondary" Text="{Binding Status}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="820" />
                 <ProgressBar IsIndeterminate="True" Width="80" IsVisible="{Binding Scanning}" VerticalAlignment="Center" />
@@ -39,10 +41,14 @@
 
             <Border Classes="card" IsVisible="{Binding NoGames}" Padding="14" Margin="0,4,0,14" MaxWidth="820" HorizontalAlignment="Left">
                 <StackPanel Spacing="8">
-                    <TextBlock FontWeight="SemiBold" FontSize="15" Text="No game yet? Freedoom is free." />
-                    <TextBlock Classes="secondary" TextWrapping="Wrap" Text="Freedoom plays like Doom and Doom II and is free to share. WadSmith can fetch it (about 30 MB) so you can make and play a map right now; your own games show up here as soon as they are installed." />
+                    <TextBlock FontWeight="SemiBold" FontSize="15" Text="{Binding NoGamesHeading}" />
+                    <TextBlock Classes="secondary" TextWrapping="Wrap" Text="{Binding NoGamesText}" />
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                        <Button Classes="primary" Content="Get Freedoom" Command="{Binding GetFreedoomCommand}" IsEnabled="{Binding !GettingFreedoom}"
+                        <Button Classes="metal" Classes.primary="{Binding FoldersAdded}" Content="Pick a game file…" Command="{Binding AddGameFileCommand}"
+                                ToolTip.Tip="Point WadSmith at DOOM.WAD, DOOM2.WAD, HERETIC.WAD, HEXEN.WAD, STRIFE1.WAD or a ZIP holding one. Its folder is looked in, and the folders beside and above it." />
+                        <Button Classes="metal" Content="Add a folder…" Command="{Binding AddFolderCommand}"
+                                ToolTip.Tip="Tell WadSmith about a folder that holds your games. The folders beside and above it are looked in too, and inside ZIP files." />
+                        <Button Classes="metal" Classes.primary="{Binding !FoldersAdded}" Content="Get Freedoom" Command="{Binding GetFreedoomCommand}" IsEnabled="{Binding !GettingFreedoom}"
                                 ToolTip.Tip="Downloads Freedoom from its own release page, checks it, and puts it in WadSmith's games folder." />
                         <ProgressBar Width="180" Minimum="0" Maximum="100" Value="{Binding FreedoomProgress}" IsVisible="{Binding GettingFreedoom}" VerticalAlignment="Center" />
                         <TextBlock Classes="secondary" Text="{Binding FreedoomStatus}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="520" />
@@ -93,8 +99,10 @@
             </ItemsControl>
 
             <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button Classes="metal" Content="Pick a game file…" Command="{Binding AddGameFileCommand}"
+                        ToolTip.Tip="Point WadSmith at a game file (DOOM2.WAD, a ZIP holding one…) it did not find by itself. Its folder is looked in, and the folders beside and above it." />
                 <Button Classes="metal" Content="Add a folder…" Command="{Binding AddFolderCommand}"
-                        ToolTip.Tip="Tell WadSmith about a folder that holds your games, if it did not find them by itself." />
+                        ToolTip.Tip="Tell WadSmith about a folder that holds your games, if it did not find them by itself. The folders beside and above it are looked in too, and inside ZIP files." />
                 <Button Classes="metal" Content="Open a project…" Command="{Binding OpenProjectCommand}"
                         ToolTip.Tip="Open a WadSmith project folder." />
             </StackPanel>

@@ -40,6 +40,9 @@ internal sealed partial class MainViewModel : ObservableObject
     /// <summary>Asks the user for a folder (set by the window).</summary>
     public Func<string, Task<string?>>? PickFolder { get; set; }
 
+    /// <summary>Asks the user for a game file (set by the window).</summary>
+    public Func<string, Task<string?>>? PickFile { get; set; }
+
     /// <summary>Raised when the Large interface preference changes, so the window rescales at once.</summary>
     public event Action<bool>? LargeInterfaceChanged;
 
@@ -51,7 +54,7 @@ internal sealed partial class MainViewModel : ObservableObject
         {
             Preferences = null;
             Welcome.TeachingChanged();
-        }, large => LargeInterfaceChanged?.Invoke(large)) { PickFolder = PickFolder };
+        }, large => LargeInterfaceChanged?.Invoke(large)) { PickFolder = PickFolder, PickFile = PickFile };
         prefs.FoldersChanged += () => _ = Welcome.RescanAsync();
         prefs.VeteranChanged += () => (Page as EditorViewModel)?.VeteranChanged();
         Preferences = prefs;

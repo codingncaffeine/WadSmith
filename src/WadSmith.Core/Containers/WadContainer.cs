@@ -253,20 +253,40 @@ public static class WadDirectory
             using var f = File.OpenRead(path);
             Span<byte> header = stackalloc byte[WadContainer.HeaderSize];
             if (f.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) < header.Length) return null;
-            if (!header[..4].SequenceEqual("IWAD"u8) && !header[..4].SequenceEqual("PWAD"u8)) return null;
-            var count = BinaryPrimitives.ReadInt32LittleEndian(header[4..]);
-            var dir = BinaryPrimitives.ReadInt32LittleEndian(header[8..]);
-            if (count < 0 || count > 1_000_000 || dir < 0 || (long)dir + (long)count * WadContainer.DirectoryEntrySize > f.Length) return null;
+            if (!IsWadHeader(header)) return null;
+            var (count, dir) = (BinaryPrimitives.ReadInt32LittleEndian(header[4..]), BinaryPrimitives.ReadInt32LittleEndian(header[8..]));
+            if (!DirectoryFits(count, dir, f.Length)) return null;
             var buffer = new byte[count * WadContainer.DirectoryEntrySize];
             f.Seek(dir, SeekOrigin.Begin);
             f.ReadExactly(buffer);
-            var names = new string[count];
-            for (var i = 0; i < count; i++) names[i] = LumpName.Read(buffer.AsSpan(i * WadContainer.DirectoryEntrySize + 8, 8));
-            return names;
+            return Names(buffer, count);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or EndOfStreamException)
         {
             return null;
         }
+    }
+
+    /// <summary>The lump names of a WAD held in memory (one found inside an archive), or null when it is not one.</summary>
+    public static IReadOnlyList<string>? ReadNames(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < WadContainer.HeaderSize || !IsWadHeader(data)) return null;
+        var (count, dir) = (BinaryPrimitives.ReadInt32LittleEndian(data[4..]), BinaryPrimitives.ReadInt32LittleEndian(data[8..]));
+        if (!DirectoryFits(count, dir, data.Length)) return null;
+        return Names(data.Slice(dir, count * WadContainer.DirectoryEntrySize), count);
+    }
+
+    /// <summary>Whether data in memory starts with IWAD.</summary>
+    public static bool IsIwad(ReadOnlySpan<byte> data) => data.Length >= 4 && data[..4].SequenceEqual("IWAD"u8);
+
+    private static bool IsWadHeader(ReadOnlySpan<byte> head) => head[..4].SequenceEqual("IWAD"u8) || head[..4].SequenceEqual("PWAD"u8);
+
+    private static bool DirectoryFits(int count, int dir, long length) => count >= 0 && count <= 1_000_000 && dir >= 0 && dir + (long)count * WadContainer.DirectoryEntrySize <= length;
+
+    private static string[] Names(ReadOnlySpan<byte> directory, int count)
+    {
+        var names = new string[count];
+        for (var i = 0; i < count; i++) names[i] = LumpName.Read(directory.Slice(i * WadContainer.DirectoryEntrySize + 8, 8));
+        return names;
     }
 }

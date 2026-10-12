@@ -21,6 +21,7 @@ public partial class MainWindow : Window
             if (DataContext is MainViewModel main)
             {
                 main.PickFolder = PickFolderAsync;
+                main.PickFile = PickFileAsync;
                 main.LargeInterfaceChanged += ApplyScale;
             }
 
@@ -39,6 +40,13 @@ public partial class MainWindow : Window
     {
         if (StorageProvider is not { CanPickFolder: true } storage) return null;
         var picked = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = title, AllowMultiple = false }).ConfigureAwait(true);
+        return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
+    }
+
+    private async Task<string?> PickFileAsync(string title)
+    {
+        if (StorageProvider is not { CanOpen: true } storage) return null;
+        var picked = await storage.OpenFilePickerAsync(new FilePickerOpenOptions { Title = title, AllowMultiple = false, FileTypeFilter = GameFileTypes.Filter }).ConfigureAwait(true);
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }
 
