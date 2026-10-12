@@ -7,9 +7,10 @@ namespace WadSmith.App.ViewModels;
 
 /// <summary>
 /// One thing the editor can do, by name: its group, its shortcut, and other words people search for it by (the
-/// classic names among them, which the palette finds but never shows).
+/// classic names among them, which the palette finds but never shows); <c>Also</c> is a second key that does the same,
+/// not shown (Ctrl+Shift+Z for Redo).
 /// </summary>
-internal sealed record EditorCommand(string Name, string Group, string Shortcut, string Words, Action Run, Func<bool>? Can = null)
+internal sealed record EditorCommand(string Name, string Group, string Shortcut, string Words, Action Run, Func<bool>? Can = null, string Also = "")
 {
     public bool Available => Can?.Invoke() ?? true;
 }

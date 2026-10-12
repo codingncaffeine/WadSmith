@@ -45,6 +45,7 @@ internal sealed partial class MainViewModel : ObservableObject
         if (Preferences is not null) return;
         var prefs = new PreferencesViewModel(Services, () => Preferences = null, large => LargeInterfaceChanged?.Invoke(large)) { PickFolder = PickFolder };
         prefs.FoldersChanged += () => _ = Welcome.RescanAsync();
+        prefs.VeteranChanged += () => (Page as EditorViewModel)?.VeteranChanged();
         Preferences = prefs;
     }
 

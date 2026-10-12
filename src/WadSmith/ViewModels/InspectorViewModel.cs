@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using WadSmith.Core.Games;
 using WadSmith.Core.Projects;
 using WadSmith.Editor;
+using WadSmith.Editor.App;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Model;
 using WadSmith.Editor.Scene;
@@ -15,9 +16,16 @@ namespace WadSmith.App.ViewModels;
 /// <summary>One line of the Inspector: a friendly label, its classic name for the tooltip, and a value.</summary>
 internal abstract partial class InspectorRow(string label, string tooltip) : ObservableObject
 {
-    public string Label { get; } = label;
+    public string Label { get; private set; } = label;
 
-    public string Tooltip { get; } = tooltip;
+    public string Tooltip { get; private set; } = tooltip;
+
+    /// <summary>Shows the label by the names chosen in Preferences, with the other name in the tooltip (D3).</summary>
+    public void Name(Vocabulary words)
+    {
+        Tooltip = words.Tip(Label, Tooltip);
+        Label = words.Label(Label);
+    }
 
     /// <summary>Re-reads the value after any change to the map (an undo, an edit elsewhere).</summary>
     public abstract void Refresh();
@@ -211,6 +219,7 @@ internal sealed partial class InfoRow(string label, string tooltip, Func<string>
 internal sealed partial class InspectorViewModel : ObservableObject
 {
     private const double PlayerHeight = 56;
+    private readonly Vocabulary _words;
     private readonly EditorSession _session;
     private Func<string>? _summaryOf;
     private string _kind = "";
@@ -239,9 +248,10 @@ internal sealed partial class InspectorViewModel : ObservableObject
         var many => many.Count.ToString(CultureInfo.InvariantCulture),
     };
 
-    public InspectorViewModel(EditorSession session)
+    public InspectorViewModel(EditorSession session, Vocabulary? words = null)
     {
         _session = session;
+        _words = words ?? Vocabulary.Load();
         _groupsFound = new(MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, _session)) return;
@@ -307,7 +317,20 @@ internal sealed partial class InspectorViewModel : ObservableObject
     [ObservableProperty]
     private string _summary = "";
 
-    private void Rebuild()
+    /// <summary>Builds the rows for the selection, then names them as Preferences say (D3).</summary>
+    internal void Rebuild()
+    {
+        BuildRows();
+        HeadingTip = _words.Other(Heading) is null ? null : _words.Tip(Heading, "");
+        Heading = _words.Label(Heading);
+        foreach (var row in Rows) row.Name(_words);
+    }
+
+    /// <summary>The heading's other name, as its tooltip.</summary>
+    [ObservableProperty]
+    private string? _headingTip;
+
+    private void BuildRows()
     {
         Rows.Clear();
         _summaryOf = null;

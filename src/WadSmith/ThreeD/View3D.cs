@@ -36,6 +36,8 @@ internal sealed class View3D : Control
     public static readonly StyledProperty<EditorSession?> SessionProperty = AvaloniaProperty.Register<View3D, EditorSession?>(nameof(Session));
     public static readonly StyledProperty<CameraMode> ModeProperty = AvaloniaProperty.Register<View3D, CameraMode>(nameof(Mode), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
+    public static readonly StyledProperty<bool> ClassicKeysProperty = AvaloniaProperty.Register<View3D, bool>(nameof(ClassicKeys));
+
     private readonly HashSet<Key> _keys = [];
     private readonly DispatcherTimer _mover;
     private readonly System.Diagnostics.Stopwatch _clock = new();
@@ -149,6 +151,23 @@ internal sealed class View3D : Control
     {
         get => GetValue(SessionProperty);
         set => SetValue(SessionProperty, value);
+    }
+
+    /// <summary>Doom Builder's movement keys (E S D F, Page Up and Page Down) instead of W A S D, Q and E.</summary>
+    public bool ClassicKeys
+    {
+        get => GetValue(ClassicKeysProperty);
+        set => SetValue(ClassicKeysProperty, value);
+    }
+
+    // The keys that move the camera in Fly and Walk: forward, back, left, right, up, down (arrows and Page keys in both presets).
+    private (Key Forward, Key Back, Key Left, Key Right, Key? Up, Key? Down) MoveKeys => ClassicKeys ? (Key.E, Key.D, Key.S, Key.F, null, null) : (Key.W, Key.S, Key.A, Key.D, Key.E, Key.Q);
+
+    private bool Moves(Key key)
+    {
+        var m = MoveKeys;
+        return key == m.Forward || key == m.Back || key == m.Left || key == m.Right || key == m.Up || key == m.Down
+            || key is Key.Up or Key.Down or Key.Left or Key.Right or Key.PageUp or Key.PageDown or Key.LeftShift or Key.RightShift;
     }
 
     public CameraMode Mode
@@ -478,9 +497,10 @@ internal sealed class View3D : Control
         }
 
         double Axis(Key plus, Key plus2, Key minus, Key minus2) => (_keys.Contains(plus) || _keys.Contains(plus2) ? 1 : 0) - (_keys.Contains(minus) || _keys.Contains(minus2) ? 1 : 0);
-        var forward = Axis(Key.W, Key.Up, Key.S, Key.Down);
-        var sideways = Axis(Key.D, Key.Right, Key.A, Key.Left);
-        var vertical = Mode == CameraMode.Fly ? Axis(Key.E, Key.PageUp, Key.Q, Key.PageDown) : 0;
+        var keys = MoveKeys;
+        var forward = Axis(keys.Forward, Key.Up, keys.Back, Key.Down);
+        var sideways = Axis(keys.Right, Key.Right, keys.Left, Key.Left);
+        var vertical = Mode == CameraMode.Fly ? Axis(keys.Up ?? Key.PageUp, Key.PageUp, keys.Down ?? Key.PageDown, Key.PageDown) : 0;
         var fast = _keys.Contains(Key.LeftShift) || _keys.Contains(Key.RightShift);
         var speed = (Mode == CameraMode.Walk ? 320 : 768) * (fast ? 2.5 : 1) * dt;
         var yaw = _lookYaw * Math.PI / 180;
@@ -739,7 +759,8 @@ internal sealed class View3D : Control
             return;
         }
 
-        if (Mode == CameraMode.Orbit) return;
+        // Fly and Walk take only their movement keys; the rest (Tab, F9, the tools) go on to the editor's keymap.
+        if (Mode == CameraMode.Orbit || !Moves(e.Key)) return;
         if (_keys.Add(e.Key) && !_mover.IsEnabled)
         {
             _clock.Restart();

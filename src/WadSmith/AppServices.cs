@@ -16,6 +16,23 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
 
     public LaunchOptions Options { get; } = options;
 
+    /// <summary>The friendly and classic names of what is on screen (D3), following the "Show classic names" preference.</summary>
+    public Editor.App.Vocabulary Words
+    {
+        get
+        {
+            if (_words is null)
+            {
+                _words = Editor.App.Vocabulary.Load();
+                _words.Classic = Settings.Current.ClassicNames;
+            }
+
+            return _words;
+        }
+    }
+
+    private Editor.App.Vocabulary? _words;
+
     /// <summary>Cancelled when the application closes, so background work stops.</summary>
     public CancellationToken ShuttingDown => _shutdown.Token;
 

@@ -32,13 +32,13 @@ internal sealed partial class EditorViewModel : ObservableObject
         ("zoom", "Tip: scroll to zoom in and out; drag with the right mouse button to move around. Home shows the whole map."),
         ("select", "Tip: click a room, a wall or a thing to see what it is in the Inspector on the right."),
         ("edit", "Tip: change a number in the Inspector, such as a floor height, and watch the map follow."),
-        ("draw", "Tip: choose Room at the top left of the map (or press R) and drag to draw a room. Drawn against another room, the two share a wall."),
-        ("door", "Tip: choose Door (or press D) and click the wall between two rooms to put a door there. Draw a short corridor between rooms first for a classic doorway."),
+        ("draw", "Tip: choose {label:Room} at the top left of the map{or:Room tool} and drag to draw a room. Drawn against another room, the two share a wall."),
+        ("door", "Tip: choose Door{or:Door tool} and click the wall between two rooms to put a door there. Draw a short corridor between rooms first for a classic doorway."),
         ("undo", "Tip: Ctrl+Z takes back the last change and Ctrl+Y brings it back. Nothing needs saving; WadSmith keeps every change."),
         ("heights", "Tip: the view buttons at the top show floors, ceilings, heights as colours, or just the walls."),
         ("orbit", "Tip: in the 3D view, drag to turn around the map, right-drag to move it, and scroll to come closer."),
-        ("walk", "Tip: choose Walk at the top of the 3D view, click it, and use WASD to walk through the map as the player would."),
-        ("tab", "Tip: press Tab to fill the window with the 3D view, and Tab again to come back."),
+        ("walk", "Tip: choose Walk at the top of the 3D view, click it, and use {move} to walk through the map as the player would."),
+        ("tab", "Tip: press {key:Show the 3D view alone} to fill the window with the 3D view, and {key:Show the 3D view alone} again to come back."),
         ("palette", "Tip: press Ctrl+K and type a few letters to find anything WadSmith can do, with its shortcut."),
     ];
 
@@ -55,7 +55,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         _main = main;
         Session = session;
         _hoverText = message ?? "";
-        Inspector = new InspectorViewModel(session);
+        Inspector = new InspectorViewModel(session, services.Words);
         // A remix's narrow gaps and low openings are its author's: the passage checks speak only of the user's own.
         if (session.Origin is { Kind: "remix", Game: { } origin, Map: { } original } && services.EngineData is { } engineData
             && (session.Resources?.Game.Id == origin ? session.Resources.Files[^1] : services.Games?.FirstOrDefault(g => g.Game.Id == origin)?.Path) is { } file)
@@ -298,24 +298,46 @@ internal sealed partial class EditorViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Everything the editor can do from the keyboard or the top bar, by name, with its shortcut and the words people
-    /// look for it by (classic names included); the palette lists these, and a test holds each shortcut to the key that
-    /// does it.
+    /// Everything the editor can do from the keyboard or the top bar, by name, with its shortcut in the chosen key preset
+    /// (WadSmith's, or Ultimate Doom Builder's defaults, D14) and the words people look for it by (classic names included).
+    /// This is the keymap: the palette lists it, the editor's keys run it, and a test presses every shortcut it shows.
     /// </summary>
-    internal IReadOnlyList<EditorCommand> Commands()
+    internal IReadOnlyList<EditorCommand> Commands() => _commands ??= BuildCommands();
+
+    private IReadOnlyList<EditorCommand>? _commands;
+
+    /// <summary>Whether the keys are Ultimate Doom Builder's (Preferences, "Doom Builder keys").</summary>
+    public bool ClassicKeys => _services.Settings.Current.DoomBuilderKeys;
+
+    private IReadOnlyList<EditorCommand> BuildCommands()
     {
         bool Selected() => !Session.Selection.IsEmpty;
+        // A shortcut in each preset: ours, then Doom Builder's ("" for none). Doom Builder's come from its own
+        // defaults (UDBuilder.default.cfg): W visual mode, V/L/S/T the element modes, Ctrl+D draw lines, Shift+D make
+        // door, C clear selection, Ctrl+F9 test from here, F4 map analysis, F5 preferences; a key it gives another
+        // meaning (G gradient brightness, M make sector) leaves our command without one there.
+        string K(string ours, string builder) => ClassicKeys ? builder : ours;
+        void Pick(PickOnly only)
+        {
+            Tool = Canvas.EditorTool.Select;
+            Picks = only;
+        }
+
         var skills = SkillNames;
         var list = new List<EditorCommand>
         {
-            new("Select tool", "Tools", "V", "pointer|pick|choose|arrow", () => Tool = Canvas.EditorTool.Select),
-            new("Room tool", "Tools", "R", "draw a room|sector|rectangle|shape|area", () => Tool = Canvas.EditorTool.Room),
-            new("Door tool", "Tools", "D", "make a door|doorway|opening", () => Tool = Canvas.EditorTool.Door),
-            new("Window tool", "Tools", "W", "make a window|hole in a wall", () => Tool = Canvas.EditorTool.Window),
-            new("Teleport tool", "Tools", "T", "teleporter|warp|pad", () => Tool = Canvas.EditorTool.Teleport),
-            new("Light tool", "Tools", "L", "lamp|brightness|light level|glow", () => Tool = Canvas.EditorTool.Light),
-            new("Stairs tool", "Tools", "S", "steps|staircase|stair builder", () => Tool = Canvas.EditorTool.Stairs),
-            new("Measure tool", "Tools", "M", "ruler|distance|length|tape", () => Tool = Canvas.EditorTool.Measure),
+            new("Select tool", "Tools", K("V", ""), "pointer|pick|choose|arrow", () => Pick(PickOnly.Anything)),
+            new("Select corners only", "Tools", K("", "V"), "vertices mode|vertex|points", () => Pick(PickOnly.Corners)),
+            new("Select walls only", "Tools", K("", "L"), "linedefs mode|linedef|lines", () => Pick(PickOnly.Walls)),
+            new("Select rooms only", "Tools", K("", "S"), "sectors mode|sector|areas", () => Pick(PickOnly.Rooms)),
+            new("Select objects only", "Tools", K("", "T"), "things mode|thing|monsters|items", () => Pick(PickOnly.Objects)),
+            new("Room tool", "Tools", K("R", "Ctrl+D"), "draw a room|draw lines|sector|rectangle|shape|area", () => Tool = Canvas.EditorTool.Room),
+            new("Door tool", "Tools", K("D", "Shift+D"), "make a door|make door|doorway|opening", () => Tool = Canvas.EditorTool.Door),
+            new("Window tool", "Tools", K("W", ""), "make a window|hole in a wall", () => Tool = Canvas.EditorTool.Window),
+            new("Teleport tool", "Tools", K("T", ""), "teleporter|warp|pad", () => Tool = Canvas.EditorTool.Teleport),
+            new("Light tool", "Tools", K("L", ""), "lamp|brightness|light level|glow|dynamic light", () => Tool = Canvas.EditorTool.Light),
+            new("Stairs tool", "Tools", K("S", ""), "steps|staircase|stair builder", () => Tool = Canvas.EditorTool.Stairs),
+            new("Measure tool", "Tools", K("M", ""), "ruler|distance|length|tape", () => Tool = Canvas.EditorTool.Measure),
             new("No drawing mirror", "Tools", "", "symmetry off", () => MirrorChoice = 0),
             new("Mirror drawing left–right", "Tools", "", "symmetry|symmetric|deathmatch", () => MirrorChoice = 1),
             new("Mirror drawing top–bottom", "Tools", "", "symmetry|symmetric", () => MirrorChoice = 2),
@@ -324,42 +346,43 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Repeat drawing in quarter turns", "Tools", "", "symmetry|rotational", () => MirrorChoice = 5),
 
             new("Undo", "Edit", "Ctrl+Z", "take back|revert", () => UndoCommand.Execute(null), () => UndoCommand.CanExecute(null)),
-            new("Redo", "Edit", "Ctrl+Y", "bring back", () => RedoCommand.Execute(null), () => RedoCommand.CanExecute(null)),
+            new("Redo", "Edit", "Ctrl+Y", "bring back", () => RedoCommand.Execute(null), () => RedoCommand.CanExecute(null), Also: "Ctrl+Shift+Z"),
             new("Copy", "Edit", "Ctrl+C", "", () => CopyCommand.Execute(null), Selected),
             new("Cut", "Edit", "Ctrl+X", "", () => CutCommand.Execute(null), Selected),
             new("Paste", "Edit", "Ctrl+V", "", () => PasteCommand.Execute(null), () => Editor.Editing.Copying.Clipboard is not null),
-            new("Duplicate", "Edit", "Ctrl+D", "copy in place|clone", () => DuplicateCommand.Execute(null), Selected),
-            new("Delete", "Edit", "Delete", "remove|erase", () => DeleteCommand.Execute(null), Selected),
-            new("Join the selected rooms", "Edit", "J", "merge|join sectors|combine", Session.JoinRooms, Selected),
+            new("Duplicate", "Edit", K("Ctrl+D", ""), "copy in place|clone", () => DuplicateCommand.Execute(null), Selected),
+            new("Delete", "Edit", "Delete", "remove|erase|delete item", () => DeleteCommand.Execute(null), Selected),
+            new("Join the selected rooms", "Edit", "J", "merge|join sectors|merge sectors|combine", Session.JoinRooms, Selected),
             new("Turn the selection left", "Edit", "Ctrl+[", "rotate|anticlockwise|counter-clockwise", () => Session.TurnSelection(90), Selected),
             new("Turn the selection right", "Edit", "Ctrl+]", "rotate|clockwise", () => Session.TurnSelection(-90), Selected),
             new("Mirror the selection left–right", "Edit", "Shift+H", "flip horizontally", () => Session.FlipSelection(leftToRight: true), Selected),
             new("Mirror the selection top–bottom", "Edit", "Shift+V", "flip vertically", () => Session.FlipSelection(leftToRight: false), Selected),
-            new("Select nothing", "Edit", "Esc", "deselect|clear selection", () => Session.Selection.Clear(), Selected),
+            new("Select nothing", "Edit", K("Esc", "C"), "deselect|clear selection", () => Session.Selection.Clear(), Selected),
 
             new("Show the plan alone", "View", "", "2d|top down|map only", () => Layout = MapLayout.Plan),
             new("Show the plan and the 3D view", "View", "", "split|side by side|both", () => Layout = MapLayout.Split),
-            new("Show the 3D view alone", "View", "Tab", "3d|visual mode|full screen", () => Layout = MapLayout.ThreeD),
+            new("Show the 3D view alone", "View", K("Tab", "W"), "3d|visual mode|full screen|and back", () => Toggle3DCommand.Execute(null)),
             new("Show floors on the plan", "View", "", "floor textures|flats", () => IsFloors = true),
             new("Show ceilings on the plan", "View", "", "ceiling textures|flats", () => IsCeilings = true),
             new("Show heights as colours", "View", "", "floor heights|elevation", () => ShowHeights = !ShowHeights),
             new("Show only the walls", "View", "", "lines|automap|wireframe|linedefs", () => IsLines = true),
-            new("Show the player's size", "View", "G", "fit|player fit|ghost|clearance", () => ShowFit = !ShowFit),
-            new("Show the whole map", "View", "Home", "zoom to fit|fit map|overview", () => FitMap?.Invoke()),
+            new("Show the player's size", "View", K("G", ""), "fit|player fit|ghost|clearance", () => ShowFit = !ShowFit),
+            new("Show the whole map", "View", "Home", "zoom to fit|fit map|overview|center in screen", () => FitMap?.Invoke()),
             new("Orbit in 3D", "View", "", "turn around|model view|camera", () => CameraMode = ThreeD.CameraMode.Orbit),
             new("Fly in 3D", "View", "", "free camera|noclip|camera", () => CameraMode = ThreeD.CameraMode.Fly),
-            new("Walk in 3D", "View", "", "player view|first person|camera", () => CameraMode = ThreeD.CameraMode.Walk),
+            new("Walk in 3D", "View", "", "player view|first person|camera|gravity", () => CameraMode = ThreeD.CameraMode.Walk),
             new("The game's view", "View", "G in 3D", "gzdoom picture|engine view|screenshot", () => EngineView = !EngineView),
+            new("Command palette", "View", "Ctrl+K", "find a command|search|actions", () => OpenPaletteCommand.Execute(null), Also: "Ctrl+Shift+P"),
 
             new("Inspector", "Panels", "", "properties|details", () => ShowInspector = true),
             new("Textures shelf", "Panels", "", "textures|flats|wall pictures", () => ShowTextures = true),
             new("Objects shelf", "Panels", "", "things|monsters|items|prefabs", () => ShowObjects = true),
             new("Versions", "Panels", "", "history|snapshots|backups", () => ShowVersions = true),
-            new("Problems", "Panels", "", "errors|map analysis|check", () => ShowProblems = !ShowProblems),
+            new("Problems", "Panels", K("", "F4"), "errors|map analysis|check|error checker", () => ShowProblems = !ShowProblems),
             new("Keep a version", "Panels", "", "snapshot|save a copy|backup", () => KeepVersionCommand.Execute(null)),
 
-            new("Play", "Play", "F9", "test|run|launch|gzdoom", () => PlayCommand.Execute(null), () => !Playing),
-            new("Play from here", "Play", "Shift+F9", "test from current position|start here", () => PlayFromHereCommand.Execute(null), () => !Playing),
+            new("Play", "Play", "F9", "test|test map|run|launch|gzdoom", () => PlayCommand.Execute(null), () => !Playing),
+            new("Play from here", "Play", K("Shift+F9", "Ctrl+F9"), "test from current position|start here", () => PlayFromHereCommand.Execute(null), () => !Playing),
         };
         for (var i = 0; i < skills.Length; i++)
         {
@@ -367,9 +390,84 @@ internal sealed partial class EditorViewModel : ObservableObject
             list.Add(new($"Play on {skills[i]}", "Play", "", "difficulty|skill", () => Skill = skill));
         }
 
-        list.Add(new("Preferences", "WadSmith", "Ctrl+,", "settings|options|tips|larger text", () => OpenPreferencesCommand.Execute(null)));
+        list.Add(new("Preferences", "WadSmith", K("Ctrl+,", "F5"), "settings|options|tips|larger text|classic names|keys", () => OpenPreferencesCommand.Execute(null)));
         list.Add(new("Back to the start screen", "WadSmith", "", "close|other map|home", () => CloseCommand.Execute(null)));
         return list;
+    }
+
+    /// <summary>What the Select tool picks: anything, or only corners, walls, rooms or objects (Doom Builder's modes).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectLabel))]
+    private PickOnly _picks;
+
+    /// <summary>The Select tool's label, naming what it picks when it picks one kind only.</summary>
+    public string SelectLabel => _services.Words.Label(Picks switch
+    {
+        PickOnly.Corners => "Select · corners",
+        PickOnly.Walls => "Select · walls",
+        PickOnly.Rooms => "Select · rooms",
+        PickOnly.Objects => "Select · objects",
+        _ => "Select",
+    });
+
+    /// <summary>The command a key press runs in the chosen preset (its shortcut or its second key), or null.</summary>
+    internal EditorCommand? CommandFor(Avalonia.Input.Key key, Avalonia.Input.KeyModifiers modifiers) =>
+        Commands().FirstOrDefault(c => KeyChords.Matches(c.Shortcut, key, modifiers) || (c.Also.Length > 0 && KeyChords.Matches(c.Also, key, modifiers)));
+
+    /// <summary>The shortcut of a command in the chosen preset, or "" when it has none.</summary>
+    internal string KeyFor(string command) => Commands().FirstOrDefault(c => c.Name == command)?.Shortcut ?? "";
+
+    /// <summary>
+    /// A sentence with its keys and names filled in as Preferences say: {key:Command} is the command's key,
+    /// {or:Command} is " (or press K)" or nothing, {label:Word} the word's label, {move} the 3D movement keys.
+    /// </summary>
+    internal string Keyed(string text) => System.Text.RegularExpressions.Regex.Replace(text, @"\{(key|or|label|move)(?::([^}]*))?\}", m => m.Groups[1].Value switch
+    {
+        "key" => KeyFor(m.Groups[2].Value),
+        "or" => KeyFor(m.Groups[2].Value) is { Length: > 0 } k ? $" (or press {k})" : "",
+        "label" => _services.Words.Label(m.Groups[2].Value),
+        _ => ClassicKeys ? "E S D F" : "WASD",
+    });
+
+    /// <summary>The labels and tooltips of the controls whose names and keys follow Preferences.</summary>
+    public EditorFaces Faces => _faces ??= BuildFaces();
+
+    private EditorFaces? _faces;
+
+    private EditorFaces BuildFaces()
+    {
+        var words = _services.Words;
+        Face F(string label, string tip, string command)
+        {
+            var key = KeyFor(command);
+            return new(words.Label(label), words.Tip(label, key.Length > 0 ? $"{tip} ({key})." : tip + "."));
+        }
+
+        return new(
+            Select: F("Select", "Click a room, a wall, a corner or a thing to see it in the Inspector; Shift adds or removes", "Select tool"),
+            Room: F("Room", "Drag to draw a room. It snaps to the grid and to corners; drawn against or over other rooms, it shares their walls and never removes any", "Room tool"),
+            Door: F("Door", "Click the wall between two rooms to make it a door that opens when used, with the game's door and track textures", "Door tool"),
+            Window: F("Window", "Drag along a wall (or click it) for a window: through a thick wall to the room behind, or in a wall two rooms share, which becomes a wall closed but for the window", "Window tool"),
+            Teleport: F("Teleport", "Click a room to step on, then the spot the player arrives at: stepping onto the room sends them there", "Teleport tool"),
+            Light: F("Light", "Click in a room for a light, which the 3D view shows; its colour, reach and flicker are in the Inspector", "Light tool"),
+            Stairs: F("Stairs", "Drag from the bottom of a staircase to its top: steps that climb from one floor to the other, never more than the player can step up", "Stairs tool"),
+            Measure: F("Measure", "Drag a line to measure it: below the map, the floors and ceilings along it as a cross-section, with the player for scale and every step the player can't take", "Measure tool"),
+            Objects: F("Objects", "The game's monsters, items and decorations. Drag one onto the map to place it", "Objects shelf"),
+            Play: F("Play", "Plays this map in GZDoom. WadSmith checks it first and keeps a version; what the game says about it comes back to Problems. The arrow chooses the difficulty", "Play"),
+            Player: F("Player", "Shows the player's size at the pointer, green where the player fits and red where not, and marks in red where the player cannot pass: gaps under 32 across (45 on a slant) and openings under 56 high", "Show the player's size"),
+            ThreeD: F("3D", "The 3D view alone, from any angle; the same key again goes back to the plan", "Show the 3D view alone"));
+    }
+
+    /// <summary>The classic names or the keys changed in Preferences: every label, tooltip, tip and key follows at once.</summary>
+    internal void VeteranChanged()
+    {
+        _commands = null;
+        _faces = null;
+        OnPropertyChanged(nameof(Faces));
+        OnPropertyChanged(nameof(SelectLabel));
+        OnPropertyChanged(nameof(ClassicKeys));
+        Inspector.Rebuild();
+        UpdateStatus();
     }
 
     /// <summary>How the 3D camera moves: orbit, fly or walk.</summary>
@@ -512,7 +610,11 @@ internal sealed partial class EditorViewModel : ObservableObject
         get => Tool == Canvas.EditorTool.Select;
         set
         {
-            if (value) Tool = Canvas.EditorTool.Select;
+            if (value)
+            {
+                Tool = Canvas.EditorTool.Select;
+                Picks = PickOnly.Anything;
+            }
             else OnPropertyChanged();
         }
     }
@@ -1361,6 +1463,6 @@ internal sealed partial class EditorViewModel : ObservableObject
         }
 
         var settings = _services.Settings.Current;
-        Status = settings.CoachTips ? Tips.FirstOrDefault(t => !settings.CoachSeen.Contains(t.Id)).Text ?? "" : "";
+        Status = settings.CoachTips ? Keyed(Tips.FirstOrDefault(t => !settings.CoachSeen.Contains(t.Id)).Text ?? "") : "";
     }
 }

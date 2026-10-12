@@ -32,6 +32,15 @@
                         <TextBlock Text="Takes effect the next time WadSmith starts." Classes="secondary" FontSize="12" Margin="28,0,0,0" />
                     </StackPanel>
 
+                    <TextBlock Classes="section" Text="IF YOU HAVE MAPPED BEFORE" Margin="0,12,0,0" />
+                    <CheckBox Content="Show classic names" IsChecked="{Binding ClassicNames}"
+                              ToolTip.Tip="Labels use the names of the classic editors and tutorials: sector, linedef, sidedef, vertex, thing, light level, lower unpegged. Every tooltip still gives WadSmith's own name." />
+                    <StackPanel Spacing="2">
+                        <CheckBox Content="Doom Builder keys" IsChecked="{Binding DoomBuilderKeys}"
+                                  ToolTip.Tip="The keys of Ultimate Doom Builder's defaults: W for the 3D view, E S D F to move in it, V L S T to pick only corners, walls, rooms or objects, Ctrl+D to draw, Shift+D for a door, C to select nothing, Ctrl+F9 to play from here." />
+                        <TextBlock Text="Every command and its key is in the command palette (Ctrl+K)." Classes="secondary" FontSize="12" Margin="28,0,0,0" />
+                    </StackPanel>
+
                     <TextBlock Classes="section" Text="GAME FOLDERS" Margin="0,12,0,0" />
                     <TextBlock Classes="secondary" TextWrapping="Wrap"
                                Text="WadSmith looks in the usual places by itself (Steam, GOG, your games folder). Add a folder here when your games are somewhere else." />

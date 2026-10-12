@@ -42,7 +42,7 @@ public partial class EditorView : UserControl
                 if (e.PropertyName == nameof(EditorViewModel.Palette)) PaletteChanged(vm);
             };
         };
-        AddHandler(KeyDownEvent, OnTabDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyDownEvent, OnKeys, RoutingStrategies.Bubble);
         Canvas.HoverChanged += (element, at) => (DataContext as EditorViewModel)?.Hover(element, at);
         Canvas.Drawing += (size, step) => (DataContext as EditorViewModel)?.Drawing(size, step);
         Canvas.Moving += move => (DataContext as EditorViewModel)?.Moving(move);
@@ -78,15 +78,21 @@ public partial class EditorView : UserControl
     }
 
     /// <summary>
-    /// Tab flips the 3D view to fill the map area and back, as Doom Builder's Tab does, while the plan or the 3D
-    /// view has the keys; in the Inspector and the panels Tab still moves between fields.
+    /// The editor's keys (D14): a key the plan or the 3D view did not use itself runs the command the keymap gives it
+    /// (WadSmith's keys or Doom Builder's). Letters and other plain keys work while the plan or the 3D view has the keys,
+    /// so typing in a field never runs a tool; keys with Ctrl or Alt and F-keys work anywhere in the editor. During a
+    /// drawing or a drag the keys wait (an F-key still plays).
     /// </summary>
-    private void OnTabDown(object? sender, KeyEventArgs e)
+    private void OnKeys(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Tab || e.KeyModifiers != KeyModifiers.None || DataContext is not EditorViewModel vm) return;
+        if (e.Handled || DataContext is not EditorViewModel vm || vm.Palette is not null) return;
+        var fKey = e.Key is >= Key.F1 and <= Key.F24;
         var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
-        if (focused is not null && focused != this && focused != Canvas && focused != View3D) return;
-        vm.Toggle3DCommand.Execute(null);
+        var onMap = focused is null || focused == this || focused == Canvas || focused == View3D;
+        var plain = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Alt)) == 0 && !fKey;
+        if ((plain && !onMap) || (Canvas.IsGesturing && !fKey)) return;
+        if (vm.CommandFor(e.Key, e.KeyModifiers) is not { Available: true } command) return;
+        command.Run();
         e.Handled = true;
     }
 

@@ -58,6 +58,8 @@ internal sealed class MapCanvas : Control
     public static readonly StyledProperty<EditorTool> ToolProperty = AvaloniaProperty.Register<MapCanvas, EditorTool>(nameof(Tool), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
     public static readonly StyledProperty<bool> ShowFitProperty = AvaloniaProperty.Register<MapCanvas, bool>(nameof(ShowFit), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
+    public static readonly StyledProperty<PickOnly> PicksProperty = AvaloniaProperty.Register<MapCanvas, PickOnly>(nameof(Picks));
+
     private readonly LatestOnWorker<(EditorSession Session, CanvasSnapshot Picture)> _pictures;
     private readonly LatestOnWorker<(EditorSession Session, long Generation, SelectionOverlay Outline)> _outlines;
     private readonly LatestOnWorker<(EditorSession Session, long Gesture, MoveSet Set, string? Held)> _gathers;
@@ -264,6 +266,16 @@ internal sealed class MapCanvas : Control
         set => SetValue(ShowFitProperty, value);
     }
 
+
+    /// <summary>What the Select tool picks: anything, or only corners, walls, rooms or objects.</summary>
+    public PickOnly Picks
+    {
+        get => GetValue(PicksProperty);
+        set => SetValue(PicksProperty, value);
+    }
+
+    /// <summary>Whether a drawing, a drag or a box is under way: the editor's keys wait until it ends.</summary>
+    internal bool IsGesturing => _drawFrom is not null || _corners.Count > 0 || _boxFrom is not null || _moveGesture != 0 || _pressed is not null || _windowWall is not null;
     /// <summary>Raised as the player's box follows the pointer: whether the player fits there (null off the map or when hidden), and where.</summary>
     public event Action<WadSmith.Editor.Checks.GhostFit?, MapPoint>? GhostChanged;
 
@@ -1416,7 +1428,8 @@ internal sealed class MapCanvas : Control
             var (c0, c1) = (ToMap(from), ToMap(to));
             var geometry = boxed.Geometry;
             var add = _boxAdd;
-            _boxes.Request(() => (boxed, add, BoxSelection.Pick(geometry, Math.Min(c0.X, c1.X), Math.Min(c0.Y, c1.Y), Math.Max(c0.X, c1.X), Math.Max(c0.Y, c1.Y))));
+            var only = Tool == EditorTool.Select ? Picks : PickOnly.Anything;
+            _boxes.Request(() => (boxed, add, BoxSelection.Pick(geometry, Math.Min(c0.X, c1.X), Math.Min(c0.Y, c1.Y), Math.Max(c0.X, c1.X), Math.Max(c0.Y, c1.Y), only)));
             return;
         }
 
@@ -1541,10 +1554,6 @@ internal sealed class MapCanvas : Control
                 _spaceDown = true;
                 e.Handled = true;
                 break;
-            case Key.Home:
-                FitMap();
-                e.Handled = true;
-                break;
             // While a round room is dragged: fewer or more sides (Ctrl may still be held for the round shape).
             case Key.OemOpenBrackets when _drawFrom is not null && _round:
                 _sides = Math.Max(Shapes.MinSides, _sides - 2);
@@ -1594,63 +1603,6 @@ internal sealed class MapCanvas : Control
                 break;
             case Key.Escape:
                 Session?.Selection.Clear();
-                e.Handled = true;
-                break;
-            case Key.G when e.KeyModifiers == KeyModifiers.None:
-                ShowFit = !ShowFit;
-                e.Handled = true;
-                break;
-            case Key.V when e.KeyModifiers == KeyModifiers.None:
-                Tool = EditorTool.Select;
-                e.Handled = true;
-                break;
-            case Key.R when e.KeyModifiers == KeyModifiers.None:
-                Tool = EditorTool.Room;
-                e.Handled = true;
-                break;
-            case Key.D when e.KeyModifiers == KeyModifiers.None:
-                Tool = EditorTool.Door;
-                e.Handled = true;
-                break;
-            case Key.T when e.KeyModifiers == KeyModifiers.None:
-                Tool = EditorTool.Teleport;
-                e.Handled = true;
-                break;
-            case Key.S when e.KeyModifiers == KeyModifiers.None:
-                Tool = EditorTool.Stairs;
-                e.Handled = true;
-                break;
-            case Key.W when e.KeyModifiers == KeyModifiers.None:
-                Tool = EditorTool.Window;
-                e.Handled = true;
-                break;
-            case Key.L when e.KeyModifiers == KeyModifiers.None:
-                Tool = EditorTool.Light;
-                e.Handled = true;
-                break;
-            case Key.M when e.KeyModifiers == KeyModifiers.None:
-                Tool = EditorTool.Measure;
-                e.Handled = true;
-                break;
-            case Key.J when e.KeyModifiers == KeyModifiers.None && _moveGesture == 0:
-                Session?.JoinRooms();
-                e.Handled = true;
-                break;
-            // Turning and mirroring the selection (on the plan only, so typing a capital in a field never does it).
-            case Key.OemOpenBrackets when e.KeyModifiers == KeyModifiers.Control && _moveGesture == 0:
-                Session?.TurnSelection(90);
-                e.Handled = true;
-                break;
-            case Key.OemCloseBrackets when e.KeyModifiers == KeyModifiers.Control && _moveGesture == 0:
-                Session?.TurnSelection(-90);
-                e.Handled = true;
-                break;
-            case Key.H when e.KeyModifiers == KeyModifiers.Shift && _moveGesture == 0:
-                Session?.FlipSelection(leftToRight: true);
-                e.Handled = true;
-                break;
-            case Key.V when e.KeyModifiers == KeyModifiers.Shift && _moveGesture == 0:
-                Session?.FlipSelection(leftToRight: false);
                 e.Handled = true;
                 break;
             case Key.OemPlus or Key.Add:
@@ -1775,10 +1727,12 @@ internal sealed class MapCanvas : Control
 
         // Locked rooms and objects (and the walls and corners they hold) are not picked: clicks go through to what is free.
         bool Free(Element e) => !Grouping.Holds(geometry, e) && !Grouping.Hides(geometry, e, Session.Hidden);
-        if (geometry.ThingNear(m, Math.Max(16, px)) is { } t && Free(t)) return t;
-        if (_zoom > 0.25 && geometry.VertexNear(m, px) is { } v && Free(v)) return v;
-        if (geometry.LineNear(m, px) is { } l && Free(l)) return l;
-        return geometry.SectorAt(m) is { } s && Free(s) ? s : null;
+        // With the Select tool picking one kind only, the rest is passed over (corners then at any zoom).
+        var only = Tool == EditorTool.Select ? Picks : PickOnly.Anything;
+        if (only is PickOnly.Anything or PickOnly.Objects && geometry.ThingNear(m, Math.Max(16, px)) is { } t && Free(t)) return t;
+        if ((only == PickOnly.Corners || (only == PickOnly.Anything && _zoom > 0.25)) && geometry.VertexNear(m, only == PickOnly.Corners ? Math.Max(px, 12 / _zoom) : px) is { } v && Free(v)) return v;
+        if (only is PickOnly.Anything or PickOnly.Walls && geometry.LineNear(m, px) is { } l && Free(l)) return l;
+        return only is PickOnly.Anything or PickOnly.Rooms && geometry.SectorAt(m) is { } s && Free(s) ? s : null;
     }
 
     internal readonly record struct View(double Cx, double Cy, double Zoom, double Width, double Height)

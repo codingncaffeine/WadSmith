@@ -63,6 +63,38 @@ internal sealed partial class PreferencesViewModel : ObservableObject
         }
     }
 
+    /// <summary>Raised when the names or the keys change, so an open map shows the change at once.</summary>
+    public event Action? VeteranChanged;
+
+    /// <summary>Labels show the classic names (sector, linedef, thing); the tooltips name the friendly ones (D3).</summary>
+    public bool ClassicNames
+    {
+        get => _services.Settings.Current.ClassicNames;
+        set
+        {
+            if (value == ClassicNames) return;
+            _services.Settings.Current.ClassicNames = value;
+            _services.Words.Classic = value;
+            _services.Settings.Save();
+            OnPropertyChanged();
+            VeteranChanged?.Invoke();
+        }
+    }
+
+    /// <summary>The keys of Ultimate Doom Builder's defaults instead of WadSmith's (D14).</summary>
+    public bool DoomBuilderKeys
+    {
+        get => _services.Settings.Current.DoomBuilderKeys;
+        set
+        {
+            if (value == DoomBuilderKeys) return;
+            _services.Settings.Current.DoomBuilderKeys = value;
+            _services.Settings.Save();
+            OnPropertyChanged();
+            VeteranChanged?.Invoke();
+        }
+    }
+
     public bool UseSystemTitleBar
     {
         get => _services.Settings.Current.UseSystemTitleBar;
