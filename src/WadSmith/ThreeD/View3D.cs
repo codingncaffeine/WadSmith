@@ -82,6 +82,12 @@ internal sealed class View3D : Control
         _picks = new(ViewModels.MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, Session)) return;
+            if (r.Hit is { } hit && Editor.Editing.Grouping.Holds(r.Session.Geometry, hit))
+            {
+                r.Session.Tell("That is locked: unlock it with nothing selected, under Groups, to select or change it.");
+                return;
+            }
+
             if (r.Hit is null)
             {
                 if (!r.Toggle) r.Session.Selection.Clear();
@@ -148,12 +154,14 @@ internal sealed class View3D : Control
             {
                 old.GeometryChanged -= RequestScene;
                 old.Selection.Changed -= RequestTint;
+                old.HiddenChanged -= RequestScene;
             }
 
             if (change.NewValue is EditorSession s)
             {
                 s.GeometryChanged += RequestScene;
                 s.Selection.Changed += RequestTint;
+                s.HiddenChanged += RequestScene;
             }
             _framed = false;
             _scene = null;
@@ -178,7 +186,8 @@ internal sealed class View3D : Control
         if (Session is not { } session || _renderer is null || !IsVisible) return;
         var geometry = session.Geometry;
         var resources = session.Resources;
-        _scenes.Request(() => (session, MapScene.Build(geometry, name => resources?.Textures.GetWall(name) is { } w ? (w.Width, w.Height) : null, SpriteShapes.For(resources))));
+        var hidden = new HashSet<string>(session.Hidden);
+        _scenes.Request(() => (session, MapScene.Build(geometry, name => resources?.Textures.GetWall(name) is { } w ? (w.Width, w.Height) : null, SpriteShapes.For(resources), hidden)));
     }
 
     private (GameResources? Resources, SpriteShape? Shape) _player;

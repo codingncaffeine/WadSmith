@@ -242,9 +242,13 @@ public sealed class MapScene
     /// <param name="geometry">The map's shapes.</param>
     /// <param name="wallSize">A wall texture's size in pixels, or null when the game has no such texture.</param>
     /// <param name="sprite">An object type's sprite shape, or null when it shows none.</param>
-    public static MapScene Build(MapGeometry geometry, Func<string, (int Width, int Height)?> wallSize, Func<int, SpriteShape?>? sprite = null)
+    /// <param name="hidden">Groups hidden for clarity: their rooms, the faces seen from them and their objects are left out.</param>
+    public static MapScene Build(MapGeometry geometry, Func<string, (int Width, int Height)?> wallSize, Func<int, SpriteShape?>? sprite = null, IReadOnlySet<string>? hidden = null)
     {
         var f = geometry.Frame;
+
+        // Groups hidden for clarity: their rooms, the faces seen from them, and their objects are left out.
+        bool Hidden(KeyValuePair<string, WadSmith.Core.Maps.Udmf.UdmfValue>[] extra) => hidden is { Count: > 0 } && Editing.Grouping.GroupIn(extra) is { } name && hidden.Contains(name);
         var batches = new Dictionary<(string, SurfaceKind), SceneBatch>();
         SceneBatch Batch(string texture, SurfaceKind kind)
         {
@@ -259,7 +263,7 @@ public sealed class MapScene
         for (var s = 0; s < f.Sectors.Count; s++)
         {
             var sector = f.Sectors[s];
-            if (sector.Element is null) continue;
+            if (sector.Element is null || Hidden(sector.Extra)) continue;
             var loops = geometry.LoopsAt(s);
             if (loops.Count == 0) continue;
             minZ = Math.Min(minZ, sector.FloorHeight);
@@ -298,6 +302,7 @@ public sealed class MapScene
 
             void AddFace(MapPoint from, MapPoint to, SideFrame side, SideFrame? other)
             {
+                if (side.Sector >= 0 && Hidden(f.Sectors[side.Sector].Extra)) return;
                 if (side.Sector < 0) return;
                 var here = f.Sectors[side.Sector];
                 var light = Math.Clamp(here.Light, 0, 255);
@@ -347,7 +352,7 @@ public sealed class MapScene
         var sprites = new Dictionary<int, SpriteBatch>();
         foreach (var t in f.Things)
         {
-            if (t.Element is null) continue;
+            if (t.Element is null || Hidden(t.Extra)) continue;
             var area = geometry.SectorAt(new MapPoint(t.X, t.Y)) is { } sector && sector.Slot < f.Sectors.Count ? f.Sectors[sector.Slot] : (SectorFrame?)null;
             var z = (area?.FloorHeight ?? 0) + t.Height;
             var light = Math.Clamp(area?.Light ?? 160, 0, 255);

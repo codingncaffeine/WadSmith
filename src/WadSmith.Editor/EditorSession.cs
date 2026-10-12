@@ -181,6 +181,78 @@ public sealed class EditorSession : IDisposable
         }
     }
 
+    /// <summary>Says something in the status strip, for the views (a drag refused, …).</summary>
+    public void Tell(string sentence) => Notice?.Invoke(sentence);
+
+    /// <summary>Puts the selected rooms and objects in the group <paramref name="name"/>, one undo step.</summary>
+    public void GroupSelection(string name)
+    {
+        var members = Grouping.MembersOf(Selection.Items);
+        if (members.Count == 0 || string.IsNullOrWhiteSpace(name))
+        {
+            Notice?.Invoke(members.Count == 0 ? "Select rooms or things to group; walls and corners go with the rooms they belong to." : "Give the group a name.");
+            return;
+        }
+
+        History.Record("Group", e => Grouping.Name(e, members, name));
+        Notice?.Invoke($"{(members.Count == 1 ? "It is" : $"The {members.Count} are")} in the group {name.Trim()} now: with nothing selected, the Inspector lists it under Groups to select, lock or hide.");
+    }
+
+    /// <summary>Puts rooms and objects in the group <paramref name="name"/>, or out of any when it is empty; one undo step.</summary>
+    public void NameGroup(IReadOnlyList<Element> members, string name)
+    {
+        var live = members.Where(m => m.OnMap).ToList();
+        if (live.Count == 0) return;
+        History.Record(string.IsNullOrWhiteSpace(name) ? "Ungroup" : "Group", e => Grouping.Name(e, live, name));
+        if (!string.IsNullOrWhiteSpace(name)) Notice?.Invoke($"{(live.Count == 1 ? "It is" : $"The {live.Count} are")} in the group {name.Trim()}: with nothing selected, the Inspector lists it to select or lock.");
+    }
+
+    /// <summary>Locks rooms and objects, one undo step, and lets go of the selection.</summary>
+    public void LockMembers(IReadOnlyList<Element> members)
+    {
+        History.Record("Lock", e => Grouping.Lock(e, members.Where(m => m.OnMap), true));
+        Selection.Clear();
+        Notice?.Invoke("Locked: it can no longer be selected or changed. Unlock it with nothing selected (Esc), under Groups, or Ctrl+Z.");
+    }
+
+    /// <summary>Takes a group's members out of it (and unlocks them), one undo step.</summary>
+    public void Ungroup(MapGroup group) => History.Record("Ungroup", e => Grouping.Name(e, group.Members.Where(m => m.OnMap), null));
+
+    /// <summary>Locks or unlocks a group, one undo step; locked members leave the selection.</summary>
+    public void LockGroup(MapGroup group, bool locked)
+    {
+        History.Record(locked ? "Lock a group" : "Unlock a group", e => Grouping.Lock(e, group.Members.Where(m => m.OnMap), locked));
+        if (locked) Selection.Set([.. Selection.Items.Where(e => !Grouping.Holds(_geometry, e))]);
+    }
+
+    /// <summary>The groups hidden on the plan and in 3D, this session only (never saved): for clarity while working elsewhere.</summary>
+    public IReadOnlySet<string> Hidden => _hidden;
+
+    private readonly HashSet<string> _hidden = new(StringComparer.Ordinal);
+
+    /// <summary>Raised when <see cref="Hidden"/> changes.</summary>
+    public event Action? HiddenChanged;
+
+    /// <summary>Hides or shows a group; hidden members leave the selection.</summary>
+    public void Hide(string group, bool hidden)
+    {
+        if (!(hidden ? _hidden.Add(group) : _hidden.Remove(group))) return;
+        if (hidden) Selection.Set([.. Selection.Items.Where(e => !Grouping.Hides(_geometry, e, _hidden))]);
+        HiddenChanged?.Invoke();
+    }
+
+    /// <summary>Selects a group's members, unless it is locked.</summary>
+    public void SelectGroup(MapGroup group)
+    {
+        if (group.Locked)
+        {
+            Notice?.Invoke($"{group.Name} is locked: unlock it with nothing selected, under Groups, to select or change it.");
+            return;
+        }
+
+        Selection.Set([.. group.Members.Where(m => m.OnMap)]);
+    }
+
     /// <summary>
     /// Symmetry mode (§3.4): rooms drawn and objects placed are repeated about the middle as <see cref="Mirror"/> says; Off
     /// by default.

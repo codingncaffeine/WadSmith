@@ -72,6 +72,19 @@ public sealed class StructureEdit : IEdit
         Note(element);
     }
 
+    /// <summary>Sets a field of an element (null takes it away); undo restores the fields exactly, in their order.</summary>
+    public void Field(Element element, string name, UdmfValue? value)
+    {
+        var had = element.Extra.TryGet(name, out var old);
+        if ((value is null && !had) || (value is { } v && had && v == old)) return;
+        var before = element.Extra.ToArray();
+        if (value is { } set) element.Extra[name] = set;
+        else element.Extra.Remove(name);
+        var after = element.Extra.ToArray();
+        _steps.Add((() => Restore(element, after), () => Restore(element, before)));
+        Note(element);
+    }
+
     private static void Restore(Element element, KeyValuePair<string, UdmfValue>[] fields)
     {
         foreach (var name in element.Extra.Select(f => f.Key).ToList()) element.Extra.Remove(name);

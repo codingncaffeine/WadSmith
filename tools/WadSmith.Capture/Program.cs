@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -349,6 +349,58 @@ foreach (var pose in poses)
             var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
             view.FitMap();
             if (pose == "editor-zoomed") view.ZoomBy(3.5);
+            if (pose == "editor-groups")
+            {
+                // A room east of the starter room, named Courtyard in the Inspector and locked; a click on it picks nothing; a
+                // drag of the starter room (sharing its wall) is refused; with nothing selected the Groups rows list it; hidden.
+                var session = editor.Session;
+                session.DrawRoom([new(256, -256), new(256, 256), new(512, 256), new(512, -256)]);
+                Pump(1.0);
+                var plan = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
+                plan.FitMap();
+                Pump(0.4);
+                Avalonia.Point Spot(double x, double y) => plan.TranslatePoint(plan.ToScreen(new WadSmith.Editor.Geometry.MapPoint(x, y)), window)!.Value;
+                void Click(double x, double y)
+                {
+                    window.MouseMove(Spot(x, y), Avalonia.Input.RawInputModifiers.None);
+                    window.MouseDown(Spot(x, y), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(Spot(x, y), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.4);
+                }
+
+                plan.Focus();
+                Click(384, 0);
+                var name = editor.Inspector.Rows.OfType<TextRow>().Single(r => r.Label == "Group");
+                name.Value = "Courtyard";
+                name.Commit();
+                Pump(0.5);
+                Console.WriteLine($"groups named: status '{editor.Status}'");
+                editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Lock it").Command.Execute(null);
+                Pump(0.5);
+                Click(384, 0);
+                Console.WriteLine($"groups click on locked: {session.Selection.Count} selected, '{editor.Inspector.Heading}'");
+                Click(0, 0);
+                window.MouseDown(Spot(0, 0), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                for (var k = 1; k <= 8; k++)
+                {
+                    window.MouseMove(Spot(0, -16 * k), Avalonia.Input.RawInputModifiers.LeftMouseButton);
+                    Pump(0.05);
+                }
+
+                window.MouseUp(Spot(0, -128), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                Pump(0.6);
+                Console.WriteLine($"groups drag neighbour: status '{editor.Status}'; starter room's corner at {session.Map.Vertices.Where(v => v.OnMap).Min(v => v.Y)}");
+                window.KeyPress(Avalonia.Input.Key.Escape, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Escape, "");
+                session.Selection.Clear();
+                Pump(1.0);
+                Console.WriteLine($"groups overview: rows {string.Join(" | ", editor.Inspector.Rows.Select(r => r.Label))}");
+                Save("editor-groups");
+                editor.Inspector.Rows.OfType<FlagRow>().Single(r => r.Label == "Courtyard is hidden").Value = true;
+                Pump(1.5);
+                Save("editor-groups-hidden");
+                break;
+            }
+
             if (pose == "editor-door-drag")
             {
                 // A tall room east of the starter room sharing its 512-long wall; the Door tool dragged along it from y −192 to

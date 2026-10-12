@@ -76,12 +76,16 @@ internal sealed partial class TextRow : InspectorRow
     private readonly Action<string> _set;
     private readonly Func<string>? _hint;
 
-    public TextRow(string label, string tooltip, Func<string> get, Action<string> set, Func<string>? hint = null)
+    /// <summary>Whether it holds a texture's name (in capitals, "-" for none) rather than words as typed.</summary>
+    private readonly bool _texture;
+
+    public TextRow(string label, string tooltip, Func<string> get, Action<string> set, Func<string>? hint = null, bool texture = true)
         : base(label, tooltip)
     {
         _get = get;
         _set = set;
         _hint = hint;
+        _texture = texture;
         Refresh();
     }
 
@@ -94,8 +98,8 @@ internal sealed partial class TextRow : InspectorRow
     /// <summary>Called by the view when editing ends.</summary>
     public void Commit()
     {
-        var v = Value.Trim().ToUpperInvariant();
-        if (v.Length == 0) v = "-";
+        var v = _texture ? Value.Trim().ToUpperInvariant() : Value.Trim();
+        if (_texture && v.Length == 0) v = "-";
         if (v != _get()) _set(v);
         Value = _get();
     }
@@ -236,6 +240,15 @@ internal sealed partial class InspectorViewModel : ObservableObject
     public InspectorViewModel(EditorSession session)
     {
         _session = session;
+        _groupsFound = new(MainViewModel.PostToUi, r =>
+        {
+            if (!ReferenceEquals(r.Session, _session)) return;
+            var before = string.Join("|", _groups.Select(g => $"{g.Name}{g.Locked}{g.Rooms.Count}{g.Things.Count}"));
+            _groups = r.Groups;
+            if (_session.Selection.IsEmpty && before != string.Join("|", _groups.Select(g => $"{g.Name}{g.Locked}{g.Rooms.Count}{g.Things.Count}"))) Rebuild();
+        }, "the map's groups");
+        session.GeometryChanged += FindGroups;
+        FindGroups();
         session.Selection.Changed += Rebuild;
 
         // A room just made (a door a moment ago) is known as what it is once the map's shapes catch up.
@@ -266,6 +279,17 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rebuild();
     }
 
+    private readonly LatestOnWorker<(EditorSession Session, IReadOnlyList<MapGroup> Groups)> _groupsFound;
+    private IReadOnlyList<MapGroup> _groups = [];
+
+    /// <summary>The map's groups, read from its shapes on a worker, for the overview shown when nothing is selected.</summary>
+    private void FindGroups()
+    {
+        var session = _session;
+        var frame = session.Geometry.Frame;
+        _groupsFound.Request(() => (session, Grouping.In(frame)));
+    }
+
     public ObservableCollection<InspectorRow> Rows { get; } = [];
 
     [ObservableProperty]
@@ -284,6 +308,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         {
             Heading = "Nothing selected";
             Summary = "Click a room, a wall, a corner or a thing to see what it is and change it.";
+            AddGroups();
             return;
         }
 
@@ -296,6 +321,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             if (items.All(i => i is Sector)) Rows.Add(new ActionRow("Join them into one room", "The rooms become the first one you selected: the walls between them go, and its floor, ceiling and light hold for all of it (J).", _session.JoinRooms));
             AddShaping();
             if (items.OfType<Thing>().Where(t => t.OnMap).ToList() is { Count: >= 2 } things) AddArranging(things);
+            AddGrouping(items);
             Rows.Add(new ActionRow("Delete them", "Deletes everything selected so the map stays whole (Delete).", _session.DeleteSelection));
             return;
         }
@@ -475,6 +501,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         }
 
         if (items[0] is Sector) AddShaping();
+        AddGrouping(items);
 
         // Last: deleting it, in words that say what happens to the rest (Delete does the same).
         var (verb, tip) = items[0] switch
@@ -642,6 +669,34 @@ internal sealed partial class InspectorViewModel : ObservableObject
         };
         var none = s.Targets.Count == 0 && Switches.NamesAreas(s.Wall.Special) ? string.Create(CultureInfo.InvariantCulture, $" No area has tag {s.Wall.Args[0]}, so it does nothing.") : "";
         return $"{char.ToUpperInvariant(s.Does[0])}{s.Does[1..]}{what} when the player uses it{(s.Repeats ? ", again and again" : ", once")}.{none}";
+    }
+
+    /// <summary>The map's groups, with nothing selected: each to select, lock or unlock (a locked one is unlocked here).</summary>
+    private void AddGroups()
+    {
+        if (_groups.Count == 0) return;
+        Rows.Add(new HeadingRow("GROUPS"));
+        foreach (var g in _groups)
+        {
+            var parts = new List<string>();
+            if (g.Rooms.Count > 0) parts.Add(g.Rooms.Count == 1 ? "1 room" : $"{g.Rooms.Count} rooms");
+            if (g.Things.Count > 0) parts.Add(g.Things.Count == 1 ? "1 thing" : $"{g.Things.Count} things");
+            Rows.Add(new InfoRow(g.Name, "A group of rooms and things you named.", () => string.Join(", ", parts) + (g.Locked ? " · locked" : "")));
+            var group = g;
+            if (!g.Locked) Rows.Add(new ActionRow($"Select {g.Name}", "Selects every room and thing in the group.", () => _session.SelectGroup(group)));
+            Rows.Add(new FlagRow($"{g.Name} is locked", "A locked group cannot be selected or changed, and dragging its neighbours never moves its corners.", () => group.Locked, on => _session.LockGroup(group, on)));
+            Rows.Add(new FlagRow($"{g.Name} is hidden", "Hides the group on the plan and in the 3D view while you work elsewhere (this session only: the map is not changed, and the game shows it).", () => _session.Hidden.Contains(group.Name), on => _session.Hide(group.Name, on)));
+        }
+    }
+
+    /// <summary>A selection's group: its name to type (empty takes them out), and locking it.</summary>
+    private void AddGrouping(IReadOnlyList<Element> items)
+    {
+        var members = Grouping.MembersOf(items);
+        if (members.Count == 0) return;
+        Rows.Add(new HeadingRow("GROUP"));
+        Rows.Add(new TextRow("Group", "A name for these rooms and things together (\"Courtyard\"): with nothing selected, the Inspector lists the map's groups to select or lock. Leave it empty to take them out of their group.", () => members.Select(Grouping.GroupOf).Distinct().Count() == 1 ? Grouping.GroupOf(members[0]) ?? "" : "", name => _session.NameGroup(members, name), texture: false));
+        Rows.Add(new ActionRow(members.Count == 1 ? "Lock it" : "Lock them", "Locks the selection against changes: it can no longer be selected or dragged, nor reshaped by its neighbours. Unlock it with nothing selected, under Groups.", () => _session.LockMembers(members)));
     }
 
     private decimal _curveReach = 64;

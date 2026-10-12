@@ -1,4 +1,5 @@
 using SkiaSharp;
+using WadSmith.Editor.Editing;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
 
@@ -71,15 +72,22 @@ internal sealed class CanvasSnapshot
     public ThingMark[] Things { get; }
 
     /// <summary>Builds the picture: whole-map work, so call it on a worker.</summary>
-    public static CanvasSnapshot Take(MapGeometry geometry, MapLook look, MapViewMode mode)
+    public static CanvasSnapshot Take(MapGeometry geometry, MapLook look, MapViewMode mode, IReadOnlySet<string>? hidden = null)
     {
         var f = geometry.Frame;
 
+        // Groups hidden for clarity: their rooms and objects are left out, and walls with no room left showing.
+        bool Hidden(KeyValuePair<string, Core.Maps.Udmf.UdmfValue>[] extra) => hidden is { Count: > 0 } && Grouping.GroupIn(extra) is { } name && hidden.Contains(name);
+        bool HiddenRoom(int side) => side < 0 || f.Sides[side].Sector < 0 || Hidden(f.Sectors[f.Sides[side].Sector].Extra);
+
         // Walls: ends and style.
         var segments = new List<(float X1, float Y1, float X2, float Y2, int Style)>(f.Lines.Count);
+        var shownCorners = hidden is { Count: > 0 } ? new HashSet<int>() : null;
         foreach (var l in f.Lines)
         {
-            if (l.Element is null) continue;
+            if (l.Element is null || (hidden is { Count: > 0 } && HiddenRoom(l.Front) && HiddenRoom(l.Back))) continue;
+            shownCorners?.Add(l.V1);
+            shownCorners?.Add(l.V2);
             var a = f.Vertices[l.V1];
             var b = f.Vertices[l.V2];
             segments.Add(((float)a.X, (float)a.Y, (float)b.X, (float)b.Y, (int)StyleOf(f, l)));
@@ -96,17 +104,18 @@ internal sealed class CanvasSnapshot
             path.LineTo(s.X2, s.Y2);
         });
 
-        var (areas, styles) = mode == MapViewMode.Lines ? (null, []) : BuildAreas(geometry, look, mode);
+        var (areas, styles) = mode == MapViewMode.Lines ? (null, []) : BuildAreas(geometry, look, mode, hidden);
 
         var verts = new List<float>(f.Vertices.Count * 2);
-        foreach (var v in f.Vertices)
+        for (var i = 0; i < f.Vertices.Count; i++)
         {
-            if (v.Element is null) continue;
+            var v = f.Vertices[i];
+            if (v.Element is null || (shownCorners is not null && !shownCorners.Contains(i))) continue;
             verts.Add((float)v.X);
             verts.Add((float)v.Y);
         }
 
-        var things = f.Things.Where(t => t.Element is not null).Select(t => new ThingMark((float)t.X, (float)t.Y, t.Angle, t.Type, look.Radius(t.Type), look.Sprite(t.Type))).ToArray();
+        var things = f.Things.Where(t => t.Element is not null && !Hidden(t.Extra)).Select(t => new ThingMark((float)t.X, (float)t.Y, t.Angle, t.Type, look.Radius(t.Type), look.Sprite(t.Type))).ToArray();
         return new CanvasSnapshot(f.Version, mode, walls, areas, styles, [.. verts], things);
     }
 
@@ -115,13 +124,13 @@ internal sealed class CanvasSnapshot
     /// by floor height for Heights. Outlines run with their area on the right, so outer loops and
     /// holes wind opposite ways and many areas can share one non-zero path without a hole being filled.
     /// </summary>
-    private static (CellPaths Areas, AreaStyle[] Styles) BuildAreas(MapGeometry geometry, MapLook look, MapViewMode mode)
+    private static (CellPaths Areas, AreaStyle[] Styles) BuildAreas(MapGeometry geometry, MapLook look, MapViewMode mode, IReadOnlySet<string>? hidden)
     {
         var f = geometry.Frame;
         var sectors = new List<int>();
         for (var s = 0; s < f.Sectors.Count; s++)
         {
-            if (f.Sectors[s].Element is not null && geometry.LoopsAt(s).Count > 0) sectors.Add(s);
+            if (f.Sectors[s].Element is not null && geometry.LoopsAt(s).Count > 0 && !(hidden is { Count: > 0 } && Grouping.GroupIn(f.Sectors[s].Extra) is { } name && hidden.Contains(name))) sectors.Add(s);
         }
 
         var styles = new List<AreaStyle>();

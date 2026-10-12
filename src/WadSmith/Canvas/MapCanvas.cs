@@ -60,7 +60,7 @@ internal sealed class MapCanvas : Control
 
     private readonly LatestOnWorker<(EditorSession Session, CanvasSnapshot Picture)> _pictures;
     private readonly LatestOnWorker<(EditorSession Session, long Generation, SelectionOverlay Outline)> _outlines;
-    private readonly LatestOnWorker<(EditorSession Session, long Gesture, MoveSet Set)> _gathers;
+    private readonly LatestOnWorker<(EditorSession Session, long Gesture, MoveSet Set, string? Held)> _gathers;
     private readonly LatestOnWorker<(EditorSession Session, bool Add, IReadOnlyList<Element> Picked)> _boxes;
     private readonly LatestOnWorker<(EditorSession Session, FitMarks Marks)> _fits;
 
@@ -201,6 +201,14 @@ internal sealed class MapCanvas : Control
         _gathers = new(ViewModels.MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, Session) || r.Gesture != _moveGesture) return;
+            if (r.Held is { } held)
+            {
+                // Moving these would change a locked room: the drag stops before anything moves.
+                CancelMove();
+                r.Session.Tell(held == "a locked room" ? "That would change a locked room: unlock it first (with nothing selected, under Groups)." : $"That would change {held}, which is locked: unlock it first (with nothing selected, under Groups).");
+                return;
+            }
+
             _moveSet = r.Set;
             _moving = new HashSet<Vertex>(r.Set.Vertices, ReferenceEqualityComparer.Instance);
 
@@ -213,8 +221,10 @@ internal sealed class MapCanvas : Control
         _boxes = new(ViewModels.MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, Session)) return;
-            if (r.Add) r.Session.Selection.Set([.. r.Session.Selection.Items, .. r.Picked]);
-            else r.Session.Selection.Set([.. r.Picked]);
+            // Locked rooms and objects stay out of a box selection.
+            var picked = r.Picked.Where(e => !Grouping.Holds(r.Session.Geometry, e)).ToList();
+            if (r.Add) r.Session.Selection.Set([.. r.Session.Selection.Items, .. picked]);
+            else r.Session.Selection.Set([.. picked]);
         }, "a box selection");
         _fits = new(ViewModels.MainViewModel.PostToUi, r =>
         {
@@ -316,6 +326,7 @@ internal sealed class MapCanvas : Control
             old.GeometryChanged -= OnGeometryChanged;
             old.Selection.Changed -= OnSelectionChanged;
             old.MirrorChanged -= InvalidateVisual;
+            old.HiddenChanged -= RequestPicture;
         }
 
         _snapshot = null;
@@ -330,6 +341,7 @@ internal sealed class MapCanvas : Control
             s.GeometryChanged += OnGeometryChanged;
             s.Selection.Changed += OnSelectionChanged;
             s.MirrorChanged += InvalidateVisual;
+            s.HiddenChanged += RequestPicture;
             RequestPicture();
             RequestFit();
             OnSelectionChanged();
@@ -381,10 +393,11 @@ internal sealed class MapCanvas : Control
         var geometry = session.Geometry;
         var look = _look;
         var mode = Mode;
+        var hidden = new HashSet<string>(session.Hidden);
         _pictures.Request(() =>
         {
             var started = System.Diagnostics.Stopwatch.GetTimestamp();
-            var picture = CanvasSnapshot.Take(geometry, look, mode);
+            var picture = CanvasSnapshot.Take(geometry, look, mode, hidden);
             FrameStats.Snapshot(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             return (session, picture);
         });
@@ -595,7 +608,11 @@ internal sealed class MapCanvas : Control
         var geometry = session.Geometry;
         var seeds = MoveSet.Seeds.Of(session.Selection.Items);
         var gesture = _moveGesture;
-        _gathers.Request(() => (session, gesture, MoveSet.Gather(geometry, seeds)));
+        _gathers.Request(() =>
+        {
+            var set = MoveSet.Gather(geometry, seeds);
+            return (session, gesture, set, Grouping.HeldBy(geometry, set.Vertices));
+        });
         Cursor = new Cursor(StandardCursorType.SizeAll);
     }
 
@@ -1755,10 +1772,13 @@ internal sealed class MapCanvas : Control
         var geometry = Session.Geometry;
         var m = ToMap(p);
         var px = 7 / _zoom;
-        if (geometry.ThingNear(m, Math.Max(16, px)) is { } t) return t;
-        if (_zoom > 0.25 && geometry.VertexNear(m, px) is { } v) return v;
-        if (geometry.LineNear(m, px) is { } l) return l;
-        return geometry.SectorAt(m);
+
+        // Locked rooms and objects (and the walls and corners they hold) are not picked: clicks go through to what is free.
+        bool Free(Element e) => !Grouping.Holds(geometry, e) && !Grouping.Hides(geometry, e, Session.Hidden);
+        if (geometry.ThingNear(m, Math.Max(16, px)) is { } t && Free(t)) return t;
+        if (_zoom > 0.25 && geometry.VertexNear(m, px) is { } v && Free(v)) return v;
+        if (geometry.LineNear(m, px) is { } l && Free(l)) return l;
+        return geometry.SectorAt(m) is { } s && Free(s) ? s : null;
     }
 
     internal readonly record struct View(double Cx, double Cy, double Zoom, double Width, double Height)
