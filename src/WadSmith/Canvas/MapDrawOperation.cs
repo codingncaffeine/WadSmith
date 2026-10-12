@@ -180,7 +180,7 @@ internal sealed class SelectionOverlay
 /// A room being drawn: the rectangle between two corners in map units (null before the drag starts),
 /// the point the pointer snaps to, and the grid step it snaps to.
 /// </summary>
-internal sealed record DrawPreview(MapPoint? From, MapPoint? To, MapPoint? Snap, double Step, IReadOnlyList<MapPoint>? Corners = null, IReadOnlyList<MapPoint>? Round = null);
+internal sealed record DrawPreview(MapPoint? From, MapPoint? To, MapPoint? Snap, double Step, IReadOnlyList<MapPoint>? Corners = null, IReadOnlyList<MapPoint>? Round = null, IReadOnlyList<WadSmith.Editor.Editing.Guide>? Guides = null);
 
 /// <summary>
 /// What is being moved and by how much (or turned, resized or mirrored: <paramref name="Placement"/>): its
@@ -248,6 +248,7 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
     private static readonly SKColor PlayerStart = new(0x5F, 0xD3, 0x5F);
     private static readonly SKColor ThingColour = new(0xC9, 0xC2, 0xBC);
     private static readonly SKColor Misfit = new(0xE8, 0x4A, 0x4A);
+    private static readonly SKColor Guide = new(0xE0, 0x4F, 0xC8);
 
     /// <summary>Above this many walls on screen they are drawn one pixel wide.</summary>
     internal const int DenseWalls = 20_000;
@@ -411,6 +412,21 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
             }
 
             foreach (var c in corners) canvas.DrawRect(Sx(c.X) - 3, Sy(c.Y) - 3, 6, 6, dot);
+        }
+
+        // Smart guides: thin dashed lines from what the corner lines up with, a little past both ends.
+        if (preview.Guides is { Count: > 0 } guides)
+        {
+            using var guide = new SKPaint { Style = SKPaintStyle.Stroke, Color = Guide, StrokeWidth = 1, IsAntialias = true, PathEffect = SKPathEffect.CreateDash([4, 3], 0) };
+            foreach (var g in guides)
+            {
+                var (x0, y0, x1, y1) = (Sx(g.From.X), Sy(g.From.Y), Sx(g.To.X), Sy(g.To.Y));
+                var length = MathF.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
+                if (length < 1) continue;
+                var (ux, uy) = ((x1 - x0) / length * 14, (y1 - y0) / length * 14);
+                canvas.DrawLine(x0 - ux, y0 - uy, x1 + ux, y1 + uy, guide);
+                canvas.DrawCircle(x0, y0, 2.5f, guide);
+            }
         }
 
         if (preview.Snap is { } s)

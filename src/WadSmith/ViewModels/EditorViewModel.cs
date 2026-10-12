@@ -382,7 +382,7 @@ internal sealed partial class EditorViewModel : ObservableObject
     public void Corners((int Corners, double Side)? drawing)
     {
         _drawingText = drawing is { } d
-            ? string.Create(CultureInfo.InvariantCulture, $"{d.Corners} corner{(d.Corners == 1 ? "" : "s")}{(d.Side > 0 ? $" · this side {d.Side:0}" : "")} · click the first corner to close, or double-click or press Enter to finish (a line from wall to wall across a room splits it); Shift keeps sides straight, Backspace takes a corner back, Esc lets go")
+            ? string.Create(CultureInfo.InvariantCulture, $"{d.Corners} corner{(d.Corners == 1 ? "" : "s")}{(d.Side > 0 ? $" · this side {d.Side:0}" : "")} · click the first corner to close, or double-click or press Enter to finish (a line from wall to wall across a room splits it); Shift keeps sides to 15° steps, Backspace takes a corner back, Esc lets go")
             : "";
         UpdateStatus();
     }

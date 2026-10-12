@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -349,6 +349,52 @@ foreach (var pose in poses)
             var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
             view.FitMap();
             if (pose == "editor-zoomed") view.ZoomBy(3.5);
+            if (pose == "editor-guides")
+            {
+                // A room with corners off the grid (x 300 and 420) beside the starter room, then the Room tool corner by corner:
+                // the pointer near x 420 and y 0 lines up with both (two guides); then a side close to 45° settles on it.
+                var session = editor.Session;
+                session.DrawRoom([new(300, 100), new(300, 180), new(420, 180), new(420, 100)]);
+                Pump(1.0);
+                var plan = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
+                plan.FitTo([.. session.Map.Sectors.Where(s => s.OnMap)]);
+                plan.ZoomBy(0.7);
+                plan.PanBy(-120, 0);
+                Pump(0.5);
+                Avalonia.Point Spot(double x, double y) => plan.TranslatePoint(plan.ToScreen(new WadSmith.Editor.Geometry.MapPoint(x, y)), window)!.Value;
+                Console.WriteLine($"guides view: (640, 0) at {Spot(640, 0)}, plan {plan.Bounds.Width:0} wide");
+                plan.Focus();
+                Pump(0.1);
+                window.KeyPress(Avalonia.Input.Key.R, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.R, "r");
+                Pump(0.2);
+                void Click(double x, double y)
+                {
+                    window.MouseMove(Spot(x, y), Avalonia.Input.RawInputModifiers.None);
+                    window.MouseDown(Spot(x, y), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(Spot(x, y), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.2);
+                }
+
+                Click(640, 0);
+                window.MouseMove(Spot(422.5, 2), Avalonia.Input.RawInputModifiers.None);
+                Pump(0.4);
+                Console.WriteLine($"guides align: status '{editor.Status}'");
+                Save("editor-guides-align");
+                Click(422.5, 2);
+                window.MouseMove(Spot(520, -104), Avalonia.Input.RawInputModifiers.None);
+                Pump(0.4);
+                Save("editor-guides-45");
+                Click(520, -104);
+                Click(640, -100);
+                Click(640, 0);
+                Pump(1.0);
+                var room = session.Map.Sectors.Where(s => s.OnMap).Last();
+                var corners = session.Map.Lines.Where(l => l.OnMap && (ReferenceEquals(l.Front.Sector, room) || ReferenceEquals(l.Back?.Sector, room))).SelectMany(l => new[] { (l.Start.X, l.Start.Y), (l.End.X, l.End.Y) }).Distinct().OrderBy(c => c.X).ThenBy(c => c.Y);
+                Console.WriteLine($"guides room: {string.Join(" ", corners.Select(c => $"({c.X:0.#},{c.Y:0.#})"))}; undo '{session.History.UndoLabel}'");
+                Save("editor-guides");
+                break;
+            }
+
             if (pose == "editor-arrange")
             {
                 // Eight imps dropped about the starter room, all selected, "Arrange in a ring, facing in"; then one turned by

@@ -152,6 +152,9 @@ internal sealed class MapCanvas : Control
     private TransformEdit? _transformEdit;
     private bool _overGrip;
 
+    /// <summary>The smart guides shown while a room's corner is placed (map units).</summary>
+    private IReadOnlyList<Guide> _guides = [];
+
     /// <summary>An object being turned by its facing knob, the gesture its turns merge into, and whether the pointer is over the knob.</summary>
     private Thing? _turning;
     private long _turnGesture;
@@ -461,7 +464,7 @@ internal sealed class MapCanvas : Control
         if (_drawnIn >= 0 && _snapshot is { } shown && shown.Version >= _drawnIn) _drawnIn = -1;
         var (from, to) = _drawFrom is not null || _drawnIn < 0 ? (_drawFrom, _drawTo) : (_justDrawn.From, (MapPoint?)_justDrawn.To);
         var round = Tool == EditorTool.Room && _round && _corners.Count == 0 && _drawFrom is { } r0 && _drawTo is { } r1 && r0.X != r1.X && r0.Y != r1.Y ? Shapes.Ellipse(r0, r1, _sides) : null;
-        var preview = Tool is EditorTool.Room or EditorTool.Stairs || _drawnIn >= 0 ? new DrawPreview(_corners.Count > 0 ? null : from, _corners.Count > 0 ? null : to, Tool == EditorTool.Room ? _drawFrom is null || _corners.Count > 0 ? _snap : _drawTo : null, Tool == EditorTool.Room ? GridStep() : 0, _corners.Count > 0 ? [.. _corners] : null, round) : null;
+        var preview = Tool is EditorTool.Room or EditorTool.Stairs || _drawnIn >= 0 ? new DrawPreview(_corners.Count > 0 ? null : from, _corners.Count > 0 ? null : to, Tool == EditorTool.Room ? _drawFrom is null || _corners.Count > 0 ? _snap : _drawTo : null, Tool == EditorTool.Room ? GridStep() : 0, _corners.Count > 0 ? [.. _corners] : null, round, Tool == EditorTool.Room ? _guides : null) : null;
         MovePreview? move = null;
         if (_moveGesture != 0)
         {
@@ -928,6 +931,7 @@ internal sealed class MapCanvas : Control
 
     private void CancelDrawing()
     {
+        _guides = [];
         if (_drawFrom is null && _corners.Count == 0) return;
         _drawFrom = _drawTo = null;
         _corners.Clear();
@@ -941,13 +945,30 @@ internal sealed class MapCanvas : Control
     /// <summary>Where the next corner of a shape goes: snapped as usual, and with Shift along a 45° step from the last corner.</summary>
     private MapPoint NextCorner(Point p, bool straight)
     {
-        var at = SnapCorner(p);
-        if (!straight || _corners.Count == 0) return at;
-        var last = _corners[^1];
-        var (dx, dy) = (at.X - last.X, at.Y - last.Y);
-        var length = Math.Sqrt(dx * dx + dy * dy);
-        var angle = Math.Round(Math.Atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
-        return new MapPoint(Math.Round(last.X + Math.Cos(angle) * length), Math.Round(last.Y + Math.Sin(angle) * length));
+        // Back on the first corner closes the shape.
+        if (_corners.Count >= 3 && ToScreen(_corners[0]) is var first && Math.Abs(first.X - p.X) <= 8 && Math.Abs(first.Y - p.Y) <= 8)
+        {
+            _guides = [];
+            return _corners[0];
+        }
+
+        return Guided(p, SnapCorner(p), _corners.Count > 0 ? _corners[^1] : null, straight);
+    }
+
+    /// <summary>
+    /// Where a room's corner goes with the smart guides: lined up with corners nearby (the map's and the shape's own), a side at
+    /// a whole 45° from the corner before, or at 15° steps with Shift; a corner on one of the map's corners or on a wall stays.
+    /// </summary>
+    private MapPoint Guided(Point p, MapPoint snapped, MapPoint? previous, bool fifteen)
+    {
+        var m = ToMap(p);
+        var stays = Session?.Geometry.VertexNear(m, 8 / _zoom) is not null || snapped != Snap(p);
+        var reach = Math.Min(2048, 400 / _zoom);
+        var corners = new List<MapPoint>(_corners);
+        if (Session is { } s) corners.AddRange(s.Geometry.VerticesIn(m.X - reach, m.Y - reach, m.X + reach, m.Y + reach).Select(v => new MapPoint(v.X, v.Y)));
+        var (at, guides) = SmartGuides.Place(m, snapped, stays, corners, previous, 5 / _zoom, GridStep(), fifteen);
+        _guides = guides;
+        return at;
     }
 
     /// <summary>
@@ -963,6 +984,7 @@ internal sealed class MapCanvas : Control
 
         MapPoint[] shape = [.. _corners];
         _corners.Clear();
+        _guides = [];
         CornersChanged?.Invoke(null);
         if (open) session.FinishCorners(shape);
         else session.DrawRoom(shape);
@@ -1132,7 +1154,7 @@ internal sealed class MapCanvas : Control
             _drawPress = e.GetPosition(this);
             if (_corners.Count == 0)
             {
-                _drawFrom = _drawTo = Snap(_drawPress);
+                _drawFrom = _drawTo = Guided(_drawPress, Snap(_drawPress), null, false);
                 _round = (e.KeyModifiers & KeyModifiers.Control) != 0;
                 Drawing?.Invoke((0, 0), GridStep());
             }
@@ -1279,7 +1301,7 @@ internal sealed class MapCanvas : Control
         if (Tool == EditorTool.Room)
         {
             var straight = (e.KeyModifiers & KeyModifiers.Shift) != 0;
-            var at = _corners.Count > 0 ? NextCorner(p, straight) : Snap(p);
+            var at = _corners.Count > 0 ? NextCorner(p, straight) : Guided(p, Snap(p), null, false);
             if (_drawFrom is { } from2 && _corners.Count == 0)
             {
                 _drawTo = at;
@@ -1435,7 +1457,7 @@ internal sealed class MapCanvas : Control
         // A click (no drag) puts a corner of a shape drawn corner by corner; the first corner again closes it.
         if (!dragged || _corners.Count > 0 || a0 is not { } a || b0 is not { } b || Math.Abs(b.X - a.X) < 1 || Math.Abs(b.Y - a.Y) < 1)
         {
-            var corner = _corners.Count > 0 ? NextCorner(released, (e.KeyModifiers & KeyModifiers.Shift) != 0) : SnapCorner(released);
+            var corner = _corners.Count > 0 ? NextCorner(released, (e.KeyModifiers & KeyModifiers.Shift) != 0) : Guided(released, SnapCorner(released), null, false);
             if (_corners.Count >= 3 && corner.DistanceTo(_corners[0]) < 1e-6)
             {
                 CloseCorners();
