@@ -1,8 +1,9 @@
 version "4.6"
 
-// Uses every wall that opens a door (a door action naming no tag) as the player would, one at a
-// time: notes the door's ceiling, uses the wall from its front, reads the ceiling 2 seconds later,
-// then waits for the door to close before the next. WadSmith checks the doors it makes with this.
+// Uses every wall that opens a door (a door action naming no tag) or lowers a lift (by tag, or the
+// area behind with none) as the player would, one at a time: notes the area's ceiling or floor,
+// uses the wall from its front, reads it again 2 seconds later, then waits for the door to close or
+// the lift to come back before the next. WadSmith checks the doors and lifts it makes with this.
 class WadSmithDoorCheck : StaticEventHandler
 {
 	Array<int> openers;
@@ -11,6 +12,19 @@ class WadSmithDoorCheck : StaticEventHandler
 	int since;
 	double closed;
 	bool used;
+	Sector target;
+
+	static bool IsLift(Line l) { return l.special == 62 || l.special == 206; }
+
+	// The area a wall works on: by its tag, or the area behind it when it names none.
+	static Sector TargetOf(Line l)
+	{
+		if (l.args[0] == 0) return l.backsector;
+		let it = level.CreateSectorTagIterator(l.args[0]);
+		int s = it.Next();
+		if (s < 0) return null;
+		return level.Sectors[s];
+	}
 
 	override void WorldLoaded(WorldEvent e)
 	{
@@ -19,6 +33,7 @@ class WadSmithDoorCheck : StaticEventHandler
 		{
 			Line l = level.Lines[i];
 			if ((l.special == 11 || l.special == 12 || l.special == 13) && l.args[0] == 0 && l.backsector) openers.Push(i);
+			else if (IsLift(l) && TargetOf(l)) openers.Push(i);
 		}
 
 		Console.Printf("WSDOOR BEGIN %s %d", level.MapName, openers.Size());
@@ -26,6 +41,16 @@ class WadSmithDoorCheck : StaticEventHandler
 
 	override void WorldTick()
 	{
+		// Every key the game has, so locked doors are tried as doors.
+		if (level.maptime == 5)
+		{
+			for (int i = 0; i < AllActorClasses.Size(); i++)
+			{
+				let k = (class<Key>)(AllActorClasses[i]);
+				if (k && k != "Key") players[consoleplayer].mo.GiveInventory(k, 1);
+			}
+		}
+
 		if (level.maptime < 10 || next > openers.Size()) return;
 		if (next == openers.Size())
 		{
@@ -35,21 +60,25 @@ class WadSmithDoorCheck : StaticEventHandler
 		}
 
 		Line l = level.Lines[openers[next]];
-		Sector door = l.backsector;
+		bool lift = IsLift(l);
 		since++;
 		if (phase == 0)
 		{
-			closed = door.CenterCeiling();
-			used = l.Activate(players[consoleplayer].mo, Line.front, SPAC_Use);
+			// Walked-across lift lines are set off by crossing, switches and doors by use.
+			target = TargetOf(l);
+			closed = lift ? target.CenterFloor() : target.CenterCeiling();
+			used = l.Activate(players[consoleplayer].mo, Line.front, (l.activation & SPAC_Use) ? SPAC_Use : SPAC_Cross);
 			phase = 1;
 			since = 0;
 		}
 		else if (phase == 1 && since >= 70)
 		{
-			Console.Printf("WSDOOR %d %d %.1f %.1f %.1f %d", openers[next], door.Index(), door.CenterFloor(), closed, door.CenterCeiling(), used);
+			if (lift) Console.Printf("WSLIFT %d %d %.1f %.1f %d", openers[next], target.Index(), closed, target.CenterFloor(), used);
+			else Console.Printf("WSDOOR %d %d %.1f %.1f %.1f %d", openers[next], target.Index(), target.CenterFloor(), closed, target.CenterCeiling(), used);
 			phase = 2;
 		}
-		else if (phase == 2 && (door.CenterCeiling() <= closed + 0.5 || since > 700))
+		// Doors that stay open (Door_Open, or locked with no delay) do not close: on to the next wall at once.
+		else if (phase == 2 && ((!lift && (l.special == 11 || (l.special == 13 && l.args[2] == 0))) || (lift ? target.CenterFloor() >= closed - 0.5 : target.CenterCeiling() <= closed + 0.5) || since > 700))
 		{
 			next++;
 			phase = 0;

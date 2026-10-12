@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Session script for nested.sh: starts GZDoom with the door check add-on on one map, waits for the
-# check to finish (or 90 seconds), then stops the engine. GZDoom gets its own HOME inside the work
+# check to finish (or about 14 minutes: a map with many doors takes a while), then stops the engine. GZDoom gets its own HOME inside the work
 # folder and runs with no sound or music.
 #
 # Environment (set by tools/engine/door-check.sh): WADSMITH_NESTED_WORK, WS_ENGINE, WS_IWAD, WS_MAP,
@@ -15,7 +15,7 @@ while IFS= read -r f; do [ -n "$f" ] && ARGS+=(-file "$f"); done <<< "${WS_FILES
 ARGS+=(+map "$WS_MAP" -nosound -nomusic -config "$HOME/gzdoom.ini" +logfile "$LOG" +queryiwad 0 +vid_fullscreen 0)
 "$WS_ENGINE" "${ARGS[@]}" > "$WORK/engine-stdout-doors.txt" 2>&1 &
 PID=$!
-for _ in $(seq 1 180); do
+for _ in $(seq 1 1700); do
   if [ -f "$LOG" ] && command grep -q "WSDOOR END" "$LOG"; then break; fi
   if ! kill -0 "$PID" 2>/dev/null; then break; fi
   sleep 0.5

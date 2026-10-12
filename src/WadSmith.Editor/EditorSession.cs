@@ -191,6 +191,21 @@ public sealed class EditorSession : IDisposable
         return thing;
     }
 
+    /// <summary>Makes a room a lift (see <see cref="Lifts.Make"/>), one undo step; says why when it cannot.</summary>
+    public void MakeLift(Sector area)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => MakeLift(area);
+            return;
+        }
+
+        string? why = null;
+        var geometry = _geometry;
+        History.Record("Make a lift", e => why = Lifts.Make(e, geometry, area));
+        if (why is not null) Notice?.Invoke(why);
+    }
+
     /// <summary>Makes a door in a wall between two rooms (see <see cref="Doors.Make"/>), one undo step, and selects it; says why when it cannot.</summary>
     public void MakeDoor(Line wall)
     {

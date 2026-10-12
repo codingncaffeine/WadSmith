@@ -29,19 +29,7 @@ public sealed record Door(Sector Area, IReadOnlyList<Line> Openers, DoorSettings
     public IEnumerable<Line> Own => Openers.Where(l => l.Args[0] == 0);
 
     /// <summary>How the walls elsewhere set it off, in words: "a switch", "2 lines walked over", "a wall shot".</summary>
-    public IEnumerable<string> RemoteWays()
-    {
-        static string Count(int n, string one, string many) => n == 1 ? one : $"{n} {many}";
-        var remote = Remote.ToList();
-        var used = remote.Count(l => l.Flag("playeruse"));
-        var crossed = remote.Count(l => !l.Flag("playeruse") && (l.Flag("playercross") || l.Flag("monstercross")));
-        var shot = remote.Count(l => !l.Flag("playeruse") && !l.Flag("playercross") && l.Flag("impact"));
-        var other = remote.Count - used - crossed - shot;
-        if (used > 0) yield return Count(used, "a switch", "switches");
-        if (crossed > 0) yield return Count(crossed, "a line walked over", "lines walked over");
-        if (shot > 0) yield return Count(shot, "a wall shot", "walls shot");
-        if (other > 0) yield return Count(other, "another wall", "other walls");
-    }
+    public IEnumerable<string> RemoteWays() => Triggers.Ways([.. Remote]);
 
     /// <summary>Whether the door is open as the map starts (its ceiling above its floor).</summary>
     public bool StartsOpen => Area.CeilingHeight > Area.FloorHeight;

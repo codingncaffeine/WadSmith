@@ -213,7 +213,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
-        [Sector s] => Doors.Recognise(_session.Geometry, s) is not null ? "door" : "room",
+        [Sector s] => Doors.Recognise(_session.Geometry, s) is not null ? "door" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : "room",
         [Line l] => Exits.IsExit(l) ? "exit" : l.Special == 0 ? "wall" : "wall with an action",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
         [var one] => one.GetType().Name,
@@ -284,10 +284,19 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Rows.Add(new HeadingRow("ITS AREA"));
                 AddSector(s);
                 break;
+            case Sector s when Lifts.Recognise(_session.Geometry, s) is not null:
+                Heading = "Lift";
+                _summaryOf = () => Lifts.Recognise(_session.Geometry, s) is { } lift ? Describe(lift) : "No longer a lift.";
+                Summary = _summaryOf();
+                AddLift(s);
+                Rows.Add(new HeadingRow("ITS AREA"));
+                AddSector(s);
+                break;
             case Sector s:
                 Heading = "Room area";
                 Summary = "Its floor, ceiling and light.";
                 AddSector(s);
+                Rows.Add(new ActionRow("Make it a lift", "Its floor goes down to the lowest floor beside it when the player uses a wall from below or walks onto it, waits 3 seconds and comes back up (Plat_DownWaitUpStayLip).", () => _session.MakeLift(s)));
                 break;
             case Line l when Exits.IsExit(l):
                 Heading = l.Flag("playeruse") ? "Exit switch" : l.Flag("playercross") ? "Exit line" : "Exit";
@@ -381,6 +390,35 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new FlagRow("Counts as a secret", "Finding this area counts toward the secrets at the end of the map (sector type 1024).", () => (s.Special & 1024) != 0, on => Set(s, on ? "Make a secret" : "Unmake a secret", e => e.Special, (e, x) => e.Special = x, on ? s.Special | 1024 : s.Special & ~1024)));
         Rows.Add(new InfoRow("Effect", "What the area does to the player or its light (sector type).", () => (s.Special & ~1024) == 0 ? "None" : (s.Special & ~1024).ToString(CultureInfo.InvariantCulture)));
         Rows.Add(new NumberRow("Tag", "A number that links a switch or trigger to this area (sector tag, id).", () => s.Tag, v => Set(s, "Change tag", e => e.Tag, (e, x) => e.Tag = x, (int)v), 1, 0, 65535));
+    }
+
+    private static string Describe(Lift lift)
+    {
+        var ways = string.Join(", ", Triggers.Ways(lift.Triggers));
+        var wait = string.Create(CultureInfo.InvariantCulture, $"{lift.Settings.Delay / 35.0:0.#} s");
+        return string.Create(CultureInfo.InvariantCulture, $"Goes down to {lift.GoesDownTo:0} when set off from {ways}{(lift.Monsters ? " (monsters too)" : "")}, waits {wait} and comes back up.");
+    }
+
+    /// <summary>A lift's settings, each one undoable change to every wall that sets it off.</summary>
+    private void AddLift(Sector area)
+    {
+        Lift? Now() => Lifts.Recognise(_session.Geometry, area);
+        void Change(Func<Lift, (LiftSettings Settings, bool Monsters)> to, string label)
+        {
+            if (Now() is not { } lift) return;
+            var (settings, monsters) = to(lift);
+            _session.History.Record(label, e => Lifts.Change(e, lift, settings, monsters));
+        }
+
+        Rows.Add(new ChoiceRow("Speed", "How fast it goes down and up: Doom's normal lifts or its fast ones (lift speed).", ["Normal", "Fast"],
+            () => Now()?.Settings.Fast == true ? 1 : 0,
+            v => Change(l => (l.Settings with { Fast = v == 1 }, l.Monsters), "Change lift speed")));
+        Rows.Add(new NumberRow("Waits down for", "Seconds it stays down before coming back up (delay, in 35ths of a second).", () => Now() is { } l ? Math.Round((decimal)l.Settings.Delay / 35, 1) : 0,
+            v => Change(l => (l.Settings with { Delay = (int)Math.Round(v * 35) }, l.Monsters), "Change how long the lift waits"), 0.5m, 0, 60, () => "seconds"));
+        Rows.Add(new FlagRow("Monsters set it off too", "Monsters can ride it down (monsteruse, monstercross).", () => Now()?.Monsters == true,
+            on => Change(l => (l.Settings, on), on ? "Let monsters use the lift" : "Keep monsters off the lift")));
+        Rows.Add(new InfoRow("Goes down to", "The lowest floor beside it, as the game does it.", () => Now() is { } l ? string.Create(CultureInfo.InvariantCulture, $"{l.GoesDownTo:0}, {area.FloorHeight - l.GoesDownTo:0} down") : "—"));
+        Rows.Add(new InfoRow("Set off from", "The walls that set it off: switches used from below, lines walked across at the top.", () => Now() is { } l ? string.Join(", ", Triggers.Ways(l.Triggers)) : "—"));
     }
 
     /// <summary>An exit's settings: where it goes, and taking it away.</summary>

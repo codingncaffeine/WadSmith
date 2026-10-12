@@ -60,8 +60,17 @@ public sealed class MapGeometry
             if (l.Element is null || l.Special == 0 || l.Args[0] == 0) continue;
             if (!_byFirstArg.TryGetValue(l.Args[0], out var list)) _byFirstArg[l.Args[0]] = list = [];
             list.Add(i);
+            HighestTag = Math.Max(HighestTag, l.Args[0]);
+        }
+
+        foreach (var s in frame.Sectors)
+        {
+            if (s.Element is not null) HighestTag = Math.Max(HighestTag, s.Tag);
         }
     }
+
+    /// <summary>The highest tag any area has or any wall's action names (a new tag above it is free).</summary>
+    public int HighestTag { get; }
 
     /// <summary>The places of the walls whose action's first argument is <paramref name="tag"/> (the walls that work on that tag, for most actions).</summary>
     public IReadOnlyList<int> LinesNaming(int tag) => tag != 0 && _byFirstArg.TryGetValue(tag, out var list) ? list : [];
