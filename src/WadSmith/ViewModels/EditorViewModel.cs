@@ -53,6 +53,9 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     public InspectorViewModel Inspector { get; }
 
+    /// <summary>Opens Preferences over the window.</summary>
+    public IRelayCommand OpenPreferencesCommand => _main.OpenPreferencesCommand;
+
     /// <summary>The kept copies of the map, newest first, while the Versions panel is open.</summary>
     public ObservableCollection<VersionItem> Versions { get; } = [];
 

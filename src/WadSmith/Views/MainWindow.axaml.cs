@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using WadSmith.App.ViewModels;
 
 namespace WadSmith.App.Views;
@@ -17,6 +18,12 @@ public partial class MainWindow : Window
         WindowFrame.Drags(this, TitleBar);
         DataContextChanged += (_, _) =>
         {
+            if (DataContext is MainViewModel main)
+            {
+                main.PickFolder = PickFolderAsync;
+                main.LargeInterfaceChanged += ApplyScale;
+            }
+
             // The desktop's own title bar for those who prefer it.
             if (DataContext is MainViewModel { Services.Settings.Current.UseSystemTitleBar: true })
             {
@@ -26,6 +33,13 @@ public partial class MainWindow : Window
                 Frame.BorderThickness = new Avalonia.Thickness(0);
             }
         };
+    }
+
+    private async Task<string?> PickFolderAsync(string title)
+    {
+        if (StorageProvider is not { CanPickFolder: true } storage) return null;
+        var picked = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = title, AllowMultiple = false }).ConfigureAwait(true);
+        return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }
 
     private void OnMinimize(object? sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;

@@ -232,6 +232,17 @@ foreach (var pose in poses)
         case "welcome":
             Save("welcome");
             break;
+        case "preferences":
+            vm.OpenPreferencesCommand.Execute(null);
+            Pump(0.3);
+            Save("preferences");
+            vm.Preferences!.LargeInterface = true;
+            Pump(0.3);
+            Save("preferences-large");
+            vm.Preferences!.LargeInterface = false;
+            vm.Preferences!.CloseCommand.Execute(null);
+            Pump(0.2);
+            break;
         case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions":
             if (vm.Page is not EditorViewModel)
             {

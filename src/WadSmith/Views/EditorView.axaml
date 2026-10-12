@@ -38,6 +38,8 @@
                     <Button Classes="metal" Content="Redo" Command="{Binding RedoCommand}" ToolTip.Tip="{Binding RedoTip}" />
                     <Button Classes="metal" Content="Keep a version" Command="{Binding KeepVersionCommand}"
                             ToolTip.Tip="Keeps a copy of the map as it is now, with a picture, in the project's versions." />
+                    <Button Classes="metal" Content="Preferences" Command="{Binding OpenPreferencesCommand}"
+                            ToolTip.Tip="Larger text, tips, the title bar and where your games are (Ctrl+,)." />
                 </StackPanel>
             </Grid>
         </Border>

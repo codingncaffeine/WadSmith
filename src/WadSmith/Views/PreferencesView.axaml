@@ -1,0 +1,58 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WadSmith.App.ViewModels"
+             x:Class="WadSmith.App.Views.PreferencesView"
+             x:DataType="vm:PreferencesViewModel">
+
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Escape" Command="{Binding CloseCommand}" />
+    </UserControl.KeyBindings>
+
+    <Border Classes="card" Width="600" Padding="26,22" MaxHeight="640">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <TextBlock Classes="title" FontSize="24" Text="Preferences" Margin="0,0,0,14" />
+            <ScrollViewer Grid.Row="1">
+                <StackPanel Spacing="12">
+                    <CheckBox Content="Larger text and controls" IsChecked="{Binding LargeInterface}"
+                              ToolTip.Tip="Makes everything a quarter bigger: easier to read on a small or far-away screen, such as a handheld or a TV." />
+
+                    <StackPanel Spacing="4">
+                        <CheckBox Content="Show tips in the status bar" IsChecked="{Binding CoachTips}"
+                                  ToolTip.Tip="A short tip at the bottom of the editor about the next thing worth trying. Each one stops once you have done what it teaches." />
+                        <StackPanel Orientation="Horizontal" Spacing="10" Margin="28,0,0,0">
+                            <Button Classes="metal" Content="Show the tips again" Command="{Binding ShowTipsAgainCommand}"
+                                    ToolTip.Tip="Starts the tips again from the first one." />
+                            <TextBlock Text="{Binding TipsNote}" Classes="secondary" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Spacing="2">
+                        <CheckBox Content="Use the desktop's own title bar" IsChecked="{Binding UseSystemTitleBar}"
+                                  ToolTip.Tip="Your desktop draws the window's title bar and its buttons instead of WadSmith." />
+                        <TextBlock Text="Takes effect the next time WadSmith starts." Classes="secondary" FontSize="12" Margin="28,0,0,0" />
+                    </StackPanel>
+
+                    <TextBlock Classes="section" Text="GAME FOLDERS" Margin="0,12,0,0" />
+                    <TextBlock Classes="secondary" TextWrapping="Wrap"
+                               Text="WadSmith looks in the usual places by itself (Steam, GOG, your games folder). Add a folder here when your games are somewhere else." />
+                    <ItemsControl ItemsSource="{Binding GameFolders}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:GameFolderRow">
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+                                    <TextBlock Text="{Binding Folder}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Folder}" />
+                                    <Button Grid.Column="1" Classes="metal" Content="Remove" Margin="10,0,0,0"
+                                            Command="{Binding $parent[UserControl].((vm:PreferencesViewModel)DataContext).RemoveFolderCommand}" CommandParameter="{Binding}"
+                                            ToolTip.Tip="WadSmith stops looking in this folder. The games in it are not touched." />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Classes="metal" Content="Add a folder…" Command="{Binding AddFolderCommand}" HorizontalAlignment="Left"
+                            ToolTip.Tip="Tell WadSmith about a folder that holds your games." />
+                </StackPanel>
+            </ScrollViewer>
+            <Button Grid.Row="2" x:Name="Done" Classes="primary" Content="Done" Command="{Binding CloseCommand}" HorizontalAlignment="Right" Margin="0,18,0,0"
+                    ToolTip.Tip="Close Preferences. Every change is already saved." />
+        </Grid>
+    </Border>
+</UserControl>

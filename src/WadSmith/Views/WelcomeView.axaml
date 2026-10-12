@@ -5,13 +5,17 @@
              x:DataType="vm:WelcomeViewModel">
     <ScrollViewer>
         <StackPanel MaxWidth="1180" Margin="40,32,40,40" Spacing="6">
-            <StackPanel Orientation="Horizontal" Spacing="18">
-                <Image Source="/Assets/icon.png" Width="84" Height="84" />
-                <StackPanel VerticalAlignment="Center" Spacing="2">
-                    <TextBlock Classes="title" Text="WadSmith" />
-                    <TextBlock Classes="secondary" FontSize="15" Text="Build maps for the games you love, then play them in GZDoom." />
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="18">
+                    <Image Source="/Assets/icon.png" Width="84" Height="84" />
+                    <StackPanel VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Classes="title" Text="WadSmith" />
+                        <TextBlock Classes="secondary" FontSize="15" Text="Build maps for the games you love, then play them in GZDoom." />
+                    </StackPanel>
                 </StackPanel>
-            </StackPanel>
+                <Button Grid.Column="1" Classes="metal" Content="Preferences" Command="{Binding OpenPreferencesCommand}" VerticalAlignment="Top"
+                        ToolTip.Tip="Larger text, tips, the title bar and where your games are (Ctrl+,)." />
+            </Grid>
 
             <TextBlock Classes="section" Text="YOUR GAMES" Margin="0,24,0,4" />
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">

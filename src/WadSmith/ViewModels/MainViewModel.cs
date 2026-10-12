@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using WadSmith.Core.Projects;
 using WadSmith.Editor;
 using WadSmith.Editor.App;
@@ -27,6 +28,25 @@ internal sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private string _title = "WadSmith";
+
+    /// <summary>Preferences while they are open, shown over the page; null when closed.</summary>
+    [ObservableProperty]
+    private PreferencesViewModel? _preferences;
+
+    /// <summary>Asks the user for a folder (set by the window).</summary>
+    public Func<string, Task<string?>>? PickFolder { get; set; }
+
+    /// <summary>Raised when the Large interface preference changes, so the window rescales at once.</summary>
+    public event Action<bool>? LargeInterfaceChanged;
+
+    [RelayCommand]
+    private void OpenPreferences()
+    {
+        if (Preferences is not null) return;
+        var prefs = new PreferencesViewModel(Services, () => Preferences = null, large => LargeInterfaceChanged?.Invoke(large)) { PickFolder = PickFolder };
+        prefs.FoldersChanged += () => _ = Welcome.RescanAsync();
+        Preferences = prefs;
+    }
 
     /// <summary>Runs an action on the UI thread (what sessions use to report back).</summary>
     public static void PostToUi(Action action) => Avalonia.Threading.Dispatcher.UIThread.Post(action);

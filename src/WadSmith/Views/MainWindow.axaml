@@ -10,9 +10,14 @@
         ExtendClientAreaToDecorationsHint="True"
         WindowDecorations="None">
 
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding OpenPreferencesCommand}" />
+    </Window.KeyBindings>
+
     <Window.DataTemplates>
         <DataTemplate DataType="vm:WelcomeViewModel"><views:WelcomeView /></DataTemplate>
         <DataTemplate DataType="vm:EditorViewModel"><views:EditorView /></DataTemplate>
+        <DataTemplate DataType="vm:PreferencesViewModel"><views:PreferencesView /></DataTemplate>
     </Window.DataTemplates>
 
     <Border BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Name="Frame">
@@ -40,7 +45,13 @@
                         </StackPanel>
                     </Grid>
                 </Border>
-                <ContentControl Grid.Row="1" Content="{Binding Page}" />
+                <Panel Grid.Row="1">
+                    <ContentControl Content="{Binding Page}" />
+                    <!-- Preferences: a sheet over whatever page is open. -->
+                    <Border Background="#B8050304" IsVisible="{Binding Preferences, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <ContentControl Content="{Binding Preferences}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </Panel>
             </Grid>
         </LayoutTransformControl>
     </Border>

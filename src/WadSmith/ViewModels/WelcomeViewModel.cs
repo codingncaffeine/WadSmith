@@ -92,6 +92,12 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         foreach (var r in _services.Settings.Current.Recent.Where(r => File.Exists(Path.Combine(r, Project.SidecarName)))) Recent.Add(new RecentProject(r));
     }
 
+    /// <summary>Looks for the games again (after the game folders changed).</summary>
+    public Task RescanAsync() => ScanAsync();
+
+    /// <summary>Opens Preferences over the window.</summary>
+    public IRelayCommand OpenPreferencesCommand => _main.OpenPreferencesCommand;
+
     private async Task ScanAsync()
     {
         Scanning = true;
