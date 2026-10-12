@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark" or "landmark-sheet":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -1039,6 +1039,32 @@ foreach (var pose in poses)
                 Pump(1.0);
                 Console.WriteLine($"landmark: back on {((WadSmith.App.ViewModels.EditorViewModel)vm.Page!).Session.Project.Info.Name}, same editor {ReferenceEquals(vm.Page, editor)}");
                 Save("editor-landmark-back");
+                break;
+            }
+
+            if (pose == "landmark-sheet")
+            {
+                // Every landmark (D28) of the games found, opened as the editor opens it, one picture each: the eyeball pass
+                // of the phase proof. Pictures are named game-map-kind.
+                var services = WadSmith.App.App.Services!;
+                foreach (var l in WadSmith.Editor.Smart.Landmarks.All)
+                {
+                    if ((services.Games ?? []).FirstOrDefault(g => WadSmith.Editor.Smart.Landmarks.IndexId(g.Game.Id) == l.Game && !g.Game.Id.EndsWith("-shareware", StringComparison.Ordinal)) is not { } game) continue;
+                    var opening = vm.PeekAsync(l, game, editor);
+                    while (!opening.IsCompleted) Pump(0.05);
+                    Pump(1.5);
+                    if (vm.Page is WadSmith.App.ViewModels.EditorViewModel { Peek: not null } peek)
+                    {
+                        Save($"landmark-{l.Game}-{l.Map}-{l.Kind.Replace(' ', '-')}");
+                        vm.BackFromPeek(peek);
+                        Pump(0.2);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"landmark-sheet: {l.Game} {l.Map} {l.Kind} did not open");
+                    }
+                }
+
                 break;
             }
 

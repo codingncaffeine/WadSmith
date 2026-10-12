@@ -52,6 +52,7 @@ internal sealed class View3D : Control
     private readonly LatestOnWorker<(float[] Surfaces, Dictionary<int, float[]> Sprites)> _tints;
     private readonly LatestOnWorker<(EditorSession Session, Editor.Model.Element? Hit, bool Toggle)> _picks;
     private readonly LatestOnWorker<(EditorSession Session, MapScene Scene, SceneHit? Hit, ViewModels.ShelfDrop? Drop, bool Apply, bool Shift)> _hovers;
+    private readonly LatestOnWorker<(EditorSession Session, MapScene Scene, double Yaw, double Pitch)> _looks;
     private SceneHit? _hover;
     private Point? _lastPointer;
 
@@ -103,6 +104,12 @@ internal sealed class View3D : Control
             if (_lastPointer is { } p && _dragFrom is null) RequestHover(p);
         }, "the 3D scene");
         _tints = new(ViewModels.MainViewModel.PostToUi, t => _renderer?.Highlight(t), "the 3D selection");
+        _looks = new(ViewModels.MainViewModel.PostToUi, r =>
+        {
+            if (!ReferenceEquals(r.Session, Session) || !ReferenceEquals(r.Scene, _scene)) return;
+            (_yaw, _pitch) = (r.Yaw, r.Pitch);
+            SendCamera();
+        }, "a clear view of a landmark");
         _hovers = new(ViewModels.MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, Session) || !ReferenceEquals(r.Scene, _scene)) return;
@@ -444,6 +451,34 @@ internal sealed class View3D : Control
         if (_scene is not null) Frame();
     }
 
+    /// <summary>
+    /// Turns the orbit camera to an angle from which nothing stands between it and the spot it turns round, tried on a
+    /// worker (each try is a ray through the whole scene): a few headings at three heights, steeper last; straight down
+    /// when every one is blocked. A hit within 64 of the spot counts as clear, so a closed door shows its own face.
+    /// </summary>
+    private void RequestClearView()
+    {
+        if (Session is not { } session || _scene is not { } scene) return;
+        var (tx, ty, tz, distance) = (_tx, _ty, _tz, _distance);
+        _looks.Request(() =>
+        {
+            foreach (var pitch in (double[])[-30, -45, -60])
+            {
+                foreach (var yaw in (double[])[50, 140, 230, 320, 95, 185, 275, 5])
+                {
+                    var eye = Camera3D.Orbit(tx, ty, tz, yaw, pitch, distance);
+                    var (dx, dy, dz) = (tx - eye.X, ty - eye.Y, tz - eye.Z);
+                    var length = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                    if (length < 1) return (session, scene, yaw, pitch);
+                    var hit = scene.Hit((eye.X, eye.Y, eye.Z), (dx / length, dy / length, dz / length), yaw);
+                    if (hit is null || hit.Value.Distance >= length - 64) return (session, scene, yaw, pitch);
+                }
+            }
+
+            return (session, scene, 50.0, -85.0);
+        });
+    }
+
     /// <summary>Turns to look at the whole map from above and to the south-west.</summary>
     public void Frame()
     {
@@ -452,6 +487,7 @@ internal sealed class View3D : Control
         {
             _focus = null;
             LookAt(f.At, (Session?.Geometry.AreaAt(f.At)?.FloorHeight ?? 0) + 48, f.Span);
+            RequestClearView();
             return;
         }
 
