@@ -319,6 +319,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             Summary = string.Join(", ", items.GroupBy(i => Name(i)).Select(g => $"{g.Count()} {g.Key.ToLowerInvariant()}{(g.Count() > 1 ? "s" : "")}"));
             Rows.Add(new ActionRow("Save as a prefab", "Keeps a copy of the selected rooms and things in this project, under Objects, Prefabs, to drag onto any of its maps.", _session.SavePrefab));
             if (items.All(i => i is Sector)) Rows.Add(new ActionRow("Join them into one room", "The rooms become the first one you selected: the walls between them go, and its floor, ceiling and light hold for all of it (J).", _session.JoinRooms));
+            if (items.OfType<Sector>().Where(r => r.OnMap).ToList() is { Count: >= 2 } rooms) AddHeights(rooms);
             AddShaping();
             if (items.OfType<Thing>().Where(t => t.OnMap).ToList() is { Count: >= 2 } things) AddArranging(things);
             AddGrouping(items);
@@ -546,6 +547,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new NumberRow("Floor height", "How high the floor is, in map units (heightfloor). The player steps up 24 at most.", () => (decimal)s.FloorHeight, v => Set(s, "Change floor height", e => e.FloorHeight, (e, x) => e.FloorHeight = x, (double)v), 8));
         Rows.Add(new NumberRow("Ceiling height", "How high the ceiling is (heightceiling). The player is 56 tall.", () => (decimal)s.CeilingHeight, v => Set(s, "Change ceiling height", e => e.CeilingHeight, (e, x) => e.CeilingHeight = x, (double)v), 8, hint: Players));
         Rows.Add(new NumberRow("Brightness", "0 is dark, 255 full light (lightlevel). Doom's rooms are usually around 160.", () => s.Light, v => Set(s, "Change brightness", e => e.Light, (e, x) => e.Light = x, (int)v), 16, 0, 255));
+        AddMatchNeighbour(s);
         Rows.Add(new TextRow("Floor texture", "The picture on the floor (texturefloor).", () => s.FloorTexture, v => Set(s, "Change floor texture", e => e.FloorTexture, (e, x) => e.FloorTexture = x, v)));
         Rows.Add(new TextRow("Ceiling texture", "The picture on the ceiling (textureceiling).", () => s.CeilingTexture, v => Set(s, "Change ceiling texture", e => e.CeilingTexture, (e, x) => e.CeilingTexture = x, v)));
         AddFlatPlacement(s, ceiling: false);
@@ -725,6 +727,54 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 e.Field(s, "yscale" + part, Math.Abs(scale - 1) < 1e-9 ? (Core.Maps.Udmf.UdmfValue?)null : Core.Maps.Udmf.UdmfValue.Float(scale));
             });
         }, 25, 1, 6400));
+    }
+
+    /// <summary>
+    /// Heights of several rooms at once: each value as theirs when they share it (the lowest otherwise, with their range
+    /// shown), set for all; and raising them all together by an amount (one undo step either way).
+    /// </summary>
+    private void AddHeights(List<Sector> rooms)
+    {
+        Rows.Add(new HeadingRow("HEIGHTS"));
+        string Range(Func<Sector, double> get) => rooms.Select(get).Distinct().Count() == 1 ? "" : string.Create(CultureInfo.InvariantCulture, $"they differ: {rooms.Min(get):0} to {rooms.Max(get):0}");
+        void All(string label, Action<StructureEdit, Sector> set) => _session.History.Record(label, e =>
+        {
+            foreach (var r in rooms.Where(r => r.OnMap)) set(e, r);
+        });
+        Rows.Add(new NumberRow("Floors at", "Sets every selected room's floor to this height.", () => (decimal)rooms.Min(r => r.FloorHeight), v => All("Change floor heights", (e, r) => e.Set(r, x => x.FloorHeight, (x, h) => x.FloorHeight = h, (double)v)), 8, hint: () => Range(r => r.FloorHeight)));
+        Rows.Add(new NumberRow("Ceilings at", "Sets every selected room's ceiling to this height.", () => (decimal)rooms.Min(r => r.CeilingHeight), v => All("Change ceiling heights", (e, r) => e.Set(r, x => x.CeilingHeight, (x, h) => x.CeilingHeight = h, (double)v)), 8, hint: () => Range(r => r.CeilingHeight)));
+        Rows.Add(new NumberRow("Brightness of all", "Sets every selected room's brightness.", () => rooms.Min(r => r.Light), v => All("Change brightness", (e, r) => e.Set(r, x => x.Light, (x, l) => x.Light = l, (int)v)), 16, 0, 255, () => Range(r => r.Light)));
+        Rows.Add(new NumberRow("Raise them all by", "Moves every selected room's floor and ceiling up (or down) by this much together, keeping their differences.", () => 0, v => All("Raise rooms", (e, r) =>
+        {
+            e.Set(r, x => x.FloorHeight, (x, h) => x.FloorHeight = h, r.FloorHeight + (double)v);
+            e.Set(r, x => x.CeilingHeight, (x, h) => x.CeilingHeight = h, r.CeilingHeight + (double)v);
+        }), 8));
+    }
+
+    /// <summary>Matching a neighbour (§3.4): the floor or ceiling of one of the rooms beside it, chosen by its height.</summary>
+    private void AddMatchNeighbour(Sector s)
+    {
+        if (_session.Geometry.WallBoundsAt(s.Slot) is not { } b) return;
+        var beside = _session.Geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY)
+            .Where(l => l.OnMap && l.Back is not null && (ReferenceEquals(l.Front.Sector, s) ^ ReferenceEquals(l.Back.Sector, s)))
+            .Select(l => ReferenceEquals(l.Front.Sector, s) ? l.Back!.Sector : l.Front.Sector).Distinct().ToList();
+        double[] floors = [.. beside.Select(r => r.FloorHeight).Where(h => h != s.FloorHeight).Distinct().Order()];
+        double[] ceilings = [.. beside.Select(r => r.CeilingHeight).Where(h => h != s.CeilingHeight).Distinct().Order()];
+        if (floors.Length > 0)
+        {
+            Rows.Add(new ChoiceRow("Floor level with", "Sets the floor to the height of a room beside it.", ["a room beside…", .. floors.Select(h => string.Create(CultureInfo.InvariantCulture, $"{h:0} (the room beside)"))], () => 0, i =>
+            {
+                if (i > 0) Set(s, "Match the floor", e => e.FloorHeight, (e, x) => e.FloorHeight = x, floors[i - 1]);
+            }));
+        }
+
+        if (ceilings.Length > 0)
+        {
+            Rows.Add(new ChoiceRow("Ceiling level with", "Sets the ceiling to the height of a room beside it.", ["a room beside…", .. ceilings.Select(h => string.Create(CultureInfo.InvariantCulture, $"{h:0} (the room beside)"))], () => 0, i =>
+            {
+                if (i > 0) Set(s, "Match the ceiling", e => e.CeilingHeight, (e, x) => e.CeilingHeight = x, ceilings[i - 1]);
+            }));
+        }
     }
 
     private decimal _curveReach = 64;
