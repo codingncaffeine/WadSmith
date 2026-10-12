@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- wadsmith-cli: the headless tool the tests, CI and scripts call. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>wadsmith-cli</AssemblyName>
+    <RootNamespace>WadSmith.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="WadSmith.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WadSmith.Core\WadSmith.Core.csproj" />
+  </ItemGroup>
+
+</Project>

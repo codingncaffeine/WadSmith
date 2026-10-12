@@ -1,0 +1,40 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Real cultures stay on so the interface can be translated; every map and data
+         parser passes CultureInfo.InvariantCulture itself. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- Known-vulnerable dependencies, transitive ones included, fail the build. -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+    <!-- Unused usings fail the build (IDE0005), which needs the documentation file;
+         undocumented members are allowed. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Product>WadSmith</Product>
+    <Company>WadSmith</Company>
+    <Authors>codingncaffeine</Authors>
+    <Copyright>Copyright (C) 2026 WadSmith contributors</Copyright>
+    <VersionPrefix>0.0.1</VersionPrefix>
+  </PropertyGroup>
+
+  <!-- Central package versions: bump here and nowhere else. -->
+  <PropertyGroup>
+    <AvaloniaVersion>12.1.3</AvaloniaVersion>
+    <SkiaSharpVersion>3.119.4</SkiaSharpVersion>
+    <TestSdkVersion>18.10.1</TestSdkVersion>
+    <XunitVersion>3.2.2</XunitVersion>
+    <XunitRunnerVersion>3.1.5</XunitRunnerVersion>
+  </PropertyGroup>
+
+</Project>

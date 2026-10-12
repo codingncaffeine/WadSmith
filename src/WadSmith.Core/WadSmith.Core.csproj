@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Everything that is not drawing or windows: containers (WAD, PK3, folders), maps in all
+       three formats, pictures, sounds, music, game definitions and the asset extractor. No UI
+       here, so all of it runs headless in the command-line tool and the tests. -->
+  <PropertyGroup>
+    <RootNamespace>WadSmith.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="WadSmith.Tests" />
+  </ItemGroup>
+
+</Project>

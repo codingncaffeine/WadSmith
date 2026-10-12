@@ -1,0 +1,22 @@
+# Local-only notes, plans and work files (house rule: plans stay local)
+/local-notes/
+/scratch/
+/snapshots/
+
+# Never commit game data
+*.wad
+*.WAD
+*.pk3
+*.PK3
+*.ipk3
+*.iwad
+
+# .NET build output
+bin/
+obj/
+publish/
+*.user
+*.suo
+.vs/
+.idea/
+*.swp

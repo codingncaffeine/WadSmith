@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WadSmith.Core/WadSmith.Core.csproj" />
+    <Project Path="src/WadSmith.Cli/WadSmith.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WadSmith.Tests/WadSmith.Tests.csproj" />
+  </Folder>
+</Solution>
