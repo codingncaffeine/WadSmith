@@ -208,6 +208,17 @@ internal sealed partial class InspectorViewModel : ObservableObject
     private const double PlayerHeight = 56;
     private readonly EditorSession _session;
     private Func<string>? _summaryOf;
+    private string _kind = "";
+
+    /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
+    private string KindOf() => _session.Selection.Items switch
+    {
+        [Sector s] => Doors.Recognise(_session.Geometry, s) is not null ? "door" : "room",
+        [Line l] => Exits.IsExit(l) ? "exit" : l.Special == 0 ? "wall" : "wall with an action",
+        [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
+        [var one] => one.GetType().Name,
+        var many => many.Count.ToString(CultureInfo.InvariantCulture),
+    };
 
     public InspectorViewModel(EditorSession session)
     {
@@ -217,10 +228,17 @@ internal sealed partial class InspectorViewModel : ObservableObject
         // A room just made (a door a moment ago) is known as what it is once the map's shapes catch up.
         session.GeometryChanged += () =>
         {
-            if (_session.Selection.Items is [Sector s] && (Doors.Recognise(_session.Geometry, s) is not null) != (Heading == "Door")) Rebuild();
+            if (KindOf() != _kind) Rebuild();
         };
         session.Map.Changed += _ =>
         {
+            // A change can make the selection something else (a wall an exit): then the rows are rebuilt.
+            if (KindOf() != _kind)
+            {
+                Rebuild();
+                return;
+            }
+
             foreach (var r in Rows) r.Refresh();
             if (_summaryOf is { } summary) Summary = summary();
         };
@@ -239,6 +257,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
     {
         Rows.Clear();
         _summaryOf = null;
+        _kind = KindOf();
         var items = _session.Selection.Items;
         if (items.Count == 0)
         {
@@ -270,6 +289,16 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = "Its floor, ceiling and light.";
                 AddSector(s);
                 break;
+            case Line l when Exits.IsExit(l):
+                Heading = l.Flag("playeruse") ? "Exit switch" : l.Flag("playercross") ? "Exit line" : "Exit";
+                _summaryOf = () => Exits.IsExit(l) ? $"Ends the map when the player {Exits.How(l)}, going on to {(l.Special == Exits.Secret ? "the secret map" : "the next map")}." : "No longer an exit.";
+                Summary = _summaryOf();
+                AddExit(l);
+                Rows.Add(new HeadingRow("THE WALL"));
+                AddLine(l);
+                AddSide("Front", l.Front);
+                if (l.Back is { } exitBack) AddSide("Back", exitBack);
+                break;
             case Line l:
                 Heading = l.Back is null ? "Solid wall" : "Wall between two areas";
                 Summary = l.Back is null ? "Nothing can pass through it." : "Players can walk through unless it blocks them.";
@@ -278,6 +307,13 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 if (l.Back is { } back) AddSide("Back", back);
                 Rows.Add(new ActionRow(l.Back is null ? "Select its face" : "Select the front face", "Shows only the side you see from the front: its textures and how they line up.", () => _session.Selection.Set(l.Front)));
                 if (l.Back is { } behind) Rows.Add(new ActionRow("Select the back face", "Shows only the side you see from the back: its textures and how they line up.", () => _session.Selection.Set(behind)));
+                if (l.Special == 0)
+                {
+                    Rows.Add(l.Back is null
+                        ? new ActionRow("Make it the exit switch", "The player uses this wall to end the map; it gets the game's exit switch texture (Exit_Normal).", () => _session.History.Record("Make the exit", e => Exits.Make(e, l, false, _session.Look)))
+                        : new ActionRow("End the map when walked across", "Crossing this wall ends the map and goes on to the next one (Exit_Normal).", () => _session.History.Record("Make the exit", e => Exits.Make(e, l, false, _session.Look))));
+                }
+
                 break;
             case Side side:
                 var solid = side.Line?.Back is null;
@@ -345,6 +381,15 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new FlagRow("Counts as a secret", "Finding this area counts toward the secrets at the end of the map (sector type 1024).", () => (s.Special & 1024) != 0, on => Set(s, on ? "Make a secret" : "Unmake a secret", e => e.Special, (e, x) => e.Special = x, on ? s.Special | 1024 : s.Special & ~1024)));
         Rows.Add(new InfoRow("Effect", "What the area does to the player or its light (sector type).", () => (s.Special & ~1024) == 0 ? "None" : (s.Special & ~1024).ToString(CultureInfo.InvariantCulture)));
         Rows.Add(new NumberRow("Tag", "A number that links a switch or trigger to this area (sector tag, id).", () => s.Tag, v => Set(s, "Change tag", e => e.Tag, (e, x) => e.Tag = x, (int)v), 1, 0, 65535));
+    }
+
+    /// <summary>An exit's settings: where it goes, and taking it away.</summary>
+    private void AddExit(Line l)
+    {
+        Rows.Add(new ChoiceRow("Goes to", "The map that follows: the next one, or the secret one the map settings name (Exit_Normal or Exit_Secret).", ["The next map", "The secret map"],
+            () => l.Special == Exits.Secret ? 1 : 0,
+            v => _session.History.Record("Change where the exit goes", e => Exits.GoTo(e, l, v == 1))));
+        Rows.Add(new ActionRow("Not an exit", "Takes the exit away; the wall keeps its look and does nothing when used or crossed.", () => _session.History.Record("Take the exit away", e => Exits.Clear(e, l))));
     }
 
     /// <summary>The door in one sentence: how it opens, what locks it, what it does after.</summary>
