@@ -92,8 +92,8 @@
             <Panel>
                 <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" Tool="{Binding Tool}" />
 
-                <!-- Tools: what a left drag on the plan does (wrapping onto a second row when the plan is narrow). -->
-                <WrapPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
+                <!-- Tools: what a left drag on the plan does, in a column down the plan's left edge (§3.3). -->
+                <StackPanel Orientation="Vertical" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
                     <ToggleButton Classes="segment tool first" Content="Select" IsChecked="{Binding IsSelectTool}"
                                   ToolTip.Tip="Click a room, a wall, a corner or a thing to see it in the Inspector; Shift adds or removes (V)." />
                     <ToggleButton Classes="segment tool" Content="Room" IsChecked="{Binding IsRoomTool}"
@@ -108,7 +108,7 @@
                                   ToolTip.Tip="Click in a room for a light, which the 3D view shows; its colour, reach and flicker are in the Inspector (L)." />
                     <ToggleButton Classes="segment tool last" Content="Stairs" IsChecked="{Binding IsStairsTool}"
                                   ToolTip.Tip="Drag from the bottom of a staircase to its top: steps that climb from one floor to the other, never more than the player can step up (S)." />
-                </WrapPanel>
+                </StackPanel>
 
                 <!-- Heights legend: the colour ramp with the lowest and highest floor. -->
                 <Border IsVisible="{Binding ShowHeights}" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12" Padding="12,9,12,10"

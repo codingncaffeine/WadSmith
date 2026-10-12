@@ -124,6 +124,9 @@ internal sealed class MapCanvas : Control
         SouthWest,
     }
 
+    /// <summary>The room the tools' column takes down the plan's left edge (pixels): a fitted map is centred to its right.</summary>
+    private const double ToolsRoom = 100;
+
     /// <summary>How far outside the selection the handles sit (pixels), so they never cover its corners.</summary>
     private const double GripPad = 10;
 
@@ -337,8 +340,8 @@ internal sealed class MapCanvas : Control
         }
 
         if (x0 > x1) return;
-        (_cx, _cy) = ((x0 + x1) / 2, (y0 + y1) / 2);
-        _zoom = Math.Min(2, Math.Min((Bounds.Width - 96) / Math.Max(x1 - x0, 64), (Bounds.Height - 96) / Math.Max(y1 - y0, 64)));
+        _zoom = Math.Min(2, Math.Min((Bounds.Width - ToolsRoom - 96) / Math.Max(x1 - x0, 64), (Bounds.Height - 96) / Math.Max(y1 - y0, 64)));
+        (_cx, _cy) = ((x0 + x1) / 2 - ToolsRoom / 2 / _zoom, (y0 + y1) / 2);
         _fitted = true;
         InvalidateVisual();
     }
@@ -355,9 +358,9 @@ internal sealed class MapCanvas : Control
     {
         if (Session is null || Bounds.Width < 1) return;
         var (minX, minY, maxX, maxY) = Session.Geometry.Extent();
-        _cx = (minX + maxX) / 2;
+        _zoom = Math.Min((Bounds.Width - ToolsRoom - 48) / Math.Max(maxX - minX, 64), (Bounds.Height - 48) / Math.Max(maxY - minY, 64));
+        _cx = (minX + maxX) / 2 - ToolsRoom / 2 / _zoom;
         _cy = (minY + maxY) / 2;
-        _zoom = Math.Min((Bounds.Width - 48) / Math.Max(maxX - minX, 64), (Bounds.Height - 48) / Math.Max(maxY - minY, 64));
         _fitted = true;
     }
 
