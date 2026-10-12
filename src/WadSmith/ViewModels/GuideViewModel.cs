@@ -27,7 +27,7 @@ internal sealed partial class GuideViewModel : ObservableObject
     private MapFrame? _atStep;
 
     // One check of the open step against the map.
-    private sealed record Reading(EditorSession Session, int Step, bool Done);
+    private sealed record Reading(EditorSession Session, int Step, bool Done, string? Hint);
 
     /// <summary>
     /// Runs <paramref name="chapter"/> on the session's map. <paramref name="standing"/> says what holds in the editor now, such as
@@ -68,6 +68,10 @@ internal sealed partial class GuideViewModel : ObservableObject
     [ObservableProperty]
     private string _text = "";
 
+    /// <summary>What the editor last refused while this step was open ("A door goes in a wall between two rooms…"), shown on the card; empty at each new step.</summary>
+    [ObservableProperty]
+    private string _said = "";
+
     /// <summary>Whether every step is done: the card says so and offers what to try next.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Target), nameof(StepLabel))]
@@ -95,13 +99,14 @@ internal sealed partial class GuideViewModel : ObservableObject
         var happened = new HashSet<string>(_happened);
         var resources = session.Resources;
         var s = Chapter.Steps[step];
-        _checks.Request(() => new Reading(session, step, GuideBook.Done(s, frame, start, resources, happened)));
+        _checks.Request(() => new Reading(session, step, GuideBook.Done(s, frame, start, resources, happened), GuideBook.Hint(s, frame, start)));
     }
 
     private void Arrived(Reading r)
     {
         if (!ReferenceEquals(r.Session, _session) || r.Step != Index || Finished) return;
         if (r.Done) Advance();
+        else if (r.Hint is { } hint && !_told) Said = hint;
     }
 
     /// <summary>Something a step may wait for happened in the editor (<see cref="GuideEvents"/>).</summary>
@@ -109,6 +114,17 @@ internal sealed partial class GuideViewModel : ObservableObject
     {
         if (Finished || !_happened.Add(what)) return;
         MapChanged();
+    }
+
+    // Whether what the card says is a refusal the user just caused: it stays over the step's standing hint until the step moves on.
+    private bool _told;
+
+    /// <summary>Shows a refusal (a Notice) on the card while a step is open.</summary>
+    public void Tell(string sentence)
+    {
+        if (Finished) return;
+        Said = sentence;
+        _told = true;
     }
 
     /// <summary>Goes on to the next step without doing this one.</summary>
@@ -121,6 +137,8 @@ internal sealed partial class GuideViewModel : ObservableObject
 
     private void Advance()
     {
+        Said = "";
+        _told = false;
         if (Index + 1 >= Chapter.Steps.Count)
         {
             Finished = true;

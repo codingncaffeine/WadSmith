@@ -126,6 +126,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         {
             _notice = text;
             UpdateStatus();
+            Guide?.Tell(text);
         };
         session.History.Refused += _ => Hint(EditorSession.ReadOnlyNotice);
         UpdateHeights();

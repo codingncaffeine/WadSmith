@@ -185,7 +185,7 @@ public static class GuideBook
         bool Kind(ThingCategory? c, params ThingCategory[] kinds) => c is { } k && kinds.Contains(k);
         return step.Id switch
         {
-            "room" => Up(Rooms) > 0,
+            "room" => Up(Rooms) > 0 && Up(SharedWalls) > 0,
             "look" => happened.Contains(GuideEvents.ThreeD),
             "door" => Up(f => Lines(f, l => IsDoor(l.Special) && l.Args[0] == 0)) > 0,
             "texture" => Changed(atStart.Sides, now.Sides, s => s.Element, s => (s.Top, s.Middle, s.Bottom)),
@@ -224,6 +224,22 @@ public static class GuideBook
     private static bool IsDoor(int special) => special is Smart.Doors.DoorOpen or Smart.Doors.DoorRaise or Smart.Doors.DoorLockedRaise;
 
     private static int Rooms(MapFrame f) => f.Sectors.Count(s => s.Element is not null);
+
+    /// <summary>Walls with a different room on each side: what a room drawn against another gets.</summary>
+    private static int SharedWalls(MapFrame f) => f.Lines.Count(l => l.Element is not null && l.Back >= 0 && f.Sides[l.Front].Sector != f.Sides[l.Back].Sector);
+
+    /// <summary>
+    /// What to say when a step is not done but the user has clearly tried: the room step with a new room that touches
+    /// nothing. Null when there is nothing to add to the step's own words.
+    /// </summary>
+    public static string? Hint(GuideStep step, MapFrame now, MapFrame atStart) => step.Id switch
+    {
+        "room" when Rooms(now) > Rooms(atStart) && SharedWalls(now) <= SharedWalls(atStart) =>
+            "Your new room does not touch the first one, so they share no wall. Drag it against the first room (it snaps to the wall), or press Ctrl+Z and draw it starting on that wall.",
+        "door" when SharedWalls(now) == 0 =>
+            "Your rooms share no wall yet: a door needs the line where two rooms meet. Drag one room against the other first (it snaps).",
+        _ => null,
+    };
 
     private static int Lines(MapFrame f, Func<LineFrame, bool> which) => f.Lines.Count(l => l.Element is not null && which(l));
 

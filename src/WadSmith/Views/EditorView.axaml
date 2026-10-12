@@ -212,6 +212,8 @@
                     <TextBlock Classes="section" Text="{Binding StepLabel}" />
                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                    <!-- What WadSmith just refused, said here too: the status bar is far from where the user is looking. -->
+                    <TextBlock Text="{Binding Said}" IsVisible="{Binding Said.Length}" Foreground="{DynamicResource Brush.Accent}" TextWrapping="Wrap" />
                     <ItemsControl ItemsSource="{Binding Next}" IsVisible="{Binding Finished}" Margin="0,6,0,0">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -224,16 +226,17 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
-                        <Button Classes="metal" Content="{Binding SeeOne.Title}" Command="{Binding SeeOne.Open}" ToolTip.Tip="{Binding SeeOne.Tip}"
+                    <!-- The buttons wrap: with a long game name in "See one in …" a row ran off the card and the window (2026-10-12). -->
+                    <WrapPanel Margin="0,2,0,0">
+                        <Button Classes="metal" Margin="0,0,8,6" Content="{Binding SeeOne.Title}" Command="{Binding SeeOne.Open}" ToolTip.Tip="{Binding SeeOne.Tip}"
                                 IsVisible="{Binding SeeOne, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                        <Button Classes="metal" Content="Skip this step" Command="{Binding SkipCommand}" IsVisible="{Binding !Finished}"
+                        <Button Classes="metal" Margin="0,0,8,6" Content="Skip this step" Command="{Binding SkipCommand}" IsVisible="{Binding !Finished}"
                                 ToolTip.Tip="Goes on to the next step without this one. Your map stays as it is." />
-                        <Button Classes="metal" Content="Stop the guide" Command="{Binding StopCommand}" IsVisible="{Binding !Finished}"
+                        <Button Classes="metal" Margin="0,0,8,6" Content="Stop the guide" Command="{Binding StopCommand}" IsVisible="{Binding !Finished}"
                                 ToolTip.Tip="Ends the guide; your map stays as it is. The Guide button at the bottom right starts it again." />
-                        <Button Classes="primary" Content="Keep going" Command="{Binding StopCommand}" IsVisible="{Binding Finished}"
+                        <Button Classes="primary" Margin="0,0,8,6" Content="Keep going" Command="{Binding StopCommand}" IsVisible="{Binding Finished}"
                                 ToolTip.Tip="Closes the guide. Your map is yours to change." />
-                    </StackPanel>
+                    </WrapPanel>
                 </StackPanel>
             </Border>
             <!-- Explain this map (D32): what the map is made of, its keys and what each difficulty holds, each with Show. -->

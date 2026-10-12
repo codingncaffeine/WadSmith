@@ -23,6 +23,13 @@ public static class ShapeDrawing
     /// <summary>Points closer than this are the same point, in map units.</summary>
     private const double Eps = 1e-6;
 
+    /// <summary>
+    /// A shape's corner within this of an existing corner is that corner, and within this of a wall is on the wall (moved
+    /// onto it, the wall split there): a click snapped to a slanted wall lands a fraction of a unit off it once rounded,
+    /// and two walls a fraction apart are the overlap no engine wants (found on a first map, 2026-10-12).
+    /// </summary>
+    private const double Snap = 1.0;
+
     /// <summary>How far off a wall a point is taken to find out what lies on that side of it.</summary>
     private const double Probe = 1.0 / 64;
 
@@ -95,7 +102,7 @@ public static class ShapeDrawing
             var stops = new List<(double T, Vertex V)> { (0, a), (1, b) };
             foreach (var v in vertices)
             {
-                if (v != a && v != b && Along(Point(v), Point(a), Point(b)) is { } t) stops.Add((t, v));
+                if (v != a && v != b && Along(Point(v), Point(a), Point(b), Snap) is { } t) stops.Add((t, v));
             }
 
             foreach (var e in edges.ToList())
@@ -265,20 +272,33 @@ public static class ShapeDrawing
 
         Vertex CornerAt(MapPoint p)
         {
+            Vertex? nearest = null;
+            var best = Snap;
             foreach (var v in vertices)
             {
-                if (Math.Abs(v.X - p.X) <= Eps && Math.Abs(v.Y - p.Y) <= Eps) return v;
+                var d = Math.Max(Math.Abs(v.X - p.X), Math.Abs(v.Y - p.Y));
+                if (d <= best && (nearest is null || d < best))
+                {
+                    nearest = v;
+                    best = d;
+                }
+            }
+
+            if (nearest is not null) return nearest;
+
+            // On a wall: the corner goes exactly onto it, where the point projects, and the wall is split there.
+            foreach (var e in edges)
+            {
+                if (Along(p, Point(e.A), Point(e.B), Snap) is not { } t) continue;
+                var (a, b) = (Point(e.A), Point(e.B));
+                var on = edit.Add(new Vertex { X = a.X + (b.X - a.X) * t, Y = a.Y + (b.Y - a.Y) * t });
+                vertices.Add(on);
+                Split(e, on);
+                return on;
             }
 
             var corner = edit.Add(new Vertex { X = p.X, Y = p.Y });
             vertices.Add(corner);
-            foreach (var e in edges)
-            {
-                if (Along(p, Point(e.A), Point(e.B)) is null) continue;
-                Split(e, corner);
-                break;
-            }
-
             return corner;
         }
 
@@ -428,16 +448,20 @@ public static class ShapeDrawing
         return area;
     }
 
-    /// <summary>Whether p lies on the segment a–b strictly between its ends; the position along it (0–1) if so.</summary>
-    private static double? Along(MapPoint p, MapPoint a, MapPoint b)
+    /// <summary>
+    /// Whether p lies on the segment a–b strictly between its ends (further than <paramref name="within"/> from each) and
+    /// no further than <paramref name="within"/> off it; the position along it (0–1) if so.
+    /// </summary>
+    private static double? Along(MapPoint p, MapPoint a, MapPoint b, double within = Eps)
     {
         var (dx, dy) = (b.X - a.X, b.Y - a.Y);
         var length2 = dx * dx + dy * dy;
         if (length2 <= Eps * Eps) return null;
+        var length = Math.Sqrt(length2);
         var t = ((p.X - a.X) * dx + (p.Y - a.Y) * dy) / length2;
-        if (t * Math.Sqrt(length2) <= Eps || (1 - t) * Math.Sqrt(length2) <= Eps) return null;
+        if (t * length <= within || (1 - t) * length <= within) return null;
         var cross = (p.X - a.X) * dy - (p.Y - a.Y) * dx;
-        return Math.Abs(cross) / Math.Sqrt(length2) <= Eps ? t : null;
+        return Math.Abs(cross) / length <= within ? t : null;
     }
 
     /// <summary>Where two segments cross in both their middles (not at an end, not lying along each other): the point, and how far along a–b.</summary>

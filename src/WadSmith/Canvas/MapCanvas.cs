@@ -1179,14 +1179,14 @@ internal sealed class MapCanvas : Control
                 Placing?.Invoke(Tool == EditorTool.Door ? DescribeDoor() : DescribeWindow());
                 InvalidateVisual();
             }
+            else
+            {
+                // A click on nothing says so: a tool that does nothing in silence looks broken.
+                Session.Tell(Tool == EditorTool.Door
+                    ? "Click on a wall: a door goes in the wall two rooms share, the line where they meet."
+                    : "Click on a wall: a window goes in the wall two rooms share, the line where they meet.");
+            }
 
-            e.Handled = true;
-            return;
-        }
-
-        if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Door)
-        {
-            if (WallAt(e.GetPosition(this)) is { } wall) Session.MakeDoor(wall);
             e.Handled = true;
             return;
         }
@@ -1736,7 +1736,8 @@ internal sealed class MapCanvas : Control
     }
 
     /// <summary>The wall under the pointer, for tools that work on walls.</summary>
-    private Line? WallAt(Point p) => Session?.Geometry.LineNear(ToMap(p), 7 / _zoom);
+    /// <summary>The wall a door, window or switch click means: the nearest within 14 pixels (twice a pick's reach: a wall is a thin line and these tools want one).</summary>
+    private Line? WallAt(Point p) => Session?.Geometry.LineNear(ToMap(p), 14 / _zoom);
 
     /// <summary>What a click at this spot picks: a thing, then a corner (zoomed in), then a wall, then the area.</summary>
     private Element? HitTest(Point p)
