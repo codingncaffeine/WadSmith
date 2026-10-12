@@ -22,7 +22,33 @@ public sealed class PlayFromTests
         Assert.Equal("server noarchive string wadsmith_from = \"\";\n", Text("cvarinfo.txt"));
         Assert.Contains("AddEventHandlers = \"WadSmithPlayFrom\"", Text("mapinfo.txt"), StringComparison.Ordinal);
         Assert.DoesNotContain('\r', Text("zscript.txt"));
-        Assert.Equal(path, PlayFrom.Write(temp.Path));
+    }
+
+    [Fact]
+    public void TheAddOnIsWrittenOnlyWhenItChanges()
+    {
+        // A game still running from the last Play holds the add-on open, and Windows refuses to replace an open file.
+        using var temp = new TempFolder();
+        var path = PlayFrom.Write(temp.Path);
+        var first = File.ReadAllBytes(path);
+        var written = File.GetLastWriteTimeUtc(path);
+        using (File.OpenRead(path))
+        {
+            Assert.Equal(path, PlayFrom.Write(temp.Path));
+        }
+
+        Assert.Equal(written, File.GetLastWriteTimeUtc(path));
+
+        // Its entries carry a fixed date, not the clock's, so the add-on is the same bytes on another day too.
+        using (var zip = ZipFile.OpenRead(path))
+        {
+            Assert.All(zip.Entries, e => Assert.True(e.LastWriteTime < DateTimeOffset.Now.AddDays(-1), e.FullName));
+        }
+
+        // One left by an older WadSmith is replaced.
+        File.WriteAllBytes(path, [1, 2, 3]);
+        PlayFrom.Write(temp.Path);
+        Assert.Equal(first, File.ReadAllBytes(path));
     }
 
     [Fact]

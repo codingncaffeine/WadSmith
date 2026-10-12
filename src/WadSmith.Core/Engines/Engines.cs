@@ -77,18 +77,23 @@ public static class PlayFrom
         }
         """;
 
-    /// <summary>Writes the add-on (again: it is small) and returns its path.</summary>
+    /// <summary>
+    /// Writes the add-on and returns its path. The same add-on is the same bytes, and a file that already holds them is
+    /// left alone: a game still running from the last Play has it open, and Windows will not replace an open file.
+    /// </summary>
     public static string Write(string dataFolder)
     {
         var folder = Path.Combine(dataFolder, "engine");
         Directory.CreateDirectory(folder);
         var path = Path.Combine(folder, "wadsmith-play.pk3");
-        var temp = path + ".tmp";
-        using (var zip = System.IO.Compression.ZipFile.Open(temp, System.IO.Compression.ZipArchiveMode.Create))
+        var bytes = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(bytes, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
         {
             void Add(string name, string text)
             {
-                using var w = new StreamWriter(zip.CreateEntry(name).Open());
+                var entry = zip.CreateEntry(name);
+                entry.LastWriteTime = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+                using var w = new StreamWriter(entry.Open());
                 w.Write(text.Replace("\r\n", "\n", StringComparison.Ordinal));
             }
 
@@ -97,6 +102,10 @@ public static class PlayFrom
             Add("mapinfo.txt", "GameInfo\n{\n\tAddEventHandlers = \"WadSmithPlayFrom\"\n}\n");
         }
 
+        var data = bytes.ToArray();
+        if (File.Exists(path) && File.ReadAllBytes(path).AsSpan().SequenceEqual(data)) return path;
+        var temp = path + ".tmp";
+        File.WriteAllBytes(temp, data);
         File.Move(temp, path, overwrite: true);
         return path;
     }
