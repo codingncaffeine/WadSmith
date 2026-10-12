@@ -11,7 +11,7 @@ namespace WadSmith.Editor.Editing;
 /// lies within the shape without reaching its outline (a room drawn around, a pillar's empty inside),
 /// stays as it was. A new area looks like
 /// the area it was drawn in (heights, textures, light; not its effect or tag), or like the game's Look
-/// when drawn in the void. Walls between two areas lose their blocking and move a solid wall's texture
+/// when drawn in the void, with the heights of the room it is drawn against (D27). Walls between two areas lose their blocking and move a solid wall's texture
 /// to the upper and lower parts, as a wall that gains a second side does in every editor.
 /// </summary>
 /// <remarks>
@@ -192,7 +192,12 @@ public static class ShapeDrawing
             var first = all[0].Side?.Sector;
             if (first is not null && all.All(h => ReferenceEquals(h.Side?.Sector, first)) && !all.Any(h => h.Edge.Boundary && ReferenceEquals(new Half(h.Edge, !h.Forward).Side?.Sector, first))) continue;
 
-            var sector = edit.Add(NewSector(before.SectorAt(RightOf(cycle[0])), look));
+            // In the void, against other rooms: the heights of the one it shares the most wall with, so no step appears by
+            // accident (D27).
+            var around = before.SectorAt(RightOf(cycle[0]));
+            var neighbour = around is not null ? null : cycle.Select(h => (Sector: new Half(h.Edge, !h.Forward).Side?.Sector, Length: Point(h.Edge.A).DistanceTo(Point(h.Edge.B))))
+                .Where(x => x.Sector is not null).GroupBy(x => x.Sector!, ReferenceEqualityComparer.Instance).OrderByDescending(g => g.Sum(x => x.Length)).Select(g => (Sector?)g.Key).FirstOrDefault();
+            var sector = edit.Add(NewSector(around, look, neighbour));
             made.Add(sector);
             foreach (var h in all)
             {
@@ -392,9 +397,9 @@ public static class ShapeDrawing
         }
     }
 
-    private static Sector NewSector(Sector? around, Look look)
+    private static Sector NewSector(Sector? around, Look look, Sector? neighbour = null)
     {
-        if (around is null) return new Sector { FloorHeight = look.FloorHeight, CeilingHeight = look.CeilingHeight, FloorTexture = look.Floor, CeilingTexture = look.Ceiling, Light = look.Light };
+        if (around is null) return new Sector { FloorHeight = neighbour?.FloorHeight ?? look.FloorHeight, CeilingHeight = neighbour?.CeilingHeight ?? look.CeilingHeight, FloorTexture = look.Floor, CeilingTexture = look.Ceiling, Light = look.Light };
         var s = new Sector { FloorHeight = around.FloorHeight, CeilingHeight = around.CeilingHeight, FloorTexture = around.FloorTexture, CeilingTexture = around.CeilingTexture, Light = around.Light };
         foreach (var (k, v) in around.Extra) s.Extra[k] = v;
         return s;
