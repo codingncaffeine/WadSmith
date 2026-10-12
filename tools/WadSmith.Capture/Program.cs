@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -601,6 +601,28 @@ foreach (var pose in poses)
                 Drag((448, -64), (576, 64), null);
                 Report("inside");
                 Save("editor-draw");
+                break;
+            }
+
+            if (pose == "editor-problems")
+            {
+                // The Problems panel open on the map: what it found, then the first fix used (one undo step).
+                editor.ShowProblems = true;
+                for (var i = 0; i < 200 && editor.Problems.Summary == "Checking…"; i++) Pump(0.05);
+                Pump(0.5);
+                Console.WriteLine($"problems: {editor.Problems.Summary}");
+                foreach (var row in editor.Problems.Rows) Console.WriteLine($"problems row: [{row.Kind}] {row.Sentence} (show {row.CanShow}, fix '{row.FixLabel}')");
+                Save("editor-problems");
+                if (editor.Problems.Rows.FirstOrDefault(r => r.CanFix) is { } fixable)
+                {
+                    fixable.ShowCommand.Execute(null);
+                    Pump(0.5);
+                    Save("editor-problems-shown");
+                    fixable.FixCommand.Execute(null);
+                    for (var i = 0; i < 100; i++) Pump(0.05);
+                    Console.WriteLine($"problems after fixing: {editor.Problems.Summary}, undo '{editor.Session.History.UndoLabel}'");
+                }
+
                 break;
             }
 

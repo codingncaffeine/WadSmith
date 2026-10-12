@@ -53,6 +53,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         Session = session;
         _hoverText = message ?? "";
         Inspector = new InspectorViewModel(session);
+        Problems = new ProblemsViewModel(session);
         TextureShelf = ShelfViewModel.Textures(session.Resources);
         ObjectShelf = ShelfViewModel.Objects(session.Resources);
         if (showVersions) Panel = SidePanel.Versions;
@@ -85,6 +86,13 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>The kept copies of the map, newest first, while the Versions panel is open.</summary>
     public ObservableCollection<VersionItem> Versions { get; } = [];
+
+    /// <summary>The live checks, listed in the Problems panel.</summary>
+    public ProblemsViewModel Problems { get; }
+
+    /// <summary>Whether the Problems panel shows under the map.</summary>
+    [ObservableProperty]
+    private bool _showProblems;
 
     /// <summary>The game's textures, to drag onto walls, floors and ceilings.</summary>
     public ShelfViewModel TextureShelf { get; }

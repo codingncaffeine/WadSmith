@@ -250,6 +250,31 @@ internal sealed class MapCanvas : Control
         InvalidateVisual();
     }
 
+    /// <summary>Brings elements into view: centred, zoomed to fit them with room around, never closer than 2 pixels a unit.</summary>
+    public void FitTo(IReadOnlyList<Element> elements)
+    {
+        if (Session is not { } session || Bounds.Width < 1) return;
+        double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+        void Add(double x, double y) => (x0, y0, x1, y1) = (Math.Min(x0, x), Math.Min(y0, y), Math.Max(x1, x), Math.Max(y1, y));
+        foreach (var e in elements)
+        {
+            switch (e)
+            {
+                case Vertex v: Add(v.X, v.Y); break;
+                case Thing t: Add(t.X, t.Y); break;
+                case Line l: Add(l.Start.X, l.Start.Y); Add(l.End.X, l.End.Y); break;
+                case Side { Line: { } l }: Add(l.Start.X, l.Start.Y); Add(l.End.X, l.End.Y); break;
+                case Sector s when session.Geometry.WallBoundsAt(s.Slot) is { } b: Add(b.MinX, b.MinY); Add(b.MaxX, b.MaxY); break;
+            }
+        }
+
+        if (x0 > x1) return;
+        (_cx, _cy) = ((x0 + x1) / 2, (y0 + y1) / 2);
+        _zoom = Math.Min(2, Math.Min((Bounds.Width - 96) / Math.Max(x1 - x0, 64), (Bounds.Height - 96) / Math.Max(y1 - y0, 64)));
+        _fitted = true;
+        InvalidateVisual();
+    }
+
     /// <summary>Centres the map and zooms so all of it shows.</summary>
     public void FitMap()
     {

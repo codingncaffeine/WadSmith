@@ -1,0 +1,220 @@
+using WadSmith.Core.Containers;
+using WadSmith.Core.Games;
+using WadSmith.Core.Maps;
+using WadSmith.Core.Translation;
+using WadSmith.Editor;
+using WadSmith.Editor.Checks;
+using WadSmith.Editor.Editing;
+using WadSmith.Editor.Geometry;
+using WadSmith.Editor.Model;
+using WadSmith.Editor.Smart;
+
+namespace WadSmith.Tests;
+
+/// <summary>The live checks (D20): every rule fires on its planted fault, a clean map shows none, and every fix leaves the map clean.</summary>
+public sealed class ProblemTests(ITestOutputHelper output)
+{
+    private static readonly Lazy<GameResources> Freedoom = new(() =>
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        var games = GameLocator.Scan([Path.GetDirectoryName(wad)!]);
+        return GameResources.Load("freedoom2", null, games, GameFiles.Require("gzdoom.pk3")) ?? throw new InvalidOperationException("freedoom2 was not recognised");
+    });
+
+    private static IReadOnlyList<Problem> Check(EditorMap map) => Problems.Check(MapGeometry.Build(map.Frame), Freedoom.Value, Look.For("doom"), "doom");
+
+    /// <summary>The starter room with an exit switch: nothing to report.</summary>
+    private static (EditorMap Map, History History) Clean()
+    {
+        var map = EditorMap.FromModel(StarterRoom.Create("MAP01", "doom"));
+        var history = new History(map);
+        history.Record("Make the exit", e => Exits.Make(e, map.Lines[0], false, Look.For("doom")));
+        return (map, history);
+    }
+
+    private static Problem Only(EditorMap map, string rule)
+    {
+        var found = Check(map);
+        Assert.True(found.Count == 1 && found[0].Rule == rule, $"expected only {rule}, found: {string.Join("; ", found.Select(p => p.Rule + ": " + p.Sentence))}");
+        return found[0];
+    }
+
+    private static void FixAndCheckClean(EditorMap map, History history, Problem problem)
+    {
+        Assert.NotNull(problem.Fix);
+        history.Record(problem.FixLabel!, problem.Fix);
+        Assert.Empty(Check(map));
+    }
+
+    /// <summary>Every rule runs over every map of the Doom-format games (as remixed: translated) without failing; what they find is printed.</summary>
+    [Theory]
+    [MemberData(nameof(DoorTests.DoomFormatGames), MemberType = typeof(DoorTests))]
+    public void EveryMapOfEveryGameCanBeChecked(string fileName)
+    {
+        var xlat = XlatTranslator.Load(new ResourceStack([ResourceContainer.Open(GameFiles.Require("gzdoom.pk3"))]), "xlat/doom.txt");
+        var counts = new SortedDictionary<string, int>();
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        var maps = 0;
+        foreach (var lumps in MapLocator.Find(WadContainer.Open(GameFiles.Require(fileName))))
+        {
+            var map = EditorMap.FromModel(MapTranslation.ToZDoom(MapConversion.Read(lumps, "doom"), xlat, []));
+            foreach (var p in Problems.Check(MapGeometry.Build(map.Frame), null, Look.For("doom"), "doom")) counts[p.Rule] = counts.GetValueOrDefault(p.Rule) + 1;
+            maps++;
+        }
+
+        output.WriteLine($"{fileName}: {maps} maps in {System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms (with reading); maps with each problem: {string.Join(", ", counts.Select(kv => $"{kv.Key} {kv.Value}"))}");
+    }
+
+    [Fact]
+    public void CheckingAHundredThousandWallMapTakesUnderASecond()
+    {
+        var geometry = MapGeometry.Build(EditorMap.FromModel(Cli.Commands.StressGenCommand.Build(223)).Frame);
+        Problems.Check(geometry, null, Look.For("doom"), "doom");
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        var found = Problems.Check(geometry, null, Look.For("doom"), "doom");
+        var ms = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        output.WriteLine($"checks on the 100k grid: {ms:0} ms; {string.Join(", ", found.Select(p => p.Rule))}");
+        Assert.True(ms < 1000, $"{ms:0} ms");
+    }
+
+    [Fact]
+    public void ACleanMapShowsNoProblems() => Assert.Empty(Check(Clean().Map));
+
+    [Fact]
+    public void NoPlayerStartIsAnErrorAndTheFixPutsOneInARoom()
+    {
+        var (map, history) = Clean();
+        history.Record("Delete", e => e.Remove(map.Things[0]));
+        var p = Only(map, "no-start");
+        Assert.Equal(Severity.Error, p.Severity);
+        FixAndCheckClean(map, history, p);
+    }
+
+    [Fact]
+    public void TwoPlayerStartsAreSaidWithoutAFix()
+    {
+        var (map, history) = Clean();
+        history.Record("Add", e => e.Add(new Thing { X = 100, Y = 100, Type = 1 }));
+        var p = Only(map, "many-starts");
+        Assert.Null(p.Fix);
+        Assert.Equal(2, p.Show.Count);
+    }
+
+    [Fact]
+    public void NoExitIsSaid()
+    {
+        var map = EditorMap.FromModel(StarterRoom.Create("MAP01", "doom"));
+        Only(map, "no-exit");
+    }
+
+    [Fact]
+    public void ARoomWithAGapIsNotClosed()
+    {
+        var (map, history) = Clean();
+        var wall = map.Lines[2];
+        history.Record("Break", e =>
+        {
+            e.Remove(wall);
+            e.Remove(wall.Front);
+        });
+        Assert.Contains(Check(map), p => p.Rule == "unclosed" && p.Show.Contains(map.Sectors[0]));
+    }
+
+    [Fact]
+    public void AWallWithNoTextureIsFixedWithTheRoomsTexture()
+    {
+        var (map, history) = Clean();
+        history.Record("Clear", e => e.Set(map.Lines[1].Front, s => s.Middle, (s, v) => s.Middle = v, "-"));
+        var p = Only(map, "missing-texture");
+        FixAndCheckClean(map, history, p);
+        Assert.Equal("STARTAN3", map.Lines[1].Front.Middle);
+    }
+
+    [Fact]
+    public void ATextureTheGameDoesNotHaveIsNamed()
+    {
+        var (map, history) = Clean();
+        history.Record("Paint", e => e.Set(map.Lines[1].Front, s => s.Middle, (s, v) => s.Middle = v, "BRICK99"));
+        Assert.Contains("BRICK99", Only(map, "unknown-texture").Sentence);
+    }
+
+    [Fact]
+    public void AWallBetweenRoomsNotMarkedOpenIsFixed()
+    {
+        var (map, history, _) = MovingTests.Drawn((0, 0, 128, 128), (128, 0, 256, 128));
+        var shared = map.Lines.Single(l => l.OnMap && l.Back is not null);
+        history.Record("Start", e =>
+        {
+            e.Add(new Thing { X = 64, Y = 64, Type = 1 });
+            e.Flag(shared, "twosided", false);
+            Exits.Make(e, map.Lines.First(l => l.OnMap && l.Back is null), false, Look.For("doom"));
+        });
+        FixAndCheckClean(map, history, Only(map, "two-sided"));
+    }
+
+    [Fact]
+    public void AThingOutsideEveryRoomIsSaid()
+    {
+        var (map, history) = Clean();
+        history.Record("Add", e => e.Add(new Thing { X = 5000, Y = 5000, Type = 3001 }));
+        Only(map, "outside");
+    }
+
+    [Fact]
+    public void AMonsterInAWallIsNudgedOut()
+    {
+        var (map, history) = Clean();
+
+        // An imp (radius 20) 10 units from the south wall at y = -256.
+        var imp = new Thing { X = 128, Y = -246, Type = 3001 };
+        history.Record("Add", e => e.Add(imp));
+        var p = Only(map, "stuck");
+        Assert.Same(imp, Assert.Single(p.Show));
+        FixAndCheckClean(map, history, p);
+        Assert.True(imp.Y >= -256 + 20, $"the imp is at {imp.Y}");
+    }
+
+    [Fact]
+    public void ATeleporterToNowhereIsSaid()
+    {
+        var (map, history) = Clean();
+        history.Record("Teleport", e =>
+        {
+            e.Set(map.Lines[1], l => l.Special, (l, v) => l.Special = v, Teleports.Teleport);
+            e.Set(map.Lines[1], l => l.Args[0], (l, v) => l.Args[0] = v, 99);
+        });
+        Only(map, "teleport-nowhere");
+    }
+
+    [Fact]
+    public void DoorTracksThatSlideAreAnchored()
+    {
+        var (map, history, rooms) = MovingTests.Drawn((0, 0, 256, 256), (256, 96, 384, 160), (384, 0, 640, 256));
+        var wall = map.Lines.Single(l => l.OnMap && l.Start.X == 256 && l.End.X == 256 && l.Back is not null);
+        var geometry = MapGeometry.Build(map.Frame);
+        history.Record("Make a door", e => Doors.Make(e, geometry, wall, Look.For("doom")));
+        history.Record("Start and exit", e =>
+        {
+            e.Add(new Thing { X = 128, Y = 128, Type = 1 });
+            Exits.Make(e, map.Lines.First(l => l.OnMap && l.Back is null && l.Front.Sector == rooms[0]), false, Look.For("doom"));
+        });
+        Assert.Empty(Check(map));
+        var track = map.Lines.First(l => l.OnMap && l.Flag("dontpegbottom"));
+        history.Record("Unanchor", e => e.Flag(track, "dontpegbottom", false));
+        FixAndCheckClean(map, history, Only(map, "door-tracks"));
+    }
+
+    [Fact]
+    public void ALockedDoorWithoutItsKeyIsSaidUntilTheKeyIsPlaced()
+    {
+        var (map, history) = Clean();
+        history.Record("Lock", e =>
+        {
+            e.Set(map.Lines[2], l => l.Special, (l, v) => l.Special = v, Doors.DoorLockedRaise);
+            e.Set(map.Lines[2], l => l.Args[3], (l, v) => l.Args[3] = v, 129);
+        });
+        Assert.Contains("red key", Only(map, "missing-key-red").Sentence);
+        history.Record("Add", e => e.Add(new Thing { X = 0, Y = 64, Type = 38 }));
+        Assert.Empty(Check(map));
+    }
+}
