@@ -11,7 +11,9 @@ plain words instead of jargon, drag and drop for everything, doors and lifts the
 and one key to play what you just built. Experienced mappers get the same tools with the teaching
 switched off.
 
-> **Status:** 0.0.5, the first build you can download, for Linux. It is early: expect rough edges, and say what you find in Issues.
+> **Status:** 0.0.5, the first build you can download, for Linux. It is early: expect rough edges, and say what you find in [Issues](https://github.com/codingncaffeine/WadSmith/issues).
+
+![WadSmith with a Freedoom map: the plan, the 3D view walking through it, and the Inspector](assets/screenshots/editor.png)
 
 ## What it does
 
@@ -33,6 +35,15 @@ Coming next: images, animated GIFs and video dropped onto walls; a share bundle;
 - **Any Linux:** the tarball from the latest release, unpacked anywhere; run `./wadsmith`.
 
 WadSmith needs [GZDoom](https://zdoom.org) to play maps, and SDL2 (optional) plays an object's sound when you point at it.
+
+## Getting started
+
+1. Start WadSmith. It finds the games you have installed; with none, it offers to fetch Freedoom.
+2. On a game, choose **Remix a map** to start from one of its maps, **New map** for one lit room, or **Guided first map** for ten minutes of steps beside you.
+3. Draw with the **Room** tool on the plan, drop textures and monsters from the **Textures** and **Objects** shelves, and watch it all in the 3D view.
+4. Press **F9** to play it in GZDoom. Everything is kept as you go.
+
+The [wiki](https://github.com/codingncaffeine/WadSmith/wiki) covers every tool, shortcut and setting.
 
 ## Requirements
 
