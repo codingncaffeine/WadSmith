@@ -10,6 +10,7 @@
         <KeyBinding Gesture="Ctrl+Z" Command="{Binding UndoCommand}" />
         <KeyBinding Gesture="Ctrl+Y" Command="{Binding RedoCommand}" />
         <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}" />
+        <KeyBinding Gesture="Delete" Command="{Binding DeleteCommand}" />
     </UserControl.KeyBindings>
 
     <Grid RowDefinitions="50,*,30">

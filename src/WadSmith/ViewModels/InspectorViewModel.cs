@@ -207,6 +207,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         {
             Heading = $"{items.Count} things selected";
             Summary = string.Join(", ", items.GroupBy(i => Name(i)).Select(g => $"{g.Count()} {g.Key.ToLowerInvariant()}{(g.Count() > 1 ? "s" : "")}"));
+            Rows.Add(new ActionRow("Delete them", "Deletes everything selected so the map stays whole (Delete).", _session.DeleteSelection));
             return;
         }
 
@@ -255,6 +256,17 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Rows.Add(new NumberRow("Y", "Position north–south, in map units.", () => (decimal)v.Y, y => Set(v, "Move corner", e => e.Y, (e, val) => e.Y = val, (double)y), 8));
                 break;
         }
+
+        // Last: deleting it, in words that say what happens to the rest (Delete does the same).
+        var (verb, tip) = items[0] switch
+        {
+            Sector => ("Delete this room", "The room and the things in it go; the walls it shared become its neighbours' solid walls (Delete)."),
+            Line { Back: not null } or Side { Line.Back: not null } => ("Delete this wall", "The wall goes and the rooms on its two sides become one room (Delete)."),
+            Thing => ("Delete this thing", "Takes it off the map (Delete)."),
+            Vertex => ("Delete this corner", "Where two walls meet, they become one straight wall (Delete)."),
+            _ => ((string?)null, ""),
+        };
+        if (verb is not null) Rows.Add(new ActionRow(verb, tip, _session.DeleteSelection));
     }
 
     private static string Name(Element e) => e switch

@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -361,7 +361,7 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose == "editor-draw" || pose == "editor-move" || pose == "editor-join")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
@@ -414,6 +414,28 @@ foreach (var pose in poses)
 
                 Drag((256, -256), (768, 256), pose == "editor-draw" ? "editor-drawing" : null);
                 Report("beside");
+                if (pose == "editor-delete")
+                {
+                    // V, a click in the new room, the Delete key: the room goes and the shared wall is the
+                    // starter room's solid wall again; Ctrl+Z brings the room back.
+                    window.KeyPress(Avalonia.Input.Key.V, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.V, "v");
+                    Pump(0.2);
+                    window.MouseDown(At(500, 100), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(At(500, 100), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.5);
+                    Save("editor-delete-selected");
+                    window.KeyPress(Avalonia.Input.Key.Delete, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Delete, null);
+                    Pump(0.8);
+                    Report("deleted");
+                    var m = editor.Session.Map;
+                    Console.WriteLine($"draw walls: {string.Join(" ", m.Lines.Where(l => l.OnMap).Select(l => $"{(l.Flag("blocking") ? "solid" : "open")}:{l.Front.Middle}"))}");
+                    Save("editor-delete");
+                    window.KeyPress(Avalonia.Input.Key.Z, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.Z, "z");
+                    Pump(0.8);
+                    Report("undone");
+                    break;
+                }
+
                 if (pose == "editor-move")
                 {
                     // V for Select, a click in the new room, then a drag of it 128 east (its corners

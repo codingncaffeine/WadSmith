@@ -92,7 +92,7 @@ public sealed class MovingTests
     }
 
     /// <summary>An empty map with rooms drawn by the Room tool's own drawing.</summary>
-    private static (EditorMap Map, History History, List<Sector> Rooms) Drawn(params (double X0, double Y0, double X1, double Y1)[] boxes)
+    internal static (EditorMap Map, History History, List<Sector> Rooms) Drawn(params (double X0, double Y0, double X1, double Y1)[] boxes)
     {
         var map = EditorMap.FromModel(new MapModel { Name = "MAP01", Namespace = "zdoom" });
         var history = new History(map);

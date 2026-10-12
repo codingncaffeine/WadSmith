@@ -41,7 +41,7 @@ public sealed class EditorSession : IDisposable
     private bool _disposed;
 
     private readonly Func<MapFrame, byte[]?>? _picture;
-    private IReadOnlyList<MapPoint>? _waitingShape;
+    private Action? _whenCaughtUp;
 
     private EditorSession(Project project, string slot, EditorMap map, MapGeometry geometry, SessionHooks hooks)
     {
@@ -62,10 +62,10 @@ public sealed class EditorSession : IDisposable
             if (_disposed || g.Version <= _geometry.Version) return;
             _geometry = g;
             GeometryChanged?.Invoke();
-            if (_waitingShape is { } shape && g.Version == Map.Version)
+            if (_whenCaughtUp is { } then && g.Version == Map.Version)
             {
-                _waitingShape = null;
-                DrawRoom(shape);
+                _whenCaughtUp = null;
+                then();
             }
         }, "the map's shapes");
         map.Changed += _ =>
@@ -113,7 +113,7 @@ public sealed class EditorSession : IDisposable
     {
         if (_geometry.Version != Map.Version)
         {
-            _waitingShape = shape;
+            _whenCaughtUp = () => DrawRoom(shape);
             return;
         }
 
@@ -131,6 +131,37 @@ public sealed class EditorSession : IDisposable
             Log.Warn($"Drawing a room in {Slot} failed: {ex.Message}");
             Notice?.Invoke($"That room could not be drawn there. {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Deletes the selection so the map stays whole (see <see cref="Deleting"/>), as one undo step, and
+    /// says what stayed and why. Waits for the map's shapes like <see cref="DrawRoom"/>.
+    /// </summary>
+    public void DeleteSelection()
+    {
+        if (Selection.IsEmpty) return;
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = DeleteSelection;
+            return;
+        }
+
+        var items = Selection.Items.ToList();
+        IReadOnlyList<string> said = [];
+        try
+        {
+            var geometry = _geometry;
+            var look = Look;
+            History.Record("Delete", e => said = Deleting.Delete(e, geometry, items, look));
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Log.Warn($"Deleting in {Slot} failed: {ex.Message}");
+            said = [$"That could not be deleted. {ex.Message}"];
+        }
+
+        Selection.Prune();
+        if (said.Count > 0) Notice?.Invoke(string.Join(" ", said));
     }
 
     /// <summary>

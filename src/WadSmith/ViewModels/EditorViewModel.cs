@@ -382,6 +382,10 @@ internal sealed partial class EditorViewModel : ObservableObject
         Learned("undo");
     }
 
+    /// <summary>Deletes the selection so the map stays whole (Delete).</summary>
+    [RelayCommand]
+    private void Delete() => Session.DeleteSelection();
+
     [RelayCommand(CanExecute = nameof(CanRedo))]
     private void Redo()
     {
