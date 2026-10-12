@@ -11,4 +11,12 @@
     <InternalsVisibleTo Include="WadSmith.Tests" />
   </ItemGroup>
 
+  <!-- The data folder (game definitions, action tables, UI words) is built into the assembly. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\data\**\*.json">
+      <!-- Forward slashes on every platform, so the name is the same on Windows. -->
+      <LogicalName>data/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>

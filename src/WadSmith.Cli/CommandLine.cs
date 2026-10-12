@@ -32,7 +32,11 @@ internal interface ICommand
 /// <summary>The verb dispatcher. Kept free of <see cref="Console"/> so the tests can run it in-process.</summary>
 public static class CommandLine
 {
-    internal static IReadOnlyList<ICommand> Commands { get; } = [];
+    internal static IReadOnlyList<ICommand> Commands { get; } =
+    [
+        new Commands.InspectCommand(),
+        new Commands.RoundTripCommand(),
+    ];
 
     public static int Run(IReadOnlyList<string> args, TextWriter output, TextWriter error)
     {
