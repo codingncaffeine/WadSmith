@@ -125,34 +125,41 @@ public static class Doors
     /// <summary>The widest wall the Door tool turns into a door.</summary>
     public const double MaxWidth = 256;
 
+    /// <summary>The stretch of a long wall a door clicked on it takes: <paramref name="width"/> wide in its middle, on whole units.</summary>
+    public static (double From, double To) Centred(Line wall, double width = 64) => (Math.Round((wall.Length - width) / 2), Math.Round((wall.Length + width) / 2));
+
     /// <summary>
     /// Makes a door in a wall between two rooms through <paramref name="edit"/>, as Doom's own doors are
-    /// made: an area 16 deep and as wide as the wall, flush with it on the side of the narrower room (a
+    /// made: an area 16 deep and as wide as the wall (or the stretch of it <paramref name="span"/> gives, from the wall's
+    /// start), flush with it on the side of the narrower room (a
     /// corridor's end), closed (its ceiling on its floor); its two walls facing the rooms open it when
     /// used, by players and monsters, again and again (Door_Raise, Doom's DR door); they show the game's
     /// door texture, and its side walls the door track texture, anchored at the bottom so they do not
     /// move with the door. Returns the door's area, or null and the reason it cannot be made there.
     /// <paramref name="before"/> must show the map as it is.
     /// </summary>
-    public static (Sector? Door, string? Why) Make(StructureEdit edit, MapGeometry before, Line wall, Look look)
+    public static (Sector? Door, string? Why) Make(StructureEdit edit, MapGeometry before, Line wall, Look look, (double From, double To)? span = null)
     {
         if (wall.Back is null) return (null, "A door goes in a wall between two rooms; this wall has a room on one side only.");
         var (front, back) = (wall.Front.Sector, wall.Back.Sector);
         if (ReferenceEquals(front, back)) return (null, "A door goes in a wall between two rooms; this wall has the same room on both sides.");
-        if (wall.Length > MaxWidth) return (null, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"This wall is {wall.Length:0} long, and a door fills the wall it is made in, up to {MaxWidth:0}. Draw a short corridor between the rooms with the Room tool and click its end."));
+        var (from, to) = span is { } s ? (Math.Clamp(Math.Min(s.From, s.To), 0, wall.Length), Math.Clamp(Math.Max(s.From, s.To), 0, wall.Length)) : (0, wall.Length);
+        var width = to - from;
+        if (width < 8) return (null, "A door needs to be at least 8 wide; drag a longer stretch of the wall.");
+        if (width > MaxWidth) return (null, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"A door can be up to {MaxWidth:0} wide, and this one would be {width:0}: drag a shorter stretch of the wall."));
         if (Recognise(before, front) is not null || Recognise(before, back) is not null) return (null, "This wall is already a door's.");
 
         // The door goes into the corridor: the room with walls running on from both ends of this one.
         var sides = new[] { back, front }.OrderByDescending(r => Corridor(before, wall, r)).ToList();
         foreach (var into in sides)
         {
-            var strip = Strip(wall, into, Depth);
+            var strip = Strip(wall, into, Depth, from, to);
             if (!Clear(before, wall, strip)) continue;
             var made = ShapeDrawing.Draw(edit, before, strip, look);
             if (made.Count != 1) throw new InvalidOperationException("The door's area did not come out as one area.");
             var door = made[0];
             door.CeilingHeight = door.FloorHeight;
-            var texture = wall.Length <= 64 ? look.Door : look.BigDoor;
+            var texture = width <= 64 ? look.Door : look.BigDoor;
             // The door's walls: the ones the drawing made or split, and the ones whose face it gave to the door.
             var walls = edit.Touched.Select(e => e switch { Line w => w, Side { Line: { } w } => w, _ => null }).OfType<Line>().Distinct();
             foreach (var l in walls.Where(l => l.OnMap && (ReferenceEquals(l.Front.Sector, door) || ReferenceEquals(l.Back?.Sector, door))).ToList())
@@ -217,10 +224,11 @@ public static class Doors
         return ReferenceEquals(wall.Front.Sector, room) ? (rx, ry) : (-rx, -ry);
     }
 
-    private static MapPoint[] Strip(Line wall, Sector into, double depth)
+    private static MapPoint[] Strip(Line wall, Sector into, double depth, double from, double to)
     {
         var (nx, ny) = Normal(wall, into);
-        var (a, b) = (new MapPoint(wall.Start.X, wall.Start.Y), new MapPoint(wall.End.X, wall.End.Y));
+        var (dx, dy) = ((wall.End.X - wall.Start.X) / wall.Length, (wall.End.Y - wall.Start.Y) / wall.Length);
+        var (a, b) = (new MapPoint(wall.Start.X + dx * from, wall.Start.Y + dy * from), new MapPoint(wall.Start.X + dx * to, wall.Start.Y + dy * to));
         return [a, b, new MapPoint(b.X + nx * depth, b.Y + ny * depth), new MapPoint(a.X + nx * depth, a.Y + ny * depth)];
     }
 

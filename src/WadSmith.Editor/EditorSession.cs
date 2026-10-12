@@ -647,20 +647,23 @@ public sealed class EditorSession : IDisposable
     }
 
     /// <summary>Makes a door in a wall between two rooms (see <see cref="Doors.Make"/>), one undo step, and selects it; says why when it cannot.</summary>
-    public void MakeDoor(Line wall)
+    public void MakeDoor(Line wall, (double From, double To)? span = null)
     {
         if (_geometry.Version != Map.Version)
         {
-            _whenCaughtUp = () => MakeDoor(wall);
+            _whenCaughtUp = () => MakeDoor(wall, span);
             return;
         }
+
+        // A click on a wall longer than a door can be: a standard door in its middle.
+        if (span is null && wall.Length > Doors.MaxWidth) span = Doors.Centred(wall);
 
         try
         {
             (Sector? Door, string? Why) result = (null, null);
             var geometry = _geometry;
             var look = Look;
-            History.Record("Make a door", e => result = Doors.Make(e, geometry, wall, look));
+            History.Record("Make a door", e => result = Doors.Make(e, geometry, wall, look, span));
             if (result.Door is { } door) Selection.Set(door);
             else if (result.Why is { } why) Notice?.Invoke(why);
         }

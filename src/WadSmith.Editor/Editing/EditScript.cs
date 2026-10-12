@@ -24,7 +24,8 @@ public static class EditScript
         floor X Y HEIGHT            the floor of the room at the point
         ceiling X Y HEIGHT          its ceiling
         light X Y                   a light
-        door X Y                    a door in the wall nearest the point
+        door X Y [WIDTH]            a door in the wall nearest the point: the whole wall, or WIDTH wide in its middle
+                                    (64 there on a wall longer than a door can be)
         lock X Y COLOUR             the door at the point locked with the red, blue or yellow key
         key COLOUR X Y              a keycard
         window X Y [WIDTH]          a window in the wall nearest the point
@@ -112,7 +113,8 @@ public static class EditScript
                 break;
             case "door":
                 var doorWall = Wall(1);
-                Record("Make a door", e => why = Doors.Make(e, g, doorWall, l).Why);
+                (double, double)? doorSpan = w.Length > 3 ? Doors.Centred(doorWall, N(3)) : doorWall.Length > Doors.MaxWidth ? Doors.Centred(doorWall) : null;
+                Record("Make a door", e => why = Doors.Make(e, g, doorWall, l, doorSpan).Why);
                 made = "a door";
                 break;
             case "lock":

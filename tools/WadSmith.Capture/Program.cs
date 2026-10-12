@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -349,6 +349,43 @@ foreach (var pose in poses)
             var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
             view.FitMap();
             if (pose == "editor-zoomed") view.ZoomBy(3.5);
+            if (pose == "editor-door-drag")
+            {
+                // A tall room east of the starter room sharing its 512-long wall; the Door tool dragged along it from y −192 to
+                // −64: a door 128 wide there. Then a click on the same wall's middle: a standard 64 there.
+                var session = editor.Session;
+                session.DrawRoom([new(256, -256), new(256, 256), new(512, 256), new(512, -256)]);
+                Pump(1.0);
+                var plan = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
+                plan.FitMap();
+                Pump(0.4);
+                Avalonia.Point Spot(double x, double y) => plan.TranslatePoint(plan.ToScreen(new WadSmith.Editor.Geometry.MapPoint(x, y)), window)!.Value;
+                plan.Focus();
+                window.KeyPress(Avalonia.Input.Key.D, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.D, "d");
+                Pump(0.2);
+                window.MouseMove(Spot(256, -192), Avalonia.Input.RawInputModifiers.None);
+                window.MouseDown(Spot(256, -192), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                for (var k = 1; k <= 8; k++)
+                {
+                    window.MouseMove(Spot(256, -192 + 16 * k), Avalonia.Input.RawInputModifiers.LeftMouseButton);
+                    Pump(0.02);
+                }
+
+                Console.WriteLine($"door drag: status '{editor.Status}'");
+                Save("editor-door-dragging");
+                window.MouseUp(Spot(256, -64), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                Pump(1.0);
+                string Doors() => string.Join(" ", session.Map.Sectors.Where(s => s.OnMap && s.CeilingHeight == s.FloorHeight).Select(s => session.Geometry.WallBoundsAt(s.Slot) is { } b ? $"[{b.MinX:0},{b.MinY:0} {b.MaxX:0},{b.MaxY:0}]" : "?"));
+                Console.WriteLine($"door drag: doors {Doors()}; undo '{session.History.UndoLabel}'");
+                window.MouseMove(Spot(256, 128), Avalonia.Input.RawInputModifiers.None);
+                window.MouseDown(Spot(256, 128), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                window.MouseUp(Spot(256, 128), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                Pump(1.0);
+                Console.WriteLine($"door click: doors {Doors()}; status '{editor.Status}'");
+                Save("editor-door-drag");
+                break;
+            }
+
             if (pose == "editor-mirror")
             {
                 // Four-way symmetry about the starter room's middle; a room dragged north-east of it, seen mid-drag with its three

@@ -744,13 +744,22 @@ internal sealed class MapCanvas : Control
             : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Window {width:0} wide · let go to make it, Esc to stop");
     }
 
+    /// <summary>The status strip's sentence while a door is dragged along a wall.</summary>
+    private string DescribeDoor()
+    {
+        var width = Math.Abs(_windowTo - _windowFrom);
+        return width < 1
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Let go for a door filling this wall (a standard 64 in the middle of a wall longer than {WadSmith.Editor.Smart.Doors.MaxWidth:0}), or drag along the wall for another width · Esc to stop")
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Door {width:0} wide · let go to make it, Esc to stop");
+    }
+
     /// <summary>The stretch of wall a window is being dragged along (screen pixels).</summary>
     private void DrawWindowDrag(DrawingContext context)
     {
         if (_windowWall is not { } wall || Math.Abs(_windowTo - _windowFrom) < 1) return;
         var length = wall.Length;
         MapPoint At(double t) => new(wall.Start.X + (wall.End.X - wall.Start.X) * t / length, wall.Start.Y + (wall.End.Y - wall.Start.Y) * t / length);
-        var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x5A, 0xC8, 0xFA)), 6, lineCap: PenLineCap.Round);
+        var pen = new Pen(new SolidColorBrush(Tool == EditorTool.Door ? Color.FromRgb(0xE0, 0x58, 0x2A) : Color.FromRgb(0x5A, 0xC8, 0xFA)), 6, lineCap: PenLineCap.Round);
         context.DrawLine(pen, ToScreen(At(_windowFrom)), ToScreen(At(_windowTo)));
     }
 
@@ -1109,7 +1118,7 @@ internal sealed class MapCanvas : Control
             return;
         }
 
-        if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Window)
+        if (props.IsLeftButtonPressed && Session is not null && Tool is EditorTool.Window or EditorTool.Door)
         {
             if (WallAt(e.GetPosition(this)) is { } wall)
             {
@@ -1117,7 +1126,7 @@ internal sealed class MapCanvas : Control
                 _windowFrom = _windowTo = AlongWall(wall, e.GetPosition(this));
                 _drawPress = e.GetPosition(this);
                 e.Pointer.Capture(this);
-                Placing?.Invoke(DescribeWindow());
+                Placing?.Invoke(Tool == EditorTool.Door ? DescribeDoor() : DescribeWindow());
                 InvalidateVisual();
             }
 
@@ -1277,10 +1286,10 @@ internal sealed class MapCanvas : Control
             return;
         }
 
-        if (Tool == EditorTool.Window && _windowWall is { } held)
+        if (Tool is EditorTool.Window or EditorTool.Door && _windowWall is { } held)
         {
             _windowTo = AlongWall(held, p);
-            Placing?.Invoke(DescribeWindow());
+            Placing?.Invoke(Tool == EditorTool.Door ? DescribeDoor() : DescribeWindow());
             InvalidateVisual();
             return;
         }
@@ -1422,6 +1431,20 @@ internal sealed class MapCanvas : Control
             if (_measureFrom is { } m0 && _measureTo is { } m1 && m0.DistanceTo(m1) >= 1) Measured?.Invoke(m0, m1);
             else (_measureFrom, _measureTo) = (null, null);
             InvalidateVisual();
+            return;
+        }
+
+        if (Tool == EditorTool.Door && _windowWall is { } doorway && e.InitialPressMouseButton == MouseButton.Left && Session is { } hanging)
+        {
+            // A click makes a door of the wall (a long one gets a standard door in its middle); a drag, of the stretch dragged.
+            e.Pointer.Capture(null);
+            var let = e.GetPosition(this);
+            var stretched = Math.Abs(let.X - _drawPress.X) + Math.Abs(let.Y - _drawPress.Y) > 4 && Math.Abs(_windowTo - _windowFrom) >= 8;
+            var span = (Math.Min(_windowFrom, _windowTo), Math.Max(_windowFrom, _windowTo));
+            _windowWall = null;
+            Placing?.Invoke(null);
+            InvalidateVisual();
+            hanging.MakeDoor(doorway, stretched ? span : null);
             return;
         }
 
