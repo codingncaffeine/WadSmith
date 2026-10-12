@@ -202,6 +202,85 @@ public sealed class Project
         lock (_gate) WriteAtomically(Path.Combine(Folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(Info, Json));
     }
 
+    /// <summary>A project found in the projects folder: where it is, what its sidecar says, and when it was last changed.</summary>
+    public sealed record Found(string Folder, ProjectInfo Info, DateTime Modified);
+
+    /// <summary>
+    /// Every project directly inside <paramref name="projectsFolder"/>, newest change first; a folder whose sidecar cannot
+    /// be read is left out. The Deleted folder (see <see cref="Delete"/>) is not looked in.
+    /// </summary>
+    public static IReadOnlyList<Found> List(string projectsFolder)
+    {
+        var found = new List<Found>();
+        if (!Directory.Exists(projectsFolder)) return found;
+        foreach (var folder in Directory.EnumerateDirectories(projectsFolder))
+        {
+            if (string.Equals(Path.GetFileName(folder), DeletedFolderName, StringComparison.Ordinal)) continue;
+            var sidecar = Path.Combine(folder, SidecarName);
+            if (!File.Exists(sidecar)) continue;
+            try
+            {
+                var info = JsonSerializer.Deserialize<ProjectInfo>(File.ReadAllText(sidecar), Json);
+                if (info is null) continue;
+                var maps = Path.Combine(folder, "maps");
+                var modified = File.GetLastWriteTimeUtc(sidecar);
+                if (Directory.Exists(maps)) modified = Directory.EnumerateFiles(maps).Select(File.GetLastWriteTimeUtc).Append(modified).Max();
+                found.Add(new Found(Path.GetFullPath(folder), info, modified));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+            }
+        }
+
+        return [.. found.OrderByDescending(f => f.Modified)];
+    }
+
+    /// <summary>Where deleted projects go, inside the projects folder: nothing is lost, only moved.</summary>
+    public const string DeletedFolderName = "Deleted";
+
+    /// <summary>Gives the project a new name (its folder stays where it is).</summary>
+    public void Rename(string name)
+    {
+        name = name.Trim();
+        if (name.Length == 0) throw new ArgumentException("A map needs a name.", nameof(name));
+        Info = Info with { Name = name };
+        SaveInfo();
+    }
+
+    /// <summary>A whole copy of the project at <paramref name="folder"/> in <paramref name="toFolder"/> (which must not exist), named <paramref name="name"/>.</summary>
+    public static Project Copy(string folder, string toFolder, string name)
+    {
+        folder = Path.GetFullPath(folder);
+        toFolder = Path.GetFullPath(toFolder);
+        if (Directory.Exists(toFolder)) throw new IOException($"{toFolder} already exists.");
+        CopyTree(folder, toFolder);
+        var copy = Open(toFolder);
+        copy.Rename(name);
+        return copy;
+    }
+
+    /// <summary>
+    /// Moves the project at <paramref name="folder"/> into the projects folder's Deleted folder, under its own name and the
+    /// time, and returns where it went: a deleted map can be brought back by moving it out again.
+    /// </summary>
+    public static string Delete(string folder, string projectsFolder)
+    {
+        folder = Path.GetFullPath(folder);
+        var deleted = Path.Combine(projectsFolder, DeletedFolderName);
+        Directory.CreateDirectory(deleted);
+        var target = Path.Combine(deleted, $"{Path.GetFileName(folder)} {DateTime.Now:yyyy-MM-dd HH.mm.ss}");
+        for (var n = 2; Directory.Exists(target); n++) target = Path.Combine(deleted, $"{Path.GetFileName(folder)} {DateTime.Now:yyyy-MM-dd HH.mm.ss} {n}");
+        Directory.Move(folder, target);
+        return target;
+    }
+
+    private static void CopyTree(string from, string to)
+    {
+        Directory.CreateDirectory(to);
+        foreach (var file in Directory.EnumerateFiles(from)) File.Copy(file, Path.Combine(to, Path.GetFileName(file)));
+        foreach (var dir in Directory.EnumerateDirectories(from)) CopyTree(dir, Path.Combine(to, Path.GetFileName(dir)));
+    }
+
     private readonly Lock _gate = new();
 
     /// <summary>The copy of <paramref name="original"/> from <paramref name="game"/> already in the project, if any (any thread).</summary>

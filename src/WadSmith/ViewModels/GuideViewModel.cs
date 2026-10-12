@@ -72,6 +72,10 @@ internal sealed partial class GuideViewModel : ObservableObject
     [ObservableProperty]
     private string _said = "";
 
+    /// <summary>How to use the tool in hand (what the status bar says), shown on the card as well.</summary>
+    [ObservableProperty]
+    private string _how = "";
+
     /// <summary>Whether every step is done: the card says so and offers what to try next.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Target), nameof(StepLabel), nameof(CanGoBack))]

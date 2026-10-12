@@ -214,6 +214,7 @@
                     <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
                     <!-- What WadSmith just refused, said here too: the status bar is far from where the user is looking. -->
                     <TextBlock Text="{Binding Said}" IsVisible="{Binding Said.Length}" Foreground="{DynamicResource Brush.Accent}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding How}" IsVisible="{Binding How.Length}" Classes="secondary" FontSize="12" TextWrapping="Wrap" />
                     <ItemsControl ItemsSource="{Binding Next}" IsVisible="{Binding Finished}" Margin="0,6,0,0">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>

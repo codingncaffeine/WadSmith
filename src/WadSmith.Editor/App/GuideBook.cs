@@ -66,7 +66,7 @@ public static class GuideBook
     [
         new(FirstMap, "Guided first map", "Ten minutes from one room to playing your own map.",
         [
-            new("room", "Draw a room", "Pick {label:Room} at the top left{or:Room tool} and drag a rectangle against the room you have. Where the two rooms touch they open into each other: in Doom there is no wall on that line (it is dashed on the plan), and it is where your door will go.", GuideTarget.RoomTool),
+            new("room", "Draw a room", "Pick {label:Room} at the top left{or:Room tool} and drag a rectangle against the room you have (or click corner by corner and double-click the last corner to finish). Where the two rooms touch they open into each other: in Doom there is no wall on that line (it is dashed on the plan), and it is where your door will go.", GuideTarget.RoomTool),
             new("look", "See it in 3D", "Press {key:Show the 3D view alone} to fill the window with the 3D view, and drag to turn round your rooms: where they meet there is no wall yet, they open into each other. {key:Show the 3D view alone} again brings the plan back.", GuideTarget.ThreeD),
             new("door", "Put a door between them", "Pick Door{or:Door tool} and click the dashed line where your two rooms meet. A door is built into that opening, with wall either side of it: it opens when the player uses it and closes again behind them.", GuideTarget.DoorTool),
             new("texture", "Give a wall a new look", "Open Textures on the right and drag a picture onto one of your walls, on the plan or in the 3D view.", GuideTarget.Textures),

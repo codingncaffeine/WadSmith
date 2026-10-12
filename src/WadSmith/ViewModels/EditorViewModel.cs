@@ -478,7 +478,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
         return new(
             Select: F("Select", "Click a room, a wall, a corner or a thing to see it in the Inspector; Shift adds or removes", "Select tool"),
-            Room: F("Room", "Drag to draw a room. It snaps to the grid and to corners; drawn against or over other rooms, it shares their walls and never removes any", "Room tool"),
+            Room: F("Room", "Two ways: drag a rectangle, or click corner by corner and double-click the last corner to finish. It snaps to the grid and to corners; drawn against or over other rooms, it shares their walls and never removes any", "Room tool"),
             Door: F("Door", "Click the wall between two rooms to make it a door that opens when used, with the game's door and track textures", "Door tool"),
             Window: F("Window", "Drag along a wall (or click it) for a window: through a thick wall to the room behind, or in a wall two rooms share, which becomes a wall closed but for the window", "Window tool"),
             Teleport: F("Teleport", "Click a room to step on, then the spot the player arrives at: stepping onto the room sends them there", "Teleport tool"),
@@ -629,6 +629,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             if (e.PropertyName == nameof(GuideViewModel.Target) && ReferenceEquals(Guide, guide)) OnPropertyChanged(nameof(Marks));
         };
         Guide = guide;
+        UpdateStatus();
     }
 
     /// <summary>One palette entry per Guide chapter; the first map keeps its own name.</summary>
@@ -853,7 +854,7 @@ internal sealed partial class EditorViewModel : ObservableObject
     public void Corners((int Corners, double Side)? drawing)
     {
         _drawingText = drawing is { } d
-            ? string.Create(CultureInfo.InvariantCulture, $"{d.Corners} corner{(d.Corners == 1 ? "" : "s")}{(d.Side > 0 ? $" · this side {d.Side:0}" : "")} · click the first corner to close, or double-click or press Enter to finish (a line from wall to wall across a room splits it); Shift keeps sides to 15° steps, Backspace takes a corner back, Esc lets go")
+            ? string.Create(CultureInfo.InvariantCulture, $"{d.Corners} corner{(d.Corners == 1 ? "" : "s")} so far{(d.Side > 0 ? $" · this side {d.Side:0}" : "")} · double-click the last corner, or click the first one again, to finish the room; Enter finishes an open line (across a room it splits it); Shift keeps sides straight; Esc lets go")
             : "";
         UpdateStatus();
     }
@@ -1675,6 +1676,10 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     private void UpdateStatus()
     {
+        // The tool in hand, how to use it: the status bar, and the Guide's card while a step is open (the status bar is far from where a first-time mapper looks).
+        var how = _drawingText.Length > 0 ? _drawingText : ToolHow();
+        if (Guide is { } guide) guide.How = how ?? "";
+
         if (_drawingText.Length > 0 || _notice.Length > 0)
         {
             Status = _drawingText.Length > 0 ? _drawingText : _notice;
@@ -1687,61 +1692,34 @@ internal sealed partial class EditorViewModel : ObservableObject
             return;
         }
 
-        if (Tool == Canvas.EditorTool.Stairs)
+        if (how is not null)
         {
-            Status = "Drag from the bottom of the stairs to the top: the steps climb from the floor where you start to the floor where you end, 16 a step where nothing else decides. Esc goes back to Select.";
-            return;
-        }
-
-        if (Tool == Canvas.EditorTool.Measure)
-        {
-            Status = "Drag a line across the map: its length, and below the map the floors and ceilings along it, with what stops the player. Esc goes back to Select.";
-            return;
-        }
-
-        if (Tool == Canvas.EditorTool.Light)
-        {
-            Status = "Click in a room for a light: warm, 128 across, 48 above the floor; its colour and reach are in the Inspector. Esc goes back to Select.";
-            return;
-        }
-
-        if (Tool == Canvas.EditorTool.Key)
-        {
-            Status = Session.KeyToPlace is { } colour ? $"Click where the {colour} key goes, somewhere the player reaches before the door. Esc goes back to Select." : "";
-            return;
-        }
-
-        if (Tool == Canvas.EditorTool.Switch)
-        {
-            Status = Session.SwitchTarget is null
-                ? "Click the door or lift the switch works. Esc goes back to Select."
-                : "Now click the solid wall where the switch goes: a piece of it 64 wide becomes the switch. Esc goes back to Select.";
-            return;
-        }
-
-        if (Tool == Canvas.EditorTool.Teleport)
-        {
-            Status = Session.TeleportPad is null
-                ? "Click the room to step on: it becomes the teleport pad. Esc goes back to Select."
-                : "Now click where the player arrives. Stepping onto the pad sends them there. Esc goes back to Select.";
-            return;
-        }
-
-        if (Tool == Canvas.EditorTool.Door)
-        {
-            Status = "Click the wall between two rooms where the door goes: it fills the wall (up to 256 wide), flush on the corridor's side, and opens when used. Esc goes back to Select.";
-            return;
-        }
-
-        if (Tool == Canvas.EditorTool.Room)
-        {
-            Status = string.Create(CultureInfo.InvariantCulture, $"Drag to draw a rectangle room, or click corner by corner for any shape. Corners snap to the grid ({_gridStep:0} units) and to corners nearby; drawn against a room, the two share a wall. Esc goes back to Select.");
+            Status = how;
             return;
         }
 
         var settings = _services.Settings.Current;
         Status = settings.CoachTips ? Keyed(Tips.FirstOrDefault(t => !settings.CoachSeen.Contains(t.Id)).Text ?? "") : "";
     }
+
+    /// <summary>How to use the tool in hand, in a sentence or two; null for the Select tool (the tips then).</summary>
+    private string? ToolHow() => Tool switch
+    {
+        Canvas.EditorTool.Stairs => "Drag from the bottom of the stairs to the top: the steps climb from the floor where you start to the floor where you end, 16 a step where nothing else decides. Esc goes back to Select.",
+        Canvas.EditorTool.Measure => "Drag a line across the map: its length, and below the map the floors and ceilings along it, with what stops the player. Esc goes back to Select.",
+        Canvas.EditorTool.Light => "Click in a room for a light: warm, 128 across, 48 above the floor; its colour and reach are in the Inspector. Esc goes back to Select.",
+        Canvas.EditorTool.Key => Session.KeyToPlace is { } colour ? $"Click where the {colour} key goes, somewhere the player reaches before the door. Esc goes back to Select." : "",
+        Canvas.EditorTool.Switch => Session.SwitchTarget is null
+            ? "Click the door or lift the switch works. Esc goes back to Select."
+            : "Now click the solid wall where the switch goes: a piece of it 64 wide becomes the switch. Esc goes back to Select.",
+        Canvas.EditorTool.Teleport => Session.TeleportPad is null
+            ? "Click the room to step on: it becomes the teleport pad. Esc goes back to Select."
+            : "Now click where the player arrives. Stepping onto the pad sends them there. Esc goes back to Select.",
+        Canvas.EditorTool.Door => "Click the dashed line where two rooms meet: a door is built into it, with wall either side when the opening is wider than a door. Drag along the line for a door of the width you want. Esc goes back to Select.",
+        Canvas.EditorTool.Window => "Drag along the dashed line where two rooms meet, as wide as the window should be: a sill and a top the player sees over. Esc goes back to Select.",
+        Canvas.EditorTool.Room => string.Create(CultureInfo.InvariantCulture, $"Two ways to draw a room: drag a rectangle, or click corner by corner — each click adds a corner, and a double-click on the last corner (or a click back on the first) finishes it. Corners snap to the grid ({_gridStep:0} units) and to corners nearby; drawn against a room, the two open into each other where they meet. Esc lets go."),
+        _ => null,
+    };
 }
 
 /// <summary>A small card that celebrates a first (D33): what happened, in a sentence or two.</summary>

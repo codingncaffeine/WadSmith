@@ -3,6 +3,25 @@
              xmlns:vm="using:WadSmith.App.ViewModels"
              x:Class="WadSmith.App.Views.WelcomeView"
              x:DataType="vm:WelcomeViewModel">
+    <UserControl.Resources>
+        <!-- One of the user's maps: its name (editable in place), when it changed, and what can be done with it. -->
+        <DataTemplate x:Key="ProjectRow" x:DataType="vm:ProjectChoice">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" Margin="0,2" MinWidth="440">
+                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" IsVisible="{Binding !IsRenaming}" ToolTip.Tip="{Binding Folder}" TextTrimming="CharacterEllipsis" />
+                <TextBox Text="{Binding NewName}" IsVisible="{Binding IsRenaming}" MinWidth="160" ToolTip.Tip="The map's new name: Enter keeps it, Escape leaves it as it was.">
+                    <TextBox.KeyBindings>
+                        <KeyBinding Gesture="Enter" Command="{Binding CommitRenameCommand}" />
+                        <KeyBinding Gesture="Escape" Command="{Binding CancelRenameCommand}" />
+                    </TextBox.KeyBindings>
+                </TextBox>
+                <TextBlock Grid.Column="1" Text="{Binding When}" Classes="secondary" FontSize="12" VerticalAlignment="Center" Margin="10,0" ToolTip.Tip="When the map last changed." />
+                <Button Grid.Column="2" Classes="primary" Content="Open" Command="{Binding OpenCommand}" Margin="4,0" ToolTip.Tip="Opens this map in the editor." />
+                <Button Grid.Column="3" Classes="metal" Content="Rename" Command="{Binding RenameCommand}" Margin="4,0" ToolTip.Tip="Gives the map a new name; its folder stays where it is." />
+                <Button Grid.Column="4" Classes="metal" Content="Copy" Command="{Binding CopyCommand}" Margin="4,0" ToolTip.Tip="A whole copy of the map beside it, named '… copy', ready to open." />
+                <Button Grid.Column="5" Classes="metal" Content="Delete" Command="{Binding DeleteCommand}" Margin="4,0" ToolTip.Tip="Moves the map into the Deleted folder inside your maps folder; move it out again to bring it back." />
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
     <ScrollViewer>
         <StackPanel MaxWidth="1180" Margin="40,32,40,40" Spacing="6">
             <Grid ColumnDefinitions="*,Auto">
@@ -92,6 +111,16 @@
                                 <Button Classes="metal" Content="Guided first map · 10 minutes" Command="{Binding GuidedMap}" CommandParameter="{Binding}" HorizontalAlignment="Stretch"
                                         IsVisible="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).GuidePrompts}"
                                         ToolTip.Tip="A new map, and seven short steps beside it: a room, a door, a texture, a monster and a weapon, a way out, then Play. You can skip or stop at any time." />
+                                <Button Classes="metal" Content="{Binding ProjectsLabel}" HorizontalAlignment="Stretch" IsVisible="{Binding Projects.Count}"
+                                        ToolTip.Tip="The maps you made for this game: open one, or rename, copy or delete it.">
+                                    <Button.Flyout>
+                                        <Flyout Placement="BottomEdgeAlignedLeft">
+                                            <ScrollViewer MaxHeight="440">
+                                                <ItemsControl ItemsSource="{Binding Projects}" ItemTemplate="{StaticResource ProjectRow}" />
+                                            </ScrollViewer>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
                             </StackPanel>
                         </Border>
                     </DataTemplate>
@@ -107,18 +136,12 @@
                         ToolTip.Tip="Open a WadSmith project folder." />
             </StackPanel>
 
-            <TextBlock Classes="section" Text="RECENT" Margin="0,28,0,4" IsVisible="{Binding Recent.Count}" />
-            <ItemsControl ItemsSource="{Binding Recent}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:RecentProject">
-                        <Button Background="Transparent" HorizontalAlignment="Left" Padding="8,6"
-                                Command="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).OpenRecentCommand}" CommandParameter="{Binding}"
-                                ToolTip.Tip="{Binding Folder}">
-                            <TextBlock Text="{Binding Name}" />
-                        </Button>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <TextBlock Classes="secondary" Text="{Binding ProjectsNote}" IsVisible="{Binding ProjectsNote.Length}" Margin="0,10,0,0" TextWrapping="Wrap" MaxWidth="820" />
+
+            <!-- Maps whose game is not on a tile right now (its files not found): still one click away. -->
+            <TextBlock Classes="section" Text="YOUR OTHER MAPS" Margin="0,28,0,4" IsVisible="{Binding OtherProjects.Count}" />
+            <TextBlock Classes="secondary" Text="Maps for games WadSmith did not find right now." IsVisible="{Binding OtherProjects.Count}" Margin="0,0,0,6" />
+            <ItemsControl ItemsSource="{Binding OtherProjects}" ItemTemplate="{StaticResource ProjectRow}" HorizontalAlignment="Left" />
         </StackPanel>
     </ScrollViewer>
 </UserControl>

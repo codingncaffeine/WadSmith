@@ -52,6 +52,7 @@ public sealed class GuideCardInTheWindowTests
                 // The Door tool on nothing: the card says to click a wall.
                 editor.Commands().Single(c => c.Name == "Door tool").Run();
                 Ui.Pump(0.2);
+                said.Add($"how: {guide.How.Split(':')[0]}");
                 var canvas = window.GetVisualDescendants().OfType<App.Canvas.MapCanvas>().First();
                 // The plan's top right: empty grid, away from the tool column that overlays its left edge.
                 var empty = canvas.TranslatePoint(new Point(canvas.Bounds.Width - 20, 20), window)!.Value;
@@ -67,6 +68,6 @@ public sealed class GuideCardInTheWindowTests
                 window.Close();
             }
         });
-        Assert.Equal(["step 3: Your rooms share no wall yet", "back to step 2 (See it in 3D), back offered", "forward to step 3: Your rooms share no wall yet", "See inside", "Skip inside", "Stop inside", "after a miss: Click on a wall"], seen);
+        Assert.Equal(["step 3: Your rooms share no wall yet", "back to step 2 (See it in 3D), back offered", "forward to step 3: Your rooms share no wall yet", "See inside", "Skip inside", "Stop inside", "how: Click the dashed line where two rooms meet", "after a miss: Click on a wall"], seen);
     }
 }

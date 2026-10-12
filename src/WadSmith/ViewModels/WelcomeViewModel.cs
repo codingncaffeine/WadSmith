@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using Avalonia.Media.Imaging;
 using WadSmith.Editor;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -34,6 +35,13 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
     [ObservableProperty]
     private IReadOnlyList<MapChoice> _maps = [];
 
+    /// <summary>The user's own maps for this game, newest first.</summary>
+    public ObservableCollection<ProjectChoice> Projects { get; } = [];
+
+    /// <summary>"Your maps · 3", the button that opens the list.</summary>
+    [ObservableProperty]
+    private string _projectsLabel = "Your maps";
+
     /// <summary>Starts a remix of one of this game's maps (set by the welcome screen).</summary>
     public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<MapChoice>? Remix { get; set; }
 
@@ -42,6 +50,56 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
 
     /// <summary>Starts a new map for this game with the guided first map running (set by the welcome screen).</summary>
     public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<GameTileViewModel>? GuidedMap { get; set; }
+}
+
+/// <summary>One of the user's own maps (a project) on a game's tile: open it, or rename, copy or delete it.</summary>
+internal sealed partial class ProjectChoice(WelcomeViewModel owner, Project.Found found) : ObservableObject
+{
+    public Project.Found Found { get; } = found;
+
+    public string Folder => Found.Folder;
+
+    public string Game => Found.Info.Game;
+
+    [ObservableProperty]
+    private string _name = found.Info.Name;
+
+    /// <summary>When it was last changed, in words.</summary>
+    public string When => Found.Modified.ToLocalTime().ToString("d MMM HH:mm", CultureInfo.CurrentCulture);
+
+    /// <summary>Whether the name is being edited in place.</summary>
+    [ObservableProperty]
+    private bool _isRenaming;
+
+    [ObservableProperty]
+    private string _newName = found.Info.Name;
+
+    [RelayCommand]
+    private Task OpenAsync() => owner.OpenFolderAsync(Folder);
+
+    [RelayCommand]
+    private void Rename()
+    {
+        NewName = Name;
+        IsRenaming = true;
+    }
+
+    [RelayCommand]
+    private async Task CommitRenameAsync()
+    {
+        IsRenaming = false;
+        if (NewName.Trim().Length == 0 || NewName.Trim() == Name) return;
+        await owner.RenameProjectAsync(this, NewName.Trim()).ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private void CancelRename() => IsRenaming = false;
+
+    [RelayCommand]
+    private Task CopyAsync() => owner.CopyProjectAsync(this);
+
+    [RelayCommand]
+    private Task DeleteAsync() => owner.DeleteProjectAsync(this);
 }
 
 /// <summary>A recently opened project.</summary>
@@ -107,6 +165,12 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     }
 
     public ObservableCollection<RecentProject> Recent { get; } = [];
+
+    /// <summary>The user's maps whose game is not among the tiles (its files not found right now), so they are still one click away.</summary>
+    public ObservableCollection<ProjectChoice> OtherProjects { get; } = [];
+
+    [ObservableProperty]
+    private string _projectsNote = "";
 
     [ObservableProperty]
     private bool _scanning;
@@ -211,6 +275,94 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     {
         Recent.Clear();
         foreach (var r in _services.Settings.Current.Recent.Where(r => File.Exists(Path.Combine(r, Project.SidecarName)))) Recent.Add(new RecentProject(r));
+        _ = RefreshProjectsAsync();
+    }
+
+    /// <summary>Lists the user's maps (read on a worker) under the tile of their game, the rest under the tiles.</summary>
+    public async Task RefreshProjectsAsync()
+    {
+        var folder = _services.Paths.Projects;
+        IReadOnlyList<Project.Found> found;
+        try
+        {
+            found = await Task.Run(() => Project.List(folder)).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Warn($"The maps in {folder} could not be listed: {ex.Message}");
+            return;
+        }
+
+        var placed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var tile in Games)
+        {
+            tile.Projects.Clear();
+            foreach (var p in found.Where(p => p.Info.Game == tile.Found.Game.Id))
+            {
+                tile.Projects.Add(new ProjectChoice(this, p));
+                placed.Add(p.Folder);
+            }
+
+            tile.ProjectsLabel = tile.Projects.Count == 0 ? "Your maps" : $"Your maps · {tile.Projects.Count}";
+        }
+
+        OtherProjects.Clear();
+        foreach (var p in found.Where(p => !placed.Contains(p.Folder))) OtherProjects.Add(new ProjectChoice(this, p));
+    }
+
+    /// <summary>Gives a map a new name; its folder stays.</summary>
+    internal async Task RenameProjectAsync(ProjectChoice choice, string name)
+    {
+        try
+        {
+            await Task.Run(() => Project.Open(choice.Folder).Rename(name)).ConfigureAwait(true);
+            choice.Name = name;
+            ProjectsNote = $"Renamed to {name}.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException or ArgumentException)
+        {
+            ProjectsNote = $"The map could not be renamed: {ex.Message}";
+        }
+
+        await RefreshProjectsAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>A whole copy of a map beside it, named after it with "copy", ready to open.</summary>
+    internal async Task CopyProjectAsync(ProjectChoice choice)
+    {
+        var name = $"{choice.Name} copy";
+        try
+        {
+            var to = UniqueFolder(name);
+            await Task.Run(() => Project.Copy(choice.Folder, to, name)).ConfigureAwait(true);
+            ProjectsNote = $"Copied as {name}.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+        {
+            ProjectsNote = $"The map could not be copied: {ex.Message}";
+        }
+
+        await RefreshProjectsAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>Moves a map to the Deleted folder inside the maps folder: it can be brought back by moving it out again.</summary>
+    internal async Task DeleteProjectAsync(ProjectChoice choice)
+    {
+        try
+        {
+            var projects = _services.Paths.Projects;
+            var where = await Task.Run(() => Project.Delete(choice.Folder, projects)).ConfigureAwait(true);
+            _services.Settings.Current.Recent.RemoveAll(r => string.Equals(r, choice.Folder, StringComparison.Ordinal));
+            _services.Settings.Save();
+            ProjectsNote = $"{choice.Name} moved to {where}. To bring it back, move the folder out of Deleted.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ProjectsNote = $"The map could not be deleted: {ex.Message}";
+        }
+
+        await RefreshProjectsAsync().ConfigureAwait(true);
+        RefreshRecent();
     }
 
     /// <summary>Looks for the games again (after the game folders changed).</summary>
