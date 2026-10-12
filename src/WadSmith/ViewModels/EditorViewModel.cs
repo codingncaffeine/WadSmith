@@ -1437,6 +1437,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
         await Session.SaveVersion("Played").ConfigureAwait(true);
         var played = Session.Map.Frame;
+        var exitCode = -1;
         var engine = engines[0];
         var (program, arguments) = WadSmith.Core.Engines.PlayCommand.For(engine, request);
         try
@@ -1449,6 +1450,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             Guide?.Happened(GuideEvents.Played);
             Hint($"Playing {Session.Slot} in {engine.Name}… WadSmith keeps your changes meanwhile; what the game says comes back to Problems when it closes.");
             await process.WaitForExitAsync(_services.ShuttingDown).ConfigureAwait(true);
+            exitCode = process.ExitCode;
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
         {
@@ -1467,7 +1469,36 @@ internal sealed partial class EditorViewModel : ObservableObject
 
         Session.ReadPlayLog(log, played);
         Hint("Back from the game.");
+        if (exitCode == 0) await CelebrateFirstPlay(played, engine.Name).ConfigureAwait(true);
     }
+
+    /// <summary>The first-Play card (D33) while it shows; null otherwise.</summary>
+    [ObservableProperty]
+    private Celebration? _celebration;
+
+    /// <summary>
+    /// The first time a map comes back from the game without an error, a small card says what the user made (D33): once per
+    /// profile, unless celebrations are off in Preferences. The counts are read from the map as it was played, on a worker.
+    /// </summary>
+    internal async Task CelebrateFirstPlay(MapFrame played, string engineName)
+    {
+        var settings = _services.Settings.Current;
+        if (!settings.Celebrations || settings.FirstPlayCelebrated) return;
+        settings.FirstPlayCelebrated = true;
+        _services.Settings.Save();
+        var resources = Session.Resources;
+        var game = Core.Games.GameCatalog.Get(Session.Project.Info.Game)?.Title ?? "Doom";
+        var (rooms, monsters) = await Task.Run(() => (
+            played.Sectors.Count(s => s.Element is not null),
+            played.Things.Count(t => t.Element is not null && resources?.Things.Find(t.Type)?.Category == Core.Games.ThingCategory.Monster))).ConfigureAwait(true);
+        string Count(int n, string one) => n == 1 ? $"1 {one}" : string.Create(CultureInfo.InvariantCulture, $"{n} {one}s");
+        Celebration = new Celebration(
+            $"You made a {game} map.",
+            $"{ProjectName} just ran in {engineName} with {Count(rooms, "room")}{(monsters > 0 ? " and " + Count(monsters, "monster") : "")}. Every Play keeps a version of the map in Versions, so this one is always there to come back to.");
+    }
+
+    [RelayCommand]
+    private void CloseCelebration() => Celebration = null;
 
     [RelayCommand]
     private async Task KeepVersionAsync()
@@ -1711,3 +1742,6 @@ internal sealed partial class EditorViewModel : ObservableObject
         Status = settings.CoachTips ? Keyed(Tips.FirstOrDefault(t => !settings.CoachSeen.Contains(t.Id)).Text ?? "") : "";
     }
 }
+
+/// <summary>A small card that celebrates a first (D33): what happened, in a sentence or two.</summary>
+internal sealed record Celebration(string Heading, string Text);

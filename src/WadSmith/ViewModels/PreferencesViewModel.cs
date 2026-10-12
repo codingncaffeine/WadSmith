@@ -74,6 +74,19 @@ internal sealed partial class PreferencesViewModel : ObservableObject
         }
     }
 
+    /// <summary>Whether firsts are celebrated: the card after the first Play (D33).</summary>
+    public bool Celebrations
+    {
+        get => _services.Settings.Current.Celebrations;
+        set
+        {
+            if (value == Celebrations) return;
+            _services.Settings.Current.Celebrations = value;
+            _services.Settings.Save();
+            OnPropertyChanged();
+        }
+    }
+
     /// <summary>Raised when the names or the keys change, so an open map shows the change at once.</summary>
     public event Action? VeteranChanged;
 

@@ -192,6 +192,18 @@
                     <TextBlock Text="{Binding Explained.Text}" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
+            <!-- The first Play (D33): a small card over the top of the map area, once, until closed. -->
+            <Border Grid.ColumnSpan="3" IsVisible="{Binding Celebration, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Center" VerticalAlignment="Top"
+                    Margin="12,56,12,12" Padding="20,16" MaxWidth="460" CornerRadius="8" Background="{DynamicResource Brush.Surface1}"
+                    BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="2">
+                <StackPanel Spacing="8">
+                    <TextBlock Classes="section" Text="FIRST PLAY" />
+                    <TextBlock Text="{Binding Celebration.Heading}" FontWeight="SemiBold" FontSize="22" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Celebration.Text}" TextWrapping="Wrap" />
+                    <Button Classes="primary" Content="Carry on" Command="{Binding CloseCelebrationCommand}" HorizontalAlignment="Right" Margin="0,4,0,0"
+                            ToolTip.Tip="Closes this card. It comes once; Preferences can turn celebrations off." />
+                </StackPanel>
+            </Border>
             <!-- The Guide (§3.9): the open step beside the map, never in the way of it. -->
             <Border Grid.ColumnSpan="3" IsVisible="{Binding Guide, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Right" VerticalAlignment="Bottom"
                     Margin="12" Padding="16,12" MaxWidth="420" CornerRadius="6" Background="{DynamicResource Brush.Surface1}"

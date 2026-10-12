@@ -40,7 +40,11 @@ public sealed class AppSettings
 
     public TooltipLength Tooltips { get; set; } = TooltipLength.Full;
 
+    /// <summary>Whether the editor celebrates firsts: the first time a map is played (D33).</summary>
     public bool Celebrations { get; set; } = true;
+
+    /// <summary>Whether the first Play has had its card, so it comes once per profile.</summary>
+    public bool FirstPlayCelebrated { get; set; }
 
     /// <summary>Whether pointing at an object on the Objects shelf plays its sound (D33).</summary>
     public bool ShelfSounds { get; set; } = true;
