@@ -11,16 +11,28 @@ plain words instead of jargon, drag and drop for everything, doors and lifts the
 and one key to play what you just built. Experienced mappers get the same tools with the teaching
 switched off.
 
-> **Status:** early development. There is nothing to download yet.
+> **Status:** 0.0.5, the first build you can download, for Linux. It is early: expect rough edges, and say what you find in Issues.
 
-## What it will do
+## What it does
 
-- **Draw rooms, not lines.** Drag a room and its walls, textures and monsters move with it; neighbours stay sealed.
-- **Smart doors, lifts, stairs and teleporters** that stay editable after you place them, and that WadSmith also recognises in maps made elsewhere.
-- **Drop anything on a wall:** images, animated GIFs, video clips and text become textures, sized to fit.
-- **Play in one key**, or from wherever the 3D camera stands, in GZDoom.
-- **Plain-language problems** with a fix button: an open room, a passage too narrow, a key locked behind its own door.
-- **An asset library** built from the games you own, so every texture, sprite and sound is a file you can browse and reuse.
+- **Remix or start fresh.** Pick any map of a game you own and make it yours, or start a new one; your game files are never changed.
+- **Draw rooms, not lines.** Rooms of any shape, with symmetry, rounded corners and smart guides; drag a room and its walls, textures and monsters move with it, and the rooms beside it stay sealed.
+- **Plan and 3D side by side.** A 3D view matched to GZDoom's own picture, where you can drop textures and objects and move floors and ceilings; Tab swaps to it alone.
+- **Smart doors, lifts, stairs, windows, switches, secrets, keys, teleporters, exits, lights, platforms and water** made with a click, still editable afterwards, and recognised in maps made elsewhere.
+- **Play in one key**, or from wherever the 3D view stands, after a check that offers to fix what would break the game.
+- **Plain-language problems** with a fix button, the way from start to exit step by step, and a meter that says whether the ammunition is enough for the monsters.
+- **Learn as you go:** a guided first map, hands-on Guide chapters, "What is this?" for anything you point at, examples from the games' own maps, and presets such as Low, Normal, Tall and Huge in place of numbers. Veterans switch the teaching off and get classic names and Doom Builder keys.
+- **Never lose work.** Every change is kept as you go, with versions to go back to.
+
+Coming next: images, animated GIFs and video dropped onto walls; a share bundle; maps for vanilla Doom and the Chocolate and Crispy ports; drawing in the 3D view.
+
+## Install
+
+- **Arch Linux:** `wadsmith-bin` from the AUR.
+- **Debian and Ubuntu:** the `.deb` from the [latest release](https://github.com/codingncaffeine/WadSmith/releases/latest), then `sudo apt install ./wadsmith_*_amd64.deb`.
+- **Any Linux:** the tarball from the latest release, unpacked anywhere; run `./wadsmith`.
+
+WadSmith needs [GZDoom](https://zdoom.org) to play maps, and SDL2 (optional) plays an object's sound when you point at it.
 
 ## Requirements
 
