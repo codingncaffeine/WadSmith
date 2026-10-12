@@ -23,6 +23,12 @@ public sealed class MoveSet
         ThingSpots = thingSpots;
     }
 
+    /// <summary>
+    /// A set of corners and walls just put on the map (a paste), to join to what was there with
+    /// <see cref="Joining.AfterMove"/>; <paramref name="before"/> shows the map as it was before.
+    /// </summary>
+    public static MoveSet Of(MapGeometry before, IReadOnlyList<Vertex> vertices, IReadOnlyList<Line> lines) => new(before, [.. vertices], [], [.. lines], [], [], []);
+
     /// <summary>The shapes the set was gathered from (the map as it was before the move).</summary>
     public MapGeometry Geometry { get; }
 

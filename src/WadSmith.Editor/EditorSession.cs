@@ -264,6 +264,61 @@ public sealed class EditorSession : IDisposable
         }
     }
 
+    /// <summary>Copies the selected rooms (with their walls and things) and things; says what was copied, or what can be.</summary>
+    public bool CopySelection()
+    {
+        var clip = Copying.Copy(_geometry, Selection.Items);
+        if (clip.IsEmpty)
+        {
+            Notice?.Invoke("Select rooms or things to copy; walls and corners are copied with the rooms they belong to.");
+            return false;
+        }
+
+        Copying.Clipboard = clip;
+        Notice?.Invoke($"Copied {clip.Describe()}. Ctrl+V puts a copy where the pointer is.");
+        return true;
+    }
+
+    /// <summary>Copies the selection, then deletes it (one undo step for the delete).</summary>
+    public void Cut()
+    {
+        if (CopySelection()) DeleteSelection();
+    }
+
+    /// <summary>
+    /// Pastes what was copied with its middle near <paramref name="at"/> (in whole 64-unit steps from where it was
+    /// copied), joins it to the map, one undo step, and selects it; says so when walls were left crossing.
+    /// </summary>
+    public void Paste(MapPoint at)
+    {
+        if (Copying.Clipboard is not { } clip)
+        {
+            Notice?.Invoke("Nothing is copied yet: select rooms or things and press Ctrl+C.");
+            return;
+        }
+
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => Paste(at);
+            return;
+        }
+
+        (IReadOnlyList<Element> Pasted, int Crossings) result = ([], 0);
+        var geometry = _geometry;
+        var look = Look;
+        var centre = Copying.PlaceNear(clip, at);
+        History.Record("Paste", e => result = Copying.Paste(e, geometry, clip, centre, look));
+        if (result.Pasted.Count > 0) Selection.Set([.. result.Pasted]);
+        if (result.Crossings > 0) Notice?.Invoke($"The copy's walls cross {result.Crossings} wall{(result.Crossings == 1 ? "" : "s")} already there, which the game draws wrongly. Drag it clear, or press Ctrl+Z.");
+    }
+
+    /// <summary>Copies the selection and pastes it beside itself, to the east, with a gap.</summary>
+    public void Duplicate()
+    {
+        if (!CopySelection() || Copying.Clipboard is not { } clip) return;
+        Paste(new MapPoint(clip.Origin.X + Math.Ceiling(clip.Size.Width / 64) * 64 + 64, clip.Origin.Y));
+    }
+
     /// <summary>Adds a corner to a wall at a point on it, splitting the wall in two, and selects the corner (to drag it).</summary>
     public void AddCorner(Line wall, MapPoint at)
     {

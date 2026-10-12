@@ -482,6 +482,27 @@ internal sealed partial class EditorViewModel : ObservableObject
         Learned("undo");
     }
 
+    /// <summary>Where the pointer last was on the plan (pastes go there).</summary>
+    private MapPoint? _pointer;
+
+    [RelayCommand]
+    private void Copy() => Session.CopySelection();
+
+    [RelayCommand]
+    private void Cut() => Session.Cut();
+
+    /// <summary>Pastes where the pointer is on the plan, or beside the original when the pointer has not been over it.</summary>
+    [RelayCommand]
+    private void Paste()
+    {
+        if (_pointer is { } at) Session.Paste(at);
+        else if (Editor.Editing.Copying.Clipboard is { } clip) Session.Paste(new MapPoint(clip.Origin.X + Math.Ceiling(clip.Size.Width / 64) * 64 + 64, clip.Origin.Y));
+        else Session.Paste(default);
+    }
+
+    [RelayCommand]
+    private void Duplicate() => Session.Duplicate();
+
     /// <summary>Deletes the selection so the map stays whole (Delete).</summary>
     [RelayCommand]
     private void Delete() => Session.DeleteSelection();
@@ -508,6 +529,7 @@ internal sealed partial class EditorViewModel : ObservableObject
     /// <summary>Called by the canvas when the pointer moves over something new.</summary>
     public void Hover(Element? element, MapPoint at)
     {
+        if (at != default) _pointer = at;
         _hoverText = element switch
         {
             Line l when Tool == Canvas.EditorTool.Door => l.Back is null
