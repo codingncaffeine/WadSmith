@@ -50,6 +50,13 @@ internal sealed class View3D : Control
     private readonly LatestOnWorker<(EditorSession Session, Editor.Model.Element? Hit, bool Toggle)> _picks;
     private readonly LatestOnWorker<(EditorSession Session, MapScene Scene, SceneHit? Hit, ViewModels.ShelfDrop? Drop, bool Apply, bool Shift)> _hovers;
     private SceneHit? _hover;
+    private Point? _lastPointer;
+
+    /// <summary>A height drag (Ctrl+left on a floor or ceiling): the surface, its gesture, how much is applied, where it began and a pixel's worth there.</summary>
+    private (SurfaceTarget Target, long Gesture, double Applied, Point From, double UnitsPerPixel)? _heightDrag;
+
+    /// <summary>The surface Ctrl+scroll is stepping and the gesture its steps join (one undo step until the pointer moves to another surface).</summary>
+    private (Editor.Model.Element Element, bool Ceiling, long Gesture)? _wheel;
     private Point _pressedAt;
     private double _dragged;
     private Renderer3D? _renderer;
@@ -79,6 +86,9 @@ internal sealed class View3D : Control
             _renderer.Show(r.Scene, r.Session.Resources);
             SendCamera();
             RequestTint();
+
+            // The surface under the pointer may have moved (a height changed): find it again in the new scene.
+            if (_lastPointer is { } p && _dragFrom is null) RequestHover(p);
         }, "the 3D scene");
         _tints = new(ViewModels.MainViewModel.PostToUi, t => _renderer?.Highlight(t), "the 3D selection");
         _hovers = new(ViewModels.MainViewModel.PostToUi, r =>
@@ -498,12 +508,26 @@ internal sealed class View3D : Control
     protected override void OnPointerExited(PointerEventArgs e)
     {
         base.OnPointerExited(e);
-        if (_dragFrom is null) ClearHover();
+        _lastPointer = null;
+        _wheel = null;
+        if (_dragFrom is null && _heightDrag is null) ClearHover();
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         Focus();
+        var pressed = e.GetCurrentPoint(this).Properties;
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0 && pressed.IsLeftButtonPressed && Session is not null && _hover is { Kind: HitKind.Floor or HitKind.Ceiling } surface)
+        {
+            // Ctrl+drag on a floor or ceiling moves it (§3.4): a pixel is worth what the view shows at that distance.
+            var unitsPerPixel = 2 * surface.Distance * Math.Tan(Current.Fov * Math.PI / 360) / Math.Max(Bounds.Height, 1);
+            _heightDrag = (surface.Target, Editor.Editing.History.NewGesture(), 0, e.GetPosition(this), unitsPerPixel);
+            _wheel = null;
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            return;
+        }
+
         ClearHover();
         var props = e.GetCurrentPoint(this).Properties;
         _dragFrom = e.GetPosition(this);
@@ -516,9 +540,26 @@ internal sealed class View3D : Control
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
+        var at = e.GetPosition(this);
+        _lastPointer = at;
+        if (_heightDrag is { } drag)
+        {
+            // The surface follows the pointer up and down, on the 8 grid (Shift: by 1), every step joining one undo step.
+            var total = (drag.From.Y - at.Y) * drag.UnitsPerPixel;
+            var snapped = (e.KeyModifiers & KeyModifiers.Shift) != 0 ? Math.Round(total) : Math.Round(total / 8) * 8;
+            if (snapped != drag.Applied && Session is { } session)
+            {
+                var now = session.RaiseSurface(drag.Target, snapped - drag.Applied, drag.Gesture);
+                _heightDrag = drag with { Applied = snapped };
+                if (now is { } h) session.Tell($"{(drag.Target.Ceiling ? "Ceiling" : "Floor")} at {h:0} · let go to keep it (Shift moves by 1).");
+            }
+
+            return;
+        }
+
         if (_dragFrom is not { } from)
         {
-            RequestHover(e.GetPosition(this));
+            RequestHover(at);
             return;
         }
 
@@ -553,6 +594,14 @@ internal sealed class View3D : Control
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        if (_heightDrag is { } drag)
+        {
+            _heightDrag = null;
+            e.Pointer.Capture(null);
+            if (drag.Applied == 0 && Session is { } s) s.Tell($"Ctrl+drag moves a {(drag.Target.Ceiling ? "ceiling" : "floor")} up or down; Ctrl+scroll steps it by 8.");
+            return;
+        }
+
         var clicked = _dragFrom is not null && _dragged < 4 && e.InitialPressMouseButton == MouseButton.Left;
         _dragFrom = null;
         e.Pointer.Capture(null);
@@ -570,6 +619,21 @@ internal sealed class View3D : Control
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0)
+        {
+            // Ctrl+scroll on a floor or ceiling steps it by 8 (Shift: by 1); the steps on one surface make one undo step.
+            if (Session is { } session && _hover is { Kind: HitKind.Floor or HitKind.Ceiling } surface && e.Delta.Y != 0)
+            {
+                if (_wheel is not { } w || !ReferenceEquals(w.Element, surface.Element) || w.Ceiling != surface.Target.Ceiling) _wheel = (surface.Element, surface.Target.Ceiling, Editor.Editing.History.NewGesture());
+                var step = (e.KeyModifiers & KeyModifiers.Shift) != 0 ? 1 : 8;
+                if (session.RaiseSurface(surface.Target, Math.Sign(e.Delta.Y) * step, _wheel.Value.Gesture) is { } now) session.Tell($"{(surface.Target.Ceiling ? "Ceiling" : "Floor")} at {now:0} · Ctrl+scroll moves it by 8, with Shift by 1; Ctrl+drag follows the pointer.");
+            }
+
+            e.Handled = true;
+            return;
+        }
+
+        _wheel = null;
         if (Mode == CameraMode.Fly)
         {
             var (fx, fy, fz) = Current.Forward;

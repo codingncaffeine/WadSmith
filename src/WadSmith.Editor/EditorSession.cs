@@ -642,6 +642,34 @@ public sealed class EditorSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Moves a floor or ceiling seen in the 3D view by <paramref name="delta"/> (§3.4: Ctrl+scroll steps by 8, Ctrl+drag
+    /// follows the pointer): the selected rooms go together when the surface is one of theirs; the steps of one
+    /// <paramref name="gesture"/> make one undo step. Returns the surface's height now, or null when nothing moved.
+    /// </summary>
+    public double? RaiseSurface(SurfaceTarget target, double delta, long gesture)
+    {
+        if (target.Element is not Sector { OnMap: true } area || delta == 0) return null;
+        if (Grouping.Holds(_geometry, area))
+        {
+            Notice?.Invoke("That room is locked: unlock it with nothing selected, under Groups, to change it.");
+            return null;
+        }
+
+        var rooms = Selection.Items.OfType<Sector>().Where(r => r.OnMap).ToList();
+        if (!rooms.Contains(area)) rooms = [area];
+        var ceiling = target.Ceiling;
+        History.Record(ceiling ? "Change ceiling height" : "Change floor height", e =>
+        {
+            foreach (var r in rooms)
+            {
+                if (ceiling) e.Set(r, x => x.CeilingHeight, (x, v) => x.CeilingHeight = v, r.CeilingHeight + delta);
+                else e.Set(r, x => x.FloorHeight, (x, v) => x.FloorHeight = v, r.FloorHeight + delta);
+            }
+        }, gesture);
+        return ceiling ? area.CeilingHeight : area.FloorHeight;
+    }
+
     public string? Paint(string texture, MapPoint at, double radius, bool ceiling)
     {
         if (_geometry.LineNear(at, radius) is { OnMap: true } wall)

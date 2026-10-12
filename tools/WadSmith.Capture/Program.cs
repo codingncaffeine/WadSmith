@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -562,6 +562,54 @@ foreach (var pose in poses)
                 Console.WriteLine($"3d drop saved: middles {string.Join(",", saved.Sides.Select(s => s.Middle).Distinct())}; things {saved.Things.Count}");
                 Pump(0.5);
                 Save("editor-3d-drop");
+                break;
+            }
+
+            if (pose == "editor-3d-heights")
+            {
+                // Walking in the starter room: Ctrl+scroll three times over the floor ahead raises it to 24 (one undo step);
+                // Ctrl+drag on the ceiling ahead, 48 px up, raises the ceiling; the plan's Heights view shows both.
+                var session = editor.Session;
+                var view3d = window.GetVisualDescendants().OfType<WadSmith.App.ThreeD.View3D>().First();
+                for (var i = 0; i < 200 && (view3d.SceneVersion < 0 || !view3d.HasPicture); i++) Pump(0.05);
+                editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Walk;
+                Pump(1.0);
+                var (sx, sy) = view3d.PlaySpot() is var spot ? (spot.X, spot.Y) : (0.0, 0.0);
+                var (fx, fy) = (Math.Cos(spot.Angle * Math.PI / 180), Math.Sin(spot.Angle * Math.PI / 180));
+                var room = session.Map.Sectors[0];
+                Avalonia.Point On(double x, double y, double z) => view3d.TranslatePoint(view3d.ScreenPoint(x, y, z)!.Value, window)!.Value;
+                var floorAt = On(sx + fx * 160, sy + fy * 160, room.FloorHeight);
+                window.MouseMove(floorAt, Avalonia.Input.RawInputModifiers.None);
+                Pump(0.5);
+                Console.WriteLine($"3d heights hover: {view3d.Hovered?.Words ?? "nothing"}");
+                for (var i = 0; i < 3; i++)
+                {
+                    window.MouseWheel(floorAt, new Avalonia.Vector(0, 1), Avalonia.Input.RawInputModifiers.Control);
+                    Pump(0.3);
+                }
+
+                Console.WriteLine($"3d heights wheel: floor {room.FloorHeight}; undo '{session.History.UndoLabel}'; steps {session.History.Steps.Count}; status '{editor.Status}'");
+                var ceilingAt = On(sx + fx * 160, sy + fy * 160, room.CeilingHeight);
+                window.MouseMove(ceilingAt, Avalonia.Input.RawInputModifiers.None);
+                Pump(0.5);
+                Console.WriteLine($"3d heights hover: {view3d.Hovered?.Words ?? "nothing"}");
+                var before = room.CeilingHeight;
+                window.MouseDown(ceilingAt, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.Control);
+                for (var k = 1; k <= 6; k++)
+                {
+                    window.MouseMove(new Avalonia.Point(ceilingAt.X, ceilingAt.Y - 8 * k), Avalonia.Input.RawInputModifiers.Control | Avalonia.Input.RawInputModifiers.LeftMouseButton);
+                    Pump(0.1);
+                }
+
+                window.MouseUp(new Avalonia.Point(ceilingAt.X, ceilingAt.Y - 48), Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.Control);
+                Pump(0.8);
+                Console.WriteLine($"3d heights drag: ceiling {room.CeilingHeight} (was {before}); undo '{session.History.UndoLabel}'; steps {session.History.Steps.Count}; status '{editor.Status}'");
+                editor.ViewMode = WadSmith.App.Canvas.MapViewMode.Heights;
+                Pump(0.5);
+                Save("editor-3d-heights");
+                session.History.Undo();
+                session.History.Undo();
+                Console.WriteLine($"3d heights undone twice: floor {room.FloorHeight}, ceiling {room.CeilingHeight}");
                 break;
             }
 

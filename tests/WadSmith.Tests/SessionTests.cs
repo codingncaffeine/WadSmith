@@ -346,4 +346,34 @@ public sealed class SessionTests
         Assert.Equal(("LOWER", "CEIL"), (face.Bottom, room.CeilingTexture));
         Assert.Contains("wall, a floor or a ceiling", session.PaintSurface(new Editor.Scene.SurfaceTarget(session.Map.Vertices[0], Editor.Scene.WallPart.Middle, false), "BRICK1"), StringComparison.Ordinal);
     }
+
+    /// <summary>A floor or ceiling moved from the 3D view: the selected rooms go together, one undo step per gesture.</summary>
+    [Fact]
+    public void RaisingASurfaceMovesTheSelectedRoomsTogetherOneStepPerGesture()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(SceneTests.TwoRooms(floor2: 32, ceiling2: 96));
+        var ui = new FakeUi();
+        using var session = EditorSession.Open(project, "MAP01", ui.Post);
+        var (one, two) = (session.Map.Sectors[0], session.Map.Sectors[1]);
+        session.Selection.Set([one, two]);
+        var gesture = History.NewGesture();
+        var floor = new Editor.Scene.SurfaceTarget(one, Editor.Scene.WallPart.Middle, false);
+        Assert.Equal(8, session.RaiseSurface(floor, 8, gesture));
+        Assert.Equal(16, session.RaiseSurface(floor, 8, gesture));
+        Assert.Equal((16.0, 48.0), (one.FloorHeight, two.FloorHeight));
+        Assert.Equal("Change floor height", session.History.UndoLabel);
+        Assert.True(session.History.Undo());
+        Assert.Equal((0.0, 32.0), (one.FloorHeight, two.FloorHeight));
+        Assert.Equal(16, session.RaiseSurface(floor, 16, History.NewGesture()));
+
+        // A room outside the selection moves alone; a ceiling is its own step; nothing else is a surface.
+        session.Selection.Clear();
+        Assert.Equal(120, session.RaiseSurface(new Editor.Scene.SurfaceTarget(one, Editor.Scene.WallPart.Middle, true), -8, History.NewGesture()));
+        Assert.Equal((120.0, 96.0), (one.CeilingHeight, two.CeilingHeight));
+        Assert.Equal("Change ceiling height", session.History.UndoLabel);
+        Assert.Null(session.RaiseSurface(new Editor.Scene.SurfaceTarget(session.Map.Lines[0], Editor.Scene.WallPart.Middle, false), 8, 0));
+        Assert.Null(session.RaiseSurface(floor, 0, 0));
+    }
 }
