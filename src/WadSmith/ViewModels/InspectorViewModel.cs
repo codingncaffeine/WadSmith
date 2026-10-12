@@ -7,6 +7,7 @@ using WadSmith.Editor;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Model;
 using WadSmith.Editor.Scene;
+using WadSmith.Editor.Smart;
 
 namespace WadSmith.App.ViewModels;
 
@@ -137,6 +138,40 @@ internal sealed partial class FlagRow : InspectorRow
     }
 }
 
+/// <summary>One of a few named choices; every change is one undoable edit.</summary>
+internal sealed partial class ChoiceRow : InspectorRow
+{
+    private readonly Func<int> _get;
+    private readonly Action<int> _set;
+    private bool _refreshing;
+
+    public ChoiceRow(string label, string tooltip, IReadOnlyList<string> options, Func<int> get, Action<int> set)
+        : base(label, tooltip)
+    {
+        Options = options;
+        _get = get;
+        _set = set;
+        Refresh();
+    }
+
+    public IReadOnlyList<string> Options { get; }
+
+    [ObservableProperty]
+    private int _value;
+
+    partial void OnValueChanged(int value)
+    {
+        if (!_refreshing && value >= 0 && value != _get()) _set(value);
+    }
+
+    public override void Refresh()
+    {
+        _refreshing = true;
+        Value = _get();
+        _refreshing = false;
+    }
+}
+
 /// <summary>A heading that starts a group of rows.</summary>
 internal sealed class HeadingRow(string label) : InspectorRow(label, "")
 {
@@ -172,6 +207,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
 {
     private const double PlayerHeight = 56;
     private readonly EditorSession _session;
+    private Func<string>? _summaryOf;
 
     public InspectorViewModel(EditorSession session)
     {
@@ -180,6 +216,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         session.Map.Changed += _ =>
         {
             foreach (var r in Rows) r.Refresh();
+            if (_summaryOf is { } summary) Summary = summary();
         };
         Rebuild();
     }
@@ -195,6 +232,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
     private void Rebuild()
     {
         Rows.Clear();
+        _summaryOf = null;
         var items = _session.Selection.Items;
         if (items.Count == 0)
         {
@@ -213,6 +251,14 @@ internal sealed partial class InspectorViewModel : ObservableObject
 
         switch (items[0])
         {
+            case Sector s when Doors.Recognise(_session.Geometry, s) is not null:
+                Heading = "Door";
+                _summaryOf = () => Doors.Recognise(_session.Geometry, s) is { } d ? Describe(d) : "No longer a door.";
+                Summary = _summaryOf();
+                AddDoor(s);
+                Rows.Add(new HeadingRow("ITS AREA"));
+                AddSector(s);
+                break;
             case Sector s:
                 Heading = "Room area";
                 Summary = "Its floor, ceiling and light.";
@@ -293,6 +339,47 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new FlagRow("Counts as a secret", "Finding this area counts toward the secrets at the end of the map (sector type 1024).", () => (s.Special & 1024) != 0, on => Set(s, on ? "Make a secret" : "Unmake a secret", e => e.Special, (e, x) => e.Special = x, on ? s.Special | 1024 : s.Special & ~1024)));
         Rows.Add(new InfoRow("Effect", "What the area does to the player or its light (sector type).", () => (s.Special & ~1024) == 0 ? "None" : (s.Special & ~1024).ToString(CultureInfo.InvariantCulture)));
         Rows.Add(new NumberRow("Tag", "A number that links a switch or trigger to this area (sector tag, id).", () => s.Tag, v => Set(s, "Change tag", e => e.Tag, (e, x) => e.Tag = x, (int)v), 1, 0, 65535));
+    }
+
+    /// <summary>The door in one sentence: how it opens, what locks it, what it does after.</summary>
+    private static string Describe(Door d)
+    {
+        var who = d.Monsters ? "when the player or a monster uses it" : "when the player uses it";
+        var key = Doors.DoomLocks.FirstOrDefault(k => k.Lock == d.Settings.Lock && k.Lock != 0).Name is { } name ? $", with the {name.ToLowerInvariant()}" : d.Settings.Lock != 0 ? $", with lock {d.Settings.Lock}" : "";
+        var after = d.Settings.StaysOpen ? "stays open" : string.Create(CultureInfo.InvariantCulture, $"closes again after {d.Settings.Delay / 35.0:0.#} s");
+        return $"Opens {who}{key}; {after}.";
+    }
+
+    /// <summary>The door's own settings, each one undoable change to every wall that opens it.</summary>
+    private void AddDoor(Sector area)
+    {
+        Door? Now() => Doors.Recognise(_session.Geometry, area);
+        void Change(Func<Door, (DoorSettings Settings, bool Monsters, bool StartsOpen)> to, string label)
+        {
+            if (Now() is not { } d) return;
+            var (settings, monsters, startsOpen) = to(d);
+            _session.History.Record(label, e => Doors.Change(e, d, settings, monsters, startsOpen));
+        }
+
+        Rows.Add(new ChoiceRow("Speed", "How fast it opens and closes: Doom's normal doors or its fast ones (door speed).", ["Normal", "Fast"],
+            () => Now()?.Settings.Fast == true ? 1 : 0,
+            v => Change(d => (d.Settings with { Fast = v == 1 }, d.Monsters, d.StartsOpen), "Change door speed")));
+        Rows.Add(new ChoiceRow("After opening", "Whether it closes by itself after a few seconds or stays open (Door_Raise or Door_Open).", ["Closes again", "Stays open"],
+            () => Now()?.Settings.StaysOpen == true ? 1 : 0,
+            v => Change(d => (d.Settings with { StaysOpen = v == 1 }, d.Monsters, d.StartsOpen), "Change what the door does after opening")));
+        if (_session.Look == Look.For("doom"))
+        {
+            Rows.Add(new ChoiceRow("Locked with", "The key the player needs to open it; the card or the skull of that colour both work, as in Doom (lock).", [.. Doors.DoomLocks.Select(k => k.Name)],
+                () => Now() is { } d ? Math.Max(0, Doors.DoomLocks.ToList().FindIndex(k => k.Lock == d.Settings.Lock)) : 0,
+                v => Change(d => (d.Settings with { Lock = Doors.DoomLocks[v].Lock }, d.Monsters, d.StartsOpen), "Change the door's lock")));
+        }
+
+        Rows.Add(new FlagRow("Monsters open it too", "Monsters chasing the player can open it (monsteruse). Locked doors never open for monsters.", () => Now()?.Monsters == true,
+            on => Change(d => (d.Settings, on, d.StartsOpen), on ? "Let monsters open the door" : "Keep monsters from opening the door")));
+        Rows.Add(new FlagRow("Starts open", "Open when the map starts, its ceiling already raised; it still closes and opens as set.", () => Now()?.StartsOpen == true,
+            on => Change(d => (d.Settings, d.Monsters, on), on ? "Start the door open" : "Start the door closed")));
+        Rows.Add(new InfoRow("Opens to", "How high its ceiling rises: 4 below the lowest ceiling beside it, as the game does it.", () => Now() is { } d ? string.Create(CultureInfo.InvariantCulture, $"{d.OpensTo:0}, {d.OpensTo - area.FloorHeight:0} tall") : "—"));
+        Rows.Add(new InfoRow("Opened from", "The walls that open it when used, facing into it from the rooms beside it.", () => Now() is { } d ? $"{d.Openers.Count} wall{(d.Openers.Count == 1 ? "" : "s")}" : "—"));
     }
 
     private void AddLine(Line l)

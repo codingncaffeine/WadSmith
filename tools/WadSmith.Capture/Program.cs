@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -481,6 +481,34 @@ foreach (var pose in poses)
                 Drag((448, -64), (576, 64), null);
                 Report("inside");
                 Save("editor-draw");
+                break;
+            }
+
+            if (pose == "editor-door")
+            {
+                // The first door of the map, selected: the Inspector shows it as a door. Then its lock is
+                // changed as the row does it, and undone.
+                var geometry = editor.Session.Geometry;
+                var area = editor.Session.Map.Sectors.FirstOrDefault(s => WadSmith.Editor.Smart.Doors.Recognise(geometry, s) is not null);
+                if (area is null)
+                {
+                    Console.Error.WriteLine("No door in this map.");
+                    return 1;
+                }
+
+                editor.Session.Selection.Set(area);
+                Pump(1.0);
+                Console.WriteLine($"door: heading '{editor.Inspector.Heading}', '{editor.Inspector.Summary}'");
+                Save("editor-door");
+                var locked = editor.Inspector.Rows.OfType<ChoiceRow>().First(r => r.Label == "Locked with");
+                locked.Value = 1;
+                Pump(0.5);
+                var door = WadSmith.Editor.Smart.Doors.Recognise(editor.Session.Geometry, area)!;
+                Console.WriteLine($"door locked: '{editor.Inspector.Summary}', openers {string.Join(" ", door.Openers.Select(l => $"{l.Special}({string.Join(",", l.Args)})"))}, undo '{editor.Session.History.UndoLabel}'");
+                Save("editor-door-locked");
+                editor.Session.History.Undo();
+                Pump(0.5);
+                Console.WriteLine($"door undone: '{editor.Inspector.Summary}'");
                 break;
             }
 
