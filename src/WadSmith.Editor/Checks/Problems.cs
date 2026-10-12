@@ -67,11 +67,14 @@ public static class Problems
             LowPassages(geometry, fit ?? FitBaseline.None, found);
         }
 
+        var walk = Progression.Walk(geometry);
+        ExitOutOfReach(geometry, walk, found);
         if (look == Look.For("doom"))
         {
             MissingKeys(f, found);
-            KeysOutOfReach(geometry, found);
+            KeysOutOfReach(geometry, walk, found);
         }
+
         return found;
     }
 
@@ -458,106 +461,25 @@ public static class Problems
     /// stop it (a door locked on one face opens freely from the other). A key is picked up from any area within the
     /// player's reach of it (16 + the key's 20), as the game does across a railing.
     /// </summary>
-    private static void KeysOutOfReach(MapGeometry g, List<Problem> found)
+    private static void KeysOutOfReach(MapGeometry g, ProgressionResult walk, List<Problem> found)
     {
-        var f = g.Frame;
-        int? AreaAt(double x, double y) => g.SectorAt(new MapPoint(x, y)) is { } s ? s.Slot : null;
-        var start = f.Things.LastOrDefault(t => t.Element is not null && t.Type == 1);
-        if (start.Element is null || AreaAt(start.X, start.Y) is not { } from) return;
-        HashSet<int> Reach(double x, double y)
+        foreach (var (colour, keys) in walk.KeysOutOfReach)
         {
-            var near = new HashSet<int>();
-            if (AreaAt(x, y) is { } own) near.Add(own);
-            for (var i = 0; i < 16; i++)
-            {
-                var angle = i * Math.PI / 8;
-                foreach (var r in new[] { 20.0, PlayerRadius + 20 })
-                {
-                    if (AreaAt(x + Math.Cos(angle) * r, y + Math.Sin(angle) * r) is { } a) near.Add(a);
-                }
-            }
-
-            return near;
+            var doors = g.Frame.Lines.Where(l => l.Element is not null && l.Special == Doors.DoorLockedRaise && Keys.ColourOfLock(l.Args[3]) == colour).Select(l => (Element)l.Element!).ToList();
+            found.Add(new Problem("key-out-of-reach-" + colour, Severity.Error, $"The {colour} key can't be reached from the player start: every way to it goes through a locked door the player can't open first.", [.. keys, .. doors]));
         }
+    }
 
-        var keys = f.Things.Where(t => t.Element is not null && Keys.ColourOf(t.Type) is not null && AreaAt(t.X, t.Y) is not null).Select(t => (Type: t.Type, Areas: Reach(t.X, t.Y), t.Element)).ToList();
-        if (keys.Count == 0) return;
-
-        // The ways between areas: walls with two sides that do not block (into a door through a locked face of it,
-        // only with the key), and teleporters (both ways).
-        var ways = new Dictionary<int, List<(int To, int Lock)>>();
-        void Way(int a, int b, int lockAtoB = 0)
-        {
-            if (a == b) return;
-            if (!ways.TryGetValue(a, out var list)) ways[a] = list = [];
-            list.Add((b, lockAtoB));
-            if (!ways.TryGetValue(b, out var back)) ways[b] = back = [];
-            back.Add((a, 0));
-        }
-
-        foreach (var l in f.Lines)
-        {
-            if (l.Element is null) continue;
-            if (l.Back >= 0 && !Flag(l.Extra, "blocking") && !Flag(l.Extra, "blockplayers") && !Flag(l.Extra, "blockeverything"))
-            {
-                // A door's face: used from its front, it opens the door behind it, locked or not.
-                var locked = l.Special == Doors.DoorLockedRaise && l.Args[0] == 0 && Keys.Opening(l.Args[3]).Count > 0 ? l.Args[3] : 0;
-                Way(f.Sides[l.Front].Sector, f.Sides[l.Back].Sector, locked);
-            }
-
-            if (l.Special is Teleports.Teleport or Teleports.TeleportNoFog)
-            {
-                var (tid, tag) = l.Special == Teleports.TeleportNoFog ? (l.Args[0], l.Args[2]) : (l.Args[0], l.Args[1]);
-                var to = tid != 0 ? g.ThingsWithTid(tid).Select(i => AreaAt(f.Things[i].X, f.Things[i].Y)).OfType<int>() : g.SectorsTagged(tag);
-                foreach (var a in to) Way(f.Sides[l.Front].Sector, a);
-            }
-        }
-
-        // The walk: a way through a locked face waits until a key that opens it is picked up.
-        var reached = new HashSet<int> { from };
-        var held = new HashSet<int>();
-        var waiting = new List<(int To, int Lock)>();
-        var queue = new Queue<int>([from]);
-        void Arrive(int area)
-        {
-            foreach (var k in keys.Where(k => k.Areas.Contains(area))) held.Add(k.Type);
-            queue.Enqueue(area);
-        }
-
-        Arrive(from);
-        queue.Dequeue();
-        queue.Enqueue(from);
-        while (queue.Count > 0)
-        {
-            var area = queue.Dequeue();
-            foreach (var (next, lockNumber) in ways.GetValueOrDefault(area) ?? [])
-            {
-                if (reached.Contains(next)) continue;
-                if (lockNumber != 0 && !Keys.Opening(lockNumber).Any(held.Contains))
-                {
-                    waiting.Add((next, lockNumber));
-                    continue;
-                }
-
-                reached.Add(next);
-                Arrive(next);
-            }
-
-            if (queue.Count > 0) continue;
-            foreach (var (door, lockNumber) in waiting.Where(w => !reached.Contains(w.To) && Keys.Opening(w.Lock).Any(held.Contains)).ToList())
-            {
-                if (!reached.Add(door)) continue;
-                Arrive(door);
-            }
-        }
-
-        foreach (var (colour, card, skull, _) in Keys.Doom)
-        {
-            var these = keys.Where(k => k.Type == card || k.Type == skull).ToList();
-            if (these.Count == 0 || these.Any(k => k.Areas.Overlaps(reached))) continue;
-            var doors = f.Lines.Where(l => l.Element is not null && l.Special == Doors.DoorLockedRaise && Keys.ColourOfLock(l.Args[3]) == colour).Select(l => (Element)l.Element!).ToList();
-            found.Add(new Problem("key-out-of-reach-" + colour, Severity.Error, $"The {colour} key can't be reached from the player start: every way to it goes through a locked door the player can't open first.", [.. these.Select(k => k.Element!), .. doors]));
-        }
+    /// <summary>An exit the walk from the start never reaches (D29): behind a locked door whose key can't be had, or with no way to it at all.</summary>
+    private static void ExitOutOfReach(MapGeometry g, ProgressionResult walk, List<Problem> found)
+    {
+        if (!walk.HasExit || walk.ExitReached || walk.Reached.Count == 0) return;
+        var exits = g.Frame.Lines.Where(l => l.Element is not null && l.Special is Exits.Normal or Exits.Secret).Select(l => (Element)l.Element!).ToList();
+        var shut = walk.LockedOnTheWay;
+        var why = shut.Count == 0
+            ? "no way from the start leads to it"
+            : $"every way to it goes through the {string.Join(" or the ", shut.Select(s => s.Colour).Distinct())} door, and the player can't get its key first";
+        found.Add(new Problem("exit-out-of-reach", Severity.Error, $"The exit can't be reached from the player start: {why}.", [.. exits, .. shut.Select(s => s.Wall)]));
     }
 
     private static void MissingKeys(MapFrame f, List<Problem> found)

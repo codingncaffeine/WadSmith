@@ -68,6 +68,36 @@ public static class MapReporting
 
         if (keyLines.Count > 0) sections.Add(new("KEYS", keyLines));
 
+        // The way from the start to the exit (D29): keys and locked doors in the order the player meets them.
+        var walk = Checks.Progression.Walk(geometry);
+        var way = new List<ReportLine>();
+        var number = 0;
+        foreach (var step in walk.Steps)
+        {
+            number++;
+            way.Add(new(step.Kind switch
+            {
+                "key" => $"{number}. Pick up the {step.Colour} key.",
+                "door" => $"{number}. Open the {step.Colour ?? "locked"} door.",
+                _ => $"{number}. Reach the exit: the map can be finished.",
+            }, step.At));
+        }
+
+        if (walk.HasExit && !walk.ExitReached && walk.Reached.Count > 0)
+        {
+            way.Add(walk.LockedOnTheWay.Count == 0
+                ? new("The exit can't be reached: no way from the start leads to it.")
+                : new($"The exit can't be reached: the {walk.LockedOnTheWay[0].Colour} door stays shut, because its key can't be had first.", walk.LockedOnTheWay[0].At));
+        }
+
+        foreach (var (colour, behind) in walk.KeysOutOfReach)
+        {
+            way.Add(new($"The {colour} key can't be reached: every way to it goes through a locked door the player can't open first.", behind[0] is Thing k ? new MapPoint(k.X, k.Y) : null));
+        }
+
+        if (!walk.HasExit) way.Add(new("There is no exit yet: the map can't be finished."));
+        sections.Add(new("FROM START TO EXIT", way));
+
         // What the player meets on each difficulty.
         var meets = new List<ReportLine>();
         foreach (var (name, flags) in Difficulties)

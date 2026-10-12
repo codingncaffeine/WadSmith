@@ -48,7 +48,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
 
     /// <summary>
     /// Every rule runs over every map of the Doom-format games (as remixed: translated) without failing; what they find
-    /// is printed. The games as shipped can be finished, so no key in them is out of reach (the control for that rule),
+    /// is printed. The games as shipped can be finished, so no key and no exit in them is out of reach (the control for those rules),
     /// and no door their players walk through opens too low; Freedoom has such doors (GZDoom opens Freedoom 2 MAP22's
     /// area 266 from 72 to 92, 20 high, as the rule says).
     /// </summary>
@@ -64,7 +64,11 @@ public sealed class ProblemTests(ITestOutputHelper output)
         {
             var map = EditorMap.FromModel(MapTranslation.ToZDoom(MapConversion.Read(lumps, "doom"), xlat, []));
             var geometry = MapGeometry.Build(map.Frame);
-            foreach (var p in Problems.Check(geometry, null, Look.For("doom"), "doom")) counts[p.Rule] = counts.GetValueOrDefault(p.Rule) + 1;
+            foreach (var p in Problems.Check(geometry, null, Look.For("doom"), "doom"))
+            {
+                counts[p.Rule] = counts.GetValueOrDefault(p.Rule) + 1;
+                if (p.Rule.EndsWith("out-of-reach", StringComparison.Ordinal) || p.Rule.StartsWith("key-out-of-reach", StringComparison.Ordinal)) output.WriteLine($"{fileName} {lumps.Name}: {p.Sentence}");
+            }
 
             // As a remix opens, with the map itself as the original: its own narrow ways and low openings are its author's.
             Assert.DoesNotContain(Problems.Check(geometry, null, Look.For("doom"), "doom", FitBaseline.Of(geometry)), p => p.Rule is "passage-too-narrow" or "passage-too-low");
@@ -73,6 +77,8 @@ public sealed class ProblemTests(ITestOutputHelper output)
 
         output.WriteLine($"{fileName}: {maps} maps in {System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms (with reading); maps with each problem: {string.Join(", ", counts.Select(kv => $"{kv.Key} {kv.Value}"))}");
         Assert.DoesNotContain(counts.Keys, k => k.StartsWith("key-out-of-reach", StringComparison.Ordinal));
+        // The Progression graph (D29): every exit of the games as shipped is reached from the start.
+        Assert.DoesNotContain("exit-out-of-reach", counts.Keys);
         if (!fileName.StartsWith("freedoom", StringComparison.OrdinalIgnoreCase)) Assert.DoesNotContain("door-too-low", counts.Keys);
     }
 
