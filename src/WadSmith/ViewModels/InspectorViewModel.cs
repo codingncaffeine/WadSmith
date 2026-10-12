@@ -350,7 +350,9 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>The door in one sentence: how it opens, what locks it, what it does after.</summary>
     private static string Describe(Door d)
     {
-        var who = d.Monsters ? "when the player or a monster uses it" : "when the player uses it";
+        var remote = string.Join(", ", d.RemoteWays());
+        var own = d.Own.Any() ? d.Monsters ? "when the player or a monster uses it" : "when the player uses it" : "";
+        var who = remote.Length == 0 ? own : own.Length == 0 ? $"from {remote}" : $"{own}, or from {remote}";
         var key = Doors.DoomLocks.FirstOrDefault(k => k.Lock == d.Settings.Lock && k.Lock != 0).Name is { } name ? $", with the {name.ToLowerInvariant()}" : d.Settings.Lock != 0 ? $", with lock {d.Settings.Lock}" : "";
         var after = d.Settings.StaysOpen ? "stays open" : string.Create(CultureInfo.InvariantCulture, $"closes again after {d.Settings.Delay / 35.0:0.#} s");
         return $"Opens {who}{key}; {after}.";
@@ -385,7 +387,12 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new FlagRow("Starts open", "Open when the map starts, its ceiling already raised; it still closes and opens as set.", () => Now()?.StartsOpen == true,
             on => Change(d => (d.Settings, d.Monsters, on), on ? "Start the door open" : "Start the door closed")));
         Rows.Add(new InfoRow("Opens to", "How high its ceiling rises: 4 below the lowest ceiling beside it, as the game does it.", () => Now() is { } d ? string.Create(CultureInfo.InvariantCulture, $"{d.OpensTo:0}, {d.OpensTo - area.FloorHeight:0} tall") : "—"));
-        Rows.Add(new InfoRow("Opened from", "The walls that open it when used, facing into it from the rooms beside it.", () => Now() is { } d ? $"{d.Openers.Count} wall{(d.Openers.Count == 1 ? "" : "s")}" : "—"));
+        Rows.Add(new InfoRow("Opened from", "Its own walls, used from the rooms beside it, and walls elsewhere that name its tag (a switch, a line walked over).", () =>
+        {
+            if (Now() is not { } d) return "—";
+            var own = d.Own.Count();
+            return string.Join(", ", (own == 0 ? [] : new[] { own == 1 ? "1 of its walls" : $"{own} of its walls" }).Concat(d.RemoteWays()));
+        }));
     }
 
     private void AddLine(Line l)

@@ -28,6 +28,7 @@ public sealed class MapGeometry
     private readonly SpatialGrid _vertices;
     private readonly SpatialGrid _things;
     private readonly SpatialGrid _sectors;
+    private readonly Dictionary<int, List<int>> _byFirstArg = [];
 
     private MapGeometry(MapFrame frame)
     {
@@ -51,7 +52,19 @@ public sealed class MapGeometry
         _vertices = SpatialGrid.Build(_extent, frame.Vertices.Count, i => frame.Vertices[i] is { Element: not null } v ? (v.X, v.Y, v.X, v.Y) : null);
         _things = SpatialGrid.Build(_extent, frame.Things.Count, i => frame.Things[i] is { Element: not null } t ? (t.X, t.Y, t.X, t.Y) : null);
         _sectors = SpatialGrid.Build(_extent, frame.Sectors.Count, i => _loops[i].Length > 0 ? _bounds[i] : null);
+
+        // Walls with an action, by its first argument: for most actions the tag of what they work on.
+        for (var i = 0; i < frame.Lines.Count; i++)
+        {
+            var l = frame.Lines[i];
+            if (l.Element is null || l.Special == 0 || l.Args[0] == 0) continue;
+            if (!_byFirstArg.TryGetValue(l.Args[0], out var list)) _byFirstArg[l.Args[0]] = list = [];
+            list.Add(i);
+        }
     }
+
+    /// <summary>The places of the walls whose action's first argument is <paramref name="tag"/> (the walls that work on that tag, for most actions).</summary>
+    public IReadOnlyList<int> LinesNaming(int tag) => tag != 0 && _byFirstArg.TryGetValue(tag, out var list) ? list : [];
 
     /// <summary>The frame these shapes were made from.</summary>
     public MapFrame Frame { get; }

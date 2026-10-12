@@ -16,12 +16,33 @@ public sealed record DoorSettings(bool Fast, bool StaysOpen, int Lock, int Delay
 /// how high it opens. Found the same way in any map, made by WadSmith or not.
 /// </summary>
 /// <param name="Area">The door's area: its ceiling rises to open it.</param>
-/// <param name="Openers">The walls that open it when used: they face into the door from the rooms beside it.</param>
+/// <param name="Openers">The walls that open it: its own walls, used from the rooms beside it, then any wall elsewhere naming its tag (a switch, a line walked over).</param>
 /// <param name="Settings">How it behaves.</param>
 /// <param name="Monsters">Whether monsters open it too.</param>
 /// <param name="OpensTo">The height its ceiling rises to: 4 below the lowest ceiling beside it (the engine's rule).</param>
 public sealed record Door(Sector Area, IReadOnlyList<Line> Openers, DoorSettings Settings, bool Monsters, double OpensTo)
 {
+    /// <summary>The walls elsewhere that open it by its tag.</summary>
+    public IEnumerable<Line> Remote => Openers.Where(l => l.Args[0] != 0);
+
+    /// <summary>Its own walls that open it when used.</summary>
+    public IEnumerable<Line> Own => Openers.Where(l => l.Args[0] == 0);
+
+    /// <summary>How the walls elsewhere set it off, in words: "a switch", "2 lines walked over", "a wall shot".</summary>
+    public IEnumerable<string> RemoteWays()
+    {
+        static string Count(int n, string one, string many) => n == 1 ? one : $"{n} {many}";
+        var remote = Remote.ToList();
+        var used = remote.Count(l => l.Flag("playeruse"));
+        var crossed = remote.Count(l => !l.Flag("playeruse") && (l.Flag("playercross") || l.Flag("monstercross")));
+        var shot = remote.Count(l => !l.Flag("playeruse") && !l.Flag("playercross") && l.Flag("impact"));
+        var other = remote.Count - used - crossed - shot;
+        if (used > 0) yield return Count(used, "a switch", "switches");
+        if (crossed > 0) yield return Count(crossed, "a line walked over", "lines walked over");
+        if (shot > 0) yield return Count(shot, "a wall shot", "walls shot");
+        if (other > 0) yield return Count(other, "another wall", "other walls");
+    }
+
     /// <summary>Whether the door is open as the map starts (its ceiling above its floor).</summary>
     public bool StartsOpen => Area.CeilingHeight > Area.FloorHeight;
 }
@@ -55,6 +76,17 @@ public static class Doors
         if (!area.OnMap || geometry.WallBoundsAt(area.Slot) is not { } b) return null;
         var walls = geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY).Where(l => l.OnMap && (l.Front.Sector == area || l.Back?.Sector == area)).ToList();
         var openers = walls.Where(l => ReferenceEquals(l.Back?.Sector, area) && l.Args[0] == 0 && Decode(l.Special, l.Args) is not null).ToList();
+
+        // Walls anywhere naming the area's tag with a door action open it from afar.
+        if (area.Tag != 0)
+        {
+            var f = geometry.Frame;
+            foreach (var slot in geometry.LinesNaming(area.Tag))
+            {
+                if (f.Lines[slot].Element is { OnMap: true } l && l.Args[0] == area.Tag && Decode(l.Special, l.Args) is not null) openers.Add(l);
+            }
+        }
+
         if (openers.Count == 0) return null;
 
         var settings = Decode(openers[0].Special, openers[0].Args)!;
@@ -82,12 +114,12 @@ public static class Doors
     /// The door action and arguments for <paramref name="settings"/>, keeping the light tag (a classic
     /// door's tag that makes lights follow it) and any speed that is neither the normal nor the fast one.
     /// </summary>
-    public static (int Special, int[] Args) Encode(DoorSettings settings, int lightTag, int? speed = null)
+    public static (int Special, int[] Args) Encode(DoorSettings settings, int lightTag, int? speed = null, int tag = 0)
     {
         var s = speed is { } given && given is not NormalSpeed and not FastSpeed && (given >= FastSpeed) == settings.Fast ? given : settings.Fast ? FastSpeed : NormalSpeed;
-        if (settings.Lock != 0) return (DoorLockedRaise, [0, s, settings.StaysOpen ? 0 : settings.Delay, settings.Lock, lightTag]);
-        if (settings.StaysOpen) return (DoorOpen, [0, s, lightTag, 0, 0]);
-        return (DoorRaise, [0, s, settings.Delay, lightTag, 0]);
+        if (settings.Lock != 0) return (DoorLockedRaise, [tag, s, settings.StaysOpen ? 0 : settings.Delay, settings.Lock, lightTag]);
+        if (settings.StaysOpen) return (DoorOpen, [tag, s, lightTag, 0, 0]);
+        return (DoorRaise, [tag, s, settings.Delay, lightTag, 0]);
     }
 
     /// <summary>The light tag a door action carries (where its arguments keep it).</summary>
@@ -269,7 +301,7 @@ public static class Doors
     {
         foreach (var l in door.Openers)
         {
-            var (special, args) = Encode(settings, LightTag(l.Special, l.Args), l.Args[1]);
+            var (special, args) = Encode(settings, LightTag(l.Special, l.Args), l.Args[1], l.Args[0]);
             edit.Set(l, x => x.Special, (x, v) => x.Special = v, special);
             for (var i = 0; i < args.Length; i++)
             {

@@ -511,7 +511,7 @@ foreach (var pose in poses)
                 // The first door of the map, selected: the Inspector shows it as a door. Then its lock is
                 // changed as the row does it, and undone.
                 var geometry = editor.Session.Geometry;
-                var area = editor.Session.Map.Sectors.FirstOrDefault(s => WadSmith.Editor.Smart.Doors.Recognise(geometry, s) is not null);
+                var area = editor.Session.Map.Sectors.Where(s => WadSmith.Editor.Smart.Doors.Recognise(geometry, s) is not null).OrderByDescending(s => WadSmith.Editor.Smart.Doors.Recognise(geometry, s)!.Remote.Count()).FirstOrDefault();
                 if (area is null)
                 {
                     Console.Error.WriteLine("No door in this map.");

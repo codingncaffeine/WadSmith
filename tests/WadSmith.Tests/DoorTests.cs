@@ -14,6 +14,12 @@ public sealed class DoorTests(ITestOutputHelper output)
     /// <summary>Doom's classic door actions that open the area behind the wall used (no tag): DR, D1, keyed and blazing.</summary>
     private static readonly HashSet<int> ClassicLocalDoors = [1, 26, 27, 28, 31, 32, 33, 34, 117, 118];
 
+    /// <summary>
+    /// Doom's classic actions that open doors by tag (switches, lines walked over or shot): W1/WR/S1/SR/GR open
+    /// and raise, blazing and locked blazing. Closing ones (2, 3, 16, …) do not make a door.
+    /// </summary>
+    private static readonly HashSet<int> ClassicRemoteDoors = [2, 4, 29, 46, 61, 63, 86, 90, 99, 103, 105, 106, 108, 109, 111, 112, 114, 115, 133, 134, 135, 136, 137];
+
     public static TheoryData<string> DoomFormatGames() => new() { "DOOM.WAD", "DOOM2.WAD", "PLUTONIA.WAD", "TNT.WAD", "SIGIL_v1_21.wad", "SIGIL_II_V1_0.WAD", "freedoom1.wad", "freedoom2.wad" };
 
     /// <summary>
@@ -32,6 +38,19 @@ public sealed class DoorTests(ITestOutputHelper output)
         {
             var classic = MapConversion.Read(lumps, "doom");
             var expected = classic.Lines.Where(l => ClassicLocalDoors.Contains(l.Special) && l.Back >= 0).Select(l => classic.Sides[l.Back].Sector).ToHashSet();
+
+            // Remote doors: every area with the tag a remote door action names. With no tag, GZDoom (unlike
+            // the original game) works on the area behind the wall, so the translated map does too.
+            foreach (var l in classic.Lines.Where(l => ClassicRemoteDoors.Contains(l.Special)))
+            {
+                var tag = Math.Max(l.Id, 0);
+                if (tag == 0 && l.Back >= 0) expected.Add(classic.Sides[l.Back].Sector);
+                for (var s = 0; s < classic.Sectors.Count; s++)
+                {
+                    if (tag != 0 && classic.Sectors[s].Id == tag) expected.Add(s);
+                }
+            }
+
             var map = EditorMap.FromModel(MapTranslation.ToZDoom(classic, xlat, []));
             var geometry = MapGeometry.Build(map.Frame);
             var found = map.Sectors.Where(s => Doors.Recognise(geometry, s) is not null).Select(s => s.Slot).ToHashSet();
@@ -120,6 +139,30 @@ public sealed class DoorTests(ITestOutputHelper output)
         history.Undo();
         Assert.Equal(new DoorSettings(false, false, 0), Doors.Recognise(MapGeometry.Build(map.Frame), area)!.Settings);
         Assert.False(area.CeilingHeight > area.FloorHeight);
+    }
+
+    [Fact]
+    public void ASwitchElsewhereNamingTheDoorsTagOpensItAndKeepsItsTag()
+    {
+        var (map, history, area) = Doorway();
+        var room = map.Sectors.First(s => s.OnMap && s != area);
+        var wall = map.Lines.First(l => l.OnMap && l.Back is null && l.Front.Sector == room);
+        history.Record("Make a switch", e =>
+        {
+            e.Set(area, s => s.Tag, (s, v) => s.Tag = v, 5);
+            e.Set(wall, x => x.Special, (x, v) => x.Special = v, Doors.DoorOpen);
+            e.Set(wall, x => x.Args[0], (x, v) => x.Args[0] = v, 5);
+            e.Set(wall, x => x.Args[1], (x, v) => x.Args[1] = v, 16);
+            e.Flag(wall, "playeruse", true);
+        });
+        var door = Doors.Recognise(MapGeometry.Build(map.Frame), area)!;
+        Assert.Equal(3, door.Openers.Count);
+        Assert.Same(wall, Assert.Single(door.Remote));
+        Assert.Equal(["a switch"], door.RemoteWays());
+
+        history.Record("Change the door", e => Doors.Change(e, door, new DoorSettings(true, true, 0), monsters: true, startsOpen: false));
+        Assert.Equal((Doors.DoorOpen, 5, 64), (wall.Special, wall.Args[0], wall.Args[1]));
+        Assert.All(door.Own, l => Assert.Equal((Doors.DoorOpen, 0), (l.Special, l.Args[0])));
     }
 
     [Fact]
