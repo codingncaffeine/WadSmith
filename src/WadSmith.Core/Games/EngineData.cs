@@ -14,6 +14,13 @@ public static class EngineData
         "/usr/share/games/uzdoom/uzdoom.pk3",
     ];
 
-    /// <summary>The first engine data file found in the usual install locations, or null.</summary>
-    public static string? Find() => Candidates.FirstOrDefault(File.Exists);
+    private static readonly string[] Names = ["gzdoom.pk3", "uzdoom.pk3", "GZDOOM.PK3", "UZDOOM.PK3"];
+
+    /// <summary>
+    /// The first engine data file found in the usual install locations, then in <paramref name="alsoIn"/> (the user's
+    /// game folders and the chosen engine's folder: a portable or Windows GZDoom keeps it beside its games), or null.
+    /// </summary>
+    public static string? Find(IEnumerable<string>? alsoIn = null) =>
+        Candidates.FirstOrDefault(File.Exists)
+        ?? (alsoIn ?? []).Where(f => !string.IsNullOrEmpty(f)).SelectMany(f => Names.Select(n => Path.Combine(f, n))).FirstOrDefault(File.Exists);
 }

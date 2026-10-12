@@ -30,4 +30,16 @@ public sealed class GameLocatorTests
         Assert.Equal([found[0].Path], GameLocator.FilesFor(found, "doom2"));
         Assert.Empty(GameLocator.FilesFor(found, "heretic"));
     }
+
+    [Fact]
+    public void GZDoomsDataIsFoundBesideTheGamesWhenNotInstalled()
+    {
+        using var temp = new TempFolder();
+        var beside = Path.Combine(temp.Path, "gzdoom.pk3");
+        File.WriteAllBytes(beside, [0x50, 0x4B, 0x05, 0x06]);
+        var installed = Core.Games.EngineData.Find();
+        // An installed engine comes first; without one, the copy beside the games is used (CI has no GZDoom installed).
+        Assert.Equal(installed ?? beside, Core.Games.EngineData.Find(["", Path.Combine(temp.Path, "nothing"), temp.Path]));
+        Assert.Equal(installed, Core.Games.EngineData.Find([Path.Combine(temp.Path, "nothing")]));
+    }
 }

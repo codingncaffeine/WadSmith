@@ -37,7 +37,7 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
     public CancellationToken ShuttingDown => _shutdown.Token;
 
     /// <summary>GZDoom's own data file, needed to remix classic maps; null when GZDoom is not installed.</summary>
-    public string? EngineData { get; } = EngineDataFinder();
+    public string? EngineData { get; } = EngineDataFinder(settings.Current);
 
     /// <summary>The games the last scan found (the welcome screen scans at start).</summary>
     public IReadOnlyList<FoundGame>? Games
@@ -93,9 +93,9 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
 
     public void Shutdown() => _shutdown.Cancel();
 
-    private static string? EngineDataFinder()
+    private static string? EngineDataFinder(AppSettings settings)
     {
-        var found = Core.Games.EngineData.Find();
+        var found = Core.Games.EngineData.Find([.. settings.GameFolders, Path.GetDirectoryName(settings.EnginePath) ?? ""]);
         Log.Info(found is null ? "GZDoom's data file was not found; remixing classic maps needs it." : $"GZDoom data: {found}");
         return found;
     }
