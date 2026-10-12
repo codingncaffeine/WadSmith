@@ -61,6 +61,18 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.StateChanged += _ => UpdateSaveText();
         session.Selection.Changed += () => Learned("select");
         session.GeometryChanged += UpdateHeights;
+        _profiles = new LatestOnWorker<(EditorSession Session, ElevationProfile Profile)>(MainViewModel.PostToUi, r =>
+        {
+            if (!ReferenceEquals(r.Session, Session) || _measure is null) return;
+            Profile = r.Profile;
+            ProfileText = r.Profile.Describe();
+        }, "the elevation profile");
+
+        // An open profile follows the map as it changes.
+        session.GeometryChanged += () =>
+        {
+            if (_measure is { } line) RequestProfile(line.From, line.To);
+        };
         session.TeleportPadChanged += UpdateStatus;
         session.SwitchTargetChanged += UpdateStatus;
         session.KeyToPlaceChanged += UpdateStatus;
@@ -191,7 +203,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>What a left drag on the plan does (V selects, R draws rooms).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool), nameof(IsDoorTool), nameof(IsTeleportTool), nameof(IsStairsTool), nameof(IsWindowTool), nameof(IsLightTool))]
+    [NotifyPropertyChangedFor(nameof(IsSelectTool), nameof(IsRoomTool), nameof(IsDoorTool), nameof(IsTeleportTool), nameof(IsStairsTool), nameof(IsWindowTool), nameof(IsLightTool), nameof(IsMeasureTool))]
     private Canvas.EditorTool _tool;
 
     public bool IsStairsTool
@@ -202,6 +214,51 @@ internal sealed partial class EditorViewModel : ObservableObject
             if (value) Tool = Canvas.EditorTool.Stairs;
             else OnPropertyChanged();
         }
+    }
+
+    public bool IsMeasureTool
+    {
+        get => Tool == Canvas.EditorTool.Measure;
+        set
+        {
+            if (value) Tool = Canvas.EditorTool.Measure;
+            else OnPropertyChanged();
+        }
+    }
+
+    private readonly LatestOnWorker<(EditorSession Session, ElevationProfile Profile)> _profiles;
+    private (MapPoint From, MapPoint To)? _measure;
+
+    /// <summary>The floors and ceilings along the line measured last (null when no profile is open).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowProfile))]
+    private ElevationProfile? _profile;
+
+    /// <summary>The profile in a sentence: how long, the floors, where the player is stopped.</summary>
+    [ObservableProperty]
+    private string _profileText = "";
+
+    public bool ShowProfile => Profile is not null;
+
+    /// <summary>Called by the canvas when a line has been measured: works out its profile on a worker.</summary>
+    public void Measured(MapPoint from, MapPoint to)
+    {
+        _measure = (from, to);
+        RequestProfile(from, to);
+    }
+
+    private void RequestProfile(MapPoint from, MapPoint to)
+    {
+        var session = Session;
+        var geometry = session.Geometry;
+        _profiles.Request(() => (session, ElevationProfile.Build(geometry, from, to)));
+    }
+
+    [RelayCommand]
+    private void CloseProfile()
+    {
+        _measure = null;
+        Profile = null;
     }
 
     public bool IsLightTool
@@ -630,6 +687,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         if (Tool == Canvas.EditorTool.Stairs)
         {
             Status = "Drag from the bottom of the stairs to the top: the steps climb from the floor where you start to the floor where you end, 16 a step where nothing else decides. Esc goes back to Select.";
+            return;
+        }
+
+        if (Tool == Canvas.EditorTool.Measure)
+        {
+            Status = "Drag a line across the map: its length, and below the map the floors and ceilings along it, with what stops the player. Esc goes back to Select.";
             return;
         }
 

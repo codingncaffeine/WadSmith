@@ -39,6 +39,9 @@ internal enum EditorTool
 
     /// <summary>Click in a room for a light.</summary>
     Light,
+
+    /// <summary>Drag a line to measure it and see the floors and ceilings along it.</summary>
+    Measure,
 }
 
 /// <summary>
@@ -142,6 +145,11 @@ internal sealed class MapCanvas : Control
     private TransformEdit? _transformEdit;
     private bool _overGrip;
 
+    // The line measured (and shown in the profile), and whether it is being dragged.
+    private MapPoint? _measureFrom;
+    private MapPoint? _measureTo;
+    private bool _measuring;
+
     // A room drawn round (Ctrl while dragging), and with how many sides ([ and ] change them).
     private bool _round;
     private int _sides = Shapes.DefaultSides;
@@ -233,6 +241,9 @@ internal sealed class MapCanvas : Control
     /// <summary>Raised with a sentence while the selection is turned or resized with its handles (null when it ends).</summary>
     public event Action<string?>? Placing;
 
+    /// <summary>Raised when a line has been measured: its two ends, for the elevation profile.</summary>
+    public event Action<MapPoint, MapPoint>? Measured;
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -250,6 +261,7 @@ internal sealed class MapCanvas : Control
             _windowWall = null;
             if (change.GetNewValue<EditorTool>() != EditorTool.Switch && Session is { } unswitching) unswitching.SwitchTarget = null;
             if (change.GetNewValue<EditorTool>() != EditorTool.Key && Session is { } unkeyed) unkeyed.KeyToPlace = null;
+            if (change.GetNewValue<EditorTool>() != EditorTool.Measure) (_measureFrom, _measureTo, _measuring) = (null, null, false);
             _snap = null;
             InvalidateVisual();
             return;
@@ -397,6 +409,22 @@ internal sealed class MapCanvas : Control
         if (_drawFrom is { } a && _drawTo is { } b && (a.X != b.X || a.Y != b.Y)) DrawSize(context, a, b);
         DrawGrips(context);
         DrawWindowDrag(context);
+        DrawMeasure(context);
+    }
+
+    /// <summary>The line measured: dashed between its two ends, its length beside it (screen pixels).</summary>
+    private void DrawMeasure(DrawingContext context)
+    {
+        if (Tool != EditorTool.Measure || _measureFrom is not { } a || _measureTo is not { } b || a.DistanceTo(b) < 1) return;
+        var brush = new SolidColorBrush(Color.FromRgb(0x7C, 0xD8, 0x6A));
+        var (p, q) = (ToScreen(a), ToScreen(b));
+        context.DrawLine(new Pen(brush, 2, new DashStyle([6, 4], 0)), p, q);
+        context.DrawEllipse(brush, null, p, 4, 4);
+        context.DrawEllipse(brush, null, q, 4, 4);
+        var text = new FormattedText(a.DistanceTo(b).ToString("0", System.Globalization.CultureInfo.InvariantCulture), System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 13, Brushes.White);
+        var at = new Point((p.X + q.X) / 2 + 8, (p.Y + q.Y) / 2 - text.Height - 4);
+        context.FillRectangle(new SolidColorBrush(Color.FromArgb(0xD0, 0x0A, 0x07, 0x08)), new Rect(at.X - 5, at.Y - 2, text.Width + 10, text.Height + 4), 4);
+        context.DrawText(text, at);
     }
 
     /// <summary>The room's size beside it, in map units, so rooms can be drawn to measure.</summary>
@@ -914,6 +942,16 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (props.IsLeftButtonPressed && Session is not null && Tool == EditorTool.Measure)
+        {
+            _measureFrom = _measureTo = Snap(e.GetPosition(this));
+            _measuring = true;
+            e.Pointer.Capture(this);
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
         if (props.IsLeftButtonPressed && Session is { } lighting && Tool == EditorTool.Light)
         {
             lighting.PlaceLight(Snap(e.GetPosition(this)));
@@ -1073,6 +1111,15 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (Tool == EditorTool.Measure && _measuring && _measureFrom is { } start)
+        {
+            _measureTo = (e.KeyModifiers & KeyModifiers.Shift) != 0 ? ToMap(p) : Snap(p);
+            var length = start.DistanceTo(_measureTo.Value);
+            Placing?.Invoke(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{length:0} long ({length / 32:0.#} players across) · let go to see the floors and ceilings along it; Shift measures freely"));
+            InvalidateVisual();
+            return;
+        }
+
         if (Tool == EditorTool.Window && _windowWall is { } held)
         {
             _windowTo = AlongWall(held, p);
@@ -1199,6 +1246,17 @@ internal sealed class MapCanvas : Control
             if (_moveGesture != 0) EndMove(keep: true);
             else if (_narrowOnClick && Session is { } s) s.Selection.Set(clicked);
             _narrowOnClick = false;
+            return;
+        }
+
+        if (Tool == EditorTool.Measure && _measuring && e.InitialPressMouseButton == MouseButton.Left)
+        {
+            e.Pointer.Capture(null);
+            _measuring = false;
+            Placing?.Invoke(null);
+            if (_measureFrom is { } m0 && _measureTo is { } m1 && m0.DistanceTo(m1) >= 1) Measured?.Invoke(m0, m1);
+            else (_measureFrom, _measureTo) = (null, null);
+            InvalidateVisual();
             return;
         }
 
@@ -1358,6 +1416,10 @@ internal sealed class MapCanvas : Control
                 break;
             case Key.L when e.KeyModifiers == KeyModifiers.None:
                 Tool = EditorTool.Light;
+                e.Handled = true;
+                break;
+            case Key.M when e.KeyModifiers == KeyModifiers.None:
+                Tool = EditorTool.Measure;
                 e.Handled = true;
                 break;
             case Key.J when e.KeyModifiers == KeyModifiers.None && _moveGesture == 0:

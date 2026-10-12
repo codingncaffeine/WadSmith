@@ -106,8 +106,10 @@
                                   ToolTip.Tip="Click a room to step on, then the spot the player arrives at: stepping onto the room sends them there (T)." />
                     <ToggleButton Classes="segment tool" Content="Light" IsChecked="{Binding IsLightTool}"
                                   ToolTip.Tip="Click in a room for a light, which the 3D view shows; its colour, reach and flicker are in the Inspector (L)." />
-                    <ToggleButton Classes="segment tool last" Content="Stairs" IsChecked="{Binding IsStairsTool}"
+                    <ToggleButton Classes="segment tool" Content="Stairs" IsChecked="{Binding IsStairsTool}"
                                   ToolTip.Tip="Drag from the bottom of a staircase to its top: steps that climb from one floor to the other, never more than the player can step up (S)." />
+                    <ToggleButton Classes="segment tool last" Content="Measure" IsChecked="{Binding IsMeasureTool}"
+                                  ToolTip.Tip="Drag a line to measure it: below the map, the floors and ceilings along it as a cross-section, with the player for scale and every step the player can't take (M)." />
                 </StackPanel>
 
                 <!-- Heights legend: the colour ramp with the lowest and highest floor. -->
@@ -229,8 +231,21 @@
             </Border>
         </Grid>
 
+        <StackPanel Grid.Row="2">
+        <!-- The elevation profile: the floors and ceilings along the line measured last. -->
+        <Border IsVisible="{Binding ShowProfile}" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,1,0,0">
+            <Grid RowDefinitions="Auto,170" Margin="12,6,12,8">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <TextBlock Text="Profile" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <TextBlock Grid.Column="1" Text="{Binding ProfileText}" Classes="secondary" TextWrapping="Wrap" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Classes="metal" Content="Close" Command="{Binding CloseProfileCommand}" Margin="10,0,0,0" ToolTip.Tip="Closes the profile." />
+                </Grid>
+                <canvas:ProfileView Grid.Row="1" Profile="{Binding Profile}" Margin="0,6,0,0" />
+            </Grid>
+        </Border>
+
         <!-- Problems: the live checks, each with Show and, where there is one, a Fix. -->
-        <Border Grid.Row="2" IsVisible="{Binding ShowProblems}" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,1,0,0" MaxHeight="190">
+        <Border IsVisible="{Binding ShowProblems}" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,1,0,0" MaxHeight="190">
             <ScrollViewer Margin="12,8,12,8">
                 <StackPanel Spacing="6">
                     <TextBlock Text="Nothing to fix: the map has none of the problems WadSmith checks for." Classes="secondary" IsVisible="{Binding Problems.Empty}" />
@@ -258,6 +273,8 @@
                 </StackPanel>
             </ScrollViewer>
         </Border>
+        </StackPanel>
+
 
         <!-- Status strip: what is under the pointer, or the coach's next tip; the problems; whether changes are kept. -->
         <Border Grid.Row="3" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,1,0,0">

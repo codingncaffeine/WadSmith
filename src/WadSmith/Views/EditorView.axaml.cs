@@ -26,6 +26,7 @@ public partial class EditorView : UserControl
         Canvas.Drawing += (size, step) => (DataContext as EditorViewModel)?.Drawing(size, step);
         Canvas.Moving += move => (DataContext as EditorViewModel)?.Moving(move);
         Canvas.Placing += text => (DataContext as EditorViewModel)?.Hint(text);
+        Canvas.Measured += (from, to) => (DataContext as EditorViewModel)?.Measured(from, to);
         Canvas.DropHint += hint => (DataContext as EditorViewModel)?.Hint(hint);
         Canvas.CornersChanged += c => (DataContext as EditorViewModel)?.Corners(c);
     }
