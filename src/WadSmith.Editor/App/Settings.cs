@@ -11,6 +11,14 @@ public enum TooltipLength
     Off,
 }
 
+/// <summary>Which views share the map area (D46): the plan alone, the plan and the 3D view side by side, or the 3D view alone.</summary>
+public enum MapLayout
+{
+    Split,
+    Plan,
+    ThreeD,
+}
+
 /// <summary>Everything WadSmith remembers between runs.</summary>
 public sealed class AppSettings
 {
@@ -46,6 +54,9 @@ public sealed class AppSettings
 
     /// <summary>The plan shows the player's size at the pointer and marks where the player cannot pass (D20).</summary>
     public bool ShowPlayerFit { get; set; } = true;
+
+    /// <summary>Which views share the map area (D46); Split until the user picks another.</summary>
+    public MapLayout Layout { get; set; }
 
     /// <summary>Use the desktop's own title bar instead of WadSmith's.</summary>
     public bool UseSystemTitleBar { get; set; }

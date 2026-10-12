@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-platform" or "editor-layout":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -908,6 +908,53 @@ foreach (var pose in poses)
                     Console.WriteLine($"slope measured: ramp ours against the engine's ramp {Diff(rampOurs, "ramp"):0.0} per channel; flat against flat {Diff(flatOurs, "flat"):0.0}; controls: flat ours against the engine's ramp {Diff(flatOurs, "ramp"):0.0}, ramp ours against the engine's flat {Diff(rampOurs, "flat"):0.0}");
                 }
 
+                break;
+            }
+
+            if (pose == "editor-layout")
+            {
+                // The map area's three layouts (D46) driven with real keys and a real click: Tab from the plan fills the area
+                // with the 3D view and Tab brings back the layout before; the 2D segment gives the plan the whole area. A Tab in
+                // a text field moves between fields and leaves the layout alone (the control).
+                var canvas = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
+                var view3d = window.GetVisualDescendants().OfType<WadSmith.App.ThreeD.View3D>().First();
+                var views = window.GetVisualDescendants().OfType<Avalonia.Controls.Grid>().First(g => g.Name == "MapViews");
+                for (var i = 0; i < 200 && (view3d.SceneVersion < 0 || !view3d.HasPicture); i++) Pump(0.05);
+                string Shown() => $"layout {editor.Layout}; plan {(canvas.IsEffectivelyVisible ? $"{canvas.Bounds.Width:0}" : "hidden")}, 3D {(view3d.IsEffectivelyVisible ? $"{view3d.Bounds.Width:0}" : "hidden")} of {views.Bounds.Width:0}; keys with {(canvas.IsFocused ? "plan" : view3d.IsFocused ? "3D" : "neither")}";
+                void Tab()
+                {
+                    window.KeyPress(Avalonia.Input.Key.Tab, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.Tab, "\t");
+                    Pump(0.6);
+                }
+
+                canvas.Focus();
+                Pump(0.3);
+                Console.WriteLine($"layout start: {Shown()}");
+                Tab();
+                Console.WriteLine($"layout tab: {Shown()}");
+                Save("editor-layout-3d");
+                Tab();
+                Console.WriteLine($"layout tab again: {Shown()}");
+                var twoD = window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ToggleButton>().First(b => b.Content as string == "2D");
+                var at = twoD.TranslatePoint(new Avalonia.Point(twoD.Bounds.Width / 2, twoD.Bounds.Height / 2), window)!.Value;
+                window.MouseDown(at, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                window.MouseUp(at, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                Pump(0.6);
+                Console.WriteLine($"layout 2D clicked: {Shown()}");
+                Save("editor-layout-2d");
+                Tab();
+                Console.WriteLine($"layout tab from 2D: {Shown()}");
+                Tab();
+                Console.WriteLine($"layout tab back: {Shown()}");
+                editor.Layout = WadSmith.Editor.App.MapLayout.Split;
+                Pump(0.6);
+                var field = window.GetVisualDescendants().OfType<Avalonia.Controls.TextBox>().FirstOrDefault(t => t.IsEffectivelyVisible);
+                field?.Focus();
+                Pump(0.2);
+                var hadKeys = field?.IsFocused == true;
+                Tab();
+                Console.WriteLine($"layout tab in a text field ({(hadKeys ? "it had the keys" : "it did NOT have the keys")}, {field?.Name ?? field?.PlaceholderText ?? (field is null ? "none" : "unnamed")}): {Shown()}");
+                Save("editor-layout-split");
                 break;
             }
 

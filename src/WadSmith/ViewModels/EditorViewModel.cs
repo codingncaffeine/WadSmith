@@ -213,9 +213,59 @@ internal sealed partial class EditorViewModel : ObservableObject
     [ObservableProperty]
     private string _versionsNote = "";
 
-    /// <summary>Whether the 3D view shows beside the plan (D46).</summary>
-    [ObservableProperty]
-    private bool _show3D = true;
+    /// <summary>Which views share the map area (D46), remembered between runs.</summary>
+    public MapLayout Layout
+    {
+        get => _services.Settings.Current.Layout;
+        set
+        {
+            if (value == Layout) return;
+            if (value == MapLayout.ThreeD) _before3D = Layout;
+            _services.Settings.Current.Layout = value;
+            _services.Settings.Save();
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsPlanOnly));
+            OnPropertyChanged(nameof(IsSplit));
+            OnPropertyChanged(nameof(Is3DOnly));
+        }
+    }
+
+    // The layout Tab goes back to from the 3D view alone.
+    private MapLayout? _before3D;
+
+    public bool IsPlanOnly
+    {
+        get => Layout == MapLayout.Plan;
+        set
+        {
+            if (value) Layout = MapLayout.Plan;
+            else OnPropertyChanged();
+        }
+    }
+
+    public bool IsSplit
+    {
+        get => Layout == MapLayout.Split;
+        set
+        {
+            if (value) Layout = MapLayout.Split;
+            else OnPropertyChanged();
+        }
+    }
+
+    public bool Is3DOnly
+    {
+        get => Layout == MapLayout.ThreeD;
+        set
+        {
+            if (value) Layout = MapLayout.ThreeD;
+            else OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Tab: the 3D view fills the map area, and Tab again brings back the layout before it (Doom Builder's Tab).</summary>
+    [RelayCommand]
+    private void Toggle3D() => Layout = Layout == MapLayout.ThreeD ? _before3D ?? MapLayout.Split : MapLayout.ThreeD;
 
     /// <summary>How the 3D camera moves: orbit, fly or walk.</summary>
     [ObservableProperty]
