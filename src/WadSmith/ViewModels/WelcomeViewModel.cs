@@ -428,6 +428,9 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         };
         NoGamesHeading = added.Count == 0 ? "No game found yet" : "No base game in the folders you added";
         NoGamesText = NoGamesWords(report, added);
+
+        // The tiles exist now: the user's maps go onto them (listed earlier, before the scan, they all fell through to the bottom).
+        await RefreshProjectsAsync().ConfigureAwait(true);
         Log.Info($"Game scan: {report.Games.Count} game file(s) in {report.Folders.Count} folder(s), {found.Count} usable; {Games.Count} base game(s).");
         foreach (var f in report.Folders.Where(f => !f.Empty || added.Contains(f.Folder, StringComparer.Ordinal)))
         {

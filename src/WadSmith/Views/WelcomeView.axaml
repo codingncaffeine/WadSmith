@@ -6,20 +6,24 @@
     <UserControl.Resources>
         <!-- One of the user's maps: its name (editable in place), when it changed, and what can be done with it. -->
         <DataTemplate x:Key="ProjectRow" x:DataType="vm:ProjectChoice">
-            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" Margin="0,2" MinWidth="440">
-                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" IsVisible="{Binding !IsRenaming}" ToolTip.Tip="{Binding Folder}" TextTrimming="CharacterEllipsis" />
-                <TextBox Text="{Binding NewName}" IsVisible="{Binding IsRenaming}" MinWidth="160" ToolTip.Tip="The map's new name: Enter keeps it, Escape leaves it as it was.">
-                    <TextBox.KeyBindings>
-                        <KeyBinding Gesture="Enter" Command="{Binding CommitRenameCommand}" />
-                        <KeyBinding Gesture="Escape" Command="{Binding CancelRenameCommand}" />
-                    </TextBox.KeyBindings>
-                </TextBox>
-                <TextBlock Grid.Column="1" Text="{Binding When}" Classes="secondary" FontSize="12" VerticalAlignment="Center" Margin="10,0" ToolTip.Tip="When the map last changed." />
-                <Button Grid.Column="2" Classes="primary" Content="Open" Command="{Binding OpenCommand}" Margin="4,0" ToolTip.Tip="Opens this map in the editor." />
-                <Button Grid.Column="3" Classes="metal" Content="Rename" Command="{Binding RenameCommand}" Margin="4,0" ToolTip.Tip="Gives the map a new name; its folder stays where it is." />
-                <Button Grid.Column="4" Classes="metal" Content="Copy" Command="{Binding CopyCommand}" Margin="4,0" ToolTip.Tip="A whole copy of the map beside it, named '… copy', ready to open." />
-                <Button Grid.Column="5" Classes="metal" Content="Delete" Command="{Binding DeleteCommand}" Margin="4,0" ToolTip.Tip="Moves the map into the Deleted folder inside your maps folder; move it out again to bring it back." />
-            </Grid>
+            <Border BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1" Padding="0,5">
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" IsVisible="{Binding !IsRenaming}" ToolTip.Tip="{Binding Folder}" TextTrimming="CharacterEllipsis" />
+                    <TextBox Text="{Binding NewName}" IsVisible="{Binding IsRenaming}" MinWidth="160" ToolTip.Tip="The map's new name: Enter keeps it, Escape leaves it as it was.">
+                        <TextBox.KeyBindings>
+                            <KeyBinding Gesture="Enter" Command="{Binding CommitRenameCommand}" />
+                            <KeyBinding Gesture="Escape" Command="{Binding CancelRenameCommand}" />
+                        </TextBox.KeyBindings>
+                    </TextBox>
+                    <TextBlock Grid.Column="1" Text="{Binding When}" Classes="secondary" FontSize="12" VerticalAlignment="Center" Margin="10,0,0,0" ToolTip.Tip="When the map last changed." />
+                    <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6" Margin="0,5,0,0">
+                        <Button Classes="primary" Content="Open" Command="{Binding OpenCommand}" Padding="10,3" FontSize="12" ToolTip.Tip="Opens this map in the editor." />
+                        <Button Classes="metal" Content="Rename" Command="{Binding RenameCommand}" Padding="10,3" FontSize="12" ToolTip.Tip="Gives the map a new name; its folder stays where it is." />
+                        <Button Classes="metal" Content="Copy" Command="{Binding CopyCommand}" Padding="10,3" FontSize="12" ToolTip.Tip="A whole copy of the map beside it, named '… copy', ready to open." />
+                        <Button Classes="metal" Content="Delete" Command="{Binding DeleteCommand}" Padding="10,3" FontSize="12" ToolTip.Tip="Moves the map into the Deleted folder inside your maps folder; move it out again to bring it back." />
+                    </StackPanel>
+                </Grid>
+            </Border>
         </DataTemplate>
     </UserControl.Resources>
     <ScrollViewer>
@@ -81,7 +85,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:GameTileViewModel">
-                        <Border Classes="card" Width="300" Margin="0,0,18,18" Padding="12" ToolTip.Tip="{Binding Location}">
+                        <Border Classes="card" Width="400" Margin="0,0,18,18" Padding="12" ToolTip.Tip="{Binding Location}">
                             <StackPanel Spacing="10">
                                 <Border CornerRadius="6" ClipToBounds="True" Height="168" Background="#000000">
                                     <Image Source="{Binding Picture}" Stretch="UniformToFill" />
@@ -111,16 +115,13 @@
                                 <Button Classes="metal" Content="Guided first map · 10 minutes" Command="{Binding GuidedMap}" CommandParameter="{Binding}" HorizontalAlignment="Stretch"
                                         IsVisible="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).GuidePrompts}"
                                         ToolTip.Tip="A new map, and seven short steps beside it: a room, a door, a texture, a monster and a weapon, a way out, then Play. You can skip or stop at any time." />
-                                <Button Classes="metal" Content="{Binding ProjectsLabel}" HorizontalAlignment="Stretch" IsVisible="{Binding Projects.Count}"
-                                        ToolTip.Tip="The maps you made for this game: open one, or rename, copy or delete it.">
-                                    <Button.Flyout>
-                                        <Flyout Placement="BottomEdgeAlignedLeft">
-                                            <ScrollViewer MaxHeight="440">
-                                                <ItemsControl ItemsSource="{Binding Projects}" ItemTemplate="{StaticResource ProjectRow}" />
-                                            </ScrollViewer>
-                                        </Flyout>
-                                    </Button.Flyout>
-                                </Button>
+                                <!-- The user's own maps for this game, on the card: the thing they come back for. -->
+                                <StackPanel IsVisible="{Binding Projects.Count}" Spacing="2" Margin="0,8,0,0">
+                                    <TextBlock Classes="section" Text="{Binding ProjectsLabel}" ToolTip.Tip="The maps you made for this game, newest first: open one, or rename, copy or delete it." />
+                                    <ScrollViewer MaxHeight="200">
+                                        <ItemsControl ItemsSource="{Binding Projects}" ItemTemplate="{StaticResource ProjectRow}" />
+                                    </ScrollViewer>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                     </DataTemplate>
