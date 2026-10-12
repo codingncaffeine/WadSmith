@@ -5,10 +5,18 @@
        here, so all of it runs headless in the command-line tool and the tests. -->
   <PropertyGroup>
     <RootNamespace>WadSmith.Core</RootNamespace>
+    <!-- Pixel buffers are handed to Skia by pointer. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="WadSmith.Tests" />
+  </ItemGroup>
+
+  <!-- Image codecs (PNG, JPEG, GIF, WebP and their animation frames), the same Skia the app draws with. -->
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="$(SkiaSharpVersion)" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="$(SkiaSharpVersion)" />
   </ItemGroup>
 
   <!-- The data folder (game definitions, action tables, UI words) is built into the assembly. -->
