@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -349,6 +349,58 @@ foreach (var pose in poses)
             var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
             view.FitMap();
             if (pose == "editor-zoomed") view.ZoomBy(3.5);
+            if (pose == "editor-fit")
+            {
+                // Where the player cannot pass, marked in red; close to the first gaps of each kind with the player's box on
+                // each; then the box at the player's start (fits) and against the wall nearest it (does not).
+                Avalonia.Point Spot(WadSmith.Editor.Geometry.MapPoint m) => view.TranslatePoint(view.ToScreen(m), window)!.Value;
+                Pump(2.5);
+                Save("editor-fit");
+                var geometry = editor.Session.Geometry;
+                var gaps = WadSmith.Editor.Checks.Fit.Gaps(geometry);
+                Console.WriteLine($"fit problems: {string.Join(" | ", editor.Problems.Rows.Select(r => r.Sentence))}");
+                Console.WriteLine($"fit: {gaps.Count} gaps ({string.Join(", ", gaps.GroupBy(g => g.Kind).Select(g => $"{g.Count()} {g.Key}"))}), {WadSmith.Editor.Checks.Fit.LowPassages(geometry).Count} low");
+                var shots = int.TryParse(Environment.GetEnvironmentVariable("WS_FIT_SHOTS"), out var wanted) ? wanted : 2;
+                var k = 0;
+                foreach (var gap in gaps.GroupBy(g => g.Kind).SelectMany(g => g.Take(shots)))
+                {
+                    view.FitTo([geometry.Frame.Lines[gap.WallA].Element!, geometry.Frame.Lines[gap.WallB].Element!]);
+                    view.ZoomBy(0.5);
+                    Pump(0.6);
+                    var centre = new WadSmith.Editor.Geometry.MapPoint(gap.Band.Average(c => c.X), gap.Band.Average(c => c.Y));
+                    window.MouseMove(Spot(centre), Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.8);
+                    Console.WriteLine($"fit {k}: {gap.Kind} {gap.Width:0.#} of {gap.Needed:0.#} at {centre.X:0},{centre.Y:0}; status '{editor.Status}'");
+                    Save($"editor-fit-{k++}");
+                }
+
+                var start = editor.Session.Map.Things.FirstOrDefault(t => t.OnMap && t.Type == 1) ?? editor.Session.Map.Things.First(t => t.OnMap);
+                var here = new WadSmith.Editor.Geometry.MapPoint(start.X, start.Y);
+                var wall = editor.Session.Map.Lines.Where(l => l.OnMap && l.Back is null).MinBy(l => WadSmith.Editor.Geometry.MapGeometry.DistanceToSegment(here, new(l.Start.X, l.Start.Y), new(l.End.X, l.End.Y)))!;
+                var view3d = window.GetVisualDescendants().OfType<WadSmith.App.ThreeD.View3D>().First();
+                var floor = geometry.AreaAt(here)?.FloorHeight ?? 0;
+                view.FitTo([start]);
+                view.ZoomBy(0.5);
+                view3d.LookAt(here, floor + 28, 360);
+                Pump(1.0);
+                window.MouseMove(Spot(here), Avalonia.Input.RawInputModifiers.None);
+                Pump(1.5);
+                Console.WriteLine($"fit start: status '{editor.Status}'");
+                Save("editor-fit-start");
+                var (wa, wb) = (new WadSmith.Editor.Geometry.MapPoint(wall.Start.X, wall.Start.Y), new WadSmith.Editor.Geometry.MapPoint(wall.End.X, wall.End.Y));
+                var (mx, my) = ((wa.X + wb.X) / 2, (wa.Y + wb.Y) / 2);
+                var toward = Math.Sqrt((here.X - mx) * (here.X - mx) + (here.Y - my) * (here.Y - my));
+                var against = new WadSmith.Editor.Geometry.MapPoint(mx + (here.X - mx) / toward * 6, my + (here.Y - my) / toward * 6);
+                view.FitTo([start, wall]);
+                view3d.LookAt(against, floor + 28, 360);
+                Pump(1.0);
+                window.MouseMove(Spot(against), Avalonia.Input.RawInputModifiers.None);
+                Pump(1.5);
+                Console.WriteLine($"fit wall: status '{editor.Status}'");
+                Save("editor-fit-wall");
+                break;
+            }
+
             if (pose == "editor-3d-selected")
             {
                 // A room and a monster selected: outlined on the plan, tinted in the 3D view.

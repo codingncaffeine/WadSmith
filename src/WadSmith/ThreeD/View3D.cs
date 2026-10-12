@@ -181,6 +181,23 @@ internal sealed class View3D : Control
         _scenes.Request(() => (session, MapScene.Build(geometry, name => resources?.Textures.GetWall(name) is { } w ? (w.Width, w.Height) : null, SpriteShapes.For(resources))));
     }
 
+    private (GameResources? Resources, SpriteShape? Shape) _player;
+
+    /// <summary>Stands the player's ghost where the pointer is on the plan (on the floor it would stand on), or takes it away.</summary>
+    public void ShowGhost((MapPoint At, double Floor, bool Fits)? ghost)
+    {
+        if (_renderer is null) return;
+        var resources = Session?.Resources;
+        if (!ReferenceEquals(_player.Resources, resources) || (_player.Shape is null && resources is not null)) _player = (resources, SpriteShapes.For(resources)(1));
+        if (ghost is not { } g || !IsVisible || _player.Shape is not { } shape)
+        {
+            _renderer.Ghost(null, false);
+            return;
+        }
+
+        _renderer.Ghost(MapScene.SpriteQuad(g.At.X, g.At.Y, g.Floor, shape, 255), g.Fits);
+    }
+
     /// <summary>The selection's triangles, gathered on a worker, to tint in the view.</summary>
     private void RequestTint()
     {
@@ -210,6 +227,16 @@ internal sealed class View3D : Control
     internal void TurnBy(double degrees)
     {
         _yaw += degrees;
+        SendCamera();
+    }
+
+    /// <summary>Turns the orbit camera round a spot at height <paramref name="z"/>, from far enough to see <paramref name="span"/> across it.</summary>
+    internal void LookAt(MapPoint at, double z, double span)
+    {
+        (_tx, _ty, _tz) = (at.X, at.Y, z);
+        _distance = Camera3D.FitDistance(span, Bounds.Width / Math.Max(Bounds.Height, 1));
+        (_yaw, _pitch) = (50, -30);
+        _framed = true;
         SendCamera();
     }
 

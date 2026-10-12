@@ -44,6 +44,9 @@ public sealed class AppSettings
     // Comfort (D31).
     public bool LargeInterface { get; set; }
 
+    /// <summary>The plan shows the player's size at the pointer and marks where the player cannot pass (D20).</summary>
+    public bool ShowPlayerFit { get; set; } = true;
+
     /// <summary>Use the desktop's own title bar instead of WadSmith's.</summary>
     public bool UseSystemTitleBar { get; set; }
 

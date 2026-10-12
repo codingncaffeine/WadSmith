@@ -189,7 +189,27 @@ internal sealed record DrawPreview(MapPoint? From, MapPoint? To, MapPoint? Snap,
 internal sealed record MovePreview(WadSmith.Editor.Editing.MoveSet Set, double Dx, double Dy, MapPoint? MergeAt, WadSmith.Editor.Editing.Placement? Placement = null);
 
 /// <summary>Draws the map on the render thread through a Skia lease.</summary>
-internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null) : ICustomDrawOperation
+/// <summary>Where the player cannot pass in one version of the map (marks to draw, map units), built on a worker.</summary>
+internal sealed record FitMarks(long Version, IReadOnlyList<WadSmith.Editor.Geometry.MapPoint[]> Bands, IReadOnlyList<(WadSmith.Editor.Geometry.MapPoint A, WadSmith.Editor.Geometry.MapPoint B)> Low)
+{
+    public static FitMarks Of(WadSmith.Editor.Geometry.MapGeometry geometry)
+    {
+        var f = geometry.Frame;
+        var low = new List<(WadSmith.Editor.Geometry.MapPoint, WadSmith.Editor.Geometry.MapPoint)>();
+        foreach (var p in WadSmith.Editor.Checks.Fit.LowPassages(geometry))
+        {
+            var l = f.Lines[p.Wall];
+            low.Add((new(f.Vertices[l.V1].X, f.Vertices[l.V1].Y), new(f.Vertices[l.V2].X, f.Vertices[l.V2].Y)));
+        }
+
+        return new FitMarks(f.Version, [.. WadSmith.Editor.Checks.Fit.Gaps(geometry).Select(g => g.Band)], low);
+    }
+}
+
+/// <summary>What the plan shows of the player's fit: the marks, and the player's box at the pointer (null when off the map).</summary>
+internal sealed record FitOverlay(FitMarks? Marks, WadSmith.Editor.Geometry.MapPoint? Ghost, bool GhostFits);
+
+internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null, FitOverlay? fit = null) : ICustomDrawOperation
 {
     public Rect Bounds { get; } = bounds;
 
@@ -207,7 +227,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         using var lease = feature.Lease();
         FrameStats.Gpu = lease.GrContext is not null;
-        new MapPainter(snapshot, selection, hover, view, camera, preview, move).Paint(lease.SkCanvas, lease.GrContext is not null);
+        new MapPainter(snapshot, selection, hover, view, camera, preview, move, fit).Paint(lease.SkCanvas, lease.GrContext is not null);
         lease.SkCanvas.Flush();
         FrameStats.Draw(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
@@ -217,7 +237,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
 /// Paints the map onto any Skia canvas: the window's (through <see cref="MapDrawOperation"/>) or an
 /// offscreen picture such as a version's thumbnail.
 /// </summary>
-internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null)
+internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null, FitOverlay? fit = null)
 {
     private static readonly SKColor Background = new(0x0A, 0x07, 0x08);
     private static readonly SKColor GridFine = new(0x15, 0x10, 0x11);
@@ -227,6 +247,7 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
     private static readonly SKColor Ember = new(0xE0, 0x98, 0x59);
     private static readonly SKColor PlayerStart = new(0x5F, 0xD3, 0x5F);
     private static readonly SKColor ThingColour = new(0xC9, 0xC2, 0xBC);
+    private static readonly SKColor Misfit = new(0xE8, 0x4A, 0x4A);
 
     /// <summary>Above this many walls on screen they are drawn one pixel wide.</summary>
     internal const int DenseWalls = 20_000;
@@ -280,6 +301,8 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
             snapshot.Walls.Draw(canvas, (int)style, paint, walls);
         }
 
+        if (fit is not null) DrawFit(canvas, fit, px);
+
         // Selection: areas filled, walls thick, in the accent colour; the hover in ember.
         if (selection is not null) DrawOverlay(canvas, selection, Accent, px, 3.2f, 0x40);
         if (hover is not null) DrawOverlay(canvas, hover, Ember, px, 2.4f, 0x22);
@@ -290,6 +313,38 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
         if (camera is { } eye) DrawCamera(canvas, eye);
         DrawPreview(canvas);
         canvas.Restore();
+    }
+
+    /// <summary>Gaps and openings the player cannot pass, in red, and the player's box at the pointer (map units).</summary>
+    private void DrawFit(SKCanvas canvas, FitOverlay fit, float px)
+    {
+        if (fit.Marks is { } marks)
+        {
+            using var fill = new SKPaint { Style = SKPaintStyle.Fill, Color = Misfit.WithAlpha(0x50), IsAntialias = true };
+            using var edge = new SKPaint { Style = SKPaintStyle.Stroke, Color = Misfit.WithAlpha(0xD8), StrokeWidth = 1.4f * px, IsAntialias = true };
+            using var band = new SKPath();
+            foreach (var b in marks.Bands)
+            {
+                band.MoveTo((float)b[0].X, (float)b[0].Y);
+                for (var i = 1; i < b.Length; i++) band.LineTo((float)b[i].X, (float)b[i].Y);
+                band.Close();
+            }
+
+            canvas.DrawPath(band, fill);
+            canvas.DrawPath(band, edge);
+            using var low = new SKPaint { Style = SKPaintStyle.Stroke, Color = Misfit.WithAlpha(0xD8), StrokeWidth = 4f * px, StrokeCap = SKStrokeCap.Butt, IsAntialias = true, PathEffect = SKPathEffect.CreateDash([6 * px, 4 * px], 0) };
+            foreach (var (a, b) in marks.Low) canvas.DrawLine((float)a.X, (float)a.Y, (float)b.X, (float)b.Y, low);
+        }
+
+        // The player's box only where it is big enough to read.
+        if (fit.Ghost is not { } g || 2 * WadSmith.Editor.Checks.Fit.Radius * view.Zoom < 6) return;
+        var r = (float)WadSmith.Editor.Checks.Fit.Radius;
+        var colour = fit.GhostFits ? PlayerStart : Misfit;
+        var box = new SKRect((float)g.X - r, (float)g.Y - r, (float)g.X + r, (float)g.Y + r);
+        using var inside = new SKPaint { Style = SKPaintStyle.Fill, Color = colour.WithAlpha(0x38), IsAntialias = true };
+        using var outline = new SKPaint { Style = SKPaintStyle.Stroke, Color = colour, StrokeWidth = 1.6f * px, IsAntialias = true };
+        canvas.DrawRect(box, inside);
+        canvas.DrawRect(box, outline);
     }
 
     /// <summary>The walls and objects being moved, at their new place (map units).</summary>

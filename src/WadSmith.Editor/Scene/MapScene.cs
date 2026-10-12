@@ -92,6 +92,28 @@ public sealed class SpriteBatch(int type)
 /// </summary>
 public sealed class MapScene
 {
+    /// <summary>
+    /// The two triangles of a sprite whose foot stands at (<paramref name="x"/>, <paramref name="y"/>, <paramref name="z"/>), in
+    /// <see cref="SpriteBatch"/>'s layout. Doom's offsets: the picture's left edge sits OffsetX pixels left of the foot point,
+    /// its top OffsetY above it.
+    /// </summary>
+    public static float[] SpriteQuad(double x, double y, double z, SpriteShape shape, float light)
+    {
+        var left = -shape.OffsetX * shape.ScaleX;
+        var right = (shape.Width - shape.OffsetX) * shape.ScaleX;
+        var top = shape.OffsetY * shape.ScaleY;
+        var bottom = (shape.OffsetY - shape.Height) * shape.ScaleY;
+        var quad = new List<float>(6 * SpriteBatch.Stride);
+        void Corner(double across, double up, double u, double v) => quad.AddRange([(float)x, (float)y, (float)z, (float)across, (float)up, (float)u, (float)v, light]);
+        Corner(left, bottom, 0, shape.Height);
+        Corner(right, bottom, shape.Width, shape.Height);
+        Corner(right, top, shape.Width, 0);
+        Corner(left, bottom, 0, shape.Height);
+        Corner(right, top, shape.Width, 0);
+        Corner(left, top, 0, 0);
+        return [.. quad];
+    }
+
     private MapScene(long version, IReadOnlyList<SceneBatch> batches, IReadOnlyList<SpriteBatch> sprites, IReadOnlyList<SceneThing> things, IReadOnlyList<SceneLight> lights, (double MinX, double MinY, double MinZ, double MaxX, double MaxY, double MaxZ) bounds)
     {
         Version = version;
@@ -341,22 +363,7 @@ public sealed class MapScene
             if (!sprites.TryGetValue(t.Type, out var batch)) sprites[t.Type] = batch = new SpriteBatch(t.Type);
             batch.Owners.Add(t.Element);
 
-            // Doom's offsets: the picture's left edge sits OffsetX pixels left of the foot point, its top OffsetY above it.
-            var left = -shape.OffsetX * shape.ScaleX;
-            var right = (shape.Width - shape.OffsetX) * shape.ScaleX;
-            var top = shape.OffsetY * shape.ScaleY;
-            var bottom = (shape.OffsetY - shape.Height) * shape.ScaleY;
-            void Corner(double across, double up, double u, double v)
-            {
-                batch.Vertices.AddRange([(float)t.X, (float)t.Y, (float)z, (float)across, (float)up, (float)u, (float)v, light]);
-            }
-
-            Corner(left, bottom, 0, shape.Height);
-            Corner(right, bottom, shape.Width, shape.Height);
-            Corner(right, top, shape.Width, 0);
-            Corner(left, bottom, 0, shape.Height);
-            Corner(right, top, shape.Width, 0);
-            Corner(left, top, 0, 0);
+            batch.Vertices.AddRange(SpriteQuad(t.X, t.Y, z, shape, light));
         }
 
         var (x0, y0, x1, y1) = geometry.Extent();

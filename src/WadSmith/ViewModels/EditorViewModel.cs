@@ -53,6 +53,13 @@ internal sealed partial class EditorViewModel : ObservableObject
         Session = session;
         _hoverText = message ?? "";
         Inspector = new InspectorViewModel(session);
+        // A remix's narrow gaps and low openings are its author's: the passage checks speak only of the user's own.
+        if (session.Origin is { Kind: "remix", Game: { } origin, Map: { } original } && services.EngineData is { } engineData
+            && (session.Resources?.Game.Id == origin ? session.Resources.Files[^1] : services.Games?.FirstOrDefault(g => g.Game.Id == origin)?.Path) is { } file)
+        {
+            session.UseOriginal(() => WadSmith.Core.Projects.Remix.Original(file, original, engineData, []).Map);
+        }
+
         Problems = new ProblemsViewModel(session);
         TextureShelf = ShelfViewModel.Textures(session.Resources);
         _looks = [.. Look.Available(session.Engine, session.Resources)];
@@ -670,6 +677,33 @@ internal sealed partial class EditorViewModel : ObservableObject
     private async Task CloseAsync() => await _main.CloseEditorAsync().ConfigureAwait(true);
 
     /// <summary>Called by the canvas when the pointer moves over something new.</summary>
+    /// <summary>Whether the plan shows the player's size at the pointer and marks where the player cannot pass (G).</summary>
+    public bool ShowFit
+    {
+        get => _services.Settings.Current.ShowPlayerFit;
+        set
+        {
+            if (value == ShowFit) return;
+            _services.Settings.Current.ShowPlayerFit = value;
+            _services.Settings.Save();
+            OnPropertyChanged();
+            if (value) return;
+            _ghostText = "";
+            UpdateStatus();
+        }
+    }
+
+    private string _ghostText = "";
+
+    /// <summary>Called by the canvas as the player's box follows the pointer: whether the player fits there, and why.</summary>
+    public void Ghost(WadSmith.Editor.Checks.GhostFit? fit)
+    {
+        var text = fit?.Why ?? "";
+        if (text == _ghostText) return;
+        _ghostText = text;
+        UpdateStatus();
+    }
+
     public void Hover(Element? element, MapPoint at)
     {
         if (at != default) _pointer = at;
@@ -722,7 +756,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
         if (_hoverText.Length > 0)
         {
-            Status = _hoverText;
+            Status = _ghostText.Length > 0 ? $"{_hoverText} · {_ghostText}" : _hoverText;
             return;
         }
 

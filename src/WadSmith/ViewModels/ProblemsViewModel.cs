@@ -50,6 +50,7 @@ internal sealed partial class ProblemsViewModel : ObservableObject
             Empty = r.Found.Count == 0;
         }, "the map's checks");
         session.GeometryChanged += Request;
+        session.FitBaselineChanged += Request;
         Request();
     }
 
@@ -74,7 +75,8 @@ internal sealed partial class ProblemsViewModel : ObservableObject
         var resources = session.Resources;
         var look = session.Look;
         var engine = session.Engine;
-        _checks.Request(() => (session, geometry.Version, Problems.Check(geometry, resources, look, engine)));
+        var fit = session.FitBaseline;
+        _checks.Request(() => (session, geometry.Version, Problems.Check(geometry, resources, look, engine, fit)));
     }
 
     private void ShowProblem(Problem p)

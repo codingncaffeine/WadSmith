@@ -26,6 +26,8 @@ internal sealed unsafe class Renderer3D : IDisposable
     private int _height;
     private bool _dirty;
     private (float[] Surfaces, Dictionary<int, float[]> Sprites)? _highlight;
+    private (float[]? Quad, bool Fits) _ghost;
+    private bool _ghostChanged;
     private volatile bool _stopping;
 
     public Renderer3D()
@@ -59,6 +61,19 @@ internal sealed unsafe class Renderer3D : IDisposable
         lock (_gate)
         {
             _highlight = selection;
+            _dirty = true;
+        }
+
+        _wake.Set();
+    }
+
+    /// <summary>The player's ghost: its sprite's triangles where the pointer is on the plan (null for none), and whether the player fits.</summary>
+    public void Ghost(float[]? quad, bool fits)
+    {
+        lock (_gate)
+        {
+            _ghost = (quad, fits);
+            _ghostChanged = true;
             _dirty = true;
         }
 
@@ -127,6 +142,7 @@ internal sealed unsafe class Renderer3D : IDisposable
                 WriteableBitmap[]? bitmaps;
                 int width, height;
                 (float[] Surfaces, Dictionary<int, float[]> Sprites)? highlight;
+                (float[]? Quad, bool Fits)? ghost;
                 lock (_gate)
                 {
                     if (!_dirty) continue;
@@ -135,10 +151,13 @@ internal sealed unsafe class Renderer3D : IDisposable
                     _sceneChanged = false;
                     highlight = _highlight;
                     _highlight = null;
+                    ghost = _ghostChanged ? _ghost : null;
+                    _ghostChanged = false;
                 }
 
                 if (sceneChanged && scene is not null) renderer.Upload(scene, resources);
                 if (highlight is { } h) renderer.Highlight(h.Surfaces, h.Sprites);
+                if (ghost is { } gh) renderer.Ghost(gh.Quad, gh.Fits);
                 if (scene is null || bitmaps is null || width < 1 || height < 1) continue;
 
                 var started = System.Diagnostics.Stopwatch.GetTimestamp();

@@ -56,11 +56,18 @@ internal sealed class MapCanvas : Control
     public static readonly StyledProperty<EditorSession?> SessionProperty = AvaloniaProperty.Register<MapCanvas, EditorSession?>(nameof(Session));
     public static readonly StyledProperty<MapViewMode> ModeProperty = AvaloniaProperty.Register<MapCanvas, MapViewMode>(nameof(Mode));
     public static readonly StyledProperty<EditorTool> ToolProperty = AvaloniaProperty.Register<MapCanvas, EditorTool>(nameof(Tool), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
+    public static readonly StyledProperty<bool> ShowFitProperty = AvaloniaProperty.Register<MapCanvas, bool>(nameof(ShowFit), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
     private readonly LatestOnWorker<(EditorSession Session, CanvasSnapshot Picture)> _pictures;
     private readonly LatestOnWorker<(EditorSession Session, long Generation, SelectionOverlay Outline)> _outlines;
     private readonly LatestOnWorker<(EditorSession Session, long Gesture, MoveSet Set)> _gathers;
     private readonly LatestOnWorker<(EditorSession Session, bool Add, IReadOnlyList<Element> Picked)> _boxes;
+    private readonly LatestOnWorker<(EditorSession Session, FitMarks Marks)> _fits;
+
+    /// <summary>Where the player cannot pass (from a worker), the player's box at the pointer, and the pointer it follows.</summary>
+    private FitMarks? _fitMarks;
+    private (MapPoint At, WadSmith.Editor.Checks.GhostFit Fit)? _ghost;
+    private Point? _ghostPointer;
 
     /// <summary>A box being drawn over empty space with the Select tool (screen points), and whether it adds to the selection.</summary>
     private Point? _boxFrom;
@@ -201,6 +208,12 @@ internal sealed class MapCanvas : Control
             if (r.Add) r.Session.Selection.Set([.. r.Session.Selection.Items, .. r.Picked]);
             else r.Session.Selection.Set([.. r.Picked]);
         }, "a box selection");
+        _fits = new(ViewModels.MainViewModel.PostToUi, r =>
+        {
+            if (!ReferenceEquals(r.Session, Session) || !ShowFit || (_fitMarks is { } had && had.Version > r.Marks.Version)) return;
+            _fitMarks = r.Marks;
+            InvalidateVisual();
+        }, "where the player fits");
     }
 
     public EditorSession? Session
@@ -222,6 +235,16 @@ internal sealed class MapCanvas : Control
         get => GetValue(ToolProperty);
         set => SetValue(ToolProperty, value);
     }
+
+    /// <summary>Whether the player's box follows the pointer and the places the player cannot pass are marked (G).</summary>
+    public bool ShowFit
+    {
+        get => GetValue(ShowFitProperty);
+        set => SetValue(ShowFitProperty, value);
+    }
+
+    /// <summary>Raised as the player's box follows the pointer: whether the player fits there (null off the map or when hidden), and where.</summary>
+    public event Action<WadSmith.Editor.Checks.GhostFit?, MapPoint>? GhostChanged;
 
     /// <summary>Raised when the element under the pointer changes (null over empty space).</summary>
     public event Action<Element?, MapPoint>? HoverChanged;
@@ -253,6 +276,15 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        if (change.Property == ShowFitProperty)
+        {
+            _fitMarks = null;
+            RequestFit();
+            UpdateGhost(_ghostPointer);
+            InvalidateVisual();
+            return;
+        }
+
         if (change.Property == ToolProperty)
         {
             CancelDrawing();
@@ -278,6 +310,7 @@ internal sealed class MapCanvas : Control
         _selection = null;
         _hover = null;
         _hoverOutline = null;
+        _fitMarks = null;
         _fitted = false;
         if (change.NewValue is EditorSession s)
         {
@@ -285,9 +318,11 @@ internal sealed class MapCanvas : Control
             s.GeometryChanged += OnGeometryChanged;
             s.Selection.Changed += OnSelectionChanged;
             RequestPicture();
+            RequestFit();
             OnSelectionChanged();
         }
 
+        UpdateGhost(_ghostPointer);
         InvalidateVisual();
     }
 
@@ -295,8 +330,35 @@ internal sealed class MapCanvas : Control
     private void OnGeometryChanged()
     {
         RequestPicture();
+        RequestFit();
+        UpdateGhost(_ghostPointer);
         OnSelectionChanged();
         if (_hover is not null && Session is { } s) _hoverOutline = SelectionOverlay.Take([_hover], s.Geometry, _look);
+    }
+
+    /// <summary>Finds where the player cannot pass, on a worker, when the marks are shown.</summary>
+    private void RequestFit()
+    {
+        if (!ShowFit || Session is not { } session) return;
+        var geometry = session.Geometry;
+        _fits.Request(() => (session, FitMarks.Of(geometry)));
+    }
+
+    /// <summary>The player's box at the pointer (null when the pointer has left the plan): whether it fits, from the walls round it only.</summary>
+    private void UpdateGhost(Point? pointer)
+    {
+        _ghostPointer = pointer;
+        (MapPoint, WadSmith.Editor.Checks.GhostFit)? ghost = null;
+        if (ShowFit && pointer is { } p && Session is { } session && _moveGesture == 0)
+        {
+            var at = ToMap(p);
+            if (WadSmith.Editor.Checks.Fit.At(session.Geometry, at) is { Inside: true } fit) ghost = (at, fit);
+        }
+
+        if (ghost is null && _ghost is null) return;
+        _ghost = ghost;
+        GhostChanged?.Invoke(ghost?.Item2, ghost?.Item1 ?? default);
+        InvalidateVisual();
     }
 
     private void RequestPicture()
@@ -398,7 +460,8 @@ internal sealed class MapCanvas : Control
             if (_moveSet is { } set) move = new MovePreview(set, _offset.X, _offset.Y, _mergeAt, _grip != Grip.None ? _placement : null);
         }
 
-        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview, move));
+        var fit = ShowFit ? new FitOverlay(_fitMarks, _ghost?.At, _ghost?.Fit.Fits ?? false) : null;
+        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview, move, fit));
         if (_boxFrom is { } b0 && _boxTo is { } b1)
         {
             var box = new Rect(b0, b1).Normalize();
@@ -1111,6 +1174,8 @@ internal sealed class MapCanvas : Control
             return;
         }
 
+        UpdateGhost(p);
+
         if (Tool == EditorTool.Measure && _measuring && _measureFrom is { } start)
         {
             _measureTo = (e.KeyModifiers & KeyModifiers.Shift) != 0 ? ToMap(p) : Snap(p);
@@ -1320,6 +1385,7 @@ internal sealed class MapCanvas : Control
 
     protected override void OnPointerExited(PointerEventArgs e)
     {
+        UpdateGhost(null);
         if (_hover is null) return;
         _hover = null;
         _hoverOutline = null;
@@ -1388,6 +1454,10 @@ internal sealed class MapCanvas : Control
                 break;
             case Key.Escape:
                 Session?.Selection.Clear();
+                e.Handled = true;
+                break;
+            case Key.G when e.KeyModifiers == KeyModifiers.None:
+                ShowFit = !ShowFit;
                 e.Handled = true;
                 break;
             case Key.V when e.KeyModifiers == KeyModifiers.None:

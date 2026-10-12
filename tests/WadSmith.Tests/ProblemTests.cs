@@ -63,7 +63,11 @@ public sealed class ProblemTests(ITestOutputHelper output)
         foreach (var lumps in MapLocator.Find(WadContainer.Open(GameFiles.Require(fileName))))
         {
             var map = EditorMap.FromModel(MapTranslation.ToZDoom(MapConversion.Read(lumps, "doom"), xlat, []));
-            foreach (var p in Problems.Check(MapGeometry.Build(map.Frame), null, Look.For("doom"), "doom")) counts[p.Rule] = counts.GetValueOrDefault(p.Rule) + 1;
+            var geometry = MapGeometry.Build(map.Frame);
+            foreach (var p in Problems.Check(geometry, null, Look.For("doom"), "doom")) counts[p.Rule] = counts.GetValueOrDefault(p.Rule) + 1;
+
+            // As a remix opens, with the map itself as the original: its own narrow ways and low openings are its author's.
+            Assert.DoesNotContain(Problems.Check(geometry, null, Look.For("doom"), "doom", FitBaseline.Of(geometry)), p => p.Rule is "passage-too-narrow" or "passage-too-low");
             maps++;
         }
 
@@ -86,6 +90,81 @@ public sealed class ProblemTests(ITestOutputHelper output)
 
     [Fact]
     public void ACleanMapShowsNoProblems() => Assert.Empty(Check(Clean().Map));
+
+    /// <summary>A room east of the starter room joined to it by a corridor <paramref name="width"/> wide.</summary>
+    private static (EditorMap Map, History History) WithCorridor(double width)
+    {
+        var (map, history) = Clean();
+        foreach (var (x0, y0, x1, y1) in new[] { (256.0, -width / 2, 384.0, width / 2), (384.0, -256.0, 640.0, 256.0) })
+        {
+            var geometry = MapGeometry.Build(map.Frame);
+            history.Record("Draw", e => ShapeDrawing.Draw(e, geometry, [new(x0, y0), new(x0, y1), new(x1, y1), new(x1, y0)], Look.For("doom")));
+        }
+
+        return (map, history);
+    }
+
+    [Fact]
+    public void ACorridorTooNarrowForThePlayerIsAProblemAndAWideOneIsNot()
+    {
+        var p = Only(WithCorridor(24).Map, "passage-too-narrow");
+        Assert.Contains("24 across", p.Sentence);
+        Assert.Equal(2, p.Show.Count);
+        Assert.Empty(Check(WithCorridor(32).Map));
+    }
+
+    [Fact]
+    public void TheMapsOwnNarrowWaysAreLeftOutButOneTheUserDrawsIsNot()
+    {
+        var (map, history) = WithCorridor(24);
+        var original = MapGeometry.Build(map.Frame);
+        var baseline = FitBaseline.Of(original);
+        Assert.Empty(Problems.Check(original, Freedoom.Value, Look.For("doom"), "doom", baseline));
+        Assert.Empty(Problems.Check(original, Freedoom.Value, Look.For("doom"), "doom", FitBaseline.Pending));
+
+        // A second thin corridor, south of the first: only it is the user's.
+        foreach (var (x0, y0, x1, y1) in new[] { (256.0, -200.0, 384.0, -184.0) })
+        {
+            var geometry = MapGeometry.Build(map.Frame);
+            history.Record("Draw", e => ShapeDrawing.Draw(e, geometry, [new(x0, y0), new(x0, y1), new(x1, y1), new(x1, y0)], Look.For("doom")));
+        }
+
+        var found = Assert.Single(Problems.Check(MapGeometry.Build(map.Frame), Freedoom.Value, Look.For("doom"), "doom", baseline));
+        Assert.Equal("passage-too-narrow", found.Rule);
+        Assert.Contains("16 across", found.Sentence);
+    }
+
+    [Fact]
+    public void APostBesideAWallIsMarkedOnThePlanButIsNoProblem()
+    {
+        // A raised post 16 from the starter room's west wall: bars are made so.
+        var (map, history) = Clean();
+        var geometry = MapGeometry.Build(map.Frame);
+        var posts = new List<Sector>();
+        history.Record("Post", e => posts.AddRange(ShapeDrawing.Draw(e, geometry, [new(-240, -8), new(-240, 8), new(-224, 8), new(-224, -8)], Look.For("doom"))));
+        history.Record("Raise", e => e.Set(posts.Single(s => s.OnMap && MapGeometry.Build(map.Frame).WallBoundsAt(s.Slot) is { MaxX: -224 }), s => s.FloorHeight, (s, v) => s.FloorHeight = v, 128.0));
+        var gap = Assert.Single(Fit.Gaps(MapGeometry.Build(map.Frame)));
+        Assert.Equal(GapKind.Pinch, gap.Kind);
+        Assert.Empty(Check(map));
+    }
+
+    [Fact]
+    public void AnOpeningLowerThanThePlayerIsAProblemAndTheFixRaisesTheCeiling()
+    {
+        var (map, history) = WithCorridor(64);
+        var corridor = map.Sectors.Single(s => s.OnMap && MapGeometry.Build(map.Frame).WallBoundsAt(s.Slot) is { MinX: 256, MaxX: 384 });
+        history.Record("Low", e =>
+        {
+            e.Set(corridor, s => s.FloorHeight, (s, v) => s.FloorHeight = v, 16.0);
+            e.Set(corridor, s => s.CeilingHeight, (s, v) => s.CeilingHeight = v, 72.0);
+        });
+        Assert.Empty(Check(map));
+        history.Record("Lower", e => e.Set(map.Sectors[0], s => s.CeilingHeight, (s, v) => s.CeilingHeight = v, 64.0));
+        var p = Only(map, "passage-too-low");
+        Assert.Contains("only 48 high", p.Sentence);
+        FixAndCheckClean(map, history, p);
+        Assert.Equal(72.0, map.Sectors[0].CeilingHeight);
+    }
 
     [Fact]
     public void NoPlayerStartIsAnErrorAndTheFixPutsOneInARoom()

@@ -74,6 +74,8 @@
                         <ToggleButton Classes="segment last" Content="Lines" IsChecked="{Binding IsLines}"
                                       ToolTip.Tip="Shows only the walls, in the colours of the game's automap." />
                     </StackPanel>
+                    <ToggleButton Classes="segment first last" Content="Player" IsChecked="{Binding ShowFit}" Margin="0,0,10,0"
+                                  ToolTip.Tip="Shows the player's size at the pointer, green where the player fits and red where not, and marks in red where the player cannot pass: gaps under 32 across (45 on a slant) and openings under 56 high (G)." />
                     <ToggleButton Classes="segment first last" Content="3D" IsChecked="{Binding Show3D}" Margin="0,0,10,0"
                                   ToolTip.Tip="Shows the map in 3D beside the plan, from any angle." />
                     <Button Classes="metal" Content="Undo" Command="{Binding UndoCommand}" ToolTip.Tip="{Binding UndoTip}" />
@@ -90,7 +92,7 @@
         <Grid Grid.Row="1" ColumnDefinitions="*,4,356">
             <Grid x:Name="MapViews" ColumnDefinitions="*,4,*">
             <Panel>
-                <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" Tool="{Binding Tool}" />
+                <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" Tool="{Binding Tool}" ShowFit="{Binding ShowFit}" />
 
                 <!-- Tools: what a left drag on the plan does, in a column down the plan's left edge (§3.3). -->
                 <StackPanel Orientation="Vertical" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">

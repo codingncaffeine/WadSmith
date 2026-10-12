@@ -20,6 +20,19 @@ public static class Remix
     /// <param name="projectName">The name the project is shown by; "SLOT remix" when null.</param>
     public static Project Create(string projectFolder, string baseGamePath, string mapName, string engineDataPath, List<string> notes, string? projectName = null)
     {
+        var (zdoom, game, name, checksum) = Original(baseGamePath, mapName, engineDataPath, notes);
+        var project = Project.Create(projectFolder, projectName ?? $"{name} remix", game.Id);
+        project.SaveMap(zdoom, origin: new MapOrigin { Kind = "remix", Game = game.Id, Map = name, Checksum = checksum });
+        return project;
+    }
+
+    /// <summary>
+    /// A base game's map as a remix starts from it: in GZDoom's format, with the engine's own repairs. Also how the
+    /// editor sees what a remix was before it was changed.
+    /// </summary>
+    /// <returns>The map, the game, the map's name and GZDoom's checksum of the original.</returns>
+    public static (MapModel Map, GameDefinition Game, string Name, string Checksum) Original(string baseGamePath, string mapName, string engineDataPath, List<string> notes)
+    {
         var baseGame = ResourceContainer.Open(baseGamePath);
         var game = GameCatalog.Identify(baseGame) ?? throw new CorruptDataException($"{baseGame.DisplayName} is not a base game WadSmith recognises.");
         if (!game.Supported) throw new CorruptDataException($"{game.Title} is recognised, but GZDoom does not run it, so WadSmith cannot remix it.");
@@ -34,9 +47,6 @@ public static class Remix
         // The fixes GZDoom gives the original map (D40); an edited copy has a new checksum, so they come along here.
         var checksum = MapChecksum.Compute(lumps);
         if (CompatibilityRepairs.Load(engine)?.Apply(zdoom, checksum, notes) == true) notes.Add($"GZDoom's own repairs for {lumps.Name} were applied, as the engine applies them to the original.");
-
-        var project = Project.Create(projectFolder, projectName ?? $"{lumps.Name} remix", game.Id);
-        project.SaveMap(zdoom, origin: new MapOrigin { Kind = "remix", Game = game.Id, Map = lumps.Name, Checksum = checksum });
-        return project;
+        return (zdoom, game, lumps.Name, checksum);
     }
 }

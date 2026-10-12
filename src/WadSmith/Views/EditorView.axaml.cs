@@ -29,6 +29,11 @@ public partial class EditorView : UserControl
         Canvas.Measured += (from, to) => (DataContext as EditorViewModel)?.Measured(from, to);
         Canvas.DropHint += hint => (DataContext as EditorViewModel)?.Hint(hint);
         Canvas.CornersChanged += c => (DataContext as EditorViewModel)?.Corners(c);
+        Canvas.GhostChanged += (fit, at) =>
+        {
+            (DataContext as EditorViewModel)?.Ghost(fit);
+            View3D.ShowGhost(fit is { } f ? (at, f.Floor, f.Fits) : null);
+        };
     }
 
     /// <summary>Shows or hides the 3D view beside the plan; hidden, it does no work.</summary>

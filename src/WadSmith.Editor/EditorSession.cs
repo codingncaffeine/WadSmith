@@ -1,3 +1,5 @@
+using WadSmith.Core;
+using WadSmith.Core.Maps;
 using WadSmith.Core.Projects;
 using WadSmith.Editor.App;
 using WadSmith.Editor.Editing;
@@ -785,6 +787,42 @@ public sealed class EditorSession : IDisposable
 
     /// <summary>Raised on the UI thread when <see cref="Geometry"/> is replaced by a newer one.</summary>
     public event Action? GeometryChanged;
+
+    /// <summary>
+    /// The gaps and low openings the map started with, which the passage checks leave to their author: none for a map made in
+    /// WadSmith, pending while <see cref="UseOriginal"/> reads a remix's original.
+    /// </summary>
+    public Checks.FitBaseline FitBaseline { get; private set; } = Checks.FitBaseline.None;
+
+    /// <summary>Raised on the UI thread when <see cref="FitBaseline"/> is known.</summary>
+    public event Action? FitBaselineChanged;
+
+    /// <summary>Where the map came from (a remix's game and map), from the project's record.</summary>
+    public MapOrigin? Origin => Project.Info.Maps.FirstOrDefault(m => string.Equals(m.Slot, Slot, StringComparison.OrdinalIgnoreCase))?.Origin;
+
+    /// <summary>Reads the map as it started (<paramref name="original"/>, on a worker) for <see cref="FitBaseline"/>.</summary>
+    public void UseOriginal(Func<MapModel> original)
+    {
+        FitBaseline = Checks.FitBaseline.Pending;
+        Task.Run(() =>
+        {
+            var baseline = Checks.FitBaseline.None;
+            try
+            {
+                baseline = Checks.FitBaseline.Of(MapGeometry.Build(EditorMap.FromModel(original()).Frame));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"The map {Slot} started as could not be read again, so its passages are all checked: {ex.Message}");
+            }
+
+            _onUiThread(() =>
+            {
+                FitBaseline = baseline;
+                FitBaselineChanged?.Invoke();
+            });
+        });
+    }
 
     /// <param name="project">The project.</param>
     /// <param name="slot">The map to open.</param>

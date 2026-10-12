@@ -43,7 +43,8 @@ public static class Problems
     /// <param name="resources">The game, for texture and object names; null when it was not found (those rules are skipped).</param>
     /// <param name="look">The game's look, for fixes that need a texture.</param>
     /// <param name="engine">The game family ("doom", "hexen"…), for the flags of objects a fix places.</param>
-    public static IReadOnlyList<Problem> Check(MapGeometry geometry, GameResources? resources, Look look, string engine)
+    /// <param name="fit">The gaps and low openings the map started with (a remix's), left out of the passage checks; null when it started empty.</param>
+    public static IReadOnlyList<Problem> Check(MapGeometry geometry, GameResources? resources, Look look, string engine, FitBaseline? fit = null)
     {
         var f = geometry.Frame;
         var found = new List<Problem>();
@@ -60,6 +61,12 @@ public static class Problems
         TagsNowhere(geometry, found);
         LowDoors(geometry, found);
         DoorTracks(geometry, found);
+        if (fit?.IsPending != true)
+        {
+            NarrowPassages(geometry, fit ?? FitBaseline.None, found);
+            LowPassages(geometry, fit ?? FitBaseline.None, found);
+        }
+
         if (look == Look.For("doom"))
         {
             MissingKeys(f, found);
@@ -70,7 +77,7 @@ public static class Problems
 
     private static string Count(int n, string one, string many) => n == 1 ? one : string.Create(CultureInfo.InvariantCulture, $"{n} {many}");
 
-    private static bool Flag(KeyValuePair<string, UdmfValue>[] extra, string name) => extra.Any(kv => string.Equals(kv.Key, name, StringComparison.OrdinalIgnoreCase) && kv.Value.Kind == UdmfValueKind.Boolean && kv.Value.AsBool());
+    internal static bool Flag(KeyValuePair<string, UdmfValue>[] extra, string name) => extra.Any(kv => string.Equals(kv.Key, name, StringComparison.OrdinalIgnoreCase) && kv.Value.Kind == UdmfValueKind.Boolean && kv.Value.AsBool());
 
     private static void NoStart(MapGeometry g, string engine, List<Problem> found)
     {
@@ -356,6 +363,46 @@ public static class Problems
         if (low.Count == 0) return;
         var least = low.Min(x => x.Opens);
         found.Add(new Problem("door-too-low", Severity.Warning, string.Create(CultureInfo.InvariantCulture, $"{Count(low.Count, "A door opens", "doors open")} only {(low.Count == 1 ? $"{least:0}" : $"as little as {least:0}")} high, and the player is 56 tall: a door opens to 4 below the lowest ceiling beside it, so raise that ceiling."), [.. low.Select(x => x.Door)]));
+    }
+
+    /// <summary>
+    /// Doorways and corridors the player cannot get through (D20): narrower than the player's box across them (32, more on a
+    /// slant). A post beside a wall is left to the plan's marks: posts set close together are how bars are made.
+    /// </summary>
+    private static void NarrowPassages(MapGeometry g, FitBaseline baseline, List<Problem> found)
+    {
+        var f = g.Frame;
+        var narrow = Fit.Gaps(g).Where(x => x.Kind != GapKind.Pinch && !baseline.Had(x)).ToList();
+        if (narrow.Count == 0) return;
+        var least = narrow.MinBy(x => x.Width)!;
+        var walls = narrow.SelectMany(x => (int[])[x.WallA, x.WallB]).Distinct().Select(i => f.Lines[i].Element).OfType<Element>().ToList();
+        var sentence = narrow.Count == 1
+            ? string.Create(CultureInfo.InvariantCulture, $"A way through is only {least.Width:0} across, and the player needs {least.Needed:0} to get through{(least.Needed > 2 * Fit.Radius + 0.5 ? " on this slant (the player's box is square)" : "")}.")
+            : string.Create(CultureInfo.InvariantCulture, $"{narrow.Count} ways through are too narrow for the player: as little as {least.Width:0} across, where the player needs 32 (more on a slant). The plan marks them in red.");
+        found.Add(new Problem("passage-too-narrow", Severity.Warning, sentence, walls));
+    }
+
+    /// <summary>Openings between two rooms the player stands in that are lower than the player, with the fix: raise the lower ceiling.</summary>
+    private static void LowPassages(MapGeometry g, FitBaseline baseline, List<Problem> found)
+    {
+        var f = g.Frame;
+        var low = Fit.LowPassages(g).Where(x => !baseline.Had(x, f)).ToList();
+        if (low.Count == 0) return;
+        var walls = low.Select(x => f.Lines[x.Wall].Element).OfType<Line>().ToList();
+        var least = low.Min(x => x.Opening);
+        var sentence = low.Count == 1
+            ? string.Create(CultureInfo.InvariantCulture, $"An opening between two rooms is only {least:0} high, and the player is 56 tall: the player stops there.")
+            : string.Create(CultureInfo.InvariantCulture, $"{low.Count} openings between rooms are lower than the player (as little as {least:0} high; the player is 56 tall).");
+        found.Add(new Problem("passage-too-low", Severity.Warning, sentence, walls, "Raise the ceilings", e =>
+        {
+            foreach (var l in walls.Where(l => l.OnMap && l.Back is not null))
+            {
+                var (a, b) = (l.Front.Sector, l.Back!.Sector);
+                var lower = a.CeilingHeight <= b.CeilingHeight ? a : b;
+                var needed = Math.Max(a.FloorHeight, b.FloorHeight) + Fit.Height;
+                if (lower.CeilingHeight < needed) e.Set(lower, s => s.CeilingHeight, (s, v) => s.CeilingHeight = v, needed);
+            }
+        }));
     }
 
     /// <summary>Walls whose action works on the areas with a tag (a switch, a line walked over) when no area has that tag.</summary>

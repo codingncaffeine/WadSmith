@@ -144,6 +144,8 @@ internal sealed unsafe class SceneRenderer : IDisposable
     private readonly int _sUseAlpha;
     private readonly int _sTint;
     private (int Vao, int Vbo, int Count) _highlight;
+    private (int Vao, int Vbo, int Count) _ghost;
+    private bool _ghostFits;
     private readonly List<(int Vao, int Vbo, int Count, int Type)> _highlightSprites = [];
     private readonly List<(int Vao, int Vbo, int Count, int Type)> _spriteBatches = [];
     private readonly Dictionary<(string Name, SurfaceKind Kind), (int Id, int Width, int Height)> _textures = [];
@@ -213,6 +215,14 @@ internal sealed unsafe class SceneRenderer : IDisposable
             var (vao, vbo, count) = Upload(data, SpriteBatch.Stride, [3, 2, 2, 1]);
             _highlightSprites.Add((vao, vbo, count, type));
         }
+    }
+
+    /// <summary>The player's sprite standing where the pointer is on the plan (null for none), green where the player fits, red where not.</summary>
+    public void Ghost(float[]? quad, bool fits)
+    {
+        Free(ref _ghost);
+        if (quad is { Length: > 0 }) _ghost = Upload(quad, SpriteBatch.Stride, [3, 2, 2, 1]);
+        _ghostFits = fits;
     }
 
     private (int Vao, int Vbo, int Count) Upload(float[] data, int stride, int[] sizes)
@@ -439,6 +449,32 @@ internal sealed unsafe class SceneRenderer : IDisposable
             _gl.Disable(Gl.Blend);
         }
 
+        // The player's ghost: the player's own picture as a flat green or red shape, hidden by walls in front of it.
+        if (_ghost.Count > 0 && SpriteTexture(1) is { Id: not 0 } player)
+        {
+            _gl.Enable(Gl.Blend);
+            _gl.BlendFunc(Gl.SrcAlpha, Gl.OneMinusSrcAlpha);
+            _gl.DepthMask(0);
+            _gl.Disable(Gl.CullFaceMode);
+            _gl.UseProgram(_sprites);
+            fixed (float* m = matrix) _gl.UniformMatrix4fv(_sViewProjection, 1, 0, m);
+            _gl.Uniform3f(_sEye, (float)camera.X, (float)camera.Y, (float)camera.Z);
+            var turn = camera.Yaw * Math.PI / 180;
+            _gl.Uniform2f(_sAcross, (float)Math.Sin(turn), (float)-Math.Cos(turn));
+            _gl.Uniform1i(_sPicture, 0);
+            _gl.Uniform1i(_sOverlay, 1);
+            _gl.Uniform1i(_sUseAlpha, 1);
+            if (_ghostFits) _gl.Uniform4f(_sTint, 0.37f, 0.83f, 0.37f, 0.62f);
+            else _gl.Uniform4f(_sTint, 0.9f, 0.28f, 0.28f, 0.7f);
+            _gl.BindTexture(Gl.Texture2D, player.Id);
+            _gl.Uniform2f(_sTextureSize, player.Width, player.Height);
+            _gl.BindVertexArray(_ghost.Vao);
+            _gl.DrawArrays(Gl.Triangles, 0, _ghost.Count);
+            _gl.Uniform1i(_sOverlay, 0);
+            _gl.DepthMask(1);
+            _gl.Disable(Gl.Blend);
+        }
+
         _gl.BindVertexArray(0);
         _gl.PixelStorei(Gl.PackAlignment, 4);
         _gl.ReadPixels(0, 0, width, height, Gl.Bgra, Gl.UnsignedByte, target);
@@ -565,6 +601,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
 
     public void Dispose()
     {
+        Free(ref _ghost);
         ForgetTextures();
         DeleteFramebuffer();
         foreach (var b in _batches)
