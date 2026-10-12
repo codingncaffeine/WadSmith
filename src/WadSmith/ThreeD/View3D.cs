@@ -4,19 +4,46 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Threading;
 using WadSmith.Editor;
+using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Scene;
 
 namespace WadSmith.App.ThreeD;
 
+/// <summary>How the 3D view's camera moves (D46).</summary>
+internal enum CameraMode
+{
+    /// <summary>Turn around the map or the selection, like a model on a table.</summary>
+    Orbit,
+
+    /// <summary>Move freely through walls and floors.</summary>
+    Fly,
+
+    /// <summary>Walk as the player does: eye height, steps up to 24, stopped by solid walls.</summary>
+    Walk,
+}
+
 /// <summary>
-/// The 3D view (D46): the map from any angle. Drag to turn around it, right- or middle-drag to move,
-/// scroll to come closer; Home frames the whole map again. The scene is built on a worker from the
-/// session's shapes and drawn on its own render thread; this control only shows finished pictures.
+/// The 3D view (D46): the map from any angle. Orbit: drag to turn around it, right- or middle-drag to
+/// move, scroll to come closer. Fly and Walk: drag to look, WASD or the arrows to move (Shift for
+/// speed; Q and E down and up when flying). Home frames the whole map again. The scene is built on a
+/// worker from the session's shapes and drawn on its own render thread; this control only shows
+/// finished pictures and turns input into a camera.
 /// </summary>
 internal sealed class View3D : Control
 {
     public static readonly StyledProperty<EditorSession?> SessionProperty = AvaloniaProperty.Register<View3D, EditorSession?>(nameof(Session));
+    public static readonly StyledProperty<CameraMode> ModeProperty = AvaloniaProperty.Register<View3D, CameraMode>(nameof(Mode), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
+
+    private readonly HashSet<Key> _keys = [];
+    private readonly DispatcherTimer _mover;
+    private readonly System.Diagnostics.Stopwatch _clock = new();
+    private double _x;
+    private double _y;
+    private double _z;
+    private double _lookYaw;
+    private double _lookPitch;
 
     private readonly LatestOnWorker<(EditorSession Session, MapScene Scene)> _scenes;
     private Renderer3D? _renderer;
@@ -37,6 +64,7 @@ internal sealed class View3D : Control
     {
         ClipToBounds = true;
         Focusable = true;
+        _mover = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render, (_, _) => Move());
         _scenes = new(ViewModels.MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, Session) || _renderer is null) return;
@@ -52,6 +80,15 @@ internal sealed class View3D : Control
         get => GetValue(SessionProperty);
         set => SetValue(SessionProperty, value);
     }
+
+    public CameraMode Mode
+    {
+        get => GetValue(ModeProperty);
+        set => SetValue(ModeProperty, value);
+    }
+
+    /// <summary>Raised when the camera moves: where it stands in Fly and Walk, null while orbiting (the plan shows no marker then).</summary>
+    public event Action<Camera3D?>? CameraMoved;
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
@@ -99,6 +136,10 @@ internal sealed class View3D : Control
         {
             RequestScene();
         }
+        else if (change.Property == ModeProperty)
+        {
+            Enter(change.GetNewValue<CameraMode>());
+        }
     }
 
     private void RequestScene()
@@ -135,7 +176,94 @@ internal sealed class View3D : Control
         SendCamera();
     }
 
-    private void SendCamera() => _renderer?.Look(Camera3D.Orbit(_tx, _ty, _tz, _yaw, _pitch, _distance), inside: false);
+    /// <summary>
+    /// Switches how the camera moves. Fly starts where the orbit camera stands; Walk lands on the floor
+    /// under the point the orbit turned around (or at the player start when that is over the void).
+    /// </summary>
+    private void Enter(CameraMode mode)
+    {
+        _keys.Clear();
+        _mover.Stop();
+        var orbit = Camera3D.Orbit(_tx, _ty, _tz, _yaw, _pitch, _distance);
+        switch (mode)
+        {
+            case CameraMode.Fly:
+                (_x, _y, _z, _lookYaw, _lookPitch) = (orbit.X, orbit.Y, orbit.Z, orbit.Yaw, orbit.Pitch);
+                break;
+            case CameraMode.Walk:
+                var geometry = Session?.Geometry;
+                var spot = new MapPoint(_tx, _ty);
+                if (geometry?.AreaAt(spot) is null && _scene?.Things.FirstOrDefault(t => t.Type == 1) is { Element: not null } start)
+                {
+                    spot = new MapPoint(start.X, start.Y);
+                    _lookYaw = start.Angle;
+                }
+                else
+                {
+                    _lookYaw = _yaw;
+                }
+
+                var floor = geometry?.AreaAt(spot)?.FloorHeight ?? _tz;
+                (_x, _y, _z, _lookPitch) = (spot.X, spot.Y, floor + Walker.EyeHeight, 0);
+                break;
+        }
+
+        SendCamera();
+        Focus();
+    }
+
+    private Camera3D Current => Mode == CameraMode.Orbit ? Camera3D.Orbit(_tx, _ty, _tz, _yaw, _pitch, _distance) : new Camera3D(_x, _y, _z, _lookYaw, _lookPitch);
+
+    private void SendCamera()
+    {
+        var camera = Current;
+        _renderer?.Look(camera, inside: Mode != CameraMode.Orbit);
+        CameraMoved?.Invoke(Mode == CameraMode.Orbit ? null : camera);
+    }
+
+    /// <summary>One step of movement while keys are held: smooth, at the same speed whatever the frame rate.</summary>
+    private void Move()
+    {
+        var dt = Math.Min(_clock.Elapsed.TotalSeconds, 0.1);
+        _clock.Restart();
+        if (_keys.Count == 0 || Mode == CameraMode.Orbit)
+        {
+            _mover.Stop();
+            return;
+        }
+
+        double Axis(Key plus, Key plus2, Key minus, Key minus2) => (_keys.Contains(plus) || _keys.Contains(plus2) ? 1 : 0) - (_keys.Contains(minus) || _keys.Contains(minus2) ? 1 : 0);
+        var forward = Axis(Key.W, Key.Up, Key.S, Key.Down);
+        var sideways = Axis(Key.D, Key.Right, Key.A, Key.Left);
+        var vertical = Mode == CameraMode.Fly ? Axis(Key.E, Key.PageUp, Key.Q, Key.PageDown) : 0;
+        var fast = _keys.Contains(Key.LeftShift) || _keys.Contains(Key.RightShift);
+        var speed = (Mode == CameraMode.Walk ? 320 : 768) * (fast ? 2.5 : 1) * dt;
+        var yaw = _lookYaw * Math.PI / 180;
+        var pitch = Mode == CameraMode.Fly ? _lookPitch * Math.PI / 180 : 0;
+        var dx = (Math.Cos(yaw) * Math.Cos(pitch) * forward + Math.Sin(yaw) * sideways) * speed;
+        var dy = (Math.Sin(yaw) * Math.Cos(pitch) * forward - Math.Cos(yaw) * sideways) * speed;
+        var dz = (Math.Sin(pitch) * forward + vertical) * speed;
+        if (Mode == CameraMode.Fly)
+        {
+            (_x, _y, _z) = (_x + dx, _y + dy, _z + dz);
+        }
+        else if (!TryWalk(_x + dx, _y + dy) && !TryWalk(_x + dx, _y))
+        {
+            // Blocked: slide along whichever direction is free.
+            TryWalk(_x, _y + dy);
+        }
+
+        SendCamera();
+    }
+
+    /// <summary>Walks to a spot if the player could (<see cref="Walker"/>).</summary>
+    private bool TryWalk(double x, double y)
+    {
+        if (Session?.Geometry is not { } geometry) return false;
+        if (Walker.Step(geometry, new MapPoint(_x, _y), _z - Walker.EyeHeight, new MapPoint(x, y)) is not { } eye) return false;
+        (_x, _y, _z) = (x, y, eye);
+        return true;
+    }
 
     public override void Render(DrawingContext context)
     {
@@ -167,7 +295,12 @@ internal sealed class View3D : Control
         var dx = p.X - from.X;
         var dy = p.Y - from.Y;
         _dragFrom = p;
-        if (_panning)
+        if (Mode != CameraMode.Orbit)
+        {
+            _lookYaw -= dx * 0.25;
+            _lookPitch = Math.Clamp(_lookPitch - dy * 0.25, -89, 89);
+        }
+        else if (_panning)
         {
             // Move the point turned around across the screen: right and up as the camera sees them.
             var scale = _distance / Math.Max(Bounds.Height, 1) * 1.4;
@@ -194,15 +327,48 @@ internal sealed class View3D : Control
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
-        _distance = Math.Clamp(_distance * Math.Pow(0.85, e.Delta.Y), 16, 200_000);
+        if (Mode == CameraMode.Fly)
+        {
+            var (fx, fy, fz) = Current.Forward;
+            (_x, _y, _z) = (_x + fx * e.Delta.Y * 96, _y + fy * e.Delta.Y * 96, _z + fz * e.Delta.Y * 96);
+        }
+        else if (Mode == CameraMode.Orbit)
+        {
+            _distance = Math.Clamp(_distance * Math.Pow(0.85, e.Delta.Y), 16, 200_000);
+        }
+
         SendCamera();
         e.Handled = true;
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
-        if (e.Key != Key.Home) return;
-        Frame();
+        if (e.Key == Key.Home)
+        {
+            Mode = CameraMode.Orbit;
+            Frame();
+            e.Handled = true;
+            return;
+        }
+
+        if (Mode == CameraMode.Orbit) return;
+        if (_keys.Add(e.Key) && !_mover.IsEnabled)
+        {
+            _clock.Restart();
+            _mover.Start();
+        }
+
         e.Handled = true;
+    }
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        _keys.Remove(e.Key);
+    }
+
+    protected override void OnLostFocus(FocusChangedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        _keys.Clear();
     }
 }

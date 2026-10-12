@@ -124,3 +124,61 @@ public sealed class SceneTests
         Assert.All(corners, c => Assert.Equal(192, c[7]));
     }
 }
+
+/// <summary>Walking as the player does in the 3D view's Walk camera.</summary>
+public sealed class WalkerTests
+{
+    /// <summary>Two rooms side by side; the second's floor at <paramref name="step"/>, its ceiling at <paramref name="ceiling"/>; the shared wall optionally impassable.</summary>
+    private static MapGeometry Rooms(double step, double ceiling = 128, bool impassable = false)
+    {
+        var m = new MapModel { Name = "MAP01", Namespace = "zdoom" };
+        foreach (var (x, y) in new[] { (0, 0), (128, 0), (128, 128), (0, 128), (256, 0), (256, 128) }) m.Vertices.Add(new MapVertex { X = x, Y = y });
+        m.Sectors.Add(new MapSector { FloorHeight = 0, CeilingHeight = 128, FloorTexture = "F", CeilingTexture = "C" });
+        m.Sectors.Add(new MapSector { FloorHeight = step, CeilingHeight = ceiling, FloorTexture = "F", CeilingTexture = "C" });
+        void Wall(int v1, int v2, int sector)
+        {
+            m.Sides.Add(new MapSide { Sector = sector });
+            m.Lines.Add(new MapLine { V1 = v1, V2 = v2, Front = m.Sides.Count - 1 });
+        }
+
+        Wall(0, 3, 0);
+        Wall(3, 2, 0);
+        Wall(1, 0, 0);
+        Wall(2, 5, 1);
+        Wall(5, 4, 1);
+        Wall(4, 1, 1);
+        m.Sides.Add(new MapSide { Sector = 0 });
+        m.Sides.Add(new MapSide { Sector = 1 });
+        var shared = new MapLine { V1 = 2, V2 = 1, Front = m.Sides.Count - 2, Back = m.Sides.Count - 1 };
+        if (impassable) shared.Extra["blocking"] = true;
+        m.Lines.Add(shared);
+        return MapGeometry.Build(EditorMap.FromModel(m).Frame);
+    }
+
+    private static readonly MapPoint Here = new(100, 64);
+    private static readonly MapPoint There = new(156, 64);
+
+    [Fact]
+    public void AStepOfTwentyFourIsClimbedAndOneMoreIsNot()
+    {
+        Assert.Equal(24 + Walker.EyeHeight, Walker.Step(Rooms(24), Here, 0, There));
+        Assert.Null(Walker.Step(Rooms(25), Here, 0, There));
+    }
+
+    [Fact]
+    public void WallsTheVoidAndLowCeilingsStopTheWalk()
+    {
+        var open = Rooms(0);
+        Assert.Equal(Walker.EyeHeight, Walker.Step(open, Here, 0, There));
+        Assert.Null(Walker.Step(open, Here, 0, new MapPoint(-20, 64)));
+        Assert.Null(Walker.Step(Rooms(0, impassable: true), Here, 0, There));
+        Assert.Null(Walker.Step(Rooms(0, ceiling: 55), Here, 0, There));
+        Assert.NotNull(Walker.Step(Rooms(0, ceiling: 56), Here, 0, There));
+    }
+
+    [Fact]
+    public void ALowerFloorIsDroppedToAtOnce()
+    {
+        Assert.Equal(-64 + Walker.EyeHeight, Walker.Step(Rooms(-64), Here, 0, There));
+    }
+}

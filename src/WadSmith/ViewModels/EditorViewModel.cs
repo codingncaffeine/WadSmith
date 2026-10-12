@@ -25,6 +25,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         ("undo", "Tip: Ctrl+Z takes back the last change and Ctrl+Y brings it back. Nothing needs saving; WadSmith keeps every change."),
         ("heights", "Tip: the view buttons at the top show floors, ceilings, heights as colours, or just the walls."),
         ("orbit", "Tip: in the 3D view, drag to turn around the map, right-drag to move it, and scroll to come closer."),
+        ("walk", "Tip: choose Walk at the top of the 3D view, click it, and use WASD to walk through the map as the player would."),
     ];
 
     private readonly AppServices _services;
@@ -81,6 +82,41 @@ internal sealed partial class EditorViewModel : ObservableObject
     /// <summary>Whether the 3D view shows beside the plan (D46).</summary>
     [ObservableProperty]
     private bool _show3D = true;
+
+    /// <summary>How the 3D camera moves: orbit, fly or walk.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOrbit), nameof(IsFly), nameof(IsWalk))]
+    private ThreeD.CameraMode _cameraMode;
+
+    public bool IsOrbit
+    {
+        get => CameraMode == ThreeD.CameraMode.Orbit;
+        set
+        {
+            if (value) CameraMode = ThreeD.CameraMode.Orbit;
+            else OnPropertyChanged();
+        }
+    }
+
+    public bool IsFly
+    {
+        get => CameraMode == ThreeD.CameraMode.Fly;
+        set
+        {
+            if (value) CameraMode = ThreeD.CameraMode.Fly;
+            else OnPropertyChanged();
+        }
+    }
+
+    public bool IsWalk
+    {
+        get => CameraMode == ThreeD.CameraMode.Walk;
+        set
+        {
+            if (value) CameraMode = ThreeD.CameraMode.Walk;
+            else OnPropertyChanged();
+        }
+    }
 
     partial void OnShowVersionsChanged(bool value)
     {

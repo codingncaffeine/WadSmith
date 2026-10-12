@@ -71,8 +71,18 @@
                 </Border>
             </Panel>
             <GridSplitter Grid.Column="1" x:Name="Split3D" Background="{DynamicResource Brush.Border.Subtle}" ResizeDirection="Columns" />
-            <threeD:View3D Grid.Column="2" x:Name="View3D" Session="{Binding Session}"
-                           ToolTip.Tip="The map in 3D. Drag to turn around it, right-drag to move, scroll to come closer. Home shows the whole map." />
+            <Panel Grid.Column="2" x:Name="Pane3D">
+                <threeD:View3D x:Name="View3D" Session="{Binding Session}" Mode="{Binding CameraMode}"
+                               ToolTip.Tip="The map in 3D. Orbit: drag to turn, right-drag to move, scroll to come closer. Fly and Walk: drag to look, WASD to move. Home shows the whole map." />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
+                    <ToggleButton Classes="segment first" Content="Orbit" IsChecked="{Binding IsOrbit}"
+                                  ToolTip.Tip="Turn around the map like a model on a table." />
+                    <ToggleButton Classes="segment" Content="Fly" IsChecked="{Binding IsFly}"
+                                  ToolTip.Tip="Move freely through the map: drag to look, WASD to move, Q and E to go down and up, Shift for speed." />
+                    <ToggleButton Classes="segment last" Content="Walk" IsChecked="{Binding IsWalk}"
+                                  ToolTip.Tip="Walk as the player does: eye height, up steps, stopped by walls. Drag to look, WASD to move, Shift to run." />
+                </StackPanel>
+            </Panel>
             </Grid>
             <GridSplitter Grid.Column="1" Background="{DynamicResource Brush.Border.Subtle}" ResizeDirection="Columns" />
             <Border Grid.Column="2" Classes="panel" BorderThickness="1,0,0,0">

@@ -11,6 +11,7 @@ public partial class EditorView : UserControl
     {
         InitializeComponent();
         HeightsRamp.Background = WadSmith.App.Canvas.HeightRamp.Brush();
+        View3D.CameraMoved += camera => Canvas.ShowCamera(camera);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is not EditorViewModel vm) return;
@@ -28,6 +29,7 @@ public partial class EditorView : UserControl
     {
         MapViews.ColumnDefinitions[2].Width = show ? new Avalonia.Controls.GridLength(1, Avalonia.Controls.GridUnitType.Star) : new Avalonia.Controls.GridLength(0);
         Split3D.IsVisible = show;
+        Pane3D.IsVisible = show;
         View3D.IsVisible = show;
     }
 

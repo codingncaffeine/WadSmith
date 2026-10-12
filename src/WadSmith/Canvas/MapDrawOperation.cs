@@ -59,7 +59,7 @@ internal sealed class SelectionOverlay
 }
 
 /// <summary>Draws the map on the render thread through a Skia lease.</summary>
-internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view) : ICustomDrawOperation
+internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null) : ICustomDrawOperation
 {
     public Rect Bounds { get; } = bounds;
 
@@ -77,7 +77,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         using var lease = feature.Lease();
         FrameStats.Gpu = lease.GrContext is not null;
-        new MapPainter(snapshot, selection, hover, view).Paint(lease.SkCanvas, lease.GrContext is not null);
+        new MapPainter(snapshot, selection, hover, view, camera).Paint(lease.SkCanvas, lease.GrContext is not null);
         lease.SkCanvas.Flush();
         FrameStats.Draw(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
@@ -87,7 +87,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
 /// Paints the map onto any Skia canvas: the window's (through <see cref="MapDrawOperation"/>) or an
 /// offscreen picture such as a version's thumbnail.
 /// </summary>
-internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view)
+internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null)
 {
     private static readonly SKColor Background = new(0x0A, 0x07, 0x08);
     private static readonly SKColor GridMinor = new(0x1C, 0x15, 0x16);
@@ -154,7 +154,28 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
         canvas.Restore();
 
         DrawPoints(canvas, snapshot);
+        if (camera is { } eye) DrawCamera(canvas, eye);
         canvas.Restore();
+    }
+
+    /// <summary>Where the 3D camera stands, as a wedge pointing the way it looks (screen pixels, so it reads at any zoom).</summary>
+    private void DrawCamera(SKCanvas canvas, ThreeD.Camera3D eye)
+    {
+        var x = (float)((eye.X - view.Cx) * view.Zoom + view.Width / 2);
+        var y = (float)(view.Height / 2 - (eye.Y - view.Cy) * view.Zoom);
+        var a = eye.Yaw * Math.PI / 180;
+        var half = 34 * Math.PI / 180;
+        using var wedge = new SKPath();
+        wedge.MoveTo(x, y);
+        wedge.LineTo(x + (float)(Math.Cos(a - half) * 46), y - (float)(Math.Sin(a - half) * 46));
+        wedge.LineTo(x + (float)(Math.Cos(a + half) * 46), y - (float)(Math.Sin(a + half) * 46));
+        wedge.Close();
+        using var fill = new SKPaint { Style = SKPaintStyle.Fill, Color = Accent.WithAlpha(0x50), IsAntialias = true };
+        using var edge = new SKPaint { Style = SKPaintStyle.Stroke, Color = Accent, StrokeWidth = 1.5f, IsAntialias = true };
+        canvas.DrawPath(wedge, fill);
+        canvas.DrawPath(wedge, edge);
+        using var dot = new SKPaint { Style = SKPaintStyle.Fill, Color = Accent, IsAntialias = true };
+        canvas.DrawCircle(x, y, 5, dot);
     }
 
     private void DrawGrid(SKCanvas canvas)

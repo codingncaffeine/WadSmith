@@ -155,6 +155,34 @@ public sealed class MapGeometry
         return best;
     }
 
+    /// <summary>The walls the segment from <paramref name="a"/> to <paramref name="b"/> crosses (touching a wall's end counts).</summary>
+    public IEnumerable<LineFrame> WallsCrossing(MapPoint a, MapPoint b)
+    {
+        var seen = new HashSet<int>();
+        foreach (var i in _lines.Near(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Max(a.X, b.X), Math.Max(a.Y, b.Y)))
+        {
+            if (!seen.Add(i)) continue;
+            var l = Frame.Lines[i];
+            if (l.Element is null) continue;
+            var c = Frame.Vertices[l.V1];
+            var d = Frame.Vertices[l.V2];
+            if (SegmentsCross(a, b, new MapPoint(c.X, c.Y), new MapPoint(d.X, d.Y))) yield return l;
+        }
+    }
+
+    /// <summary>The area at a point and its floor and ceiling heights, or null over the void.</summary>
+    public SectorFrame? AreaAt(MapPoint p) => SectorAt(p) is { } s && s.Slot < Frame.Sectors.Count ? Frame.Sectors[s.Slot] : null;
+
+    private static bool SegmentsCross(MapPoint a, MapPoint b, MapPoint c, MapPoint d)
+    {
+        static double Cross(MapPoint o, MapPoint p, MapPoint q) => (p.X - o.X) * (q.Y - o.Y) - (p.Y - o.Y) * (q.X - o.X);
+        var d1 = Cross(c, d, a);
+        var d2 = Cross(c, d, b);
+        var d3 = Cross(a, b, c);
+        var d4 = Cross(a, b, d);
+        return ((d1 > 0 && d2 <= 0) || (d1 < 0 && d2 >= 0) || (d1 == 0 && d2 != 0)) && ((d3 >= 0 && d4 <= 0) || (d3 <= 0 && d4 >= 0));
+    }
+
     public static double DistanceToSegment(MapPoint p, MapPoint a, MapPoint b)
     {
         double dx = b.X - a.X, dy = b.Y - a.Y;

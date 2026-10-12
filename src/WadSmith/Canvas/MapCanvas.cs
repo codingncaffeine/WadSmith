@@ -27,6 +27,7 @@ internal sealed class MapCanvas : Control
     private SelectionOverlay? _selection;
     private SelectionOverlay? _hoverOutline;
     private long _outlineGeneration;
+    private ThreeD.Camera3D? _camera;
     private double _cx;
     private double _cy;
     private double _zoom = 0.5;
@@ -173,7 +174,7 @@ internal sealed class MapCanvas : Control
         if (Session is null) return;
         if (!_fitted) ComputeFit();
         var hover = _hover is not null && !Session.Selection.Contains(_hover) ? _hoverOutline : null;
-        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height)));
+        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera));
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -293,6 +294,13 @@ internal sealed class MapCanvas : Control
     protected override void OnKeyUp(KeyEventArgs e)
     {
         if (e.Key == Key.Space) _spaceDown = false;
+    }
+
+    /// <summary>Marks where the 3D camera stands and looks (null hides the mark).</summary>
+    public void ShowCamera(ThreeD.Camera3D? camera)
+    {
+        _camera = camera;
+        InvalidateVisual();
     }
 
     /// <summary>Zooms about the centre (for tools that measure drawing).</summary>
