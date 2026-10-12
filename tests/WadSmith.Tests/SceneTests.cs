@@ -17,7 +17,7 @@ public sealed class SceneTests
     }
 
     /// <summary>Two rooms side by side, 128 square, sharing the wall at x = 128.</summary>
-    private static MapModel TwoRooms(double floor2, double ceiling2, string ceilingFlat2 = "CEIL", string ceilingFlat1 = "CEIL", bool upperUnpegged = false, bool lowerUnpegged = false)
+    internal static MapModel TwoRooms(double floor2, double ceiling2, string ceilingFlat2 = "CEIL", string ceilingFlat1 = "CEIL", bool upperUnpegged = false, bool lowerUnpegged = false)
     {
         var m = new MapModel { Name = "MAP01", Namespace = "zdoom" };
         foreach (var (x, y) in new[] { (0, 0), (128, 0), (128, 128), (0, 128), (256, 0), (256, 128) }) m.Vertices.Add(new MapVertex { X = x, Y = y });
@@ -200,10 +200,11 @@ public sealed class PickTests
         Assert.Same(map.Sectors[0], scene.Pick((0, 100, 64), (0, 0, -1), 90));
         Assert.Same(map.Sectors[0], scene.Pick((0, 100, 64), (0, 0, 1), 90));
 
-        // Facing north from the middle: the north wall (y = 256).
-        var wall = Assert.IsType<Line>(scene.Pick((0, 0, 64), (0, 1, 0), 90));
-        Assert.Equal(256, wall.Start.Y);
-        Assert.Equal(256, wall.End.Y);
+        // Facing north from the middle: the north wall's face (y = 256).
+        var face = Assert.IsType<Side>(scene.Pick((0, 0, 64), (0, 1, 0), 90));
+        Assert.Equal(256, face.Line!.Start.Y);
+        Assert.Equal(256, face.Line.End.Y);
+        Assert.Same(face, face.Line.Front);
     }
 
     [Fact]
@@ -222,8 +223,8 @@ public sealed class PickTests
         var (scene, _) = Room();
 
         // From outside the room, looking in through its south wall: the far (north) wall's front is hit, not the near wall's back.
-        var wall = Assert.IsType<Line>(scene.Pick((0, -400, 64), (0, 1, 0), 90));
-        Assert.Equal(256, wall.Start.Y);
+        var face = Assert.IsType<Side>(scene.Pick((0, -400, 64), (0, 1, 0), 90));
+        Assert.Equal(256, face.Line!.Start.Y);
     }
 
     [Fact]

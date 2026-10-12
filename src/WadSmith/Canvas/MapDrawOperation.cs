@@ -17,6 +17,9 @@ internal sealed class SelectionOverlay
 {
     public List<(float X1, float Y1, float X2, float Y2)> Lines { get; } = [];
 
+    /// <summary>Wall faces: their wall, running so that the face is on its right (the side its room is on).</summary>
+    public List<(float X1, float Y1, float X2, float Y2)> Faces { get; } = [];
+
     public List<(float X, float Y)> Points { get; } = [];
 
     public List<(float X, float Y, float R)> Things { get; } = [];
@@ -27,6 +30,7 @@ internal sealed class SelectionOverlay
     {
         var o = new SelectionOverlay();
         var f = geometry.Frame;
+        HashSet<int>? faces = null;
         foreach (var e in items)
         {
             var slot = e.Slot;
@@ -37,6 +41,9 @@ internal sealed class SelectionOverlay
                     var a = f.Vertices[l.V1];
                     var b = f.Vertices[l.V2];
                     o.Lines.Add(((float)a.X, (float)a.Y, (float)b.X, (float)b.Y));
+                    break;
+                case Side when slot < f.Sides.Count:
+                    (faces ??= []).Add(slot);
                     break;
                 case Vertex when slot < f.Vertices.Count && f.Vertices[slot] is { Element: not null } v:
                     o.Points.Add(((float)v.X, (float)v.Y));
@@ -51,6 +58,19 @@ internal sealed class SelectionOverlay
                     CanvasSnapshot.AddLoops(path, loops);
                     o.Areas.Add(path);
                     break;
+            }
+        }
+
+        // A face is found through its wall: one pass over the walls, only when faces are selected.
+        if (faces is not null)
+        {
+            foreach (var l in f.Lines)
+            {
+                if (l.Element is null) continue;
+                var a = f.Vertices[l.V1];
+                var b = f.Vertices[l.V2];
+                if (faces.Contains(l.Front)) o.Faces.Add(((float)a.X, (float)a.Y, (float)b.X, (float)b.Y));
+                if (l.Back >= 0 && faces.Contains(l.Back)) o.Faces.Add(((float)b.X, (float)b.Y, (float)a.X, (float)a.Y));
             }
         }
 
@@ -235,6 +255,18 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
 
         stroke.StrokeWidth = width * px;
         foreach (var (x1, y1, x2, y2) in o.Lines) canvas.DrawLine(x1, y1, x2, y2, stroke);
+
+        // A face: its wall, and a tick from the wall's middle into the room the face looks at.
+        foreach (var (x1, y1, x2, y2) in o.Faces)
+        {
+            canvas.DrawLine(x1, y1, x2, y2, stroke);
+            var (dx, dy) = (x2 - x1, y2 - y1);
+            var length = MathF.Sqrt(dx * dx + dy * dy);
+            if (length <= 0) continue;
+            var tick = 12 * px / length;
+            var (mx, my) = ((x1 + x2) / 2, (y1 + y2) / 2);
+            canvas.DrawLine(mx, my, mx + dy * tick, my - dx * tick, stroke);
+        }
         foreach (var (x, y) in o.Points) canvas.DrawRect(x - 5 * px, y - 5 * px, 10 * px, 10 * px, stroke);
         foreach (var (x, y, r) in o.Things) canvas.DrawCircle(x, y, Math.Max(r, 6 * px), stroke);
     }

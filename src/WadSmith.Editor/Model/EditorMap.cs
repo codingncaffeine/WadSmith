@@ -168,13 +168,33 @@ public sealed class EditorMap
             e.Sides.Add(x);
         }
 
+        // Old tools packed classic maps by sharing one face among walls that looked alike. Each wall
+        // gets its own face here, so changing one never changes another; while a copy still matches
+        // its original, MapFrame.ToModel writes the two as one again.
+        var taken = new bool[e.Sides.Count];
+        var copies = new List<Side>();
+        Side Own(int index)
+        {
+            var s = e.Sides[index];
+            if (!taken[index])
+            {
+                taken[index] = true;
+                return s;
+            }
+
+            var copy = new Side(s.Sector) { OffsetX = s.OffsetX, OffsetY = s.OffsetY, Top = s.Top, Middle = s.Middle, Bottom = s.Bottom, PackedWith = s };
+            Copy(s.Extra, copy.Extra);
+            copies.Add(copy);
+            return copy;
+        }
+
         foreach (var l in m.Lines)
         {
             if (l.V1 < 0 || l.V1 >= e.Vertices.Count || l.V2 < 0 || l.V2 >= e.Vertices.Count || l.Front < 0 || l.Front >= e.Sides.Count)
                 throw new Core.CorruptDataException($"{m.Name} has a line that points at a missing corner or face; run validate on it.");
-            var x = new Line(e.Vertices[l.V1], e.Vertices[l.V2], e.Sides[l.Front])
+            var x = new Line(e.Vertices[l.V1], e.Vertices[l.V2], Own(l.Front))
             {
-                Back = l.Back >= 0 && l.Back < e.Sides.Count ? e.Sides[l.Back] : null,
+                Back = l.Back >= 0 && l.Back < e.Sides.Count ? Own(l.Back) : null,
                 Special = l.Special,
                 LineId = l.Id,
             };
@@ -182,6 +202,8 @@ public sealed class EditorMap
             Copy(l.Extra, x.Extra);
             e.Lines.Add(x);
         }
+
+        e.Sides.AddRange(copies);
 
         foreach (var t in m.Things)
         {

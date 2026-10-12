@@ -2,7 +2,7 @@
 //
 //   dotnet run --project tools/WadSmith.Capture -c Release -- OUTPUT_DIR [WIDTHxHEIGHT] [--games=FOLDER] [pose ...]
 //
-// Poses: welcome, editor, editor-heights, editor-selected, perf. Editor poses open a starter room unless
+// Poses: welcome, editor, editor-heights, editor-selected, editor-face, perf. Editor poses open a starter room unless
 // --map=BASEGAME:SLOT names a base game map to remix (needs GZDoom's data file). perf pans a
 // 100,000-wall map and prints frame times. --real runs perf in a real window on the current display
 // (use it inside tools/app/perf.sh, never on the desktop).
@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -358,6 +358,19 @@ foreach (var pose in poses)
                 editor.Session.Selection.Set(room, monster);
                 Pump(2.5);
                 Save("editor-3d-selected");
+                break;
+            }
+
+            if (pose == "editor-face")
+            {
+                // One face of a wall between two areas, as a click in 3D selects it: a tick into its room on the
+                // plan, the face alone tinted in 3D, its parts and offsets in the Inspector.
+                editor.CameraMode = WadSmith.App.ThreeD.CameraMode.Orbit;
+                var lines = editor.Session.Map.Lines;
+                var face = lines.Where(l => l.Back is not null && l.Front.Sector.CeilingHeight > l.Back.Sector.CeilingHeight && !WadSmith.Editor.Scene.MapScene.IsSky(l.Back.Sector.CeilingTexture)).OrderByDescending(l => l.Length).Select(l => l.Front).FirstOrDefault() ?? lines[0].Front;
+                editor.Session.Selection.Set(face);
+                Pump(2.5);
+                Save("editor-face");
                 break;
             }
 

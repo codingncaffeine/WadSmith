@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using WadSmith.Core.Games;
 using WadSmith.Editor;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Model;
+using WadSmith.Editor.Scene;
 
 namespace WadSmith.App.ViewModels;
 
@@ -71,17 +73,22 @@ internal sealed partial class TextRow : InspectorRow
 {
     private readonly Func<string> _get;
     private readonly Action<string> _set;
+    private readonly Func<string>? _hint;
 
-    public TextRow(string label, string tooltip, Func<string> get, Action<string> set)
+    public TextRow(string label, string tooltip, Func<string> get, Action<string> set, Func<string>? hint = null)
         : base(label, tooltip)
     {
         _get = get;
         _set = set;
+        _hint = hint;
         Refresh();
     }
 
     [ObservableProperty]
     private string _value = "";
+
+    [ObservableProperty]
+    private string _hintText = "";
 
     /// <summary>Called by the view when editing ends.</summary>
     public void Commit()
@@ -92,7 +99,11 @@ internal sealed partial class TextRow : InspectorRow
         Value = _get();
     }
 
-    public override void Refresh() => Value = _get();
+    public override void Refresh()
+    {
+        Value = _get();
+        HintText = _hint?.Invoke() ?? "";
+    }
 }
 
 /// <summary>An on/off setting.</summary>
@@ -123,6 +134,24 @@ internal sealed partial class FlagRow : InspectorRow
         _refreshing = true;
         Value = _get();
         _refreshing = false;
+    }
+}
+
+/// <summary>A heading that starts a group of rows.</summary>
+internal sealed class HeadingRow(string label) : InspectorRow(label, "")
+{
+    public override void Refresh()
+    {
+    }
+}
+
+/// <summary>A button that does one thing, named by its verb.</summary>
+internal sealed class ActionRow(string label, string tooltip, Action act) : InspectorRow(label, tooltip)
+{
+    public IRelayCommand Command { get; } = new RelayCommand(act);
+
+    public override void Refresh()
+    {
     }
 }
 
@@ -192,6 +221,24 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Heading = l.Back is null ? "Solid wall" : "Wall between two areas";
                 Summary = l.Back is null ? "Nothing can pass through it." : "Players can walk through unless it blocks them.";
                 AddLine(l);
+                AddSide("Front", l.Front);
+                if (l.Back is { } back) AddSide("Back", back);
+                Rows.Add(new ActionRow(l.Back is null ? "Select its face" : "Select the front face", "Shows only the side you see from the front: its textures and how they line up.", () => _session.Selection.Set(l.Front)));
+                if (l.Back is { } behind) Rows.Add(new ActionRow("Select the back face", "Shows only the side you see from the back: its textures and how they line up.", () => _session.Selection.Set(behind)));
+                break;
+            case Side side:
+                var solid = side.Line?.Back is null;
+                Heading = "Wall face";
+                Summary = solid ? "The side of a solid wall you see from its room: its texture and how it lines up." : "One side of a wall between two areas, as you see it from this side: its textures and how they line up.";
+                AddFace(side);
+                if (side.Line is { } wall)
+                {
+                    Rows.Add(new HeadingRow("THE WHOLE WALL"));
+                    AddLine(wall);
+                    Rows.Add(new ActionRow("Select the whole wall", "Selects the wall with both its faces, as clicking it on the map does.", () => _session.Selection.Set(wall)));
+                    if (wall.Opposite(side) is { } other) Rows.Add(new ActionRow("Select the other face", "Shows the side of this wall you see from the other area.", () => _session.Selection.Set(other)));
+                }
+
                 break;
             case Thing t:
                 var known = _session.Resources?.Things.Find(t.Type);
@@ -214,6 +261,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
     {
         Sector => "Area",
         Line => "Wall",
+        Side => "Wall face",
         Thing => "Thing",
         Vertex => "Corner",
         _ => "Item",
@@ -243,8 +291,49 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new FlagRow("Blocks monsters", "Players pass, monsters do not (blockmonsters).", () => l.Flag("blockmonsters"), on => Flag(l, "blockmonsters", on, "Change monster blocking")));
         Rows.Add(new FlagRow("Hidden on the map", "Not drawn on the in-game map (dontdraw).", () => l.Flag("dontdraw"), on => Flag(l, "dontdraw", on, "Change map visibility")));
         Rows.Add(new FlagRow("Counts as a secret", "Shown as a solid wall on the in-game map so it does not give a secret away (secret).", () => l.Flag("secret"), on => Flag(l, "secret", on, "Change secret")));
-        AddSide("Front", l.Front);
-        if (l.Back is { } back) AddSide("Back", back);
+        if (l.Back is null)
+        {
+            Rows.Add(new FlagRow("Texture sits on the floor", "The texture's bottom edge rests on the floor, so it stays put when the ceiling moves, as door tracks need (lower unpegged, dontpegbottom).", () => l.Flag("dontpegbottom"), on => Flag(l, "dontpegbottom", on, "Change texture anchoring")));
+        }
+        else
+        {
+            Rows.Add(new FlagRow("Upper texture hangs from the ceiling", "The upper texture starts at the higher ceiling and runs down, instead of rising from the opening below it (upper unpegged, dontpegtop).", () => l.Flag("dontpegtop"), on => Flag(l, "dontpegtop", on, "Change texture anchoring")));
+            Rows.Add(new FlagRow("Lower texture continues the wall above", "The lower texture is placed as if the wall ran down from the ceiling, so it carries on the pattern above it (lower unpegged, dontpegbottom).", () => l.Flag("dontpegbottom"), on => Flag(l, "dontpegbottom", on, "Change texture anchoring")));
+        }
+    }
+
+    /// <summary>One face on its own: only the parts it can show, with whether each is seen, and its offsets.</summary>
+    private void AddFace(Side side)
+    {
+        var wall = side.Line;
+        if (wall?.Opposite(side) is not { } other)
+        {
+            Rows.Add(new TextRow("Texture", "The picture on this wall (texturemiddle).", () => side.Middle, v => Set(side, "Change wall texture", e => e.Middle, (e, x) => e.Middle = x, v)));
+        }
+        else
+        {
+            string Upper()
+            {
+                var (here, there) = (side.Sector, other.Sector);
+                if (MapScene.IsSky(here.CeilingTexture) && MapScene.IsSky(there.CeilingTexture)) return "Not seen: both sides are open sky.";
+                return here.CeilingHeight > there.CeilingHeight
+                    ? string.Create(CultureInfo.InvariantCulture, $"Seen above the opening, {here.CeilingHeight - there.CeilingHeight:0} tall.")
+                    : "Not seen now: the ceiling beyond is not lower.";
+            }
+
+            string Lower() => other.Sector.FloorHeight > side.Sector.FloorHeight
+                ? string.Create(CultureInfo.InvariantCulture, $"Seen below the opening, a step of {other.Sector.FloorHeight - side.Sector.FloorHeight:0}.")
+                : "Not seen now: the floor beyond is not higher.";
+
+            string Middle() => side.Middle is "-" or "" ? "None: the opening is clear." : "Hangs once in the opening, like a grate or a fence.";
+
+            Rows.Add(new TextRow("Upper texture", "Shown where the ceiling on the other side is lower (texturetop).", () => side.Top, v => Set(side, "Change upper texture", e => e.Top, (e, x) => e.Top = x, v), Upper));
+            Rows.Add(new TextRow("Middle texture", "A grate or fence across the opening; - for none (texturemiddle).", () => side.Middle, v => Set(side, "Change middle texture", e => e.Middle, (e, x) => e.Middle = x, v), Middle));
+            Rows.Add(new TextRow("Lower texture", "Shown where the floor on the other side is higher (texturebottom).", () => side.Bottom, v => Set(side, "Change lower texture", e => e.Bottom, (e, x) => e.Bottom = x, v), Lower));
+        }
+
+        Rows.Add(new NumberRow("Texture shift across", "Moves this face's textures sideways, in pixels; above zero moves them left (x offset, offsetx).", () => (decimal)side.OffsetX, v => Set(side, "Shift texture across", e => e.OffsetX, (e, x) => e.OffsetX = x, (double)v), 1));
+        Rows.Add(new NumberRow("Texture shift up", "Moves this face's textures up, in pixels; below zero moves them down (y offset, offsety).", () => (decimal)side.OffsetY, v => Set(side, "Shift texture up", e => e.OffsetY, (e, x) => e.OffsetY = x, (double)v), 1));
     }
 
     private void AddSide(string which, Side side)

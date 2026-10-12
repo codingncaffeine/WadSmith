@@ -99,8 +99,11 @@ public readonly record struct VertexFrame(Vertex? Element, double X, double Y, K
 
 public readonly record struct SectorFrame(Sector? Element, double FloorHeight, double CeilingHeight, string FloorTexture, string CeilingTexture, int Light, int Special, int Tag, KeyValuePair<string, UdmfValue>[] Extra);
 
-/// <summary>A face; <see cref="Sector"/> is the area's slot, -1 when it faces nothing on the map.</summary>
-public readonly record struct SideFrame(Side? Element, int Sector, double OffsetX, double OffsetY, string Top, string Middle, string Bottom, KeyValuePair<string, UdmfValue>[] Extra);
+/// <summary>
+/// A face; <see cref="Sector"/> is the area's slot, -1 when it faces nothing on the map;
+/// <see cref="PackedWith"/> the slot of the face it was copied from when read (<see cref="Side.PackedWith"/>), -1 for none.
+/// </summary>
+public readonly record struct SideFrame(Side? Element, int Sector, double OffsetX, double OffsetY, string Top, string Middle, string Bottom, KeyValuePair<string, UdmfValue>[] Extra, int PackedWith = -1);
 
 /// <summary>A wall; corners and faces are slots, <see cref="Back"/> -1 for none.</summary>
 public readonly record struct LineFrame(Line? Element, int V1, int V2, int Front, int Back, int Special, int[] Args, int LineId, KeyValuePair<string, UdmfValue>[] Extra);
@@ -143,7 +146,7 @@ public sealed class MapFrame
 
     internal static SectorFrame Of(Sector s) => new(s, s.FloorHeight, s.CeilingHeight, s.FloorTexture, s.CeilingTexture, s.Light, s.Special, s.Tag, Copy(s.Extra));
 
-    internal static SideFrame Of(Side s) => new(s, s.Sector.Slot, s.OffsetX, s.OffsetY, s.Top, s.Middle, s.Bottom, Copy(s.Extra));
+    internal static SideFrame Of(Side s) => new(s, s.Sector.Slot, s.OffsetX, s.OffsetY, s.Top, s.Middle, s.Bottom, Copy(s.Extra), s.PackedWith?.Slot ?? -1);
 
     internal static LineFrame Of(Line l) => new(l, l.Start.Slot, l.End.Slot, l.Front.Slot, l.Back?.Slot ?? -1, l.Special, [.. l.Args], l.LineId, Copy(l.Extra));
 
@@ -159,7 +162,21 @@ public sealed class MapFrame
 
         var vIndex = Compact(Vertices, v => v.Element is not null);
         var sectorIndex = Compact(Sectors, s => s.Element is not null);
-        var sideIndex = Compact(Sides, s => s.Element is not null);
+        // A face copied from a shared one when the map was read is written as that one while the two still match.
+        var shared = new int[Sides.Count];
+        for (var i = 0; i < Sides.Count; i++)
+        {
+            var s = Sides[i];
+            shared[i] = s.Element is not null && s.PackedWith >= 0 && s.PackedWith < Sides.Count && Sides[s.PackedWith] is { Element: not null } o && Matches(s, o) ? s.PackedWith : -1;
+        }
+
+        var sideIndex = new int[Sides.Count];
+        var nextSide = 0;
+        for (var i = 0; i < Sides.Count; i++) sideIndex[i] = Sides[i].Element is not null && shared[i] < 0 ? nextSide++ : -1;
+        for (var i = 0; i < Sides.Count; i++)
+        {
+            if (shared[i] >= 0) sideIndex[i] = sideIndex[shared[i]];
+        }
 
         foreach (var v in Vertices)
         {
@@ -177,9 +194,10 @@ public sealed class MapFrame
             m.Sectors.Add(x);
         }
 
-        foreach (var s in Sides)
+        for (var i = 0; i < Sides.Count; i++)
         {
-            if (s.Element is null) continue;
+            var s = Sides[i];
+            if (s.Element is null || shared[i] >= 0) continue;
             var x = new MapSide { OffsetX = s.OffsetX, OffsetY = s.OffsetY, Top = s.Top, Middle = s.Middle, Bottom = s.Bottom, Sector = s.Sector >= 0 ? sectorIndex[s.Sector] : -1 };
             Fill(s.Extra, x.Extra);
             m.Sides.Add(x);
@@ -204,6 +222,18 @@ public sealed class MapFrame
         }
 
         return m;
+    }
+
+    /// <summary>Whether two faces hold the same textures, offsets, area and fields.</summary>
+    private static bool Matches(SideFrame a, SideFrame b)
+    {
+        if (a.Sector != b.Sector || a.OffsetX != b.OffsetX || a.OffsetY != b.OffsetY || a.Top != b.Top || a.Middle != b.Middle || a.Bottom != b.Bottom || a.Extra.Length != b.Extra.Length) return false;
+        for (var i = 0; i < a.Extra.Length; i++)
+        {
+            if (a.Extra[i].Key != b.Extra[i].Key || !a.Extra[i].Value.Equals(b.Extra[i].Value)) return false;
+        }
+
+        return true;
     }
 
     /// <summary>Slot to file index, skipping empty slots (-1 for those).</summary>

@@ -67,6 +67,16 @@ public sealed class Side : Element
 
     public Sector Sector { get; set; }
 
+    /// <summary>The wall this face belongs to (each face belongs to one wall); null while no wall holds it.</summary>
+    public Line? Line { get; internal set; }
+
+    /// <summary>
+    /// The face this one was copied from when the map was read: classic maps may share one face among
+    /// several walls, and the editor gives each wall its own. While the copy still matches the
+    /// original, the file keeps them as one (so an unchanged map writes back as it was read).
+    /// </summary>
+    public Side? PackedWith { get; internal set; }
+
     public double OffsetX { get; set; }
 
     public double OffsetY { get; set; }
@@ -81,20 +91,34 @@ public sealed class Side : Element
 /// <summary>A wall (a line): from one corner to another, with a front face and maybe a back face.</summary>
 public sealed class Line : Element
 {
+    private Side _front;
+    private Side? _back;
+
     public Line(Vertex start, Vertex end, Side front)
     {
         Start = start;
         End = end;
-        Front = front;
+        _front = front;
+        front.Line = this;
     }
 
     public Vertex Start { get; set; }
 
     public Vertex End { get; set; }
 
-    public Side Front { get; set; }
+    /// <summary>The face on the right going from <see cref="Start"/> to <see cref="End"/>.</summary>
+    public Side Front
+    {
+        get => _front;
+        set => _front = Adopt(_front, value, _back)!;
+    }
 
-    public Side? Back { get; set; }
+    /// <summary>The face on the left, null for a wall with a room on one side only.</summary>
+    public Side? Back
+    {
+        get => _back;
+        set => _back = Adopt(_back, value, _front);
+    }
 
     public int Special { get; set; }
 
@@ -104,6 +128,17 @@ public sealed class Line : Element
     public int LineId { get; set; } = -1;
 
     public double Length => Math.Sqrt((End.X - Start.X) * (End.X - Start.X) + (End.Y - Start.Y) * (End.Y - Start.Y));
+
+    /// <summary>The other face of the wall from <paramref name="side"/>, null when there is none.</summary>
+    public Side? Opposite(Side side) => ReferenceEquals(side, _front) ? _back : ReferenceEquals(side, _back) ? _front : null;
+
+    /// <summary>Points a new face at this wall, and an old one it no longer holds at none.</summary>
+    private Side? Adopt(Side? old, Side? value, Side? other)
+    {
+        if (old is not null && !ReferenceEquals(old, value) && !ReferenceEquals(old, other) && ReferenceEquals(old.Line, this)) old.Line = null;
+        if (value is not null) value.Line = this;
+        return value;
+    }
 }
 
 /// <summary>A monster, item, decoration, light or start spot.</summary>

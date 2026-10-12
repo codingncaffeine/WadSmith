@@ -134,7 +134,14 @@
                                     <StackPanel Margin="0,0,0,10">
                                         <TextBlock Text="{Binding Label}" Classes="secondary" ToolTip.Tip="{Binding Tooltip}" Margin="0,0,0,3" />
                                         <TextBox Text="{Binding Value}" ToolTip.Tip="{Binding Tooltip}" LostFocus="OnTextRowLostFocus" KeyDown="OnTextRowKeyDown" />
+                                        <TextBlock Text="{Binding HintText}" Classes="secondary" FontSize="12" Margin="0,3,0,0" TextWrapping="Wrap" IsVisible="{Binding HintText.Length}" />
                                     </StackPanel>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:HeadingRow">
+                                    <TextBlock Classes="section" Text="{Binding Label}" Margin="0,10,0,8" />
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:ActionRow">
+                                    <Button Classes="metal" Content="{Binding Label}" Command="{Binding Command}" ToolTip.Tip="{Binding Tooltip}" HorizontalAlignment="Left" Margin="0,2,0,8" />
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:FlagRow">
                                     <CheckBox Content="{Binding Label}" IsChecked="{Binding Value}" ToolTip.Tip="{Binding Tooltip}" Margin="0,0,0,6" />

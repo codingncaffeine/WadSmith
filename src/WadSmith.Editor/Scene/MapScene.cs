@@ -34,8 +34,11 @@ public sealed class SceneBatch(string texture, SurfaceKind kind)
 
     public List<float> Vertices { get; } = [];
 
-    /// <summary>The element each triangle belongs to (a wall's line, a floor's or ceiling's area), in triangle order.</summary>
+    /// <summary>The element each triangle belongs to (a wall's face, a floor's or ceiling's area), in triangle order.</summary>
     public List<Element> Owners { get; } = [];
+
+    /// <summary>For wall triangles, the wall the face belongs to, in triangle order; empty for floors and ceilings.</summary>
+    public List<Line> Walls { get; } = [];
 
     public int VertexCount => Vertices.Count / Stride;
 
@@ -105,8 +108,8 @@ public sealed class MapScene
 
     /// <summary>
     /// What a ray from <paramref name="origin"/> along <paramref name="direction"/> meets first: a wall's
-    /// line, a floor's or ceiling's area, or an object, counting only surfaces that face the ray (the
-    /// ones the view draws). Sprites turn to face a camera looking along <paramref name="cameraYaw"/>.
+    /// face (the side seen), a floor's or ceiling's area, or an object, counting only surfaces that face
+    /// the ray (the ones the view draws). Sprites turn to face a camera looking along <paramref name="cameraYaw"/>.
     /// Tests every triangle: call it on a worker.
     /// </summary>
     public Element? Pick((double X, double Y, double Z) origin, (double X, double Y, double Z) direction, double cameraYaw)
@@ -149,16 +152,18 @@ public sealed class MapScene
 
     /// <summary>
     /// The triangles of the given elements, for tinting the selection in the view: wall and floor
-    /// corners in the batches' layout, and per object type the sprite corners.
+    /// corners in the batches' layout, and per object type the sprite corners. A face shows alone; a
+    /// wall shows both its faces.
     /// </summary>
     public (float[] Surfaces, Dictionary<int, float[]> Sprites) Highlight(IReadOnlySet<Element> elements)
     {
         var surfaces = new List<float>();
         foreach (var b in Batches)
         {
+            var walls = b.Walls.Count == b.Owners.Count;
             for (var tri = 0; tri < b.Owners.Count; tri++)
             {
-                if (!elements.Contains(b.Owners[tri])) continue;
+                if (!elements.Contains(b.Owners[tri]) && !(walls && elements.Contains(b.Walls[tri]))) continue;
                 surfaces.AddRange(b.Vertices.GetRange(tri * SceneBatch.Stride * 3, SceneBatch.Stride * 3));
             }
         }
@@ -343,12 +348,14 @@ public sealed class MapScene
         double Height(string texture) => texture is "-" or "" ? 128 : wallSize(texture)?.Height ?? 128;
 
         // A wall part from z0 to z1 whose texture's top row sits at height top (before the side's offsets).
-        void Quad(string texture, MapPoint from, MapPoint to, double z0, double z1, double top, SideFrame side, double length, int light, Line owner)
+        void Quad(string texture, MapPoint from, MapPoint to, double z0, double z1, double top, SideFrame side, double length, int light, Line wall)
         {
-            if (z1 <= z0) return;
+            if (z1 <= z0 || side.Element is not { } face) return;
             var batch = Batch(texture is "" ? "-" : texture, SurfaceKind.Wall);
-            batch.Owners.Add(owner);
-            batch.Owners.Add(owner);
+            batch.Owners.Add(face);
+            batch.Owners.Add(face);
+            batch.Walls.Add(wall);
+            batch.Walls.Add(wall);
             var u0 = side.OffsetX;
             var u1 = side.OffsetX + length;
             double V(double z) => top - z + side.OffsetY;
