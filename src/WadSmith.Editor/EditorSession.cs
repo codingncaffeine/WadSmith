@@ -322,7 +322,12 @@ public sealed class EditorSession : IDisposable
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             Log.Warn($"Drawing a room in {Slot} failed: {ex.Message}");
-            Notice?.Invoke($"That room could not be drawn there. {ex.Message}");
+            // A shape with no inside, or one along walls already there, is a first-time mapper trying to draw a wall between
+            // rooms that open into each other: say how rooms and doors work instead of what the code could not do.
+            var reason = ex.Message.Split(" (Parameter", 2)[0];
+            Notice?.Invoke(reason.Contains("overlap in a way", StringComparison.Ordinal) || reason.Contains("needs an inside", StringComparison.Ordinal)
+                ? "Nothing new to draw there: that shape runs along walls that are already there. Rooms drawn against each other open into each other — to close the opening between two rooms, pick Door and click the dashed line where they meet; to keep two rooms apart with a solid wall, draw the second room a little away from the first."
+                : $"That room could not be drawn there. {reason}");
         }
     }
 

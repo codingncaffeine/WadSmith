@@ -228,6 +228,8 @@
                     </ItemsControl>
                     <!-- The buttons wrap: with a long game name in "See one in …" a row ran off the card and the window (2026-10-12). -->
                     <WrapPanel Margin="0,2,0,0">
+                        <Button Classes="metal" Margin="0,0,8,6" Content="Back" Command="{Binding BackCommand}" IsVisible="{Binding CanGoBack}"
+                                ToolTip.Tip="The step before this one, to read it again. Your map stays as it is; Skip this step goes forward again." />
                         <Button Classes="metal" Margin="0,0,8,6" Content="{Binding SeeOne.Title}" Command="{Binding SeeOne.Open}" ToolTip.Tip="{Binding SeeOne.Tip}"
                                 IsVisible="{Binding SeeOne, Converter={x:Static ObjectConverters.IsNotNull}}" />
                         <Button Classes="metal" Margin="0,0,8,6" Content="Skip this step" Command="{Binding SkipCommand}" IsVisible="{Binding !Finished}"

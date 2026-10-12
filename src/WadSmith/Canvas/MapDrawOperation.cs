@@ -288,10 +288,12 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
         if (snapshot.Areas is { } areas) DrawAreas(canvas, areas, areas.Visible(left, bottom, right, top), dense, gpu);
         using var paint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeCap = SKStrokeCap.Round };
 
-        // Openings first, then steps, then solid walls on top: the automap's order.
+        // Openings first, then steps, then solid walls on top: the automap's order. An opening (two rooms open into each
+        // other there: no wall in the game) is dashed, so a first-time mapper sees where a door or a window goes.
+        using var dashed = SKPathEffect.CreateDash([6 * px, 4 * px], 0);
         foreach (var (style, colour, width) in new[]
         {
-            (WallStyle.Opening, new SKColor(0x6C, 0x6C, 0x6C, 0x90), 1f),
+            (WallStyle.Opening, new SKColor(0x9A, 0xA3, 0xB0, 0xC0), 1.2f),
             (WallStyle.FloorStep, MapPreview.FloorChange, 1.4f),
             (WallStyle.CeilingStep, MapPreview.CeilingChange, 1.4f),
             (WallStyle.Solid, MapPreview.Wall, 1.6f),
@@ -299,8 +301,11 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
         {
             paint.Color = colour;
             paint.StrokeWidth = dense ? 0 : width * px;
+            paint.PathEffect = style == WallStyle.Opening ? dashed : null;
             snapshot.Walls.Draw(canvas, (int)style, paint, walls);
         }
+
+        paint.PathEffect = null;
 
         if (fit is not null) DrawFit(canvas, fit, px);
 

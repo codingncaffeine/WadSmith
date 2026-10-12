@@ -59,7 +59,7 @@ internal sealed partial class GuideViewModel : ObservableObject
 
     /// <summary>The open step's number, from 0.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StepLabel), nameof(Target))]
+    [NotifyPropertyChangedFor(nameof(StepLabel), nameof(Target), nameof(CanGoBack))]
     private int _index;
 
     [ObservableProperty]
@@ -74,8 +74,11 @@ internal sealed partial class GuideViewModel : ObservableObject
 
     /// <summary>Whether every step is done: the card says so and offers what to try next.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Target), nameof(StepLabel))]
+    [NotifyPropertyChangedFor(nameof(Target), nameof(StepLabel), nameof(CanGoBack))]
     private bool _finished;
+
+    /// <summary>Whether there is a step before this one to go back to.</summary>
+    public bool CanGoBack => Index > 0 && !Finished;
 
     private bool IsFirstMap => Chapter.Id == GuideBook.FirstMap;
 
@@ -130,6 +133,16 @@ internal sealed partial class GuideViewModel : ObservableObject
     /// <summary>Goes on to the next step without doing this one.</summary>
     [RelayCommand]
     private void Skip() => Advance();
+
+    /// <summary>Back to the step before, to read it again; the map stays as it is, and Skip goes forward again.</summary>
+    [RelayCommand]
+    private void Back()
+    {
+        if (!CanGoBack) return;
+        Said = "";
+        _told = false;
+        Begin(Index - 1);
+    }
 
     /// <summary>Ends the guide; the map stays as it is.</summary>
     [RelayCommand]

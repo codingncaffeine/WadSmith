@@ -560,7 +560,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 if (l.Back is { } exitBack) AddSide("Back", exitBack);
                 break;
             case Line l:
-                Heading = l.Back is null ? "Solid wall" : "Wall between two areas";
+                Heading = l.Back is null ? "Solid wall" : "Opening between two rooms";
                 Summary = l.Back is null ? "Nothing can pass through it." : "Players can walk through unless it blocks them.";
                 AddLine(l);
                 AddSide("Front", l.Front);
@@ -1227,6 +1227,17 @@ internal sealed partial class InspectorViewModel : ObservableObject
         }
         else
         {
+            if (l.Special == 0)
+            {
+                // What a first-time mapper came here for: the opening is where a door or a window goes.
+                Rows.Add(new ActionRow("Make it a door", "Builds a door into this opening with the game's door and track textures; it opens when the player uses it and closes again. One undo step.", () => _session.MakeDoor(l)));
+                Rows.Add(new ActionRow("Make it a window", "Turns the middle of this opening into a window: a sill and a top the player sees over but cannot pass. One undo step.", () =>
+                {
+                    var (from, to) = Doors.Centred(l, Math.Min(64, l.Length));
+                    _session.MakeWindow(l, from, to);
+                }));
+            }
+
             Rows.Add(new FlagRow("Upper texture hangs from the ceiling", "The upper texture starts at the higher ceiling and runs down, instead of rising from the opening below it (upper unpegged, dontpegtop).", () => l.Flag("dontpegtop"), on => Flag(l, "dontpegtop", on, "Change texture anchoring")));
             Rows.Add(new FlagRow("Lower texture continues the wall above", "The lower texture is placed as if the wall ran down from the ceiling, so it carries on the pattern above it (lower unpegged, dontpegbottom).", () => l.Flag("dontpegbottom"), on => Flag(l, "dontpegbottom", on, "Change texture anchoring")));
         }

@@ -30,6 +30,14 @@ public sealed class GuideCardInTheWindowTests
                 Ui.Pump(0.6);
                 var said = new List<string> { $"step {guide.Index + 1}: {guide.Said.Split(':')[0]}" };
 
+                // Back reads the step before again; Skip goes forward once more.
+                guide.BackCommand.Execute(null);
+                Ui.Pump(0.2);
+                said.Add($"back to step {guide.Index + 1} ({guide.Title}), back {(guide.CanGoBack ? "offered" : "not offered")}");
+                guide.SkipCommand.Execute(null);
+                Ui.Pump(0.6);
+                said.Add($"forward to step {guide.Index + 1}: {guide.Said.Split(':')[0]}");
+
                 // The row of buttons, with the long "See one in <game>" title, must wrap: every button inside the card's own
                 // border (a row that overflows is clipped by the map area, still inside the window, and unreadable).
                 var buttons = window.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible && b.Content is string c && (c.StartsWith("See one in", StringComparison.Ordinal) || c is "Stop the guide" or "Skip this step")).ToList();
@@ -59,6 +67,6 @@ public sealed class GuideCardInTheWindowTests
                 window.Close();
             }
         });
-        Assert.Equal(["step 3: Your rooms share no wall yet", "See inside", "Skip inside", "Stop inside", "after a miss: Click on a wall"], seen);
+        Assert.Equal(["step 3: Your rooms share no wall yet", "back to step 2 (See it in 3D), back offered", "forward to step 3: Your rooms share no wall yet", "See inside", "Skip inside", "Stop inside", "after a miss: Click on a wall"], seen);
     }
 }

@@ -86,7 +86,7 @@ public static class Explaining
             : step > StepUp ? string.Create(CultureInfo.InvariantCulture, $" The floors differ by {step:0}, more than the player climbs ({StepUp:0}): a ledge or a drop.")
             : step > 0 ? string.Create(CultureInfo.InvariantCulture, $" The floors differ by {step:0}, a step the player climbs.")
             : " The floors are level, so the player walks straight through.";
-        return new("Wall between two areas", "Joins two areas: what is above and below the opening is drawn with its upper and lower textures." + how);
+        return new("Opening between two rooms", "The rooms open into each other here: in the game there is no wall on this line (dashed on the plan). A door or a window goes in it, with the Door and Window tools or from the Inspector; what is above and below the opening shows its upper and lower textures." + how);
     }
 
     private static Explanation Object(Thing t, MapGeometry g, GameResources? resources)
