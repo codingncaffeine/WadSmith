@@ -14,7 +14,10 @@ public sealed class LooksTests(ITestOutputHelper output)
     public void EveryTextureOfTheDefaultLookIsInTheGameAndTheOtherLooksSayWhetherTheyAre(string fileName)
     {
         var wad = GameFiles.Require(fileName);
-        var found = GameLocator.Scan([Path.GetDirectoryName(wad)!], cancel: TestContext.Current.CancellationToken).Where(g => string.Equals(g.Path, wad, StringComparison.OrdinalIgnoreCase)).ToList();
+        // The scan names each game by its file's final link target, full path (as GameLocator does): match it the same way.
+        var real = Path.GetFullPath(new FileInfo(wad).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? wad);
+        var found = GameLocator.Scan([Path.GetDirectoryName(wad)!], cancel: TestContext.Current.CancellationToken).Where(g => string.Equals(Path.GetFullPath(g.Path), real, StringComparison.OrdinalIgnoreCase)
+            || (string.Equals(Path.GetFileName(g.Path), Path.GetFileName(real), StringComparison.OrdinalIgnoreCase) && g.Size == new FileInfo(real).Length)).Take(1).ToList();
         var game = Assert.Single(found);
         var resources = GameResources.Load(game.Game.Id, null, found, GameFiles.Require("gzdoom.pk3"));
         Assert.NotNull(resources);
