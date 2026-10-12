@@ -470,6 +470,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = "Where walls meet.";
                 Rows.Add(new NumberRow("X", "Position east–west, in map units.", () => (decimal)v.X, x => Set(v, "Move corner", e => e.X, (e, val) => e.X = val, (double)x), 8));
                 Rows.Add(new NumberRow("Y", "Position north–south, in map units.", () => (decimal)v.Y, y => Set(v, "Move corner", e => e.Y, (e, val) => e.Y = val, (double)y), 8));
+                if (Rounding.WallsAt(_session.Geometry, v).Count == 2) AddRounding(v);
                 break;
         }
 
@@ -641,6 +642,19 @@ internal sealed partial class InspectorViewModel : ObservableObject
         };
         var none = s.Targets.Count == 0 && Switches.NamesAreas(s.Wall.Special) ? string.Create(CultureInfo.InvariantCulture, $" No area has tag {s.Wall.Args[0]}, so it does nothing.") : "";
         return $"{char.ToUpperInvariant(s.Does[0])}{s.Does[1..]}{what} when the player uses it{(s.Repeats ? ", again and again" : ", once")}.{none}";
+    }
+
+    private decimal _curveReach = 64;
+    private decimal _curveSides = 6;
+
+    /// <summary>Rounding off a corner where two walls meet (arc walls).</summary>
+    private void AddRounding(Vertex corner)
+    {
+        Rows.Add(new HeadingRow("ROUND IT OFF"));
+        _curveReach = (decimal)Rounding.DefaultReach(_session.Geometry, corner);
+        Rows.Add(new NumberRow("Curve reach", "How far along each wall from the corner the curve starts and ends.", () => _curveReach, v => _curveReach = v, 8, 4, 4096));
+        Rows.Add(new NumberRow("Curve sides", "How many walls the curve is made of: more is smoother, fewer is closer to the game's own maps.", () => _curveSides, v => _curveSides = v, 1, 2, 32));
+        Rows.Add(new ActionRow("Round this corner", "Turns the corner into a curve of walls that meets both walls smoothly; the rooms either side follow it. One undo step.", () => _session.RoundCorner(corner, (double)_curveReach, (int)_curveSides)));
     }
 
     private int _gridColumns;

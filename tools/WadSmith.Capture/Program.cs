@@ -304,7 +304,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -349,6 +349,31 @@ foreach (var pose in poses)
             var view = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
             view.FitMap();
             if (pose == "editor-zoomed") view.ZoomBy(3.5);
+            if (pose == "editor-round")
+            {
+                // The starter room's north-east corner clicked, the Inspector's reach 128 and 8 sides, "Round this corner".
+                var session = editor.Session;
+                var plan = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First();
+                plan.FitMap();
+                Pump(0.4);
+                var corner = session.Map.Vertices.Single(v => v.OnMap && v.X == 256 && v.Y == 256);
+                var spot = plan.TranslatePoint(plan.ToScreen(new WadSmith.Editor.Geometry.MapPoint(256, 256)), window)!.Value;
+                plan.Focus();
+                window.MouseMove(spot, Avalonia.Input.RawInputModifiers.None);
+                window.MouseDown(spot, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                window.MouseUp(spot, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                Pump(0.5);
+                Console.WriteLine($"round: selected '{editor.Inspector.Heading}'; rows {string.Join(" | ", editor.Inspector.Rows.Select(r => r.Label))}");
+                editor.Inspector.Rows.OfType<NumberRow>().Single(r => r.Label == "Curve reach").Value = 128;
+                editor.Inspector.Rows.OfType<NumberRow>().Single(r => r.Label == "Curve sides").Value = 8;
+                editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Round this corner").Command.Execute(null);
+                Pump(1.5);
+                var room = session.Map.Sectors.First(s => s.OnMap);
+                Console.WriteLine($"round: {session.Map.Lines.Count(l => l.OnMap)} walls, undo '{session.History.UndoLabel}', status '{editor.Status}', problems {editor.Problems.Summary}");
+                Save("editor-round");
+                break;
+            }
+
             if (pose == "editor-guides")
             {
                 // A room with corners off the grid (x 300 and 420) beside the starter room, then the Room tool corner by corner:

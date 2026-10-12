@@ -765,6 +765,32 @@ public sealed class EditorSession : IDisposable
         Paste(new MapPoint(clip.Origin.X + Math.Ceiling(clip.Size.Width / 64) * 64 + 64, clip.Origin.Y));
     }
 
+    /// <summary>
+    /// Rounds off a corner where two walls meet into a curve of <paramref name="sides"/> walls starting <paramref name="reach"/>
+    /// along each (<see cref="Rounding"/>), one undo step; says why not when it cannot. Waits for the map's shapes.
+    /// </summary>
+    public void RoundCorner(Vertex corner, double reach, int sides)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => RoundCorner(corner, reach, sides);
+            return;
+        }
+
+        if (!corner.OnMap) return;
+        string? why = null;
+        var geometry = _geometry;
+        History.Record("Round a corner", e => why = Rounding.Round(e, geometry, corner, reach, sides));
+        if (why is not null)
+        {
+            Notice?.Invoke(why);
+            return;
+        }
+
+        Selection.Clear();
+        Notice?.Invoke(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"The corner is a curve of {sides} walls now, starting {reach:0} along each wall. Ctrl+Z puts the corner back."));
+    }
+
     /// <summary>Adds a corner to a wall at a point on it, splitting the wall in two, and selects the corner (to drag it).</summary>
     public void AddCorner(Line wall, MapPoint at)
     {
