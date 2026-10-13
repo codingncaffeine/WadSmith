@@ -250,6 +250,19 @@ internal sealed partial class MainViewModel : ObservableObject
         Welcome.RefreshRecent();
     }
 
+    /// <summary>Opens another map of the project being edited in place of this one, after keeping this one's changes.</summary>
+    public async Task SwitchMapAsync(Project project, string slot)
+    {
+        if (Page is EditorViewModel { } editor)
+        {
+            if (string.Equals(editor.Session.Slot, slot, StringComparison.OrdinalIgnoreCase)) return;
+            await editor.Session.FlushAsync().ConfigureAwait(true);
+            editor.Session.Dispose();
+        }
+
+        await OpenEditorAsync(project, slot).ConfigureAwait(true);
+    }
+
     /// <summary>Back to the start screen from a page that is not the editor (Make me a map).</summary>
     public void ShowWelcome()
     {

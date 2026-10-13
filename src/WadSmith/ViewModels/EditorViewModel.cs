@@ -1033,6 +1033,14 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     public string MapName => Session.Slot;
 
+    /// <summary>The project's maps, when it has more than one (an episode): each opens in the editor in place of this one.</summary>
+    public IReadOnlyList<ProjectMapChoice> ProjectMaps => _projectMaps ??= Session.Project.Info.Maps.Count < 2 ? [] : [.. Session.Project.Info.Maps.Select(m => new ProjectMapChoice(m.Slot, m.Title, m.Slot == Session.Slot, new AsyncRelayCommand(() => _main.SwitchMapAsync(Session.Project, m.Slot))))];
+
+    private IReadOnlyList<ProjectMapChoice>? _projectMaps;
+
+    /// <summary>"MAP01 ▾": the button that lists the project's maps.</summary>
+    public string MapChooserLabel => $"{Session.Slot} ▾";
+
     [ObservableProperty]
     private string _status = "";
 
@@ -1779,3 +1787,9 @@ internal sealed partial class EditorViewModel : ObservableObject
 
 /// <summary>A small card that celebrates a first (D33): what happened, in a sentence or two.</summary>
 internal sealed record Celebration(string Heading, string Text);
+
+/// <summary>One of a project's maps in the editor's map list: its slot, its name, whether it is the one open, and what opens it.</summary>
+internal sealed record ProjectMapChoice(string Slot, string Title, bool Current, System.Windows.Input.ICommand Open)
+{
+    public string Label => Title.Length > 0 ? $"{Slot} · {Title}" : Slot;
+}

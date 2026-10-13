@@ -2025,6 +2025,9 @@ public sealed class EditorSession : IDisposable
         });
     }
 
+    /// <summary>Whether the session was closed: its map is no longer being edited.</summary>
+    public bool IsDisposed => _disposed;
+
     public void Dispose()
     {
         _disposed = true;

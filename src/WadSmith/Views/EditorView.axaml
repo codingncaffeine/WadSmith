@@ -53,9 +53,25 @@
                 <Button Classes="metal" Content="‹ Start" Command="{Binding CloseCommand}" VerticalAlignment="Center"
                         ToolTip.Tip="Back to the start screen. Your changes are already kept." />
                 <!-- The project and the map: the one part of the bar that gives way, trimmed, so the controls always fit. -->
-                <Grid Grid.Column="1" ColumnDefinitions="Auto,*" Margin="16,0" VerticalAlignment="Center">
+                <Grid Grid.Column="1" ColumnDefinitions="Auto,Auto,*" Margin="16,0" VerticalAlignment="Center">
                     <Image Source="/Assets/icon.png" Width="24" Height="24" Margin="0,0,6,0" />
-                    <TextBlock Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ProjectName}">
+                    <!-- A project of several maps (an episode): the map's slot opens the list of its maps. -->
+                    <Button Grid.Column="1" Classes="metal" Content="{Binding MapChooserLabel}" Padding="8,2" Margin="0,0,8,0" IsVisible="{Binding ProjectMaps.Count}"
+                            ToolTip.Tip="This project has more than one map: pick another to edit it. This one's changes are already kept.">
+                        <Button.Flyout>
+                            <Flyout Placement="BottomEdgeAlignedLeft">
+                                <ItemsControl ItemsSource="{Binding ProjectMaps}" MinWidth="240">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ProjectMapChoice">
+                                            <Button Content="{Binding Label}" Command="{Binding Open}" IsEnabled="{Binding !Current}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent"
+                                                    ToolTip.Tip="Opens this map of the project in the editor." />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                    <TextBlock Grid.Column="2" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ProjectName}">
                         <Run Text="{Binding ProjectName}" FontWeight="SemiBold" />
                         <Run Text=" · " Foreground="{DynamicResource Brush.Text.Secondary}" />
                         <Run Text="{Binding MapName}" Foreground="{DynamicResource Brush.Text.Secondary}" />
