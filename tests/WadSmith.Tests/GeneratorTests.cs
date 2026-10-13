@@ -299,6 +299,7 @@ public sealed class GeneratorTests
     [InlineData("hexen", "hexen", "HEXEN.WAD")]
     [InlineData("strife", "strife", "STRIFE1.WAD")]
     [InlineData("build", "duke3d", "DUKE3D.GRP")]
+    [InlineData("quake", "quake", "PAK0.PAK")]
     public void EveryLookIsDrawnWithItsGamesOwnPictures(string family, string id, string file)
     {
         var path = GameFiles.Require(file);
@@ -309,6 +310,36 @@ public sealed class GeneratorTests
             .Where(p => !GeneratorSettings.IsSky(p.Item2) && (p.Item3 ? game.Textures.GetFlat(p.Item2) ?? game.Textures.GetWall(p.Item2) : game.Textures.GetWall(p.Item2)) is null)
             .Select(p => $"{p.Name}: {p.Item2}").ToList();
         Assert.Empty(missing);
+    }
+
+    /// <summary>A made Doom II map whose rooms all take another game's looks: the pictures are copied into the project (Duke's and Quake's floors as floors too) and the map's walls, floors and ceilings use them.</summary>
+    [Theory]
+    [InlineData("heretic", "heretic", "HERETIC.WAD")]
+    [InlineData("build", "duke3d", "DUKE3D.GRP")]
+    [InlineData("quake", "quake", "PAK0.PAK")]
+    public void AnotherGamesLooksAreCopiedInAndUsed(string family, string id, string file)
+    {
+        var engine = GameFiles.Require("gzdoom.pk3");
+        var lenderPath = GameFiles.Require(file);
+        var doomPath = GameFiles.Require("DOOM2.WAD");
+        using var temp = new TempFolder();
+        var settings = For("doom", "lent-looks", MapSize.Small) with { Looks = GeneratorSettings.OwnLooks(family), Outdoors = OutdoorShare.None };
+        var lender = GameResources.Load(id, null, [new FoundGame(GameCatalog.Get(id)!, lenderPath, new FileInfo(lenderPath).Length)], engine)!;
+        IReadOnlyList<string> notes = [];
+        var (project, made) = MadeProjects.Create(Path.Combine(temp.Path, "Lent Looks"), settings, prepare: (project, plan) =>
+        {
+            var into = GameResources.Load("doom2", project.Folder, [new FoundGame(GameCatalog.Get("doom2")!, doomPath, new FileInfo(doomPath).Length)], engine)!;
+            var (lent, said) = Sources.Carry(project, into, _ => null, _ => lender, _ => null, plan, engine);
+            notes = said;
+            return lent;
+        });
+        Assert.Empty(notes);
+        var copies = project.Info.Copied.Where(c => c.Game == id).ToList();
+        Assert.Contains(copies, c => c.Kind == "wall");
+        Assert.Contains(copies, c => c.Kind == "flat");
+        Assert.All(copies, c => Assert.True(File.Exists(Path.Combine(project.Folder, c.File)), c.File));
+        var used = made[0].Map.Sectors.Where(x => x.OnMap).Select(x => x.FloorTexture).Concat(made[0].Map.Sectors.Where(x => x.OnMap).Select(x => x.CeilingTexture)).ToHashSet();
+        Assert.Contains(copies, c => c.Kind == "flat" && used.Contains(c.Name));
     }
 
     [Fact]

@@ -57,4 +57,12 @@ public sealed class ShelfChooserInTheWindowTests
         GameFiles.Require("HERETIC.WAD");
         Assert.Equal(["shows 'Doom II'; tiles from own", "after choosing: shows 'Heretic'; tiles from Heretic, True"], await Choose(Path.GetDirectoryName(doom2)!, "doom2", "Heretic"));
     }
+
+    [Fact]
+    public async Task ChoosingQuakeShowsQuakesPictures()
+    {
+        var doom2 = GameFiles.Require("DOOM2.WAD");
+        GameFiles.Require("PAK0.PAK");
+        Assert.Equal(["shows 'Doom II'; tiles from own", "after choosing: shows 'Quake'; tiles from Quake, True"], await Choose(Path.GetDirectoryName(doom2)!, "doom2", "Quake"));
+    }
 }

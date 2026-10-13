@@ -180,6 +180,13 @@ public sealed class GameResources
             return null;
         }
 
+        // Quake (Phase 8b.6): its textures as pictures to borrow; GZDoom does not play it.
+        if (found.Game.Engine == "quake")
+        {
+            var quake = new ResourceStack([Core.Quake.QuakeTextureContainer.Open(found.Path)]);
+            return new GameResources(found.Game, [found.Path], quake, new TextureLibrary(quake), new SpriteIndex(quake), ThingCatalog.Empty, []);
+        }
+
         // Duke Nukem 3D (D48): its art as pictures to borrow; GZDoom does not play it, so it has no objects of its own here yet.
         if (found.Game.Engine == "build")
         {

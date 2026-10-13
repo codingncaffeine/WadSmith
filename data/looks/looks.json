@@ -36,5 +36,12 @@
     { "name": "Duke rock", "wall": "DK0805", "floor": "DK0893", "ceiling": "DK0894" },
     { "name": "Duke brick", "wall": "DK0750", "floor": "DK0802", "ceiling": "DK0790" },
     { "name": "Duke alien hive", "wall": "DK1100", "floor": "DK1104", "ceiling": "DK1137" }
+  ],
+  "quake": [
+    { "name": "Quake base", "wall": "QTECHPLG", "floor": "QSFLOKE8", "ceiling": "QMMET62H", "comment": "tech03_1, sfloor4_1, mmetal1_1" },
+    { "name": "Quake castle", "wall": "QWALLGCK", "floor": "QAZFLF3G", "ceiling": "QWALLEC3", "comment": "wall14_5, azfloor1_1, wall11_2" },
+    { "name": "Quake wizard", "wall": "QWBRI2JQ", "floor": "QWIZMLOA", "ceiling": "QWIZ1_4", "comment": "wbrick1_5, wizmet1_2, wiz1_4" },
+    { "name": "Quake rock", "wall": "QROCK3_7", "floor": "QGROU869", "ceiling": "QROCK1_2", "comment": "rock3_7, ground1_6, rock1_2" },
+    { "name": "Quake metal", "wall": "QMETANLW", "floor": "QFLOOU6R", "ceiling": "QMETABFD", "comment": "metal1_1, floor01_5, metal5_1" }
   ]
 }

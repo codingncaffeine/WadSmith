@@ -118,11 +118,11 @@ internal sealed partial class SourceRow(MakeMapViewModel owner, FoundGame game, 
     /// <summary>Whether the row offers its weapons: another game of another family (the base game's are always there).</summary>
     public bool CanWeapons => !IsBase && !Doom2Only && !Build;
 
-    /// <summary>Whether the row offers monsters (Duke Nukem 3D's enemies are not offered yet).</summary>
+    /// <summary>Whether the row offers monsters (Duke Nukem 3D's and Quake's are not offered yet).</summary>
     public bool CanMonsters => !Build;
 
-    /// <summary>Whether the game is Duke Nukem 3D, which lends only its pictures for now.</summary>
-    public bool Build => Family == "build";
+    /// <summary>Whether the game lends only its pictures for now (Duke Nukem 3D, Quake).</summary>
+    public bool Build => Family is "build" or "quake";
 
     partial void OnWeaponsChanged(bool value) => owner.Remake();
 
@@ -334,10 +334,11 @@ internal sealed partial class MakeMapViewModel : ObservableObject
             if (best is not null) Sources.Add(new SourceRow(this, best, best.Game.Title, false, false));
         }
 
-        // Duke Nukem 3D lends its pictures; its enemies come once GZDoom has been seen running the code WadSmith writes for them.
-        if ((_services.Games ?? []).FirstOrDefault(g => g.Game.Engine == "build") is { } duke)
+        // Duke Nukem 3D and Quake lend their pictures; Duke's enemies come once GZDoom has been seen running the code WadSmith
+        // writes for them, Quake's when its models can be drawn as sprites.
+        foreach (var engine in new[] { "build", "quake" })
         {
-            Sources.Add(new SourceRow(this, duke, duke.Game.Title, false, false));
+            if ((_services.Games ?? []).FirstOrDefault(g => g.Game.Engine == engine) is { } lender) Sources.Add(new SourceRow(this, lender, lender.Game.Title, false, false));
         }
 
         foreach (var row in Sources) row.Note = Offer(row);

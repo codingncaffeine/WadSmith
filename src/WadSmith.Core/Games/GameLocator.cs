@@ -232,6 +232,26 @@ public static partial class GameLocator
                     continue;
                 }
 
+                // Quake's first PAK file (Phase 8b.6): its textures can be borrowed; GZDoom does not play it. Only PAK0, with the
+                // palette and Quake's first level, stands for the game (its other PAK files are read with it).
+                if (real.EndsWith(".pak", StringComparison.OrdinalIgnoreCase))
+                {
+                    archives++;
+                    if (Path.GetFileName(real).Equals("pak0.pak", StringComparison.OrdinalIgnoreCase) && Quake.PakArchive.IsPak(real) && GameCatalog.Get("quake") is { } quake)
+                    {
+                        try
+                        {
+                            var pak = Quake.PakArchive.Open(real);
+                            if (quake.MustContain.All(n => pak.Names.Contains(n, StringComparer.OrdinalIgnoreCase))) here.Add(new FoundGame(quake, real, new FileInfo(real).Length, Iwad: false));
+                        }
+                        catch (CorruptDataException)
+                        {
+                        }
+                    }
+
+                    continue;
+                }
+
                 wads++;
                 var names = WadDirectory.ReadNames(real);
                 if (names is null) continue;
@@ -407,7 +427,7 @@ public static partial class GameLocator
             IEnumerable<string> files, dirs;
             try
             {
-                files = Directory.EnumerateFiles(dir, "*", options).Where(f => f.EndsWith(".wad", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".iwad", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".grp", StringComparison.OrdinalIgnoreCase) || (archives && IsArchive(f))).ToList();
+                files = Directory.EnumerateFiles(dir, "*", options).Where(f => f.EndsWith(".wad", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".iwad", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".grp", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".pak", StringComparison.OrdinalIgnoreCase) || (archives && IsArchive(f))).ToList();
                 dirs = d < depth ? Directory.EnumerateDirectories(dir, "*", options).ToList() : [];
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

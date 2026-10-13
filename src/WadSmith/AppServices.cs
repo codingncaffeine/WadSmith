@@ -97,7 +97,7 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
     public IReadOnlyList<Func<GameResources?>> OtherGameOpeners(GameResources? own)
     {
         var games = Games ?? [];
-        return [.. games.Where(g => (g.Game.Supported || g.Game.Engine == "build") && g.Game.Id != own?.Game.Id && g.Game.Id != own?.Game.AddOnFor).DistinctBy(g => g.Game.Id).Select(g => (Func<GameResources?>)(() =>
+        return [.. games.Where(g => (g.Game.Supported || g.Game.Engine is "build" or "quake") && g.Game.Id != own?.Game.Id && g.Game.Id != own?.Game.AddOnFor).DistinctBy(g => g.Game.Id).Select(g => (Func<GameResources?>)(() =>
         {
             try
             {
