@@ -282,6 +282,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
             e.Set(map.Lines[1], l => l.Special, (l, v) => l.Special = v, Doors.DoorRaise);
             e.Set(map.Lines[1], l => l.Args[0], (l, v) => l.Args[0] = v, 7);
             e.Flag(map.Lines[1], "playeruse", true);
+            e.Set(map.Lines[1].Front, x => x.Middle, (x, v) => x.Middle = v, "SW1BRCOM");
         });
         var problem = Only(map, "tag-nowhere");
         Assert.Contains("tag 7", problem.Sentence);

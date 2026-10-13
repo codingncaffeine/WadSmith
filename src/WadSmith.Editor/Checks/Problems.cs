@@ -74,6 +74,7 @@ public static class Problems
         if (resources is not null) UnknownTextures(f, resources, found);
         if (resources is not null) CannotShow(f, resources, found);
         TwoSidedFlag(f, found);
+        if (resources is not null) StillSwitches(geometry, resources, found);
         ThingsOutside(geometry, resources, found);
         Slivers(geometry, found);
         StuckInWalls(geometry, resources, found);
@@ -443,6 +444,33 @@ public static class Problems
         if (names.Count == 0) return;
         var list = string.Join(", ", names.Take(4)) + (names.Count > 4 ? ", …" : "");
         found.Add(new Problem("unknown-texture", Severity.Error, $"{Count(where.Count, "A wall or floor uses", "walls and floors use")} a picture the game does not have ({list}); the game shows a checkerboard there.", where));
+    }
+
+    /// <summary>
+    /// Switches whose picture is none of the game's switch pictures (Eureka's "non-animating switch textures"): the player
+    /// uses the wall and sees nothing change. A switch is a wall the player uses whose action works elsewhere or ends the
+    /// map. A door's or lift's own walls are not switches: an action on the area beside the wall itself (tag 0, or the
+    /// tag of a room on either side), as id's maps open doors and lower lifts from their own edges.
+    /// </summary>
+    private static void StillSwitches(MapGeometry g, GameResources resources, List<Problem> found)
+    {
+        var f = g.Frame;
+        var pictures = resources.SwitchPictures;
+        if (pictures.Count == 0) return;
+        var still = new List<Element>();
+        foreach (var l in f.Lines)
+        {
+            if (l.Element is null || l.Front < 0 || l.Special == 0 || !Flag(l.Extra, "playeruse")) continue;
+            if (Switches.NamesAreas(l.Special) && (l.Args[0] == 0 || g.SectorsTagged(l.Args[0]).Any(s => s == f.Sides[l.Front].Sector || (l.Back >= 0 && s == f.Sides[l.Back].Sector)))) continue;
+            var face = f.Sides[l.Front];
+            // An unseen wall (nothing drawn on its face) has no picture to change.
+            if (face.Middle == "-" && face.Top == "-" && face.Bottom == "-") continue;
+            if (pictures.Contains(face.Middle) || pictures.Contains(face.Top) || pictures.Contains(face.Bottom)) continue;
+            still.Add(l.Element);
+        }
+
+        if (still.Count == 0) return;
+        found.Add(new Problem("still-switch", Severity.Warning, $"{Count(still.Count, "A switch shows", "switches show")} no switch picture, so nothing changes on the wall when the player uses {(still.Count == 1 ? "it" : "them")}. Give {(still.Count == 1 ? "it" : "them")} one of the game's switch pictures (SW1… in Doom).", still));
     }
 
     private static void TwoSidedFlag(MapFrame f, List<Problem> found)

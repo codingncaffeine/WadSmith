@@ -32,6 +32,11 @@ public sealed class GameResources
         Skies = [.. textures.Walls.Where(w => w.Name.StartsWith("SKY", StringComparison.OrdinalIgnoreCase)).Select(w => w.Name).Order(StringComparer.OrdinalIgnoreCase)];
     }
 
+    /// <summary>The pictures that are switches in this game, both states (GZDoom's list, then the files' ANIMDEFS and SWITCHES); read on first use.</summary>
+    public IReadOnlySet<string> SwitchPictures => _switches?.Value ?? new HashSet<string>();
+
+    private Lazy<IReadOnlySet<string>>? _switches;
+
     /// <summary>The music the game (and the project) has, by name, A to Z: every lump or file holding a MUS or MIDI score, or an Ogg, FLAC or MP3 stream.</summary>
     public IReadOnlyList<string> Music { get; }
 
@@ -275,6 +280,7 @@ public sealed class GameResources
 
         var made = new GameResources(found.Game, files, stack, new TextureLibrary(stack), new SpriteIndex(stack), things, FindMusic(stack)) { ProjectFiles = projectFiles };
         foreach (var sky in skyboxes) made.AddSky(sky);
+        made._switches = new(() => Core.Graphics.SwitchPictures.Read(engineData, found.Game.Engine, stack));
         return made;
     }
 
