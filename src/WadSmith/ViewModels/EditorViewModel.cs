@@ -66,11 +66,17 @@ internal sealed partial class EditorViewModel : ObservableObject
         }
 
         Problems = new ProblemsViewModel(session);
-        TextureShelf = ShelfViewModel.Textures(session.Resources, () => services.OtherGameOpeners(session.Resources));
+        TextureShelf = ShelfViewModel.Textures(session.Resources, () => services.OtherGameOpeners(session.Resources), session.Project.CopiedNow);
         TextureShelf.AddLabel = "Add a picture or material…";
         TextureShelf.AddTip = "Brings in a picture of your own as a texture for walls, doors and floors: a still picture, an animated GIF, WebP or PNG (GZDoom plays it at its own pace), or any picture of a PBR material set (a colour picture with its normal, roughness, metal or occlusion maps, as ambientCG and Poly Haven give them; GZDoom lights it by its maps).";
         TextureShelf.Add = () => _ = AddMaterialAsync();
         session.TexturesChanged += TextureShelf.Refresh;
+        session.MapsAdded += () =>
+        {
+            _projectMaps = null;
+            OnPropertyChanged(nameof(ProjectMaps));
+            OnPropertyChanged(nameof(MapChooserLabel));
+        };
         _looks = [.. Look.Available(session.Engine, session.Resources)];
         LookNames = [.. _looks.Select(l => l.Name)];
         ObjectShelf = ShelfViewModel.Objects(session.Resources, () => WadSmith.Editor.Editing.Prefabs.In(session.Project.Folder), () => services.OtherGameOpeners(session.Resources), ModelNumbers);

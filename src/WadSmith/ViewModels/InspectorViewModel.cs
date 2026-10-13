@@ -501,6 +501,24 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>Asks the user for a 360° picture (set by the view); null when they chose none.</summary>
     public Func<Task<string?>>? PickPanorama { get; set; }
 
+    /// <summary>Asks the user for a Wolfenstein 3D MAPHEAD file (set by the view); null when they chose none.</summary>
+    public Func<Task<string?>>? PickGrid { get; set; }
+
+    /// <summary>The grid map file picked and its levels, while the user chooses one; null otherwise.</summary>
+    private (string Path, IReadOnlyList<string> Levels)? _grid;
+
+    private int _gridLevel;
+
+    /// <summary>"Bring in a Wolfenstein 3D level…": the file picker, its levels read on a worker, then the level box in the map's settings.</summary>
+    private async Task PickGridAsync()
+    {
+        if (PickGrid is null || await PickGrid().ConfigureAwait(true) is not { } path) return;
+        var levels = await _session.GridLevelsAsync(path).ConfigureAwait(true);
+        if (levels.Count == 0) return;
+        (_grid, _gridLevel) = ((path, levels), 0);
+        Rebuild();
+    }
+
     /// <summary>"Make a sky from a 360° picture…": the file picker, then the sky made on a worker and set as the map's.</summary>
     private async Task MakeSkyAsync()
     {
@@ -1001,6 +1019,17 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new ChoiceRow("Sky", "The sky seen over the map (sky1): the game's own for this slot, or any sky the game has.", [TheGames(defaults?.Sky, "sky"), .. skies],
             () => Index(skies, Entry().Sky), i => _session.ChangeMapSettings(m => m with { Sky = i == 0 ? null : skies[i - 1] })));
         Rows.Add(new ActionRow("Make a sky from a 360° picture…", "Turns a 360° picture (a panorama twice as wide as tall, or an HDRI photograph in .hdr) into a sky all round and overhead, and makes it this map's sky; GZDoom draws it as a skybox.", () => _ = MakeSkyAsync()));
+        Rows.Add(new ActionRow("Bring in a Wolfenstein 3D level…", "Turns a level of your own Wolfenstein 3D (or Spear of Destiny) into rooms, doors and walls in this game's pictures, as a new map of this project: pick its MAPHEAD file, then the level.", () => _ = PickGridAsync()));
+        if (_grid is { } grid)
+        {
+            Rows.Add(new ChoiceRow("Wolfenstein 3D level", "Which level of the file to bring in.", grid.Levels, () => _gridLevel, i => _gridLevel = i));
+            Rows.Add(new ActionRow("Make this level a map of the project", "Brings the level in as the project's next map; open it from the map chooser at the top.", () =>
+            {
+                _session.ImportGridLevel(grid.Path, _gridLevel);
+                _grid = null;
+                Rebuild();
+            }));
+        }
 
         var ends = ProjectMapInfo.EndToTitle;
         var slots = Choices([.. defaults?.Slots ?? [], .. _session.Project.Maps().Select(m => m.Slot)], Entry().Next is { } n && n != ends ? n : null, sorted: false);

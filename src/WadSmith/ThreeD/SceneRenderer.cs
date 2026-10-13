@@ -212,6 +212,19 @@ internal sealed unsafe class SceneRenderer : IDisposable
 
     /// <summary>The game's light as this renderer draws it (see <see cref="Lighting"/>); the live view uses the measured defaults.</summary>
     public Lighting Light { get; set; } = Lighting.Measured;
+
+    /// <summary>Textures that move (the project's ANIMDEFS from pictures brought in): the first frame's name, then every frame and its tics.</summary>
+    public IReadOnlyDictionary<string, (string[] Frames, int[] Tics)> Animations { get; set; } = new Dictionary<string, (string[], int[])>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Whether anything in the scene moves, so the picture must be drawn again as time passes.</summary>
+    public bool Animates => Animations.Count > 0 && _batches.Exists(b => Animations.ContainsKey(b.Texture));
+
+    private readonly System.Diagnostics.Stopwatch _time = System.Diagnostics.Stopwatch.StartNew();
+
+    /// <summary>The frame a texture shows now: its animation's at this tic (35 a second, as GZDoom counts), or itself.</summary>
+    private string Frame(string texture) =>
+        Animations.TryGetValue(texture, out var animation) && animation.Frames.Length > 0 ? WadSmith.Editor.Editing.Pictures.FrameAt(animation, _time.Elapsed.TotalSeconds) : texture;
+
     private readonly int _sprites;
     private readonly int _sViewProjection;
     private readonly int _sTextureSize;
@@ -501,7 +514,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
         foreach (var (vao, _, count, kind, texture, opacity) in _batches)
         {
             if (opacity < 1 || kind == SurfaceKind.Model) continue;
-            var (id, w, h) = TextureFor(texture, kind);
+            var (id, w, h) = TextureFor(Frame(texture), kind);
             _gl.BindTexture(Gl.Texture2D, id);
             _gl.Uniform2f(_uTextureSize, w, h);
             _gl.Uniform1i(_uSky, kind == SurfaceKind.Sky ? 1 : 0);
@@ -517,7 +530,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
             foreach (var (vao, _, count, kind, texture, _) in _batches)
             {
                 if (kind != SurfaceKind.Model) continue;
-                var (id, w, h) = TextureFor(texture, kind);
+                var (id, w, h) = TextureFor(Frame(texture), kind);
                 _gl.BindTexture(Gl.Texture2D, id);
                 _gl.Uniform2f(_uTextureSize, w, h);
                 _gl.BindVertexArray(vao);
@@ -566,7 +579,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
             foreach (var (vao, _, count, kind, texture, opacity) in _batches)
             {
                 if (opacity >= 1) continue;
-                var (id, w, h) = TextureFor(texture, kind);
+                var (id, w, h) = TextureFor(Frame(texture), kind);
                 _gl.BindTexture(Gl.Texture2D, id);
                 _gl.Uniform2f(_uTextureSize, w, h);
                 _gl.Uniform1i(_uSky, kind == SurfaceKind.Sky ? 1 : 0);

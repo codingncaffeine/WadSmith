@@ -19,6 +19,7 @@ internal sealed unsafe class Renderer3D : IDisposable
     private MapScene? _scene;
     private GameResources? _resources;
     private bool _sceneChanged;
+    private IReadOnlyDictionary<string, (string[] Frames, int[] Tics)>? _animations;
     private Camera3D _camera;
     private bool _inside;
     private WriteableBitmap[]? _bitmaps;
@@ -43,12 +44,13 @@ internal sealed unsafe class Renderer3D : IDisposable
     /// <summary>Raised on the render thread, once, when the 3D view cannot run here (in a sentence).</summary>
     public event Action<string>? Failed;
 
-    public void Show(MapScene scene, GameResources? resources)
+    public void Show(MapScene scene, GameResources? resources, IReadOnlyDictionary<string, (string[] Frames, int[] Tics)>? animations = null)
     {
         lock (_gate)
         {
             _scene = scene;
             _resources = resources;
+            _animations = animations;
             _sceneChanged = true;
             _dirty = true;
         }
@@ -145,11 +147,17 @@ internal sealed unsafe class Renderer3D : IDisposable
         {
             while (!_stopping)
             {
-                _wake.WaitOne();
+                // While a texture moves, the picture is drawn again each tic (35 a second, as GZDoom plays it).
+                if (!_wake.WaitOne(renderer.Animates ? 28 : Timeout.Infinite))
+                {
+                    lock (_gate) _dirty = true;
+                }
+
                 if (_stopping) break;
                 MapScene? scene;
                 GameResources? resources;
                 bool sceneChanged;
+                IReadOnlyDictionary<string, (string[] Frames, int[] Tics)>? animations;
                 Camera3D camera;
                 bool inside;
                 WriteableBitmap[]? bitmaps;
@@ -163,6 +171,7 @@ internal sealed unsafe class Renderer3D : IDisposable
                     _dirty = false;
                     (scene, resources, sceneChanged, camera, inside, bitmaps, width, height) = (_scene, _resources, _sceneChanged, _camera, _inside, _bitmaps, _width, _height);
                     _sceneChanged = false;
+                    animations = _animations;
                     highlight = _highlight;
                     _highlight = null;
                     hover = _hover;
@@ -171,7 +180,11 @@ internal sealed unsafe class Renderer3D : IDisposable
                     _ghostChanged = false;
                 }
 
-                if (sceneChanged && scene is not null) renderer.Upload(scene, resources);
+                if (sceneChanged && scene is not null)
+                {
+                    renderer.Upload(scene, resources);
+                    renderer.Animations = animations ?? new Dictionary<string, (string[], int[])>();
+                }
                 if (highlight is { } h) renderer.Highlight(h.Surfaces, h.Sprites);
                 if (hover is { } hv) renderer.Hover(hv.Surfaces, hv.Sprites);
                 if (ghost is { } gh) renderer.Ghost(gh.Quad, gh.Fits);

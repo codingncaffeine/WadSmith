@@ -74,6 +74,23 @@ public sealed class PictureTests
     }
 
     [Fact]
+    public void TheEditorPlaysAnAnimationAtGZDoomsPace()
+    {
+        // Frame A for 2 tics, B for 4: 6 tics in all, 35 a second.
+        var animation = (new[] { "A", "B" }, new[] { 2, 4 });
+        Assert.Equal("A", Pictures.FrameAt(animation, 0));
+        Assert.Equal("A", Pictures.FrameAt(animation, 1.9 / 35));
+        Assert.Equal("B", Pictures.FrameAt(animation, 2.1 / 35));
+        Assert.Equal("B", Pictures.FrameAt(animation, 5.9 / 35));
+        Assert.Equal("A", Pictures.FrameAt(animation, 6.1 / 35));
+
+        // The project's record gives the 3D view each animation by its first frame.
+        var animations = Pictures.Animations([new WadSmith.Core.Projects.CopiedAsset { Kind = "animation", Game = "picture", Original = "x.gif", Name = "PORTA|2|2,4", File = Pictures.AnimationFile }]);
+        Assert.Equal(["PORTA000", "PORTA001"], animations["PORTA000"].Frames);
+        Assert.Equal([2, 4], animations["PORTA000"].Tics);
+    }
+
+    [Fact]
     public void ManyFramesAreThinnedRunningAsLong()
     {
         var one = new RgbaImage(1, 1);

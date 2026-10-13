@@ -630,6 +630,9 @@ foreach (var pose in poses)
                 for (var i = 0; i < 100 && view3d.SceneVersion < session.Map.Version; i++) Pump(0.05);
                 Pump(1.5);
                 Save("editor-3d-picture");
+                // A moving picture moves in the 3D view: the same view a moment later.
+                Pump(0.4);
+                Save("editor-3d-picture-later");
                 break;
             }
 

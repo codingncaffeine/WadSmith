@@ -96,7 +96,7 @@ internal sealed class View3D : Control
             if (!ReferenceEquals(r.Session, Session) || _renderer is null) return;
             _scene = r.Scene;
             if (!_framed) Frame();
-            _renderer.Show(r.Scene, r.Session.Resources);
+            _renderer.Show(r.Scene, r.Session.Resources, WadSmith.Editor.Editing.Pictures.Animations(r.Session.Project.CopiedNow()));
             SendCamera();
             RequestTint();
 

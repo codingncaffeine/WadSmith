@@ -217,19 +217,36 @@ internal sealed partial class ShelfViewModel : ObservableObject
     /// (<paramref name="others"/> lists them, opened on the shelf's own threads), copied into the project when used. From a game of the same
     /// family (Doom for a Doom II map) only the pictures this game lacks.
     /// </summary>
-    public static ShelfViewModel Textures(GameResources? game, Func<IReadOnlyList<Func<GameResources?>>>? others = null) => new ShelfViewModel(
+    public static ShelfViewModel Textures(GameResources? game, Func<IReadOnlyList<Func<GameResources?>>>? others = null, Func<IReadOnlyList<WadSmith.Core.Projects.CopiedAsset>>? copied = null) => new ShelfViewModel(
         game is null ? "Choose a base game to see its textures." : "",
-        ["All", "Walls", "Floors and ceilings"],
+        ["All", "Walls", "Floors and ceilings", PictureGroup],
         Once(() =>
         {
             if (game is null) return [];
             var tiles = new List<ShelfTile>();
+
+            // The project's own pictures (brought in, Phase 7 and 11): an animation is one tile, its first frame, under the
+            // picture's own name; its other frames are files GZDoom steps through, not pictures to pick.
+            var record = copied?.Invoke() ?? [];
+            var animations = WadSmith.Editor.Editing.Pictures.Animations(record);
+            var frames = animations.Values.SelectMany(a => a.Frames.Skip(1)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var own = record.Where(c => c.Kind == "wall" && c.Game is "picture" or "pbr").GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
             foreach (var (infos, group, get) in new (IEnumerable<TextureInfo>, string, Func<string, RgbaImage?>)[] { (game.Textures.Walls, "Walls", game.Textures.GetWall), (game.Textures.Flats, "Floors and ceilings", game.Textures.GetFlat) })
             {
                 foreach (var info in infos.OrderBy(i => i.Name, StringComparer.Ordinal))
                 {
-                    if (info.IsNull || info.Name is "-" or "") continue;
+                    if (info.IsNull || info.Name is "-" or "" || frames.Contains(info.Name)) continue;
                     var picture = get(info.Name) is { } image ? Imaging.ToBitmap(Shrink(image)) : null;
+                    if (own.TryGetValue(info.Name, out var mine))
+                    {
+                        var title = Path.GetFileNameWithoutExtension(mine.Original);
+                        var moves = animations.TryGetValue(info.Name, out var animation)
+                            ? $" It moves: {animation.Frames.Length} frames, played by GZDoom (and the 3D view) at the picture's own pace."
+                            : "";
+                        tiles.Add(new ShelfTile(title, $"{mine.Original}, your picture ({info.Name}, {info.Width} × {info.Height}).{moves} Drag it onto a wall, a door or a floor; the Inspector's Fit makes one copy fill it.", PictureGroup, $"{title} {info.Name} {mine.Original} picture yours".ToLowerInvariant(), picture, new ShelfDrop(info.Name, 0, title)));
+                        continue;
+                    }
+
                     var kind = group == "Walls" ? "Wall texture" : "Floor or ceiling";
                     tiles.Add(new ShelfTile(info.Name, $"{kind} {info.Name}, {info.Width} × {info.Height}. Drag it onto a wall, a floor or a ceiling.", group, info.Name.ToLowerInvariant(), picture, new ShelfDrop(info.Name, 0, info.Name)));
                 }
@@ -267,6 +284,9 @@ internal sealed partial class ShelfViewModel : ObservableObject
     ];
 
     private const string PrefabGroup = "Prefabs";
+
+    /// <summary>The group of the pictures brought in: still, moving, and material sets.</summary>
+    public const string PictureGroup = "Your pictures";
 
     /// <summary>The group of the props brought in from 3D model files (Phase 11).</summary>
     public const string ModelGroup = "Your models";

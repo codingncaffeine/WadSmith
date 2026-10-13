@@ -1197,6 +1197,60 @@ public sealed class EditorSession : IDisposable
         Notice?.Invoke(why ?? $"The {(ceiling ? "ceiling" : "floor")} picture covers this room once, its top to the north. Undo puts it back.");
     }
 
+    /// <summary>The level names of a Wolfenstein 3D <c>MAPHEAD.*</c> file, read on a worker; empty when it cannot be read (said in the notice).</summary>
+    public async Task<IReadOnlyList<string>> GridLevelsAsync(string mapHead)
+    {
+        try
+        {
+            return await Task.Run(() => (IReadOnlyList<string>)[.. Core.Grids.WolfMaps.Read(mapHead).Select(l => l.Name)]).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+        {
+            Notice?.Invoke($"{Path.GetFileName(mapHead)} could not be read as Wolfenstein 3D's levels. {ex.Message}");
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Makes level <paramref name="index"/> of a Wolfenstein 3D <c>MAPHEAD.*</c> file a new map of this project (Phase 11's grid
+    /// maps) on a worker: rooms, doors and walls in this game's pictures, in the project's next free slot. Raises
+    /// <see cref="MapsAdded"/>.
+    /// </summary>
+    public void ImportGridLevel(string mapHead, int index)
+    {
+        var engine = Engine;
+        var resources = Resources;
+        Task.Run(() =>
+        {
+            string slot, name;
+            try
+            {
+                var level = Core.Grids.WolfMaps.Read(mapHead)[index];
+                var walls = Look.Available(engine, resources).Select(l => l.Look.Wall).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                slot = GridRooms.NextSlot(Project);
+                name = level.Name;
+                var map = GridRooms.Build(GridRooms.FromWolf(level), slot, Look.For(engine), walls);
+                map = Core.Translation.ClassicTranslation.ForProject(Project, map, Hooks.EngineData);
+                Project.SaveMap(map, level.Name);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException or ArgumentException or IndexOutOfRangeException)
+            {
+                Log.Warn($"Bringing in a Wolfenstein 3D level from {mapHead} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"The level could not be brought in. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                Notice?.Invoke($"{name} is {slot} of this project: its rooms, doors and walls in this game's pictures. Open it from the map chooser at the top.");
+                MapsAdded?.Invoke();
+            });
+        });
+    }
+
+    /// <summary>Raised on the UI thread when the project gained a map (a level brought in).</summary>
+    public event Action? MapsAdded;
+
     /// <summary>Raised on the UI thread when a 3D model has been brought in or turned.</summary>
     public event Action? PropsChanged;
 

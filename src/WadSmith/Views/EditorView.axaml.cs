@@ -34,6 +34,7 @@ public partial class EditorView : UserControl
             vm.PickModel = PickModelAsync;
             vm.PickMaterial = PickMaterialAsync;
             vm.Inspector.PickPanorama = PickPanoramaAsync;
+            vm.Inspector.PickGrid = PickGridAsync;
             vm.ViewSize = () =>
             {
                 var scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
@@ -234,6 +235,19 @@ public partial class EditorView : UserControl
             Title = "Make a sky from a 360° picture",
             AllowMultiple = false,
             FileTypeFilter = [new("360° pictures (JPG, PNG, HDR)") { Patterns = ["*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.png", "*.PNG", "*.hdr", "*.HDR", "*.webp", "*.WEBP"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
+        }).ConfigureAwait(true);
+        return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
+    }
+
+    /// <summary>The file picker for "Bring in a Wolfenstein 3D level…": the game's MAPHEAD file.</summary>
+    private async Task<string?> PickGridAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage) return null;
+        var picked = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "Bring in a Wolfenstein 3D level: pick the game's MAPHEAD file",
+            AllowMultiple = false,
+            FileTypeFilter = [new("Wolfenstein 3D levels (MAPHEAD.WL6, .WL1, .SOD…)") { Patterns = ["MAPHEAD.*", "maphead.*"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
         }).ConfigureAwait(true);
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }

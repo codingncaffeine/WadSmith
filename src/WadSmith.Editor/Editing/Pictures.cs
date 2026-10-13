@@ -85,6 +85,38 @@ public static class Pictures
         static string Frame(string stem, int i) => stem + i.ToString("000", CultureInfo.InvariantCulture);
     }
 
+    /// <summary>The frame an animation shows <paramref name="seconds"/> after it began: GZDoom counts 35 tics a second and loops.</summary>
+    public static string FrameAt((string[] Frames, int[] Tics) animation, double seconds)
+    {
+        var total = animation.Tics.Sum();
+        if (animation.Frames.Length == 0) return "";
+        if (total <= 0) return animation.Frames[0];
+        var tic = (long)Math.Floor(seconds * 35) % total;
+        for (var i = 0; i < animation.Frames.Length; i++)
+        {
+            tic -= animation.Tics[i];
+            if (tic < 0) return animation.Frames[i];
+        }
+
+        return animation.Frames[^1];
+    }
+
+    /// <summary>The project's animations by their first frame's name: every frame and its tics (what its ANIMDEFS says), for the 3D view to play.</summary>
+    public static Dictionary<string, (string[] Frames, int[] Tics)> Animations(IReadOnlyList<CopiedAsset> copied)
+    {
+        var animations = new Dictionary<string, (string[] Frames, int[] Tics)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var animation in copied.Where(c => c.Kind == "animation"))
+        {
+            var parts = animation.Name.Split('|');
+            if (parts.Length < 3 || !int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) || count < 1) continue;
+            var tics = parts[2].Split(',').Select(t => int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? Math.Max(1, n) : 1).ToArray();
+            var frames = Enumerable.Range(0, count).Select(i => parts[0] + i.ToString("000", CultureInfo.InvariantCulture)).ToArray();
+            animations[frames[0]] = (frames, [.. Enumerable.Range(0, count).Select(i => i < tics.Length ? tics[i] : 1)]);
+        }
+
+        return animations;
+    }
+
     /// <summary>Writes the project's ANIMDEFS from its animations; an ANIMDEFS of the user's own is left alone.</summary>
     public static void WriteAnimations(Project project)
     {

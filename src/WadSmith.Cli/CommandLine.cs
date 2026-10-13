@@ -46,6 +46,7 @@ public static class CommandLine
         new Commands.GenerateCommand(),
         new Commands.AddModelCommand(),
         new Commands.AddPictureCommand(),
+        new Commands.ImportGridCommand(),
         new Commands.RecogniseCommand(),
         new Commands.LandmarksCommand(),
         new Commands.TourCommand(),

@@ -192,6 +192,73 @@ public sealed class ModelPropInTheWindowTests
     }
 
     [Fact]
+    public async Task TheInspectorBringsAWolfensteinLevelInAsANewMap()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var (head, maps) = GridMapTests.Wolf();
+        var mapHead = Path.Combine(temp.Path, "MAPHEAD.WL6");
+        File.WriteAllBytes(mapHead, head);
+        File.WriteAllBytes(Path.Combine(temp.Path, "GAMEMAPS.WL6"), maps);
+        var said = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(Path.Combine(temp.Path, "profile"), Path.GetDirectoryName(wad)!);
+            try
+            {
+                var editor = Ui.NewMap(vm);
+                editor.Session.Selection.Clear();
+                editor.Panel = SidePanel.Inspector;
+                Ui.Pump(0.5);
+                editor.Inspector.PickGrid = () => Task.FromResult<string?>(mapHead);
+                Click(window, window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && b.DataContext is ActionRow { Label: "Bring in a Wolfenstein 3D level…" }));
+                for (var i = 0; i < 200 && !editor.Inspector.Rows.OfType<ChoiceRow>().Any(r => r.Label == "Wolfenstein 3D level"); i++) Ui.Pump(0.05);
+                var levels = string.Join(",", editor.Inspector.Rows.OfType<ChoiceRow>().Single(r => r.Label == "Wolfenstein 3D level").Options);
+                Click(window, window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && b.DataContext is ActionRow { Label: "Make this level a map of the project" }));
+                for (var i = 0; i < 400 && editor.ProjectMaps.Count < 2; i++) Ui.Pump(0.05);
+                return $"levels {levels}; maps {string.Join(",", editor.ProjectMaps.Select(m => m.Label))}";
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.Matches("^levels Test; maps (E1M1|MAP01),(E1M2|MAP02) · Test$", said);
+    }
+
+    [Fact]
+    public async Task AnAnimatedGifIsOneTileOnTheShelf()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var gif = Path.Combine(temp.Path, "portal_loop.gif");
+        File.WriteAllBytes(gif, PictureTests.Gif());
+        var said = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(Path.Combine(temp.Path, "profile"), Path.GetDirectoryName(wad)!);
+            try
+            {
+                var editor = Ui.NewMap(vm);
+                editor.ShowTextures = true;
+                var shelf = editor.TextureShelf;
+                for (var i = 0; i < 400 && shelf.Tiles.Count == 0; i++) Ui.Pump(0.05);
+                editor.PickMaterial = () => Task.FromResult<string?>(gif);
+                Click(window, window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && AutomationProperties.GetName(b) == "Add a picture or material…"));
+                for (var i = 0; i < 400 && !shelf.Tiles.Any(t => t.Group == ShelfViewModel.PictureGroup); i++) Ui.Pump(0.05);
+                var mine = shelf.Tiles.Where(t => t.Group == ShelfViewModel.PictureGroup).Select(t => $"{t.Label}={t.Drop.Texture}");
+                var frames = shelf.Tiles.Count(t => t.Drop.Texture is { } n && n.StartsWith("PORTA", StringComparison.Ordinal));
+                return $"{string.Join(",", mine)}; tiles of its frames {frames}";
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.Equal("portal_loop=PORTA000; tiles of its frames 1", said);
+    }
+
+    [Fact]
     public async Task TheTextureShelfsButtonBringsAMaterialInAsATexture()
     {
         var wad = GameFiles.Require("freedoom2.wad");
@@ -212,8 +279,8 @@ public sealed class ModelPropInTheWindowTests
                 for (var i = 0; i < 400 && shelf.Tiles.Count == 0; i++) Ui.Pump(0.05);
                 editor.PickMaterial = () => Task.FromResult<string?>(Path.Combine(source, "Tiles012_1K-PNG_NormalGL.png"));
                 Click(window, window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && AutomationProperties.GetName(b) == "Add a picture or material…"));
-                for (var i = 0; i < 400 && !shelf.Tiles.Any(t => t.Label == "TILES012"); i++) Ui.Pump(0.05);
-                var tile = shelf.Tiles.FirstOrDefault(t => t.Label == "TILES012");
+                for (var i = 0; i < 400 && !shelf.Tiles.Any(t => t.Drop.Texture == "TILES012"); i++) Ui.Pump(0.05);
+                var tile = shelf.Tiles.FirstOrDefault(t => t.Drop.Texture == "TILES012");
                 return $"{tile?.Label}:{tile?.Group}:{tile?.Picture is not null}; status '{editor.Status}'";
             }
             finally
@@ -222,6 +289,6 @@ public sealed class ModelPropInTheWindowTests
             }
         });
 
-        Assert.Equal("TILES012:Walls:True; status 'The material is the texture TILES012, with a normal map: under Textures, ready for walls, doors and floors. GZDoom lights it by its maps under dynamic lights.'", said);
+        Assert.Equal("Tiles012 1K PNG:Your pictures:True; status 'The material is the texture TILES012, with a normal map: under Textures, ready for walls, doors and floors. GZDoom lights it by its maps under dynamic lights.'", said);
     }
 }
