@@ -385,7 +385,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-find" or "editor-brightness" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-make-exit" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-model" or "editor-3d-picture" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-climb" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark" or "landmark-sheet" or "editor-explain" or "editor-export" or "editor-tour":
+        case "editor" or "editor-find" or "editor-brightness" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-make-exit" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-model" or "editor-3d-picture" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-climb" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark" or "landmark-sheet" or "editor-explain" or "editor-export" or "editor-play-in" or "editor-tour":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -1273,6 +1273,28 @@ foreach (var pose in poses)
                     }
                 }
 
+                break;
+            }
+
+            if (pose == "editor-play-in")
+            {
+                // Play's arrow (Phase 12) with its Play in list open: GZDoom and the classic ports installed for this game.
+                for (var i = 0; i < 100 && editor.PlayInMenu.Count < 2; i++) Pump(0.05);
+                var split = window.GetVisualDescendants().OfType<Avalonia.Controls.SplitButton>().First();
+                split.Flyout!.ShowAt(split);
+                Pump(0.3);
+                var playIn = Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(Avalonia.Controls.TopLevel.GetTopLevel(split)!).OfType<Avalonia.Controls.MenuItem>()
+                    .Concat(window.GetVisualDescendants().OfType<Avalonia.Controls.MenuItem>())
+                    .FirstOrDefault(m => m.Header as string == "Play in");
+                foreach (var popup in Avalonia.Controls.Primitives.OverlayLayer.GetOverlayLayer(split)?.GetVisualDescendants().OfType<Avalonia.Controls.MenuItem>() ?? [])
+                {
+                    if (popup.Header as string == "Play in") playIn = popup;
+                }
+
+                playIn?.Open();
+                Pump(0.5);
+                Console.WriteLine($"play in: {string.Join(" | ", editor.PlayInMenu.Select(c => c.Header.Trim()))}; menu found {playIn is not null}");
+                Save("editor-play-in");
                 break;
             }
 

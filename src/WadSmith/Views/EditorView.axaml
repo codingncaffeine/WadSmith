@@ -97,6 +97,16 @@
                         <SplitButton.Flyout>
                             <MenuFlyout>
                                 <MenuItem Header="Play from here (where the 3D view stands)" Command="{Binding PlayFromHereCommand}" InputGesture="Shift+F9" />
+                                <!-- Phase 12: GZDoom, or a classic port installed for this game, playing the map exported for it. -->
+                                <MenuItem Header="Play in" ItemsSource="{Binding PlayInMenu}">
+                                    <MenuItem.ItemContainerTheme>
+                                        <ControlTheme TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" x:DataType="vm:PlayInChoice">
+                                            <Setter Property="Header" Value="{Binding Header}" />
+                                            <Setter Property="Command" Value="{Binding Choose}" />
+                                            <Setter Property="ToolTip.Tip" Value="{Binding Tip}" />
+                                        </ControlTheme>
+                                    </MenuItem.ItemContainerTheme>
+                                </MenuItem>
                                 <Separator />
                                 <MenuItem Header="{Binding SkillHeaders[0]}" Command="{Binding ChooseSkillCommand}" CommandParameter="0" />
                                 <MenuItem Header="{Binding SkillHeaders[1]}" Command="{Binding ChooseSkillCommand}" CommandParameter="1" />

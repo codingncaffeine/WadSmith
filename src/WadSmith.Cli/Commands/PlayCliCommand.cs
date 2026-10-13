@@ -1,4 +1,5 @@
 using WadSmith.Core.Engines;
+using WadSmith.Core.Exporting;
 using WadSmith.Core.Games;
 using WadSmith.Core.Projects;
 
@@ -13,14 +14,15 @@ internal sealed class PlayCliCommand : ICommand
 
     public string Usage => """
         Usage: wadsmith-cli play PROJECT_FOLDER --print --data=FOLDER [--map=SLOT] [--skill=1-5] [--engine=PATH]
-                                 [--games=FOLDER] [--home=FOLDER] [--from="X Y ANGLE"]
+                                 [--games=FOLDER] [--home=FOLDER] [--from="X Y ANGLE"] [--port=PROGRAM]
 
         Prints the command the editor's Play starts, one argument a line, the program first: the base game,
         the project folder (and an add-on the game needs) on top, the map, the difficulty, and the engine
         settings and log WadSmith keeps in --data (the settings copied once from the GZDoom settings in the
         home folder, which is only read). --home stands in for the home folder. --from plays from a spot (Play
-        From Here: WadSmith's small add-on, written into --data, stands the player there). The command is only printed:
-        the editor plays it.
+        From Here: WadSmith's small add-on, written into --data, stands the player there). --port plays in a classic
+        port on the PATH instead (chocolate-doom, crispy-doom, dsda-doom, woof, nugget-doom …): the project is exported
+        for it into --data/play first, as the editor's Play in does. The command is only printed: the editor plays it.
         """;
 
     public int Run(CommandArgs args, TextWriter output, TextWriter error)
@@ -32,6 +34,7 @@ internal sealed class PlayCliCommand : ICommand
         var enginePath = args.Option("engine");
         var games = args.Option("games");
         var home = args.Option("home");
+        var portName = args.Option("port");
         var from = args.Option("from")?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(p => double.Parse(p, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
         args.RejectUnread();
         if (args.Positional.Count != 1) throw new UsageException("play takes one project folder.");
@@ -41,7 +44,7 @@ internal sealed class PlayCliCommand : ICommand
         var project = Project.Open(args.Positional[0]);
         var found = GameLocator.Scan([.. GameLocator.StandardFolders(Env), .. games is null ? Array.Empty<string>() : [games]]);
         var engine = enginePath is not null ? new EngineInstall("Your engine", enginePath, "custom") : EngineLocator.Find(null, Env).FirstOrDefault();
-        if (engine is null)
+        if (engine is null && portName is null)
         {
             error.WriteLine("No engine was found: install GZDoom, or pass --engine=PATH.");
             return ExitCode.Failed;
@@ -57,8 +60,30 @@ internal sealed class PlayCliCommand : ICommand
             return ExitCode.Failed;
         }
 
+        if (portName is not null)
+        {
+            var family = project.ClassicNamespace;
+            var port = PortLocator.Find(family, Env).FirstOrDefault(p => Path.GetFileName(p.Program) == portName);
+            if (port is null)
+            {
+                error.WriteLine($"{portName} was not found on the PATH, or does not play {family} maps.");
+                return ExitCode.Failed;
+            }
+
+            var exportId = port.ExportFor(project.Info.Target);
+            var wad = Path.Combine(Path.GetFullPath(data), "play", $"play-{exportId}.wad");
+            var report = ProjectExport.Write(project, exportId, wad, EngineData.Find(), null);
+            foreach (var loss in report.Losses) error.WriteLine($"lost in {exportId}: {(loss.Map is null ? "" : loss.Map + ": ")}{loss.Title}");
+            // The game's own add-on and the project's add-ons that are WADs; the project itself is the exported file.
+            var wads = request.Files.Take(request.Files.Count - 1).Where(f => f.EndsWith(".wad", StringComparison.OrdinalIgnoreCase)).ToList();
+            var (portProgram, portArguments) = PortPlay.For(port, exportId, family, request.Iwad, wads, wad, slot, skill, PortPlay.Settings(port, Path.GetFullPath(data), Env));
+            output.WriteLine(portProgram);
+            foreach (var a in portArguments) output.WriteLine(a);
+            return ExitCode.Ok;
+        }
+
         if (from is { Length: 3 }) request = request with { From = (from[0], from[1], from[2]), FromAddOn = PlayFrom.Write(Path.GetFullPath(data)) };
-        var (program, arguments) = PlayCommand.For(engine, request);
+        var (program, arguments) = PlayCommand.For(engine!, request);
         output.WriteLine(program);
         foreach (var a in arguments) output.WriteLine(a);
         return ExitCode.Ok;

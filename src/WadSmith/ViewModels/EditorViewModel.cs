@@ -103,6 +103,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         _reports = new(session.OnUiThread, ReportArrived, "the map's explanation");
         Inspector.ExplainMap += () => ExplainMapCommand.Execute(null);
         Inspector.ExportMap += () => OpenExportCommand.Execute(null);
+        FindPorts();
         _shelfSounds = new LatestOnWorker<byte[]?>(session.OnUiThread, wav =>
         {
             if (wav is not null) _services.Sound.Play(wav);
@@ -612,7 +613,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             Stairs: F("Stairs", "Drag from the bottom of a staircase to its top: steps that climb from one floor to the other, never more than the player can step up", "Stairs tool"),
             Measure: F("Measure", "Drag a line to measure it: below the map, the floors and ceilings along it as a cross-section, with the player for scale and every step the player can't take", "Measure tool"),
             Objects: F("Objects", "The game's monsters, items and decorations. Drag one onto the map to place it", "Objects shelf"),
-            Play: F("Play", "Plays this map in GZDoom. WadSmith checks it first and keeps a version; what the game says about it comes back to Problems. The arrow chooses the difficulty", "Play"),
+            Play: F("Play", "Plays this map in GZDoom, or in a classic port chosen under the arrow's Play in (the map exported for it). WadSmith checks it first and keeps a version; what the game says about it comes back to Problems. The arrow also chooses the difficulty", "Play"),
             Player: F("Player", "Shows the player's size at the pointer, green where the player fits and red where not, and marks in red where the player cannot pass: gaps under 32 across (45 on a slant) and openings under 56 high", "Show the player's size"),
             ThreeD: F("3D", "The 3D view alone, from any angle; the same key again goes back to the plan", "Show the 3D view alone"));
     }
@@ -1654,7 +1655,14 @@ internal sealed partial class EditorViewModel : ObservableObject
         if (Playing) return;
         Preflight = null;
         var engines = WadSmith.Core.Engines.EngineLocator.Find(_services.Settings.Current.EnginePath, Environment.GetEnvironmentVariable);
-        if (engines.Count == 0)
+        var port = PlayingPort;
+        if (port is not null && from is not null)
+        {
+            Hint($"Play From Here works in GZDoom only; {port.Name} starts the map at the player's start. Choose GZDoom under the Play arrow's Play in.");
+            return;
+        }
+
+        if (engines.Count == 0 && port is null)
         {
             Hint("GZDoom is not installed. Install it from your system's software centre or package manager (Arch: pacman -S gzdoom; Debian or Ubuntu: apt install gzdoom; any: flatpak install flathub org.zdoom.GZDoom), then press Play again. Editing works meanwhile.");
             return;
@@ -1689,6 +1697,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         }
 
         _waitingFrom = null;
+        if (port is not null)
+        {
+            await PlayInPortAsync(port, request).ConfigureAwait(true);
+            return;
+        }
+
         if (from is { } here) request = request with { From = here, FromAddOn = WadSmith.Core.Engines.PlayFrom.Write(data) };
 
         await Session.SaveVersion("Played").ConfigureAwait(true);
