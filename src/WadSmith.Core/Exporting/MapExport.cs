@@ -96,6 +96,7 @@ public static class MapExport
         if (tagArg >= 0 && args.Count > tagArg && args[0] > 0 && args[tagArg] == 0) return true;
         var monsters = flag("monsteruse") || flag("monsteractivate") || (flag("playercross") && flag("monstercross"));
         if (monsters && ClassicTranslation.TypeOf(special, args, f => f is not ("monsteruse" or "monsteractivate" or "monstercross") && flag(f), id, xlat, rules) is not null) return true;
+        if (flag("anycross") && ClassicTranslation.TypeOf(special, args, f => f is "playercross" or "monstercross" || (f != "anycross" && flag(f)), id, xlat, rules) is not null) return true;
         return flag("repeatspecial") && ClassicTranslation.TypeOf(special, args, f => f != "repeatspecial" && flag(f), id, xlat, rules) is not null;
     }
 
@@ -249,6 +250,22 @@ public static class MapExport
         }
 
         report.AddGrouped(map, "wall", once, _ => ($"Doors, switches and lines that work again and again, which work once in {port.Title}", false, ""));
+
+        // Lines anything crossing sets off (shots too), where the port's nearest is players and monsters walking over
+        // (GZDoom's repair to Doom's E4M3 lift).
+        var walkers = new List<(string, int)>();
+        for (var i = 0; i < m.Lines.Count; i++)
+        {
+            var l = m.Lines[i];
+            if (l.Special == 0 || !l.Flag("anycross") || ClassicTranslation.TypeOf(l, xlat, rules) is not null) continue;
+            if (ClassicTranslation.TypeOf(l.Special, l.Args, f => f is "playercross" or "monstercross" || (f != "anycross" && l.Flag(f)), l.Id, xlat, rules) is null) continue;
+            l.Extra.Remove("anycross");
+            l.SetFlag("playercross", true);
+            l.SetFlag("monstercross", true);
+            walkers.Add(("walkers", i));
+        }
+
+        report.AddGrouped(map, "wall", walkers, _ => ($"Lines anything crossing sets off, which players and monsters walking over set off in {port.Title}", false, ""));
     }
 
     /// <summary>

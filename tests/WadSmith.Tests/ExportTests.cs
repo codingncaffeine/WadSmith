@@ -167,6 +167,16 @@ public sealed class ExportTests
         var (report, back) = Export(model, "vanilla");
         Assert.Equal(["wall:once"], Keys(report));
         Assert.Contains(back.Lines, l => l.Special == 32);
+
+        // GZDoom's repair to E4M3 makes a lift anything crossing sets off: vanilla's nearest is the WR lift monsters use (88).
+        var lift = model.Lines.First(l => l.Special == 0 && l.Back < 0);
+        lift.Special = Action("Plat_DownWaitUpStayLip");
+        (lift.Args[0], lift.Args[1], lift.Args[2]) = (1, 32, 105);
+        lift.SetFlag("anycross", true);
+        lift.SetFlag("repeatspecial", true);
+        (report, back) = Export(model, "vanilla");
+        Assert.Equal(["wall:once", "wall:walkers"], Keys(report));
+        Assert.Contains(back.Lines, l => l.Special == 88 && l.Id == 1);
     }
 
     [Fact]
