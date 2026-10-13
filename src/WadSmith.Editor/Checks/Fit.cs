@@ -133,6 +133,13 @@ public static class Fit
             {
                 if (f.Sides[side].Sector is var sec and >= 0 && sec < f.Sectors.Count)
                 {
+                    // A closed area beside (a wall between two rooms, its ceiling on its floor) is a wall, not a low room.
+                    if (f.Sectors[sec].CeilingHeight <= f.Sectors[sec].FloorHeight && sec != s.Slot)
+                    {
+                        wall = true;
+                        continue;
+                    }
+
                     var rise = f.Sectors[sec].FloorHeight - area.FloorHeight;
                     if (rise > Stairs.MaxRise) ledge = Math.Max(ledge, rise);
                     else floor = Math.Max(floor, f.Sectors[sec].FloorHeight);
