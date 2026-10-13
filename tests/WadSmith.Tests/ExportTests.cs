@@ -222,6 +222,26 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void StrifesSeeThroughWallsAndRiftSpotsSurviveAVanillaExport()
+    {
+        var strife = XlatTranslator.Load(new ResourceStack([ResourceContainer.Open(GameFiles.Require("gzdoom.pk3"))]), "xlat/strife.txt");
+        var model = Tools("room 0 0 256 256\nroom 256 96 384 160\nstart 128 128\ndoor 256 128");
+        var classic = MapTranslation.Copy(model, "strife");
+        classic.Lines.ForEach(l => { l.Special = 0; l.SourceFlags = null; });
+        classic.Lines[0].SourceFlags = 0x0801;   // impassable, transparent
+        classic.Lines[1].SourceFlags = 0x1001;   // impassable, translucent
+        classic.Things.Add(new MapThing { X = 64, Y = 64, Type = 118, SourceFlags = 7 });
+        var zdoom = MapTranslation.ToZDoom(classic, strife, []);
+        foreach (var f in new[] { "skill1", "skill2", "skill3", "skill4", "skill5", "single", "coop", "dm" }) zdoom.Things[^1].SetFlag(f, true);
+        Assert.Equal(0.25, zdoom.Lines[0].Extra["alpha"].AsFloat());
+        var report = new ExportReport();
+        var lumps = MapExport.ForPort(zdoom, Port("vanilla"), "strife", strife, report);
+        Assert.Empty(report.Losses);
+        var read = MapConversion.Read(MapLocator.Find(WadContainer.FromBytes(WadWriter.Write(WadKind.Pwad, lumps.Select(l => (l.Name, (ReadOnlyMemory<byte>)l.Data))))).Single(), "strife");
+        Assert.Equal((0x0801, 0x1001), (read.Lines[0].SourceFlags!.Value & 0x1801, read.Lines[1].SourceFlags!.Value & 0x1801));
+    }
+
+    [Fact]
     public void PicturesAndDoomIIObjectsTheGameLacksStopVanilla()
     {
         var model = Tools("room 0 0 256 256\nstart 128 128\nthing 66 64 64");

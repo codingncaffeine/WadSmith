@@ -62,6 +62,20 @@ public static class MapExport
 
         var lumps = new List<(string, byte[])> { (name, []) };
         lumps.AddRange(classic.WriteLumps());
+        // Strife's see-through flags read back as the alpha they mean: compared as that.
+        if (family == "strife")
+        {
+            foreach (var l in model.Lines)
+            {
+                foreach (var (flag, alpha) in new[] { ("transparent", 0.25), ("translucent", 0.75) })
+                {
+                    if (!l.Flag(flag)) continue;
+                    l.Extra.Remove(flag);
+                    l.Extra["alpha"] = alpha;
+                }
+            }
+        }
+
         Compare(model, lumps, family, xlat, notClassic, dropped, name, port, report);
         return lumps;
     }
@@ -172,6 +186,20 @@ public static class MapExport
     {
         Exits(m, map, family, report, next);
         if (family == "hexen" || xlat is null) return;
+
+        // Strife's see-through walls: the engine reads its two flags as alpha (0.25 transparent, 0.75 translucent), and
+        // they go back to the flags (every Strife map lost them, 2026-10-13 sweep).
+        if (family == "strife")
+        {
+            foreach (var l in m.Lines)
+            {
+                if (!l.Extra.TryGet("alpha", out var alpha)) continue;
+                var flag = alpha.AsFloat() switch { 0.25 => "transparent", 0.75 => "translucent", _ => null };
+                if (flag is null) continue;
+                l.Extra.Remove("alpha");
+                l.SetFlag(flag, true);
+            }
+        }
 
         // Teleporters by id.
         var nextTag = Math.Max(m.Sectors.Select(s => s.Id).DefaultIfEmpty(0).Max(), m.Lines.SelectMany(l => l.Args).DefaultIfEmpty(0).Max()) + 1;
