@@ -320,6 +320,54 @@ internal sealed partial class EditorViewModel : ObservableObject
     /// <summary>Shows the whole map on the plan; set by the view.</summary>
     public Action? FitMap { get; set; }
 
+    /// <summary>Brings the selection into view on the plan; set by the view.</summary>
+    public Action? FitSelection { get; set; }
+
+    /// <summary>The grid the plan snaps to now (it follows the zoom unless <see cref="GridSize"/> is set); set by the view.</summary>
+    public Func<double>? GridNow { get; set; }
+
+    /// <summary>The ways "Select alike" matches: the palette's command, the Inspector's shorter label, and the words it is found by.</summary>
+    internal static readonly (Alike By, string Command, string Label, string Words)[] AlikeChoices =
+    [
+        (Alike.FloorPicture, "Select rooms with the same floor picture", "Same floor picture", "select similar|same flat|same floor texture|select same floor"),
+        (Alike.CeilingPicture, "Select rooms with the same ceiling picture", "Same ceiling picture", "select similar|same flat|same ceiling texture|select same ceil"),
+        (Alike.FloorHeight, "Select rooms with the floor at the same height", "Same floor height", "select similar|same height|floor height"),
+        (Alike.CeilingHeight, "Select rooms with the ceiling at the same height", "Same ceiling height", "select similar|same height|ceiling height"),
+        (Alike.Brightness, "Select rooms with the same brightness", "Same brightness", "select similar|same light|light level"),
+        (Alike.JoinedFloorHeight, "Select the joined rooms with the floor at the same height", "Joined, same floor height", "select same h|select group|neighbors|neighbours|contiguous|flood"),
+        (Alike.WallPicture, "Select walls with the same picture", "Same picture", "select similar|same texture|walls with texture"),
+        (Alike.WallsAlong, "Select the walls it runs on into", "The walls it runs on into", "select path|chain|connected walls|outline"),
+        (Alike.ObjectKind, "Select objects of the same kind", "Same kind", "select similar|same type|same thing|all of these"),
+    ];
+
+    /// <summary>What a selection from the whole map picks: what the Select tool picks, or anything with another tool.</summary>
+    private PickOnly PicksNow => Tool == Canvas.EditorTool.Select ? Picks : PickOnly.Anything;
+
+    /// <summary>The grid the plan snaps to, in map units; 0 follows the zoom (64, halved as you come closer).</summary>
+    [ObservableProperty]
+    private double _gridSize;
+
+    // The grid steps [ and ] go through (Eureka's and Doom Builder's).
+    private static readonly double[] GridSteps = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
+
+    /// <summary>A finer (−1) or coarser (+1) grid than the one the plan snaps to now, and says which.</summary>
+    private void StepGrid(int way)
+    {
+        var now = GridSize > 0 ? GridSize : GridNow?.Invoke() ?? 64;
+        var at = Array.FindIndex(GridSteps, s => s >= now);
+        if (at < 0) at = GridSteps.Length - 1;
+        if (GridSteps[at] > now && way > 0) at--;
+        SetGrid(GridSteps[Math.Clamp(at + way, 0, GridSteps.Length - 1)]);
+    }
+
+    private void SetGrid(double size)
+    {
+        GridSize = size;
+        Session.Tell(size > 0
+            ? string.Create(CultureInfo.InvariantCulture, $"Grid: {size:0} units. {KeyFor("Finer grid")} and {KeyFor("Coarser grid")} change it; “Grid follows the zoom” in Ctrl+K hands it back to the zoom.")
+            : "The grid follows the zoom again: 64 units, finer as you come closer.");
+    }
+
     /// <summary>Asks the user for a 3D model file (set by the view); null when they chose none.</summary>
     public Func<Task<string?>>? PickModel { get; set; }
 
@@ -419,6 +467,13 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Mirror the selection left–right", "Edit", "Shift+H", "flip horizontally", () => Session.FlipSelection(leftToRight: true), Selected),
             new("Mirror the selection top–bottom", "Edit", "Shift+V", "flip vertically", () => Session.FlipSelection(leftToRight: false), Selected),
             new("Select nothing", "Edit", K("Esc", "C"), "deselect|clear selection", () => Session.Selection.Clear(), Selected),
+            new("Select everything", "Edit", "Ctrl+A", "select all|all of it|whole map", () => Session.SelectAll(PicksNow)),
+            new("Invert the selection", "Edit", "Ctrl+I", "invert selection|select the rest|select the others|inverse", () => Session.InvertSelection(PicksNow)),
+            new("Bring back the last selection", "Edit", "Ctrl+L", "previous selection|last selection|reselect|lost selection", () => Session.Selection.BringBack(), () => Session.Selection.Previous.Count > 0),
+            new("Copy properties", "Edit", "Ctrl+Shift+C", "copy properties|copy settings|match|eyedropper", Session.CopyProperties, () => Session.Selection.Items.Any(e => e is not Vertex)),
+            new("Paste properties", "Edit", "Ctrl+Shift+V", "paste properties|apply settings|match", Session.PasteProperties, () => Properties.Held is not null && Selected()),
+            new("Swap floor and ceiling pictures", "Edit", "", "swap flats|flip floor and ceiling|swap textures", Session.SwapFlats, () => Session.Selection.OfType<Sector>().Any()),
+            new("Split the wall in half", "Edit", "", "split linedef|split line|halve|add a corner|insert vertex", Session.SplitWalls, () => Session.Selection.Items.Any(e => e is Line or Side)),
 
             new("Show the plan alone", "View", "", "2d|top down|map only", () => Layout = MapLayout.Plan),
             new("Show the plan and the 3D view", "View", "", "split|side by side|both", () => Layout = MapLayout.Split),
@@ -429,6 +484,10 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Show only the walls", "View", "", "lines|automap|wireframe|linedefs", () => IsLines = true),
             new("Show the player's size", "View", K("G", ""), "fit|player fit|ghost|clearance", () => ShowFit = !ShowFit),
             new("Show the whole map", "View", "Home", "zoom to fit|fit map|overview|center in screen", () => FitMap?.Invoke()),
+            new("Show the selection", "View", "Shift+Home", "zoom to selection|frame selected|go to selection|center on selection", () => FitSelection?.Invoke(), Selected),
+            new("Finer grid", "View", "[", "grid smaller|smaller grid|decrease grid|grid size", () => StepGrid(-1)),
+            new("Coarser grid", "View", "]", "grid larger|larger grid|increase grid|grid size", () => StepGrid(1)),
+            new("Grid follows the zoom", "View", "", "automatic grid|auto grid|grid size", () => SetGrid(0), () => GridSize > 0),
             new("Orbit in 3D", "View", "", "turn around|model view|camera", () => CameraMode = ThreeD.CameraMode.Orbit),
             new("Fly in 3D", "View", "", "free camera|noclip|camera", () => CameraMode = ThreeD.CameraMode.Fly),
             new("Walk in 3D", "View", "", "player view|first person|camera|gravity", () => CameraMode = ThreeD.CameraMode.Walk),
@@ -448,6 +507,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Play", "Play", "F9", "test|test map|run|launch|gzdoom", () => PlayCommand.Execute(null), () => !Playing),
             new("Play from here", "Play", K("Shift+F9", "Ctrl+F9"), "test from current position|start here", () => PlayFromHereCommand.Execute(null), () => !Playing),
         };
+        list.InsertRange(list.FindIndex(c => c.Name == "Bring back the last selection") + 1, AlikeChoices.Select(a => new EditorCommand(a.Command, "Edit", "", a.Words, () => Session.SelectAlike(a.By), () => Session.Selection.Items.Any(e => Selecting.Fits(e, a.By)))));
         for (var i = 0; i < skills.Length; i++)
         {
             var skill = i;

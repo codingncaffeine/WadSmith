@@ -1,6 +1,7 @@
 using WadSmith.Core;
 using WadSmith.Core.Containers;
 using WadSmith.Core.Maps;
+using WadSmith.Core.Maps.Udmf;
 using WadSmith.Core.Projects;
 using WadSmith.Core.Translation;
 using WadSmith.Editor.App;
@@ -65,6 +66,7 @@ public sealed class EditorSession : IDisposable
     private readonly SemaphoreSlim _writer = new(1, 1);
     private readonly LatestOnWorker<MapGeometry> _shapes;
     private readonly LatestOnWorker<(long Version, MoveSet Set, Func<MoveSet, Placement?> Make)> _placings;
+    private readonly LatestOnWorker<(IReadOnlyList<Element> Picked, Func<IReadOnlyList<Element>, string?>? Say)> _selects;
     private MapGeometry _geometry;
     private long _savedVersion;
     private Task _lastSave = Task.CompletedTask;
@@ -113,6 +115,14 @@ public sealed class EditorSession : IDisposable
             History.Run(new TransformEdit(r.Set, placement, FlatSize), gesture);
             if (r.Set.Count <= MoveSet.LiveLimit) FinishMove(r.Set, gesture);
         }, "what a turn moves");
+        _selects = new(onUiThread, r =>
+        {
+            if (_disposed) return;
+            // Locked rooms and objects stay out, as from a box.
+            Element[] picked = [.. r.Picked.Where(e => e.OnMap && !Grouping.Holds(_geometry, e))];
+            Selection.Set(picked);
+            if (r.Say?.Invoke(picked) is { } said) Notice?.Invoke(said);
+        }, "a selection from the whole map");
         map.Changed += _ =>
         {
             State = SaveState.Pending;
@@ -2180,6 +2190,110 @@ public sealed class EditorSession : IDisposable
 
     /// <summary>Resizes the selection round its middle by <paramref name="factor"/> both ways.</summary>
     public void ResizeSelection(double factor) => TransformSelection(set => Placement.Size(factor, factor, set.Middle));
+
+    /// <summary>
+    /// Selects what <paramref name="pick"/> finds in the map's shapes, worked out on a worker (it may read the whole map)
+    /// once the shapes have caught up with the map; locked rooms and objects stay out. <paramref name="say"/> words the
+    /// notice from what was selected (null for none).
+    /// </summary>
+    public void SelectFromMap(Func<MapGeometry, IReadOnlyList<Element>> pick, Func<IReadOnlyList<Element>, string?>? say = null)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => SelectFromMap(pick, say);
+            return;
+        }
+
+        var geometry = _geometry;
+        _selects.Request(() => (pick(geometry), say));
+    }
+
+    /// <summary>Selects everything of the kind <paramref name="only"/> picks (Ctrl+A).</summary>
+    public void SelectAll(PickOnly only) => SelectFromMap(g => Selecting.All(g, only));
+
+    /// <summary>Selects what is not selected, of the kinds that are (see <see cref="Selecting.Invert"/>).</summary>
+    public void InvertSelection(PickOnly only)
+    {
+        Element[] had = [.. Selection.Items];
+        SelectFromMap(g => Selecting.Invert(g, had, only), picked => picked.Count == 0 ? "Everything of that kind was selected, so now nothing is." : null);
+    }
+
+    /// <summary>Selects the elements like the first selected one that <paramref name="by"/> applies to, and says how many.</summary>
+    public void SelectAlike(Alike by)
+    {
+        if (Selection.Items.FirstOrDefault(e => Selecting.Fits(e, by)) is not { } seed) return;
+        SelectFromMap(g => Selecting.Like(g, seed, by), picked => picked.Count <= 1 ? "Nothing else matches it." : $"Selected {picked.Count} in all.");
+    }
+
+    /// <summary>Copies the properties of the first selected room, wall, face or object (Ctrl+Shift+C), to paste onto others with <see cref="PasteProperties"/>.</summary>
+    public void CopyProperties()
+    {
+        if (Selection.Items.FirstOrDefault(e => e is not Vertex) is not { } from || !Properties.Copy(from)) return;
+        Notice?.Invoke($"Copied {Properties.Of(Properties.Held!)} properties: select others and press Ctrl+Shift+V to give them the same.");
+    }
+
+    /// <summary>Lays the copied properties onto every selected element of the same kind, as one undo step (Ctrl+Shift+V).</summary>
+    public void PasteProperties()
+    {
+        if (Properties.Held is not { } held || Selection.IsEmpty) return;
+        var count = 0;
+        History.Record($"Paste {Properties.Of(held)} properties", e => count = Properties.Paste(e, held, Selection.Items));
+        Notice?.Invoke(count == 0
+            ? $"The copied properties are {Properties.Of(held)}, and nothing selected is of that kind."
+            : $"Gave {count} {(count == 1 ? "element" : "elements")} {Properties.Of(held)} properties.");
+    }
+
+    // Fields a room keeps for its floor and its ceiling, which trade places with the pictures.
+    private static readonly (string Floor, string Ceiling)[] FlatFields =
+    [
+        ("xpanningfloor", "xpanningceiling"), ("ypanningfloor", "ypanningceiling"), ("xscalefloor", "xscaleceiling"), ("yscalefloor", "yscaleceiling"),
+        ("rotationfloor", "rotationceiling"), ("lightfloor", "lightceiling"), ("lightfloorabsolute", "lightceilingabsolute"),
+    ];
+
+    /// <summary>Swaps the floor and ceiling pictures of the selected rooms, with how each is shifted, turned and lit (Eureka's "swap flats").</summary>
+    public void SwapFlats()
+    {
+        var rooms = Selection.OfType<Sector>().ToList();
+        if (rooms.Count == 0) return;
+        History.Record(rooms.Count == 1 ? "Swap the floor and ceiling pictures" : "Swap floor and ceiling pictures", e =>
+        {
+            foreach (var s in rooms)
+            {
+                var (floor, ceiling) = (s.FloorTexture, s.CeilingTexture);
+                e.Set(s, x => x.FloorTexture, (x, v) => x.FloorTexture = v, ceiling);
+                e.Set(s, x => x.CeilingTexture, (x, v) => x.CeilingTexture = v, floor);
+                foreach (var (f, c) in FlatFields)
+                {
+                    var (onFloor, onCeiling) = (Had(s, f), Had(s, c));
+                    e.Field(s, f, onCeiling);
+                    e.Field(s, c, onFloor);
+                }
+            }
+        });
+    }
+
+    private static UdmfValue? Had(Element e, string name) => e.Extra.TryGet(name, out var v) ? v : (UdmfValue?)null;
+
+    /// <summary>Splits each selected wall in two at its middle (on whole units in a classic map), and selects the new corners.</summary>
+    public void SplitWalls()
+    {
+        var walls = Selection.Items.Select(e => e is Side { Line: { } l } ? l : e).OfType<Line>().Distinct().Where(l => l.OnMap).ToList();
+        if (walls.Count == 0) return;
+        var corners = new List<Vertex>();
+        History.Record(walls.Count == 1 ? "Split the wall in half" : "Split walls in half", e =>
+        {
+            foreach (var wall in walls)
+            {
+                var (x, y) = ((wall.Start.X + wall.End.X) / 2, (wall.Start.Y + wall.End.Y) / 2);
+                if (Project.ClassicFormat) (x, y) = (Math.Round(x), Math.Round(y));
+                if ((x == wall.Start.X && y == wall.Start.Y) || (x == wall.End.X && y == wall.End.Y)) continue;
+                var corner = new Vertex { X = x, Y = y };
+                Walls.Split(e, wall, e.Add(corner));
+                corners.Add(corner);
+            }
+        });
+        Selection.Set([.. corners]);
+    }
 
     /// <summary>
     /// Ends a drag that moved <paramref name="set"/>: joins what landed on the rest of the map (corners

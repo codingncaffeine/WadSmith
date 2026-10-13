@@ -31,6 +31,8 @@ public partial class EditorView : UserControl
                 return (c.X, c.Y, c.Z, c.Yaw, c.Pitch);
             };
             vm.FitMap = Canvas.FitMap;
+            vm.FitSelection = () => Canvas.FitTo(vm.Session.Selection.Items);
+            vm.GridNow = () => Canvas.GridStepNow;
             vm.PickModel = PickModelAsync;
             vm.PickMaterial = PickMaterialAsync;
             vm.Inspector.PickPanorama = PickPanoramaAsync;

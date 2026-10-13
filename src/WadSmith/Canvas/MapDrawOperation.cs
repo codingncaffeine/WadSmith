@@ -521,7 +521,9 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
     {
         // While a room is being drawn, the finer grid it snaps to shows too, fainter than the usual one.
         var steps = new List<(double, SKColor)>();
+        // A grid chosen by hand coarser than 64 shows too, as strong as the 64 grid.
         if (preview is { Step: < 64 and > 0 } p) steps.Add((p.Step, GridFine));
+        else if (preview is { Step: > 64 } q && q.Step != 512) steps.Add((q.Step, GridMinor));
         steps.Add((64.0, GridMinor));
         steps.Add((512.0, GridMajor));
         foreach (var (step, colour) in steps)

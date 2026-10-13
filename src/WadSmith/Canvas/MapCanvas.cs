@@ -61,6 +61,7 @@ internal sealed class MapCanvas : Control
     public static readonly StyledProperty<bool> ShowFitProperty = AvaloniaProperty.Register<MapCanvas, bool>(nameof(ShowFit), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
     public static readonly StyledProperty<PickOnly> PicksProperty = AvaloniaProperty.Register<MapCanvas, PickOnly>(nameof(Picks));
+    public static readonly StyledProperty<double> GridSizeProperty = AvaloniaProperty.Register<MapCanvas, double>(nameof(GridSize));
 
     private readonly LatestOnWorker<(EditorSession Session, CanvasSnapshot Picture)> _pictures;
     private readonly LatestOnWorker<(EditorSession Session, long Generation, SelectionOverlay Outline)> _outlines;
@@ -280,6 +281,16 @@ internal sealed class MapCanvas : Control
         set => SetValue(PicksProperty, value);
     }
 
+    /// <summary>The grid corners snap to, in map units; 0 follows the zoom (see <see cref="GridStep"/>).</summary>
+    public double GridSize
+    {
+        get => GetValue(GridSizeProperty);
+        set => SetValue(GridSizeProperty, value);
+    }
+
+    /// <summary>The grid corners snap to now.</summary>
+    public double GridStepNow => GridStep();
+
     /// <summary>Whether a drawing, a drag or a box is under way: the editor's keys wait until it ends.</summary>
     internal bool IsGesturing => _drawFrom is not null || _corners.Count > 0 || _boxFrom is not null || _moveGesture != 0 || _pressed is not null || _windowWall is not null;
     /// <summary>Raised as the player's box follows the pointer: whether the player fits there (null off the map or when hidden), and where.</summary>
@@ -312,6 +323,12 @@ internal sealed class MapCanvas : Control
         if (change.Property == ModeProperty)
         {
             RequestPicture();
+            return;
+        }
+
+        if (change.Property == GridSizeProperty)
+        {
+            InvalidateVisual();
             return;
         }
 
@@ -523,6 +540,8 @@ internal sealed class MapCanvas : Control
             if (_moveSet is { } set) move = new MovePreview(set, _offset.X, _offset.Y, _mergeAt, _grip != Grip.None ? _placement : null);
         }
 
+        // A grid chosen by hand shows all the time, so what a corner will snap to is in sight.
+        if (preview is null && GridSize > 0) preview = new DrawPreview(null, null, null, GridSize);
         var fit = ShowFit ? new FitOverlay(_fitMarks, _ghost?.At, _ghost?.Fit.Fits ?? false) : null;
         context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview, move, fit, Session.Mirror.IsOn ? Session.Mirror : null));
         // The selected object's facing knob, at the tip of its arrow.
@@ -576,11 +595,12 @@ internal sealed class MapCanvas : Control
     }
 
     /// <summary>
-    /// The grid a drawn corner snaps to: 64 units, halved while that still leaves 12 pixels between
+    /// The grid a drawn corner snaps to: the one chosen by hand ('[' and ']'), else 64 units, halved while that still leaves 12 pixels between
     /// lines (down to 8), so a closer view draws finer rooms.
     /// </summary>
     private double GridStep()
     {
+        if (GridSize > 0) return GridSize;
         var step = 64.0;
         while (step > 8 && step / 2 * _zoom >= 12) step /= 2;
         return step;

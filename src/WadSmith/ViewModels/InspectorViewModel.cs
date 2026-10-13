@@ -571,6 +571,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             if (items.OfType<Sector>().Where(r => r.OnMap).ToList() is { Count: >= 2 } rooms) AddHeights(rooms);
             AddShaping();
             if (items.OfType<Thing>().Where(t => t.OnMap).ToList() is { Count: >= 2 } things) AddArranging(things);
+            AddLikeIt(null);
             AddGrouping(items);
             Rows.Add(new ActionRow("Delete them", "Deletes everything selected so the map stays whole (Delete).", _session.DeleteSelection));
             return;
@@ -633,6 +634,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 AddPlatforms(s);
                 Rows.Add(new ActionRow("Fit the floor picture to this room", "Sizes the floor's picture so one copy covers the room corner to corner, its top to the north (UDMF floor scale and panning).", () => _session.FitFlat(s, ceiling: false)));
                 Rows.Add(new ActionRow("Fit the ceiling picture to this room", "Sizes the ceiling's picture so one copy covers the room corner to corner (UDMF ceiling scale and panning).", () => _session.FitFlat(s, ceiling: true)));
+                Rows.Add(new ActionRow("Swap the floor and ceiling pictures", "The floor takes the ceiling's picture and the ceiling the floor's, with how each is shifted, turned and lit (swap flats).", _session.SwapFlats));
                 Rows.Add(new ActionRow("Make it a secret", "Finding it counts toward the secrets at the end of the map, and the walls into it show as solid walls on the in-game map so they do not give it away.", () => _session.MakeSecret(s)));
                 Rows.Add(new ActionRow("Save as a prefab", "Keeps a copy of this room, its walls and the things in it in this project, under Objects, Prefabs, to drag onto any of its maps.", _session.SavePrefab));
                 Rows.Add(new ActionRow("Draw new rooms like this one", "New rooms take its floor and ceiling pictures, heights, light and the texture of its walls (the Look in the Textures panel).", () => LookLike?.Invoke(s)));
@@ -800,6 +802,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
 
         if (items[0] is Sector) AddShaping();
         AddGrouping(items);
+        AddLikeIt(items[0]);
 
         // Last: deleting it, in words that say what happens to the rest (Delete does the same).
         var (verb, tip) = items[0] switch
@@ -1427,6 +1430,9 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new FlagRow("Blocks monsters", "Players pass, monsters do not (blockmonsters).", () => l.Flag("blockmonsters"), on => Flag(l, "blockmonsters", on, "Change monster blocking")));
         Rows.Add(new FlagRow("Hidden on the map", "Not drawn on the in-game map (dontdraw).", () => l.Flag("dontdraw"), on => Flag(l, "dontdraw", on, "Change map visibility")));
         Rows.Add(new FlagRow("Counts as a secret", "Shown as a solid wall on the in-game map so it does not give a secret away (secret).", () => l.Flag("secret"), on => Flag(l, "secret", on, "Change secret")));
+        Rows.Add(new FlagRow("Shown on the map from the start", "Drawn on the in-game map before the player has seen it (mapped).", () => l.Flag("mapped"), on => Flag(l, "mapped", on, "Change map visibility")));
+        Rows.Add(new FlagRow("Blocks sound", "Muffles shots: a monster hears the player through one such wall but not through two (sound block, blocksound).", () => l.Flag("blocksound"), on => Flag(l, "blocksound", on, "Change sound blocking")));
+        if (!_session.Project.ClassicFormat) Rows.Add(new FlagRow("Blocks players", "Monsters pass, players do not (blockplayers).", () => l.Flag("blockplayers"), on => Flag(l, "blockplayers", on, "Change player blocking")));
         if (l.Back is null)
         {
             Rows.Add(new FlagRow("Texture sits on the floor", "The texture's bottom edge rests on the floor, so it stays put when the ceiling moves, as door tracks need (lower unpegged, dontpegbottom).", () => l.Flag("dontpegbottom"), on => Flag(l, "dontpegbottom", on, "Change texture anchoring")));
@@ -1448,6 +1454,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
             Rows.Add(new FlagRow("Upper texture hangs from the ceiling", "The upper texture starts at the higher ceiling and runs down, instead of rising from the opening below it (upper unpegged, dontpegtop).", () => l.Flag("dontpegtop"), on => Flag(l, "dontpegtop", on, "Change texture anchoring")));
             Rows.Add(new FlagRow("Lower texture continues the wall above", "The lower texture is placed as if the wall ran down from the ceiling, so it carries on the pattern above it (lower unpegged, dontpegbottom).", () => l.Flag("dontpegbottom"), on => Flag(l, "dontpegbottom", on, "Change texture anchoring")));
         }
+
+        Rows.Add(new ActionRow("Split it in half", "Adds a corner in the middle of the wall, making two walls of it (Eureka's split in half).", _session.SplitWalls));
     }
 
     /// <summary>One face on its own: only the parts it can show, with whether each is seen, and its offsets.</summary>
@@ -1492,6 +1500,24 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new TextRow($"{which}: lower texture", "Shown where the floor on the other side is higher (texturebottom).", () => side.Bottom, v => Set(side, "Change lower texture", e => e.Bottom, (e, x) => e.Bottom = x, v)));
     }
 
+    /// <summary>
+    /// The rows that reach from the selection across the map: select the rooms, walls or objects like this one (Eureka's
+    /// select-alike), copy its properties, and paste copied ones onto it. <paramref name="one"/> is the one element
+    /// selected; null for several, which get only the paste.
+    /// </summary>
+    private void AddLikeIt(Element? one)
+    {
+        var held = Properties.Held;
+        var alike = one is null ? [] : EditorViewModel.AlikeChoices.Where(a => Selecting.Fits(one, a.By)).ToList();
+        var copy = one is not null and not Vertex;
+        var paste = held is not null && _session.Selection.Items.Any(e => Properties.Fits(held, e));
+        if (alike.Count == 0 && !copy && !paste) return;
+        Rows.Add(new HeadingRow("LIKE THIS ONE"));
+        foreach (var a in alike) Rows.Add(new ActionRow(a.Label, $"{a.Command}, all over the map.", () => _session.SelectAlike(a.By)));
+        if (copy) Rows.Add(new ActionRow("Copy its properties", "Remembers how it looks and what it does (not where it is, nor its tag or id), to give the same to others: select them and choose Paste (Ctrl+Shift+C).", _session.CopyProperties));
+        if (paste) Rows.Add(new ActionRow(one is null ? "Paste the copied properties onto them" : "Paste the copied properties onto it", $"Gives the selection {Properties.Of(held!)} looks and settings, as one undo step (Ctrl+Shift+V).", _session.PasteProperties));
+    }
+
     private void AddThing(Thing t)
     {
         // A prop from a 3D model (Phase 11): which way the model faces, for models made facing another way than Doom's forward.
@@ -1520,6 +1546,13 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new FlagRow("Appears on Normal", "Included on the middle difficulty (skill3).", () => t.Flag("skill3"), on => Flags(t, ["skill3"], on)));
         Rows.Add(new FlagRow("Appears on Hard", "Included on the two hardest difficulties (skill4, skill5).", () => t.Flag("skill4") || t.Flag("skill5"), on => Flags(t, ["skill4", "skill5"], on)));
         Rows.Add(new FlagRow("Deaf", "Waits until it sees the player instead of coming when it hears shots (ambush).", () => t.Flag("ambush"), on => Flags(t, ["ambush"], on)));
+        Rows.Add(new FlagRow("In single player", "Included when one person plays (single; off = multiplayer only).", () => t.Flag("single"), on => Flags(t, ["single"], on)));
+        Rows.Add(new FlagRow("In co-op", "Included when friends play the map together (coop).", () => t.Flag("coop"), on => Flags(t, ["coop"], on)));
+        Rows.Add(new FlagRow("In deathmatch", "Included when players fight each other on the map (dm).", () => t.Flag("dm"), on => Flags(t, ["dm"], on)));
+        if (_session.Project.ClassicFormat) return;
+        Rows.Add(new FlagRow("Friendly", "A monster that fights for the player instead of against them (friend).", () => t.Flag("friend"), on => Flags(t, ["friend"], on)));
+        Rows.Add(new FlagRow("Asleep until woken", "Does nothing at all until a script or a wall's action wakes it with its id (dormant).", () => t.Flag("dormant"), on => Flags(t, ["dormant"], on)));
+        Rows.Add(new NumberRow("Id", "A number a wall's action or a script finds this object by, to wake it, move it or send something to it (thing id, TID).", () => t.Tid, v => Set(t, "Change the object's id", e => e.Tid, (e, x) => e.Tid = x, (int)v), 1, 0, 32767));
     }
 
     private void Flag(Element e, string name, bool on, string label) => _session.History.Run(new SetProperty<Element, bool>(e, label, x => x.Flag(name), (x, v) => x.SetFlag(name, v), on));

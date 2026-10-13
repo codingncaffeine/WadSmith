@@ -25,8 +25,29 @@ public sealed class Selection
 
     public bool Contains(Element e) => _set.Contains(e);
 
+    /// <summary>The selection before the last one that replaced or cleared it (empty when there was none), for "Bring back the last selection".</summary>
+    public IReadOnlyList<Element> Previous => _previous;
+
+    private Element[] _previous = [];
+
+    // A selection about to be replaced or cleared is kept, so it can be brought back (Eureka's "last selection").
+    private void Keep()
+    {
+        if (_items.Count > 0) _previous = [.. _items];
+    }
+
+    /// <summary>Selects again what was selected before the last replace or clear, as much of it as is still on the map; the selection it replaces becomes the one kept, so a second time swaps back.</summary>
+    public bool BringBack()
+    {
+        var back = _previous.Where(e => e.OnMap).ToArray();
+        if (back.Length == 0) return false;
+        Set(back);
+        return true;
+    }
+
     public void Set(params Element[] elements)
     {
+        if (!elements.SequenceEqual(_items)) Keep();
         At = null;
         _items.Clear();
         _set.Clear();
@@ -41,6 +62,7 @@ public sealed class Selection
     /// <summary>Selects one element clicked at <paramref name="at"/> on the map, keeping the point as <see cref="At"/>.</summary>
     public void Pick(Element e, MapPoint at)
     {
+        if (_items.Count != 1 || !ReferenceEquals(_items[0], e)) Keep();
         _items.Clear();
         _set.Clear();
         _items.Add(e);
@@ -60,6 +82,7 @@ public sealed class Selection
     public void Clear()
     {
         if (_items.Count == 0) return;
+        Keep();
         At = null;
         _items.Clear();
         _set.Clear();

@@ -128,7 +128,7 @@
         <Grid Grid.Row="1" ColumnDefinitions="*,4,356">
             <Grid x:Name="MapViews" ColumnDefinitions="*,4,*">
             <Panel x:Name="PlanPane">
-                <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" Tool="{Binding Tool}" ShowFit="{Binding ShowFit}" Picks="{Binding Picks}" ContextMenuFor="{Binding ContextMenuFor}" />
+                <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" Tool="{Binding Tool}" ShowFit="{Binding ShowFit}" Picks="{Binding Picks}" GridSize="{Binding GridSize}" ContextMenuFor="{Binding ContextMenuFor}" />
 
                 <!-- Tools: what a left drag on the plan does, in a column down the plan's left edge (§3.3). -->
                 <StackPanel Orientation="Vertical" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
