@@ -304,6 +304,20 @@ internal sealed partial class ShelfViewModel : ObservableObject
         () => game is null ? [] : PerGame(others?.Invoke() ?? [], other =>
         {
             var tiles = new List<ShelfTile>();
+
+            // Duke Nukem 3D's enemies (D55): Duke's look, a Doom monster's behaviour.
+            if (other.Build is { } build)
+            {
+                foreach (var enemy in build.Enemies)
+                {
+                    var picture = build.Art.Tile(enemy.PictureTile) is { } tile ? Imaging.ToBitmap(Shrink(build.Art.Picture(tile))) : null;
+                    var behaviour = WadSmith.Core.Build.DukeEnemies.Behaviours.FirstOrDefault(b => b.Class == enemy.Behaviour).Name ?? enemy.Behaviour;
+                    tiles.Add(new ShelfTile(enemy.Name, $"Duke Nukem 3D's {enemy.Name}. Drag it onto the map: it looks like Duke's and behaves like a {behaviour.ToLowerInvariant()} (Duke's own behaviour lives in scripts GZDoom cannot run); its frames are copied into this project, and the map plays in GZDoom.", "Monsters", $"{enemy.Name} {enemy.Key} monsters duke".ToLowerInvariant(), picture, new ShelfDrop(null, enemy.BaseTile, $"{enemy.Name} from Duke Nukem 3D", From: other), other.Game.Title));
+                }
+
+                return tiles;
+            }
+
             {
                 foreach (var (category, group) in Kinds.Where(k => k.Category is ThingCategory.Monster or ThingCategory.Weapon or ThingCategory.Decoration or ThingCategory.Health or ThingCategory.Armor or ThingCategory.Ammo or ThingCategory.Powerup))
                 {

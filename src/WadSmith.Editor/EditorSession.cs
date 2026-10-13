@@ -597,6 +597,12 @@ public sealed class EditorSession : IDisposable
     /// </summary>
     public void PlaceBorrowedThing(GameResources from, int number, MapPoint at, double? standAt = null)
     {
+        if (from.Build is { } build && build.Enemies.FirstOrDefault(e => e.BaseTile == number) is { } enemy)
+        {
+            PlaceDukeEnemy(build, enemy, enemy.Behaviour, at, standAt);
+            return;
+        }
+
         if (Resources is not { } into || from.Things.Find(number) is not { } thing)
         {
             Notice?.Invoke("Objects from your other games need this map's own game to be found first.");
@@ -635,6 +641,50 @@ public sealed class EditorSession : IDisposable
             {
                 PlaceThing(carried.Number, at, standAt);
                 if (carried.New) Notice?.Invoke($"{thing.Name} was brought in from {from.Game.Title}: its pictures and sounds are copied into this project, so the map plays it in GZDoom.");
+            });
+        });
+    }
+
+    /// <summary>
+    /// Places a Duke Nukem 3D enemy with the behaviour of the Doom monster <paramref name="behaviour"/> (D55): carried into the
+    /// project on a worker the first time for that pair (its frames, its class, a number), then placed on the UI thread.
+    /// </summary>
+    public void PlaceDukeEnemy(Core.Build.BuildArtContainer duke, Core.Build.DukeEnemy enemy, string behaviour, MapPoint at, double? standAt = null)
+    {
+        if (Resources is not { } into)
+        {
+            Notice?.Invoke("Duke Nukem 3D's enemies need this map's own game to be found first.");
+            return;
+        }
+
+        if (Project.ClassicFormat || Engine != "doom")
+        {
+            Notice?.Invoke(Project.ClassicFormat
+                ? $"Duke Nukem 3D's {enemy.Name} plays in GZDoom only. Change what the project plays in under Map settings to use it."
+                : $"Duke Nukem 3D's enemies take a Doom monster's behaviour, so they go in maps for Doom and its family.");
+            return;
+        }
+
+        var engineData = Hooks.EngineData;
+        Task.Run(() =>
+        {
+            CarriedActor carried;
+            try
+            {
+                carried = DukeBorrowing.Carry(Project, into, duke, enemy, behaviour);
+                ProjectMapInfo.Refresh(Project, into.Game, into.Files, engineData);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Carrying Duke's {enemy.Key} as {behaviour} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"{enemy.Name} could not be brought in from Duke Nukem 3D. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                PlaceThing(carried.Number, at, standAt);
+                if (carried.New) Notice?.Invoke($"{carried.Thing.Name} was brought in: Duke's frames are copied into this project, with a Doom monster's behaviour, so the map plays it in GZDoom.");
             });
         });
     }

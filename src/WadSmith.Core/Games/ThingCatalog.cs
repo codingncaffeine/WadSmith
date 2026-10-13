@@ -106,6 +106,44 @@ public sealed partial class ThingCatalog
     }
 
     /// <summary>
+    /// A class's states as the engine runs them (D55): its own state blocks, then each block of its ancestors under a label it
+    /// does not define itself. A block is its labels ("Death:", "XDeath:") and the lines that follow them, without the ';'.
+    /// </summary>
+    public IReadOnlyList<(IReadOnlyList<string> Labels, IReadOnlyList<string> Lines)> StateBlocks(string className)
+    {
+        var blocks = new List<(IReadOnlyList<string> Labels, IReadOnlyList<string> Lines)>();
+        var defined = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // The engine's base classes' states (Null, the freeze and crush deaths) stay theirs: the walk stops there.
+        for (var c = _classes.GetValueOrDefault(className); c is not null && !EngineBases.Contains(c.Name); c = c.Parent is null ? null : _classes.GetValueOrDefault(c.Parent))
+        {
+            var own = new List<(List<string> Labels, List<string> Lines)>();
+            foreach (var entry in c.States)
+            {
+                if (entry.EndsWith(':'))
+                {
+                    if (own.Count == 0 || own[^1].Lines.Count > 0) own.Add(([], []));
+                    own[^1].Labels.Add(entry.TrimEnd(':'));
+                }
+                else if (own.Count > 0)
+                {
+                    own[^1].Lines.Add(entry);
+                }
+            }
+
+            foreach (var (labels, lines) in own)
+            {
+                var fresh = labels.Where(l => !defined.Contains(l)).ToList();
+                if (fresh.Count == 0) continue;
+                blocks.Add((fresh, lines));
+            }
+
+            foreach (var (labels, _) in own) defined.UnionWith(labels);
+        }
+
+        return blocks;
+    }
+
+    /// <summary>
     /// The weapon slot <paramref name="weaponClass"/> has in its own game: the number of the first player class's
     /// <c>Player.WeaponSlot</c> that names it (Heretic's Blaster is 4, Hexen's Fighter's Axe 2); null when none does.
     /// </summary>

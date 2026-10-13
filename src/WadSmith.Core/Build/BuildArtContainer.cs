@@ -32,5 +32,12 @@ public sealed class BuildArtContainer : ResourceContainer
 
     public BuildArt Art { get; }
 
-    public static new BuildArtContainer Open(string grpPath) => new(grpPath, BuildArt.Read(GrpArchive.Open(grpPath)));
+    /// <summary>The enemies the group file's own scripts describe (empty when it has none).</summary>
+    public IReadOnlyList<DukeEnemy> Enemies { get; private init; } = [];
+
+    public static new BuildArtContainer Open(string grpPath)
+    {
+        var grp = GrpArchive.Open(grpPath);
+        return new BuildArtContainer(grpPath, BuildArt.Read(grp)) { Enemies = DukeEnemies.Read(grp) };
+    }
 }

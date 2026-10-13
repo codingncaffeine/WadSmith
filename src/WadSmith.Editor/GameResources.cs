@@ -79,6 +79,9 @@ public sealed class GameResources
     /// <summary>A floor or ceiling picture by name; null for "-" or a name the game does not have.</summary>
     public RgbaImage? Flat(string name) => Textures.GetFlat(name);
 
+    /// <summary>Duke Nukem 3D's art and enemies when this is a Build-engine game (D48), else null.</summary>
+    public Core.Build.BuildArtContainer? Build { get; private init; }
+
     /// <summary>A lump of the game's files by name and namespace, the last file that has it winning; null when none has.</summary>
     public ResourceEntry? Find(string name, ResourceNamespace ns) => _stack.Find(name, ns);
 
@@ -161,8 +164,9 @@ public sealed class GameResources
         // Duke Nukem 3D (D48): its art as pictures to borrow; GZDoom does not play it, so it has no objects of its own here yet.
         if (found.Game.Engine == "build")
         {
-            var build = new ResourceStack([Core.Build.BuildArtContainer.Open(found.Path)]);
-            return new GameResources(found.Game, [found.Path], build, new TextureLibrary(build), new SpriteIndex(build), ThingCatalog.Empty, []);
+            var art = Core.Build.BuildArtContainer.Open(found.Path);
+            var build = new ResourceStack([art]);
+            return new GameResources(found.Game, [found.Path], build, new TextureLibrary(build), new SpriteIndex(build), ThingCatalog.Empty, []) { Build = art };
         }
 
         var files = new List<string>();
@@ -186,7 +190,19 @@ public sealed class GameResources
             try
             {
                 var carried = new List<ThingType>();
-                foreach (var copy in Core.Projects.Project.Open(projectFolder).Info.Copied.Where(c => c.Kind == "actor"))
+                var info = Core.Projects.Project.Open(projectFolder).Info;
+
+                // Duke Nukem 3D's enemies (D55): classes the project itself declares, each with a Doom monster's behaviour.
+                foreach (var duke in info.Copied.Where(c => c.Kind == "dukeactor"))
+                {
+                    var parts = duke.Name.Split('|');
+                    var number = info.Copied.FirstOrDefault(c => c.Kind == "actor" && c.Original == duke.Original)?.Name;
+                    if (parts.Length < 4 || number is null || things.FindClass(parts[0]) is not { } parent) continue;
+                    var scale = double.Parse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture);
+                    carried.Add(parent with { Number = int.Parse(number, CultureInfo.InvariantCulture), ClassName = duke.Original, Name = parts[3], Sprite = parts[1], Frame = 'A', ScaleX = scale, ScaleY = scale });
+                }
+
+                foreach (var copy in info.Copied.Where(c => c.Kind == "actor" && c.Game != "duke3d"))
                 {
                     if (GameCatalog.Get(copy.Game) is not { } source || !int.TryParse(copy.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)) continue;
                     var family = Catalogues.GetOrAdd((engineData, source.Engine), key => new Lazy<ThingCatalog>(() => ThingCatalog.Load(ResourceContainer.Open(key.Engine), key.Family))).Value;
