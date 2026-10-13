@@ -124,16 +124,19 @@
                                         ToolTip.Tip="Maps found in your folders that are for this game (map packs, loose or inside ZIPs): pick one to edit. The file is never changed; your changes become a project of your own, played with the pack.">
                                     <Button.Flyout>
                                         <Flyout Placement="BottomEdgeAlignedLeft">
-                                            <ScrollViewer MaxHeight="440" Width="360">
-                                                <ItemsControl ItemsSource="{Binding PackMaps}">
-                                                    <ItemsControl.ItemTemplate>
+                                            <!-- A collection can hold thousands of maps: a search box, and a list that only makes the rows on screen. -->
+                                            <StackPanel Width="380" Spacing="6">
+                                                <TextBox Text="{Binding PackFilter}" PlaceholderText="Find a pack or a map…"
+                                                         ToolTip.Tip="Type part of a pack's name or a map's slot (MAP07, E2M1) to shorten the list." />
+                                                <ListBox ItemsSource="{Binding ShownPackMaps}" SelectedItem="{Binding ChosenPackMap}" MaxHeight="400"
+                                                         ToolTip.Tip="The maps found near your games that are for this game: pick one to edit it, with its pack loaded.">
+                                                    <ListBox.ItemTemplate>
                                                         <DataTemplate x:DataType="vm:PackMapChoice">
-                                                            <Button Content="{Binding Label}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                                                    Background="Transparent" Command="{Binding Tile.EditPackMap}" CommandParameter="{Binding}" />
+                                                            <TextBlock Text="{Binding Label}" />
                                                         </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </ScrollViewer>
+                                                    </ListBox.ItemTemplate>
+                                                </ListBox>
+                                            </StackPanel>
                                         </Flyout>
                                     </Button.Flyout>
                                 </Button>

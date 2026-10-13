@@ -53,6 +53,35 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
     [ObservableProperty]
     private string _packMapsLabel = "Maps found near your games";
 
+    /// <summary>What the user typed to shorten the list: part of a pack's name or a map's slot.</summary>
+    [ObservableProperty]
+    private string _packFilter = "";
+
+    /// <summary>The maps the list shows: all of them, or those matching <see cref="PackFilter"/>.</summary>
+    [ObservableProperty]
+    private IReadOnlyList<PackMapChoice> _shownPackMaps = [];
+
+    /// <summary>The map picked in the list: picking one starts editing it, and the pick clears.</summary>
+    [ObservableProperty]
+    private PackMapChoice? _chosenPackMap;
+
+    partial void OnPackMapsChanged(IReadOnlyList<PackMapChoice> value) => ShowPackMaps();
+
+    partial void OnPackFilterChanged(string value) => ShowPackMaps();
+
+    partial void OnChosenPackMapChanged(PackMapChoice? value)
+    {
+        if (value is null) return;
+        ChosenPackMap = null;
+        _ = EditPackMap?.ExecuteAsync(value);
+    }
+
+    private void ShowPackMaps()
+    {
+        var filter = PackFilter.Trim();
+        ShownPackMaps = filter.Length == 0 ? PackMaps : [.. PackMaps.Where(p => p.Label.Contains(filter, StringComparison.OrdinalIgnoreCase))];
+    }
+
     /// <summary>Starts a project from a map in a pack found near the games (set by the welcome screen).</summary>
     public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<PackMapChoice>? EditPackMap { get; set; }
 
@@ -400,6 +429,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         var targets = GameLocator.StandardTargets(Environment.GetEnvironmentVariable).Concat(added.Select(f => new ScanTarget(f, GameLocator.DefaultDepth, Added: true))).ToList();
         var extracted = ExtractedFolder;
         var cachePath = Path.Combine(_services.Paths.Cache, "game-scan.json");
+        var packCachePath = Path.Combine(_services.Paths.Cache, "pack-scan.json");
         var progress = new Progress<string>(s => Status = s);
         ScanReport report;
         IReadOnlyList<FoundGame> found;
@@ -446,8 +476,18 @@ internal sealed partial class WelcomeViewModel : ObservableObject
                     return set;
                 }
 
-                var fits = MapPacks.Fit(r.MapFiles, usable, NamesOf, _services.ShuttingDown);
-                Log.Info($"Game scan: {fits.Count} of {r.MapFiles.Count()} map pack(s) fit a game found, in {started.ElapsedMilliseconds} ms.");
+                var packCache = PackCache.Load(packCachePath);
+                var fits = MapPacks.Fit(r.MapFiles, usable, NamesOf, packCache, _services.ShuttingDown);
+                try
+                {
+                    packCache.Save(packCachePath);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Log.Warn($"The map packs' memory could not be saved: {ex.Message}");
+                }
+
+                Log.Info($"Game scan: {fits.Count} of {r.MapFiles.Count()} map pack(s) fit a game found, {packCache.Hits} remembered, in {started.ElapsedMilliseconds} ms.");
                 return (r, usable, fits, (cache.Hits, cache.Count));
             }, _services.ShuttingDown).ConfigureAwait(true);
         }

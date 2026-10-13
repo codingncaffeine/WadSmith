@@ -19,19 +19,35 @@ public static partial class MapPacks
     /// <summary>
     /// The packs among <paramref name="packs"/> that fit a base game among <paramref name="games"/>, with the games each
     /// fits. <paramref name="namesOf"/> gives the texture and flat names a game file holds (see <see cref="TextureNames"/>);
-    /// cache it, a game is asked for once per pack. A pack that cannot be read is left out.
+    /// cache it, a game is asked for once per pack. With a <paramref name="cache"/>, a pack read before is not read again
+    /// while its file and the games judged among are the same. A pack that cannot be read is left out.
     /// </summary>
-    public static IReadOnlyList<PackFit> Fit(IEnumerable<MapFile> packs, IReadOnlyList<FoundGame> games, Func<string, IReadOnlySet<string>> namesOf, CancellationToken cancel = default)
+    public static IReadOnlyList<PackFit> Fit(IEnumerable<MapFile> packs, IReadOnlyList<FoundGame> games, Func<string, IReadOnlySet<string>> namesOf, PackCache? cache = null, CancellationToken cancel = default)
     {
         var bases = games.Where(g => g.Usable && g.Game.IsBaseGame && g.Game.Supported && g.Game.MapNames is not null).GroupBy(g => g.Game.Id).Select(g => g.First()).ToList();
         var fits = new List<PackFit>();
         if (bases.Count == 0) return fits;
+        var among = PackCache.AmongOf(bases);
+        var byId = bases.ToDictionary(g => g.Game.Id, StringComparer.Ordinal);
         foreach (var pack in packs)
         {
             cancel.ThrowIfCancellationRequested();
             try
             {
-                if (GamesFor(pack, bases, namesOf) is { Count: > 0 } found) fits.Add(new PackFit(pack, found));
+                var file = new FileInfo(pack.Path);
+                var (length, written) = file.Exists ? (file.Length, file.LastWriteTimeUtc) : (-1L, DateTime.MinValue);
+                IReadOnlyList<FoundGame> found;
+                if (cache is not null && cache.TryGet(pack, length, written, among, out var ids))
+                {
+                    found = [.. ids.Select(id => byId.GetValueOrDefault(id)).OfType<FoundGame>()];
+                }
+                else
+                {
+                    found = GamesFor(pack, bases, namesOf);
+                    cache?.Put(pack, length, written, among, found.Select(g => g.Game.Id));
+                }
+
+                if (found.Count > 0) fits.Add(new PackFit(pack, found));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException or InvalidDataException)
             {

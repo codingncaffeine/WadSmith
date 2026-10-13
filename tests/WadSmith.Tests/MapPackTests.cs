@@ -68,7 +68,36 @@ public sealed class MapPackTests
 
         // A name of another shape fits nothing; so does a pack for a game that is not here.
         Assert.Empty(Fits(Loose(temp, "f.wad", Pack("MAP01", "hexen", ns: "hexen"), "MAP01")));
-        Assert.Empty(MapPacks.Fit([new MapFile(Path.Combine(temp.Path, "gone.wad"), null, ["MAP01"])], Games, NamesOf, TestContext.Current.CancellationToken));
+        Assert.Empty(MapPacks.Fit([new MapFile(Path.Combine(temp.Path, "gone.wad"), null, ["MAP01"])], Games, NamesOf, cancel: TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public void ABigCollectionIsReadOnceAndRememberedUntilAFileOrTheGamesChange()
+    {
+        using var temp = new TempFolder();
+        MapFile[] packs = [Loose(temp, "a.wad", Pack("MAP01", "doom"), "MAP01"), Loose(temp, "b.wad", Pack("E1M1", "heretic"), "E1M1")];
+        var cache = PackCache.Empty();
+        var first = MapPacks.Fit(packs, Games, NamesOf, cache, TestContext.Current.CancellationToken);
+        Assert.Equal(["freedoom2", "heretic"], first.Select(f => f.Games.Single().Game.Id));
+        Assert.Equal(0, cache.Hits);
+
+        // The second scan takes both from the cache, saved and loaded again in between.
+        var path = Path.Combine(temp.Path, "pack-scan.json");
+        cache.Save(path);
+        var loaded = PackCache.Load(path);
+        var second = MapPacks.Fit(packs, Games, NamesOf, loaded, TestContext.Current.CancellationToken);
+        Assert.Equal(first.Select(f => f.Games.Single().Game.Id), second.Select(f => f.Games.Single().Game.Id));
+        Assert.Equal(2, loaded.Hits);
+
+        // A file written again is read again; so is every pack when the games it is judged among change.
+        File.WriteAllBytes(packs[0].Path, Pack("MAP01", "doom", wall: "MYWALL", flat: "MYFLAT", extra: [("TX_START", []), ("MYWALL", new byte[8]), ("TX_END", []), ("F_START", []), ("MYFLAT", new byte[4096]), ("F_END", [])]));
+        File.SetLastWriteTimeUtc(packs[0].Path, DateTime.UtcNow.AddMinutes(1));
+        var third = MapPacks.Fit(packs, Games, NamesOf, loaded, TestContext.Current.CancellationToken);
+        Assert.Equal(3, loaded.Hits);
+        Assert.Equal(["freedoom2", "heretic"], third.Select(f => f.Games.Single().Game.Id));
+        var fewer = MapPacks.Fit(packs, [Freedoom1, Heretic], NamesOf, loaded, TestContext.Current.CancellationToken);
+        Assert.Equal(3, loaded.Hits);
+        Assert.Equal(["heretic"], fewer.Select(f => f.Games.Single().Game.Id));
     }
 
     [Fact]

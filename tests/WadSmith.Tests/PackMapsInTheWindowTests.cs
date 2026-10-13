@@ -35,7 +35,13 @@ public sealed class PackMapsInTheWindowTests
                 var button = window.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible && b.Content is string c && c.StartsWith("Maps found near your games", StringComparison.Ordinal) && ReferenceEquals(b.DataContext, tile));
                 said.Add($"{button.Content}: {choice.Label}");
 
-                Ui.Wait(tile.EditPackMap!.ExecuteAsync(choice));
+                // The search box shortens the list; picking a map in it starts editing it.
+                tile.PackFilter = "nothing like this";
+                var none = tile.ShownPackMaps.Count;
+                tile.PackFilter = "shre";
+                said.Add($"filtered: {none} then {tile.ShownPackMaps.Count}, {tile.ShownPackMaps.FirstOrDefault()?.Label}");
+                tile.ChosenPackMap = choice;
+                for (var i = 0; i < 100 && vm.Page is not App.ViewModels.EditorViewModel; i++) Ui.Pump(0.05);
                 Ui.Pump(1.0);
                 var editor = (App.ViewModels.EditorViewModel)vm.Page!;
                 var session = editor.Session;
@@ -47,6 +53,6 @@ public sealed class PackMapsInTheWindowTests
                 window.Close();
             }
         });
-        Assert.Equal(["Maps found near your games · 1 ▾: shreds.wad › MAP03", "opened shreds MAP03 (MAP03): 1 room, add-on shreds.wad, game freedoom2, files freedoom2.wad + shreds.wad"], seen);
+        Assert.Equal(["Maps found near your games · 1 ▾: shreds.wad › MAP03", "filtered: 0 then 1, shreds.wad › MAP03", "opened shreds MAP03 (MAP03): 1 room, add-on shreds.wad, game freedoom2, files freedoom2.wad + shreds.wad"], seen);
     }
 }
