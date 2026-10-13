@@ -26,6 +26,9 @@ public static class Planner
             var plan = new MapPlan { Settings = settings };
             if (!Lay(plan, palette, root.Fork($"layout {attempt}"))) continue;
             Heights(plan, root.Fork("heights"));
+
+            // A layout that cannot keep its size's loops is laid again (the last tries take what they get).
+            if (attempt < 48 && plan.Links.Count(l => l.Loop && l.OneWayFrom < 0) < LoopsFor(settings.Size)) continue;
             Shape(plan, root.Fork("shapes"));
             if (settings.Traps) Closets(plan, root.Fork("closets"));
             Dress(plan, root.Fork("looks"));
@@ -37,6 +40,12 @@ public static class Planner
     }
 
     private static int KeysFor(GeneratorSettings s, FamilyPalette p) => Math.Clamp(s.Keys, 0, p.Keys.Count);
+
+    /// <summary>The fewest ways round a map of <paramref name="size"/> gets when its rooms have the neighbours for them (D59).</summary>
+    public static int LoopsFor(MapSize size) => size switch { MapSize.Small => 1, MapSize.Medium => 2, MapSize.Large => 3, _ => 5 };
+
+    /// <summary>The most one-way shortcuts back to an earlier part a map of <paramref name="size"/> gets (D59).</summary>
+    public static int ShortcutsFor(MapSize size) => size switch { MapSize.Small or MapSize.Medium => 1, MapSize.Large => 2, _ => 3 };
 
     // ── Layout ──────────────────────────────────────────────────────────────────────────────────────────
 
@@ -90,7 +99,12 @@ public static class Planner
         {
             var options = Enumerable.Range(0, 4).Where(d => Free((at.I + Directions[d].Di, at.J + Directions[d].Dj)) && FreeAround((at.I + Directions[d].Di, at.J + Directions[d].Dj)) >= 2).ToList();
             if (options.Count == 0) return false;
-            if (!(options.Contains(dir) && rng.Chance(0.35))) dir = rng.Pick(options);
+
+            // Half the time the way turns back beside rooms already laid (the most such neighbours wins), so the map coils
+            // and its rooms have neighbours to loop with (D59: the community's maps fold back on themselves; ours ran away).
+            var hugging = options.Select(d => (d, Near: 4 - FreeAround((at.I + Directions[d].Di, at.J + Directions[d].Dj)) - 1)).Where(o => o.Near > 0).ToList();
+            if (hugging.Count > 0 && rng.Chance(0.5)) dir = rng.Pick([.. hugging.Where(o => o.Near == hugging.Max(h => h.Near)).Select(o => o.d)]);
+            else if (!(options.Contains(dir) && rng.Chance(0.35))) dir = rng.Pick(options);
             at = (at.I + Directions[dir].Di, at.J + Directions[dir].Dj);
             var role = k == pathLength - 1 ? RoomRole.Exit : arena && k == pathLength - 2 ? RoomRole.Arena : RoomRole.Path;
             var room = Add(at, role, ZoneOf(k), StyleAt(k, ZoneOf(k)));
@@ -115,6 +129,10 @@ public static class Planner
             if (open.Count == 0) return null;
             var parent = rng.Pick(open);
             var ways = Directions.Select(d => (parent.Cell.I + d.Di, parent.Cell.J + d.Dj)).Where(c => Free(c)).ToList();
+
+            // Most of the time beside the most rooms already laid (each a loop or a shortcut it may get); a secret keeps apart.
+            var crowded = ways.Max(c => 4 - FreeAround(c));
+            if (role != RoomRole.Secret && crowded > 1 && rng.Chance(0.65)) ways = [.. ways.Where(c => 4 - FreeAround(c) == crowded)];
             var room = Add(rng.Pick(ways), role, parent.Zone, parent.Style);
             room.Progress = parent.Progress;
             Link(plan, parent.Index, room.Index, rng);
@@ -131,6 +149,57 @@ public static class Planner
             keyRoom.Key = palette.Keys[k];
         }
 
+        // Loops (D59: the community's maps have three ways round at the median, ours had none). First, before the secrets and
+        // side rooms take the free cells, rooms built to close the size's few: each in a free cell beside two rooms of the same
+        // part (a key room may be one; a secret, the arena and the exit stay dead ends), from one of them and on into the
+        // other, else a detour of two rooms beside two joined rooms of a part. Plan retries a layout that cannot have them.
+        bool Loopable(PlannedRoom r) => Walkable(r) || r.Role == RoomRole.Key;
+        for (var built = 0; built < LoopsFor(s.Size); built++)
+        {
+            var bridges = new List<((int I, int J) Cell, PlannedRoom From, PlannedRoom To)>();
+            foreach (var cell in plan.Rooms.SelectMany(r => Directions.Select(d => (r.Cell.I + d.Di, r.Cell.J + d.Dj))).Where(Free).Distinct())
+            {
+                var beside = Directions.Select(d => cells.TryGetValue((cell.Item1 + d.Di, cell.Item2 + d.Dj), out var i) ? plan.Rooms[i] : null).OfType<PlannedRoom>().Where(Loopable).ToList();
+                foreach (var a in beside)
+                {
+                    foreach (var b in beside.Where(b => b.Index > a.Index && b.Zone == a.Zone)) bridges.Add((cell, a, b));
+                }
+            }
+
+            if (bridges.Count == 0)
+            {
+                // None: a detour of two rooms beside two joined rooms of a part, making a square of four to walk round.
+                var detours = new List<(PlannedRoom A, PlannedRoom B, (int I, int J) X, (int I, int J) Y)>();
+                foreach (var l in plan.Links.Where(l => !l.Loop))
+                {
+                    var (a, b) = (plan.Rooms[l.A], plan.Rooms[l.B]);
+                    if (a.Zone != b.Zone || !Loopable(a) || !Loopable(b)) continue;
+                    var along = (I: b.Cell.I - a.Cell.I, J: b.Cell.J - a.Cell.J);
+                    foreach (var side in new[] { (I: along.J, J: along.I), (I: -along.J, J: -along.I) })
+                    {
+                        var (x, y) = ((a.Cell.I + side.I, a.Cell.J + side.J), (b.Cell.I + side.I, b.Cell.J + side.J));
+                        if (Free(x) && Free(y)) detours.Add((a, b, x, y));
+                    }
+                }
+
+                if (detours.Count == 0) break;
+                var (da, db, dx, dy) = rng.Pick(detours);
+                var first = Add(dx, RoomRole.Side, da.Zone, da.Style);
+                var second = Add(dy, RoomRole.Side, db.Zone, db.Style);
+                (first.Progress, second.Progress) = (da.Progress, db.Progress);
+                Link(plan, da.Index, first.Index, rng);
+                Link(plan, first.Index, second.Index, rng);
+                Link(plan, second.Index, db.Index, rng).Loop = true;
+                continue;
+            }
+
+            var (at2, from, to) = rng.Pick(bridges);
+            var bridge = Add(at2, RoomRole.Side, from.Zone, from.Style);
+            bridge.Progress = (from.Progress + to.Progress) / 2;
+            Link(plan, from.Index, bridge.Index, rng);
+            Link(plan, bridge.Index, to.Index, rng).Loop = true;
+        }
+
         for (var k = 0; k < secrets; k++)
         {
             if (Branch(plan.Rooms.Where(r => Walkable(r) && r.Role != RoomRole.Start), RoomRole.Secret) is null) break;
@@ -141,18 +210,31 @@ public static class Planner
             if (Branch(plan.Rooms.Where(r => Walkable(r) || r.Role == RoomRole.Key), RoomRole.Side) is null) break;
         }
 
-        // Loops: neighbours not yet joined, with the same keys behind them, and neither a dead end by design.
+        // Then more where rooms happen to be neighbours not yet joined behind the same keys, most of them. Neighbours one locked
+        // door apart become shortcuts instead: a door from the later part back into the earlier one that opens from the later
+        // side only, so the way folds back and no lock is ever passed going forward. Heights may drop one whose floors cannot
+        // be joined.
         var linked = new HashSet<(int, int)>(plan.Links.Select(l => (Math.Min(l.A, l.B), Math.Max(l.A, l.B))));
+        var same = new List<(PlannedRoom A, PlannedRoom B)>();
+        var across = new List<(PlannedRoom Later, PlannedRoom Earlier)>();
         foreach (var room in plan.Rooms.ToList())
         {
             foreach (var (di, dj) in Directions.Take(2))
             {
                 if (!cells.TryGetValue((room.Cell.I + di, room.Cell.J + dj), out var other)) continue;
                 var o = plan.Rooms[other];
-                if (linked.Contains((Math.Min(room.Index, other), Math.Max(room.Index, other)))) continue;
-                if (o.Zone != room.Zone || !Walkable(room) || !Walkable(o) || !rng.Chance(0.3)) continue;
-                Link(plan, room.Index, other, rng).Loop = true;
+                if (linked.Contains((Math.Min(room.Index, other), Math.Max(room.Index, other))) || !Loopable(room) || !Loopable(o)) continue;
+                if (o.Zone == room.Zone) same.Add((room, o));
+                else if (Math.Abs(o.Zone - room.Zone) == 1) across.Add(o.Zone > room.Zone ? (o, room) : (room, o));
             }
+        }
+
+        foreach (var (a, b) in same.Where(_ => rng.Chance(0.6))) Link(plan, a.Index, b.Index, rng).Loop = true;
+        rng.Shuffle(across);
+        foreach (var (later, earlier) in across.Take(2 * ShortcutsFor(s.Size)))
+        {
+            var shortcut = Link(plan, later.Index, earlier.Index, rng);
+            (shortcut.Loop, shortcut.Kind, shortcut.DoorAt, shortcut.OneWayFrom) = (true, LinkKind.Door, earlier.Index, later.Index);
         }
 
         return true;
@@ -375,12 +457,19 @@ public static class Planner
             done.Add(to.Index);
         }
 
-        // A loop joins floors already set: a step, stairs or a lift as the difference allows, or it is left out.
+        // A loop joins floors already set: a step, stairs or a lift as the difference allows, or it is left out. A shortcut's
+        // one-way door needs floors a step apart; the size's few are kept.
+        var shortcuts = 0;
         foreach (var link in plan.Links.Where(l => l.Loop).ToList())
         {
             var d = Math.Abs(plan.Rooms[link.A].Floor - plan.Rooms[link.B].Floor);
             var length = link.AlongX ? link.Box.Width : link.Box.Height;
-            if (d <= 24) link.Kind = rng.Chance(0.4) ? LinkKind.Door : LinkKind.Open;
+            if (link.OneWayFrom >= 0)
+            {
+                if (d > 24 || shortcuts >= ShortcutsFor(s.Size)) plan.Links.Remove(link);
+                else shortcuts++;
+            }
+            else if (d <= 24) link.Kind = rng.Chance(0.4) ? LinkKind.Door : LinkKind.Open;
             else if (s.Stairs && d <= (length / 16 + 1) * 20) link.Kind = LinkKind.Stairs;
             else if (s.Lifts && length >= 256) link.Kind = LinkKind.Lift;
             else plan.Links.Remove(link);

@@ -94,4 +94,84 @@ public sealed class GeneratorFloorTests
         Assert.Equal(Enum.GetValues<PoolKind>().ToHashSet(), kinds);
         Assert.True(liquid / floor >= 0.04, $"liquid covers {liquid / floor:P1} of the rooms' floor");
     }
+
+    /// <summary>
+    /// Ways round (the study: three loops at the community's median, ours had none): every map has at least its size's few
+    /// loops, each closing a real cycle (its rooms were already joined without it, in the same part); every shortcut runs
+    /// from a room of a later part back to a room of the part just before, through a plain door in the earlier room's wall.
+    /// </summary>
+    [Fact]
+    public void EveryMapHasItsLoopsAndShortcutsOnlyLeadBack()
+    {
+        var shortcuts = 0;
+        foreach (var plan in Sweep())
+        {
+            var seed = plan.Settings.Seed;
+            var loops = plan.Links.Where(l => l.Loop && l.OneWayFrom < 0).ToList();
+            Assert.True(loops.Count >= Planner.LoopsFor(plan.Settings.Size), $"{seed}: {loops.Count} loops, fewer than {Planner.LoopsFor(plan.Settings.Size)}");
+            foreach (var loop in loops)
+            {
+                Assert.Equal(plan.Rooms[loop.A].Zone, plan.Rooms[loop.B].Zone);
+                Assert.True(Joined(plan, loop), $"{seed}: the loop {loop.A}–{loop.B} closes no cycle");
+            }
+
+            foreach (var cut in plan.Links.Where(l => l.OneWayFrom >= 0))
+            {
+                shortcuts++;
+                var (later, earlier) = (plan.Rooms[cut.OneWayFrom], plan.Rooms[cut.OneWayFrom == cut.A ? cut.B : cut.A]);
+                Assert.Equal(later.Zone - 1, earlier.Zone);
+                Assert.Equal((LinkKind.Door, (KeyKind?)null, earlier.Index), (cut.Kind, cut.Key, cut.DoorAt));
+                Assert.True(Joined(plan, cut), $"{seed}: the shortcut {cut.A}–{cut.B} closes no cycle");
+            }
+        }
+
+        Assert.True(shortcuts > 0, "no shortcut in the whole sweep");
+    }
+
+    /// <summary>
+    /// A shortcut's door opens from the later part's side only: in the built map every wall within the doorway that opens
+    /// it lies on that side of the doorway's middle, and there is one.
+    /// </summary>
+    [Fact]
+    public void AShortcutDoorOpensFromTheLaterSideOnly()
+    {
+        var checkedDoors = 0;
+        foreach (var plan in Sweep().Where(p => p.Links.Any(l => l.OneWayFrom >= 0)).Take(6))
+        {
+            var made = MapMaker.Make(plan.Settings);
+            Assert.Empty(made.Failed);
+            foreach (var cut in made.Plan.Links.Where(l => l.OneWayFrom >= 0))
+            {
+                var earlier = made.Plan.Rooms[cut.DoorAt];
+                var (mx, my) = Planner.Mouth(cut, earlier);
+                var inward = (X: Math.Sign(earlier.Box.CentreX - mx) * (cut.AlongX ? 1 : 0), Y: Math.Sign(earlier.Box.CentreY - my) * (cut.AlongX ? 0 : 1));
+                var openers = made.Map.Lines.Where(l => l.OnMap && l.Special != 0)
+                    .Select(l => (X: (l.Start.X + l.End.X) / 2, Y: (l.Start.Y + l.End.Y) / 2))
+                    .Where(p => Math.Abs(p.X - mx) <= (cut.AlongX ? 40 : 72) && Math.Abs(p.Y - my) <= (cut.AlongX ? 72 : 40)).ToList();
+                Assert.NotEmpty(openers);
+                Assert.All(openers, p => Assert.True((p.X - mx) * inward.X + (p.Y - my) * inward.Y < 0, $"{plan.Settings.Seed}: the shortcut door opens from the earlier room at ({p.X}, {p.Y})"));
+                checkedDoors++;
+            }
+        }
+
+        Assert.True(checkedDoors > 0);
+    }
+
+    /// <summary>Whether the link's two rooms are joined by the other links.</summary>
+    private static bool Joined(MapPlan plan, PlannedLink without)
+    {
+        var seen = new HashSet<int> { without.A };
+        var queue = new Queue<int>([without.A]);
+        while (queue.Count > 0)
+        {
+            var r = queue.Dequeue();
+            foreach (var l in plan.Links.Where(l => l != without && (l.A == r || l.B == r)))
+            {
+                var o = l.A == r ? l.B : l.A;
+                if (seen.Add(o)) queue.Enqueue(o);
+            }
+        }
+
+        return seen.Contains(without.B);
+    }
 }

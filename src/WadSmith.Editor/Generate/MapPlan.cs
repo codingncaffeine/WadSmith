@@ -161,6 +161,9 @@ public sealed class PlannedLink
 
     /// <summary>The room at the door's end of the corridor (the door is set where the corridor meets it).</summary>
     public int DoorAt { get; set; }
+
+    /// <summary>For a shortcut back to an earlier part (D59): the room whose side alone opens its door; -1 for any other link.</summary>
+    public int OneWayFrom { get; set; } = -1;
 }
 
 /// <summary>What a planned object is.</summary>

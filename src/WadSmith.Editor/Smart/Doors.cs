@@ -498,6 +498,32 @@ public static partial class Doors
     }
 
     /// <summary>
+    /// Makes a door open from one side only (a shortcut back to where the player has been, D59): its own walls on
+    /// <paramref name="shut"/>'s side lose their action, as in every Doom engine a wall is used from its front alone. Walls
+    /// elsewhere that open it by its tag keep theirs.
+    /// </summary>
+    public static void OneWay(StructureEdit edit, Door door, MapPoint shut)
+    {
+        var own = door.Own.ToList();
+        if (own.Count == 0) return;
+        var (cx, cy) = (own.Average(l => (l.Start.X + l.End.X) / 2), own.Average(l => (l.Start.Y + l.End.Y) / 2));
+        foreach (var l in own)
+        {
+            var (mx, my) = ((l.Start.X + l.End.X) / 2, (l.Start.Y + l.End.Y) / 2);
+            if ((mx - cx) * (shut.X - cx) + (my - cy) * (shut.Y - cy) <= 0) continue;
+            edit.Set(l, x => x.Special, (x, v) => x.Special = v, 0);
+            for (var i = 0; i < 5; i++)
+            {
+                var k = i;
+                edit.Set(l, x => x.Args[k], (x, v) => x.Args[k] = v, 0);
+            }
+
+            edit.Flag(l, "playeruse", false);
+            edit.Flag(l, "monsteruse", false);
+        }
+    }
+
+    /// <summary>
     /// Changes how a door behaves through <paramref name="edit"/>: every wall that opens it gets the
     /// same action, and whether monsters open it; a door that starts open has its ceiling raised to
     /// where it opens to, one that starts closed has it down on its floor.

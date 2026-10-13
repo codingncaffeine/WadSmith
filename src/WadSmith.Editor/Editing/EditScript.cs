@@ -28,6 +28,7 @@ public static class EditScript
         door X Y [WIDTH]            a door in the wall nearest the point: the whole wall, or WIDTH wide in its middle
                                     (64 there on a wall longer than a door can be)
         lock X Y COLOUR|NUMBER      the door at the point locked with the red, blue or yellow key, or with a lock by its number
+        oneway X Y SX SY            the door at the point opened from one side only: not from the side of SX SY
         key COLOUR X Y              a keycard
         window X Y [WIDTH]          a window in the wall nearest the point
         lift X Y                    the room at the point becomes a lift
@@ -135,6 +136,12 @@ public static class EditScript
                 if (Doors.Recognise(g, Room(1)) is not { } door) throw new ArgumentException("no door there");
                 Record("Change the door's lock", e => Doors.Change(e, door, door.Settings with { Lock = lockNumber }, false, door.StartsOpen));
                 made = char.IsDigit(colour[0]) ? $"locked with lock {lockNumber}" : $"locked with the {colour} key";
+                break;
+            case "oneway":
+                if (Doors.Recognise(g, Room(1)) is not { } oneWay) throw new ArgumentException("no door there");
+                var shut = P(3);
+                Record("Open the door from one side only", e => Doors.OneWay(e, oneWay, shut));
+                made = "a door that opens from one side only";
                 break;
             case "key":
                 var kc = w[1].ToLowerInvariant();

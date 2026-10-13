@@ -169,10 +169,14 @@ public static class MapMaker
             var room = plan.Rooms[link.DoorAt];
             var (mx, my) = Planner.Mouth(link, room);
             Line($"door {mx} {my}");
-            if (link.Key is { } key)
+            var (ix, iy) = link.AlongX ? (Math.Abs(mx - room.Box.X1) < 1 ? mx + 8 : mx - 8, my) : (mx, Math.Abs(my - room.Box.Y1) < 1 ? my + 8 : my - 8);
+            if (link.Key is { } key) Line($"lock {ix} {iy} {key.Lock}");
+
+            // A shortcut back (D59): its door, in the earlier room's wall, does not open from that room.
+            if (link.OneWayFrom >= 0)
             {
-                var (ix, iy) = link.AlongX ? (Math.Abs(mx - room.Box.X1) < 1 ? mx + 8 : mx - 8, my) : (mx, Math.Abs(my - room.Box.Y1) < 1 ? my + 8 : my - 8);
-                Line($"lock {ix} {iy} {key.Lock}");
+                var (sx, sy) = link.AlongX ? (Math.Abs(mx - room.Box.X1) < 1 ? mx - 64 : mx + 64, my) : (mx, Math.Abs(my - room.Box.Y1) < 1 ? my - 64 : my + 64);
+                Line($"oneway {ix} {iy} {sx} {sy}");
             }
         }
 
