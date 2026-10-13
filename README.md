@@ -13,7 +13,7 @@ switched off.
 
 > **Status:** 0.0.5, the first build you can download, for Linux. It is early: expect rough edges, and say what you find in [Issues](https://github.com/codingncaffeine/WadSmith/issues).
 
-![WadSmith with a Freedoom map: the plan, the 3D view walking through it, and the Inspector](assets/screenshots/editor.png)
+![WadSmith's start screen with Freedoom: your games on the left, and for the chosen one the ways to start a map and your maps](assets/screenshots/start.png)
 
 ## What it does
 
