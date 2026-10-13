@@ -932,7 +932,8 @@ public sealed class EditorSession : IDisposable
     /// <summary>
     /// The piece of <paramref name="face"/>'s wall a texture dropped at <paramref name="at"/> with Shift covers: a section as wide
     /// as the picture (64 when its size is unknown) round the point, cut out of the wall (see <see cref="Switches.Piece"/>);
-    /// the face of that piece toward the same room.
+    /// the face of that piece toward the same room. The picture starts at the section's left edge: the wall's running offset
+    /// (a piece cut out of a long wall carries how far along it is) would otherwise show it shifted, its left part on the right.
     /// </summary>
     private Side Section(StructureEdit e, Side face, string texture, MapPoint at)
     {
@@ -940,7 +941,10 @@ public sealed class EditorSession : IDisposable
         var width = WallSize(texture) is { Width: >= 8 } t ? t.Width : Switches.Width;
         var front = ReferenceEquals(face, wall.Front);
         var piece = Switches.Piece(e, wall, at, width);
-        return front ? piece.Front : piece.Back ?? piece.Front;
+        var side = front ? piece.Front : piece.Back ?? piece.Front;
+        e.Set(side, s => s.OffsetX, (s, v) => s.OffsetX = v, 0);
+        foreach (var field in new[] { "offsetx_top", "offsetx_mid", "offsetx_bottom" }) e.Field(side, field, null);
+        return side;
     }
 
     /// <summary>Whether <paramref name="texture"/> is a picture the user brought in (still or moving; a material set tiles, so it is not one).</summary>

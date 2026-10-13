@@ -97,10 +97,14 @@ public sealed class PosterTests
         using var temp = new TempFolder();
         var (session, texture) = Open(temp, 96, 32);
         var wall = North(session);
+        // A wall carrying a running offset, as a piece of a long wall does (the user's: 1636 on a 480-wide GIF).
+        session.History.Record("offset", e => e.Set(wall.Front, s => s.OffsetX, (s, v) => s.OffsetX = v, 1636.0));
         var middle = new MapPoint((wall.Start.X + wall.End.X) / 2, (wall.Start.Y + wall.End.Y) / 2 - 4);
         session.Paint(texture, middle, 8, false, section: true);
         var piece = session.Map.Lines.Single(l => l.OnMap && l.Front.Middle == texture);
         Assert.Equal(96, Length(piece), 3);
+        // The picture starts at the section's left edge, not 1636 pixels in.
+        Assert.Equal(0, piece.Front.OffsetX);
         Assert.False(piece.Front.Extra.Contains("scalex_mid"));
     }
 
