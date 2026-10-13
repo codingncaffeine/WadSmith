@@ -8,7 +8,7 @@ namespace WadSmith.Core.Projects;
 /// <summary>Where a map in a project came from.</summary>
 public sealed record MapOrigin
 {
-    /// <summary>"new" for a map made in WadSmith, "remix" for one started from a base game's map, "import" for one brought in from another file.</summary>
+    /// <summary>"new" for a map made in WadSmith, "generated" for one "Make me a map" made (its seed in <see cref="Map"/>), "remix" for one started from a base game's map, "import" for one brought in from another file.</summary>
     public required string Kind { get; init; }
 
     public string? Game { get; init; }

@@ -1,0 +1,154 @@
+{
+  "comment": "What the map generator (D50) places, per game family: monsters by tier (1 weak .. 4 tough; boss = only in the boss arena), with the engine's own editor numbers, health and radius (a test holds them to the engine's catalogue); weapons in the order a map hands them out, the ammunition each uses and the damage a unit of it does on average (Doom's as the Balance meter counts them); health, armour, keys (colour, object, the lock a door takes) and the decorations dressed into rooms. 'doom2' marks what only the Doom II family has. 'start' is the damage the ammunition a player starts with can do.",
+  "doom": {
+    "start": 500,
+    "monsters": [
+      { "class": "ZombieMan", "number": 3004, "health": 20, "radius": 20, "tier": 1 },
+      { "class": "ShotgunGuy", "number": 9, "health": 30, "radius": 20, "tier": 1 },
+      { "class": "DoomImp", "number": 3001, "health": 60, "radius": 20, "tier": 1 },
+      { "class": "ChaingunGuy", "number": 65, "health": 70, "radius": 20, "tier": 2, "doom2": true },
+      { "class": "Demon", "number": 3002, "health": 150, "radius": 30, "tier": 2 },
+      { "class": "Spectre", "number": 58, "health": 150, "radius": 30, "tier": 2 },
+      { "class": "LostSoul", "number": 3006, "health": 100, "radius": 16, "tier": 2, "flies": true },
+      { "class": "Cacodemon", "number": 3005, "health": 400, "radius": 31, "tier": 3, "flies": true },
+      { "class": "Revenant", "number": 66, "health": 300, "radius": 20, "tier": 3, "doom2": true },
+      { "class": "HellKnight", "number": 69, "health": 500, "radius": 24, "tier": 3, "doom2": true },
+      { "class": "Arachnotron", "number": 68, "health": 500, "radius": 64, "tier": 3, "doom2": true },
+      { "class": "PainElemental", "number": 71, "health": 400, "radius": 31, "tier": 3, "flies": true, "doom2": true },
+      { "class": "BaronOfHell", "number": 3003, "health": 1000, "radius": 24, "tier": 4 },
+      { "class": "Fatso", "number": 67, "health": 600, "radius": 48, "tier": 4, "doom2": true },
+      { "class": "Archvile", "number": 64, "health": 700, "radius": 20, "tier": 4, "doom2": true },
+      { "class": "Cyberdemon", "number": 16, "health": 4000, "radius": 40, "tier": 5, "boss": true },
+      { "class": "SpiderMastermind", "number": 7, "health": 3000, "radius": 128, "tier": 5, "boss": true }
+    ],
+    "weapons": [
+      { "class": "Shotgun", "number": 2001, "ammo": "Shell", "gives": 8 },
+      { "class": "Chaingun", "number": 2002, "ammo": "Clip", "gives": 20 },
+      { "class": "SuperShotgun", "number": 82, "ammo": "Shell", "gives": 8, "doom2": true },
+      { "class": "RocketLauncher", "number": 2003, "ammo": "RocketAmmo", "gives": 2 },
+      { "class": "PlasmaRifle", "number": 2004, "ammo": "Cell", "gives": 40 },
+      { "class": "BFG9000", "number": 2006, "ammo": "Cell", "gives": 40 }
+    ],
+    "ammo": [
+      { "type": "Clip", "damage": 10, "small": 2007, "smallAmount": 10, "big": 2048, "bigAmount": 50 },
+      { "type": "Shell", "damage": 70, "small": 2008, "smallAmount": 4, "big": 2049, "bigAmount": 20 },
+      { "type": "RocketAmmo", "damage": 100, "small": 2010, "smallAmount": 1, "big": 2046, "bigAmount": 5 },
+      { "type": "Cell", "damage": 22, "small": 2047, "smallAmount": 20, "big": 17, "bigAmount": 100 }
+    ],
+    "health": { "small": 2011, "smallAmount": 10, "big": 2012, "bigAmount": 25, "super": 2013 },
+    "armor": { "light": 2018, "heavy": 2019 },
+    "keys": [
+      { "colour": "red", "number": 13, "lock": 129 },
+      { "colour": "blue", "number": 5, "lock": 130 },
+      { "colour": "yellow", "number": 6, "lock": 131 }
+    ],
+    "decorations": [ 2028, 2035, 30, 32, 48 ],
+    "outdoorDecorations": [ 43, 47, 54 ]
+  },
+  "heretic": {
+    "start": 500,
+    "monsters": [
+      { "class": "HereticImp", "number": 66, "health": 40, "radius": 16, "tier": 1, "flies": true },
+      { "class": "Mummy", "number": 68, "health": 80, "radius": 22, "tier": 1 },
+      { "class": "MummyGhost", "number": 69, "health": 80, "radius": 22, "tier": 1 },
+      { "class": "HereticImpLeader", "number": 5, "health": 80, "radius": 16, "tier": 2, "flies": true },
+      { "class": "MummyLeader", "number": 45, "health": 100, "radius": 22, "tier": 2 },
+      { "class": "Knight", "number": 64, "health": 200, "radius": 24, "tier": 2 },
+      { "class": "KnightGhost", "number": 65, "health": 200, "radius": 24, "tier": 2 },
+      { "class": "Clink", "number": 90, "health": 150, "radius": 20, "tier": 2 },
+      { "class": "Wizard", "number": 15, "health": 180, "radius": 16, "tier": 3, "flies": true },
+      { "class": "Beast", "number": 70, "health": 220, "radius": 32, "tier": 3 },
+      { "class": "Snake", "number": 92, "health": 280, "radius": 22, "tier": 3 },
+      { "class": "Ironlich", "number": 6, "health": 700, "radius": 40, "tier": 4 },
+      { "class": "Minotaur", "number": 9, "health": 3000, "radius": 28, "tier": 5, "boss": true }
+    ],
+    "weapons": [
+      { "class": "Crossbow", "number": 2001, "ammo": "CrossbowAmmo", "gives": 10 },
+      { "class": "Blaster", "number": 53, "ammo": "BlasterAmmo", "gives": 30 },
+      { "class": "SkullRod", "number": 2004, "ammo": "SkullRodAmmo", "gives": 50 },
+      { "class": "PhoenixRod", "number": 2003, "ammo": "PhoenixRodAmmo", "gives": 2 }
+    ],
+    "ammo": [
+      { "type": "GoldWandAmmo", "damage": 10, "small": 10, "smallAmount": 10, "big": 12, "bigAmount": 50 },
+      { "type": "CrossbowAmmo", "damage": 30, "small": 18, "smallAmount": 5, "big": 19, "bigAmount": 20 },
+      { "type": "BlasterAmmo", "damage": 18, "small": 54, "smallAmount": 10, "big": 55, "bigAmount": 25 },
+      { "type": "SkullRodAmmo", "damage": 12, "small": 20, "smallAmount": 20, "big": 21, "bigAmount": 100 },
+      { "type": "PhoenixRodAmmo", "damage": 80, "small": 22, "smallAmount": 1, "big": 23, "bigAmount": 10 }
+    ],
+    "health": { "small": 81, "smallAmount": 10, "big": 82, "bigAmount": 25, "super": 32 },
+    "armor": { "light": 85, "heavy": 31 },
+    "keys": [
+      { "colour": "green", "number": 73, "lock": 129 },
+      { "colour": "blue", "number": 79, "lock": 130 },
+      { "colour": "yellow", "number": 80, "lock": 131 }
+    ],
+    "decorations": [ 27, 28, 29, 76, 87, 47 ],
+    "outdoorDecorations": [ 37, 38, 39 ]
+  },
+  "hexen": {
+    "start": 500,
+    "monsters": [
+      { "class": "FireDemon", "number": 10060, "health": 80, "radius": 20, "tier": 1, "flies": true },
+      { "class": "Ettin", "number": 10030, "health": 175, "radius": 25, "tier": 1 },
+      { "class": "IceGuy", "number": 8020, "health": 120, "radius": 22, "tier": 2 },
+      { "class": "Wraith", "number": 34, "health": 150, "radius": 20, "tier": 2, "flies": true },
+      { "class": "Bishop", "number": 114, "health": 130, "radius": 22, "tier": 2, "flies": true },
+      { "class": "Centaur", "number": 107, "health": 200, "radius": 20, "tier": 2 },
+      { "class": "CentaurLeader", "number": 115, "health": 250, "radius": 20, "tier": 3 },
+      { "class": "Demon1", "number": 31, "health": 250, "radius": 32, "tier": 3 },
+      { "class": "Demon2", "number": 8080, "health": 250, "radius": 32, "tier": 3 },
+      { "class": "Heresiarch", "number": 10080, "health": 5000, "radius": 40, "tier": 5, "boss": true }
+    ],
+    "weapons": [
+      { "class": "FWeapAxe", "number": 8010, "ammo": "Mana1", "gives": 25, "with": [ 10, 53 ] },
+      { "class": "FWeapHammer", "number": 123, "ammo": "Mana2", "gives": 25, "with": [ 8009, 8040 ] }
+    ],
+    "ammo": [
+      { "type": "Mana1", "damage": 10, "small": 122, "smallAmount": 15, "big": 122, "bigAmount": 15 },
+      { "type": "Mana2", "damage": 10, "small": 124, "smallAmount": 15, "big": 124, "bigAmount": 15 }
+    ],
+    "health": { "small": 81, "smallAmount": 10, "big": 82, "bigAmount": 25, "super": 32 },
+    "armor": { "light": 8005, "heavy": 8008 },
+    "keys": [
+      { "colour": "steel", "number": 8030, "lock": 1 },
+      { "colour": "cave", "number": 8031, "lock": 2 },
+      { "colour": "axe", "number": 8032, "lock": 3 }
+    ],
+    "decorations": [ 8063, 8064, 8065, 8066, 5, 77 ],
+    "outdoorDecorations": [ 24, 25, 26 ]
+  },
+  "strife": {
+    "start": 300,
+    "monsters": [
+      { "class": "AcolyteTan", "number": 3002, "health": 70, "radius": 24, "tier": 1 },
+      { "class": "AcolyteRed", "number": 142, "health": 70, "radius": 24, "tier": 1 },
+      { "class": "AcolyteGray", "number": 146, "health": 70, "radius": 24, "tier": 1 },
+      { "class": "Sentinel", "number": 3006, "health": 100, "radius": 23, "tier": 1, "flies": true },
+      { "class": "Stalker", "number": 186, "health": 80, "radius": 31, "tier": 2 },
+      { "class": "Reaver", "number": 3001, "health": 150, "radius": 20, "tier": 2 },
+      { "class": "Templar", "number": 3003, "health": 300, "radius": 20, "tier": 3 },
+      { "class": "Crusader", "number": 3005, "health": 400, "radius": 40, "tier": 3 },
+      { "class": "StrifeBishop", "number": 187, "health": 500, "radius": 40, "tier": 4 },
+      { "class": "Inquisitor", "number": 16, "health": 1000, "radius": 40, "tier": 5, "boss": true }
+    ],
+    "weapons": [
+      { "class": "StrifeCrossbow", "number": 2001, "ammo": "ElectricBolts", "gives": 8 },
+      { "class": "AssaultGun", "number": 2002, "ammo": "ClipOfBullets", "gives": 20 },
+      { "class": "MiniMissileLauncher", "number": 2003, "ammo": "MiniMissiles", "gives": 8 },
+      { "class": "StrifeGrenadeLauncher", "number": 154, "ammo": "HEGrenadeRounds", "gives": 12 },
+      { "class": "Mauler", "number": 2004, "ammo": "EnergyPod", "gives": 40 }
+    ],
+    "ammo": [
+      { "type": "ClipOfBullets", "damage": 10, "small": 2007, "smallAmount": 10, "big": 2048, "bigAmount": 50 },
+      { "type": "ElectricBolts", "damage": 30, "small": 114, "smallAmount": 20, "big": 114, "bigAmount": 20 },
+      { "type": "MiniMissiles", "damage": 50, "small": 2010, "smallAmount": 4, "big": 2010, "bigAmount": 4 },
+      { "type": "HEGrenadeRounds", "damage": 100, "small": 152, "smallAmount": 6, "big": 152, "bigAmount": 6 },
+      { "type": "EnergyPod", "damage": 15, "small": 2047, "smallAmount": 20, "big": 17, "bigAmount": 100 }
+    ],
+    "health": { "small": 2011, "smallAmount": 10, "big": 2012, "bigAmount": 25, "super": 83 },
+    "armor": { "light": 2018, "heavy": 2019 },
+    "keys": [],
+    "decorations": [ 70, 82, 105, 106, 48 ],
+    "outdoorDecorations": [ 51, 60, 62 ]
+  }
+}

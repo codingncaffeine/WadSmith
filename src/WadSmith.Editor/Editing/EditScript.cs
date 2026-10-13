@@ -21,16 +21,17 @@ public static class EditScript
         shape X Y X Y X Y …         a room of any shape, corner by corner
         round X0 Y0 X1 Y1 [SIDES]   a round room in the box
         look NAME                   new rooms look like the named look (Tech base, Hell, …)
+        look custom WALL FLOOR CEILING  new rooms have these wall, floor and ceiling pictures
         floor X Y HEIGHT            the floor of the room at the point
         ceiling X Y HEIGHT          its ceiling
         light X Y                   a light
         door X Y [WIDTH]            a door in the wall nearest the point: the whole wall, or WIDTH wide in its middle
                                     (64 there on a wall longer than a door can be)
-        lock X Y COLOUR             the door at the point locked with the red, blue or yellow key
+        lock X Y COLOUR|NUMBER      the door at the point locked with the red, blue or yellow key, or with a lock by its number
         key COLOUR X Y              a keycard
         window X Y [WIDTH]          a window in the wall nearest the point
         lift X Y                    the room at the point becomes a lift
-        stairs X0 Y0 X1 Y1          stairs from the first point (bottom) to the second (top)
+        stairs X0 Y0 X1 Y1 [x|y]    stairs from the first point (bottom) to the second (top), running along x or y
         teleport X Y TOX TOY        the room at the point sends to the second point
         secret X Y                  the room at the point becomes a secret
         switch X Y WALLX WALLY      a switch on the wall nearest the second point for the door or lift at the first
@@ -38,7 +39,8 @@ public static class EditScript
         split X Y X Y …             a line across a room splits it
         join X Y X Y …              the rooms at the points join into the first
         start X Y [ANGLE]           the player's start
-        thing TYPE X Y [ANGLE]      an object by editor number
+        thing TYPE X Y [ANGLE] [easy|normal|hard] [ambush]
+                                    an object by editor number: on every difficulty, or from the one named up; ambush = waits
         brightness X Y LEVEL        the room's brightness, 0 to 255
         sign X Y TEXT...            a sign for the room: a WadSmith tour shows it in the game when the player walks in
         """;
@@ -95,6 +97,9 @@ public static class EditScript
             case "round":
                 Record("Draw a room", e => made = $"{ShapeDrawing.Draw(e, g, Shapes.Ellipse(P(1), P(3), w.Length > 5 ? (int)N(5) : Shapes.DefaultSides), l).Count} area(s)");
                 break;
+            case "look" when w.Length == 5 && w[1].Equals("custom", StringComparison.OrdinalIgnoreCase):
+                look = look with { Wall = w[2], Floor = w[3], Ceiling = w[4] };
+                return (true, $"new rooms have {w[2]}, {w[3]} and {w[4]}");
             case "look":
                 var name = string.Join(' ', w.Skip(1));
                 look = Look.Named(engine).FirstOrDefault(n => string.Equals(n.Name, name, StringComparison.OrdinalIgnoreCase)).Look ?? throw new ArgumentException($"no look called {name}");
@@ -121,11 +126,11 @@ public static class EditScript
                 break;
             case "lock":
                 var colour = w[3].ToLowerInvariant();
-                var keys = Keys.Doom.FirstOrDefault(k => k.Colour == colour);
-                if (keys.Colour is null) throw new ArgumentException($"no key is {w[3]}");
+                var lockNumber = int.TryParse(colour, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : Keys.Doom.FirstOrDefault(k => k.Colour == colour).Lock;
+                if (lockNumber <= 0) throw new ArgumentException($"no key is {w[3]}");
                 if (Doors.Recognise(g, Room(1)) is not { } door) throw new ArgumentException("no door there");
-                Record("Change the door's lock", e => Doors.Change(e, door, door.Settings with { Lock = keys.Lock }, false, door.StartsOpen));
-                made = $"locked with the {colour} key";
+                Record("Change the door's lock", e => Doors.Change(e, door, door.Settings with { Lock = lockNumber }, false, door.StartsOpen));
+                made = char.IsDigit(colour[0]) ? $"locked with lock {lockNumber}" : $"locked with the {colour} key";
                 break;
             case "key":
                 var kc = w[1].ToLowerInvariant();
@@ -147,7 +152,8 @@ public static class EditScript
                 made = "a lift";
                 break;
             case "stairs":
-                Record("Make stairs", e => (_, why) = Smart.Stairs.Make(e, g, P(1), P(3), l));
+                bool? alongX = w.Length > 5 ? w[5].Equals("x", StringComparison.OrdinalIgnoreCase) : null;
+                Record("Make stairs", e => (_, why) = Smart.Stairs.Make(e, g, P(1), P(3), l, alongX: alongX));
                 made = "stairs";
                 break;
             case "teleport":
@@ -197,7 +203,20 @@ public static class EditScript
                 made = "the player's start";
                 break;
             case "thing":
-                Record("Place a thing", e => e.Add(Thing((int)N(1), P(2), w.Length > 4 ? (int)N(4) : 90, engine)));
+                var placed = Thing((int)N(1), P(2), w.Length > 4 ? (int)N(4) : 90, engine);
+                foreach (var word in w.Skip(5).Select(x => x.ToLowerInvariant()))
+                {
+                    switch (word)
+                    {
+                        case "easy": break;
+                        case "normal": placed.SetFlag("skill1", false); placed.SetFlag("skill2", false); break;
+                        case "hard": placed.SetFlag("skill1", false); placed.SetFlag("skill2", false); placed.SetFlag("skill3", false); break;
+                        case "ambush": placed.SetFlag("ambush", true); break;
+                        default: throw new ArgumentException($"a thing can be easy, normal, hard or ambush, not {word}");
+                    }
+                }
+
+                Record("Place a thing", e => e.Add(placed));
                 made = $"thing {w[1]}";
                 break;
             default:

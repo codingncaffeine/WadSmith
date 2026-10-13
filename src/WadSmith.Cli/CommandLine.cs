@@ -43,6 +43,7 @@ public static class CommandLine
         new Commands.RemixCommand(),
         new Commands.StressGenCommand(),
         new Commands.ScriptCommand(),
+        new Commands.GenerateCommand(),
         new Commands.RecogniseCommand(),
         new Commands.LandmarksCommand(),
         new Commands.TourCommand(),

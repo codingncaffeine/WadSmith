@@ -1,0 +1,170 @@
+namespace WadSmith.Editor.Generate;
+
+/// <summary>What a room is for on the way through the map.</summary>
+public enum RoomRole
+{
+    Start,
+    Path,
+    Side,
+    Key,
+    Secret,
+    Arena,
+    Exit,
+}
+
+/// <summary>How two rooms are joined: an open corridor, a door, a locked door, stairs, or a lift.</summary>
+public enum LinkKind
+{
+    Open,
+    Door,
+    Locked,
+    Stairs,
+    Lift,
+}
+
+/// <summary>A rectangle on the map, west/south/east/north, in map units.</summary>
+public readonly record struct Box(int X0, int Y0, int X1, int Y1)
+{
+    public int Width => X1 - X0;
+
+    public int Height => Y1 - Y0;
+
+    public double CentreX => (X0 + X1) / 2.0;
+
+    public double CentreY => (Y0 + Y1) / 2.0;
+
+    public bool Contains(double x, double y) => x > X0 && x < X1 && y > Y0 && y < Y1;
+}
+
+/// <summary>A planned room: its cell on the lattice, its rectangle, heights, look, light, and what it is for.</summary>
+public sealed class PlannedRoom
+{
+    public required int Index { get; init; }
+
+    public required (int I, int J) Cell { get; init; }
+
+    public required RoomRole Role { get; set; }
+
+    /// <summary>How many locked doors lie between the start and this room.</summary>
+    public required int Zone { get; init; }
+
+    /// <summary>How far along the way to the exit it is, 0 to 1.</summary>
+    public double Progress { get; set; }
+
+    public Box Box { get; set; }
+
+    public double Floor { get; set; }
+
+    public double Ceiling { get; set; }
+
+    public int Light { get; set; } = 192;
+
+    public LookChoice? Look { get; set; }
+
+    public bool Outdoors { get; set; }
+
+    /// <summary>The key a key room holds.</summary>
+    public KeyKind? Key { get; set; }
+
+    /// <summary>A dim room with a light in it.</summary>
+    public bool Dark { get; set; }
+
+    /// <summary>The name the map shows for it: "Entry hall", "Red key room", "Arena".</summary>
+    public string Name { get; set; } = "";
+}
+
+/// <summary>A corridor between two rooms on neighbouring cells: its rectangle, heights, kind, and the key colour of a locked door.</summary>
+public sealed class PlannedLink
+{
+    public required int A { get; init; }
+
+    public required int B { get; init; }
+
+    public required Box Box { get; set; }
+
+    /// <summary>Whether the corridor runs east–west (else north–south).</summary>
+    public required bool AlongX { get; init; }
+
+    public LinkKind Kind { get; set; }
+
+    public KeyKind? Key { get; set; }
+
+    public double Floor { get; set; }
+
+    public double Ceiling { get; set; }
+
+    /// <summary>Whether this link closes a loop rather than leading somewhere new.</summary>
+    public bool Loop { get; set; }
+
+    /// <summary>The room at the door's end of the corridor (the door is set where the corridor meets it).</summary>
+    public int DoorAt { get; set; }
+}
+
+/// <summary>What a planned object is.</summary>
+public enum ThingRole
+{
+    Start,
+    Monster,
+    Boss,
+    Weapon,
+    Ammo,
+    Health,
+    Armor,
+    Key,
+    Decoration,
+    Light,
+}
+
+/// <summary>
+/// A planned object: what it is, where, which way it faces, the lowest difficulty it appears on (0 every difficulty, 1 from
+/// the normal one, 2 the hard ones only), whether it waits for the player, and for a monster which one (its number may
+/// come from another game, given when the map is made).
+/// </summary>
+public sealed record PlannedThing(ThingRole Role, int Number, double X, double Y, int Angle, int FromSkill = 0, bool Ambush = false, MonsterKind? Monster = null, int Room = -1);
+
+/// <summary>A teleporter: the pad's rectangle in a room and where it sends the player.</summary>
+public sealed record PlannedTeleport(int Room, Box Pad, int ToRoom, double ToX, double ToY);
+
+/// <summary>
+/// The generator's whole plan for a map (D50): rooms, corridors, objects, teleporters, the exit's wall, and the facts the page
+/// shows. Pure data from the settings and the seed; <see cref="MapMaker"/> turns it into an edit script.
+/// </summary>
+public sealed class MapPlan
+{
+    public required GeneratorSettings Settings { get; init; }
+
+    public List<PlannedRoom> Rooms { get; } = [];
+
+    public List<PlannedLink> Links { get; } = [];
+
+    public List<PlannedThing> Things { get; } = [];
+
+    public List<PlannedTeleport> Teleports { get; } = [];
+
+    /// <summary>The rooms of the way from the start to the exit, in order.</summary>
+    public List<int> Path { get; } = [];
+
+    /// <summary>Where on the exit room's wall the exit switch goes.</summary>
+    public (double X, double Y) Exit { get; set; }
+
+    /// <summary>How many monsters each difficulty has: easy, normal, hard.</summary>
+    public (int Easy, int Normal, int Hard) MonsterCounts
+    {
+        get
+        {
+            var m = Things.Where(t => t.Role is ThingRole.Monster or ThingRole.Boss).ToList();
+            return (m.Count(t => t.FromSkill == 0), m.Count(t => t.FromSkill <= 1), m.Count);
+        }
+    }
+
+    /// <summary>About how many minutes it takes to play: the way's length at a walk, plus time for each monster.</summary>
+    public int Minutes
+    {
+        get
+        {
+            var walk = Path.Zip(Path.Skip(1)).Sum(p => Math.Abs(Rooms[p.First].Box.CentreX - Rooms[p.Second].Box.CentreX) + Math.Abs(Rooms[p.First].Box.CentreY - Rooms[p.Second].Box.CentreY));
+            var monsters = Things.Count(t => t.Role is ThingRole.Monster && t.FromSkill <= 1) + 20 * Things.Count(t => t.Role == ThingRole.Boss);
+            return Math.Max(1, (int)Math.Round(walk * 2.2 / 300 / 60 + monsters * 4.0 / 60 + Rooms.Count * 0.15));
+        }
+    }
+}
