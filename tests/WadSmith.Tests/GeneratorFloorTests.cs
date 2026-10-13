@@ -290,6 +290,42 @@ public sealed class GeneratorFloorTests
 
         Assert.True(seen > 0);
     }
+
+    /// <summary>
+    /// Events (the study: 38 walk-over events a map and 18% of the monsters released by one; ours 5 and none, closets
+    /// aside): every key on a dais springs a trap — a closet in its room opened from each edge of the dais, so whichever
+    /// way the player steps up — and across the sweep at least a tenth of the monsters are released by an event and at
+    /// least three in ten wait in ambush.
+    /// </summary>
+    [Fact]
+    public void TheKeySpringsATrapAndMonstersWaitAndAreReleased()
+    {
+        var (monsters, released, waiting) = (0, 0, 0);
+        foreach (var plan in Sweep())
+        {
+            foreach (var key in plan.Rooms.Where(r => r.Key is not null && r.Dais is not null))
+            {
+                var d = key.Dais!.Value;
+                var traps = plan.Rooms.Where(c => c.ClosetOf == key.Index).ToList();
+                Assert.True(traps.Count > 0, $"{plan.Settings.Seed} {key.Name}: the key springs nothing");
+                foreach (var trap in traps)
+                {
+                    Assert.Equal(4, trap.Triggers.Count);
+                    Assert.All(trap.Triggers, t => Assert.True(((t.X == d.X0 || t.X == d.X1) && t.Y > d.Y0 && t.Y < d.Y1) || ((t.Y == d.Y0 || t.Y == d.Y1) && t.X > d.X0 && t.X < d.X1), $"{plan.Settings.Seed}: a trigger off the dais at {t}"));
+                }
+            }
+
+            foreach (var m in plan.Things.Where(t => t.Monster is not null))
+            {
+                monsters++;
+                if (plan.Rooms[m.Room].Role == RoomRole.Closet) released++;
+                if (m.Ambush) waiting++;
+            }
+        }
+
+        Assert.True(released >= monsters / 10, $"{released} of {monsters} monsters released by an event");
+        Assert.True(waiting >= monsters * 3 / 10, $"{waiting} of {monsters} monsters in ambush");
+    }
     /// <summary>Whether the link's two rooms are joined by the other links.</summary>
     private static bool Joined(MapPlan plan, PlannedLink without)
     {

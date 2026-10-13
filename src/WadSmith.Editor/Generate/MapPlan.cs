@@ -99,12 +99,12 @@ public sealed class PlannedRoom
     /// <summary>A dais a step high round the room's middle (a key room's pedestal), when it has one.</summary>
     public Box? Dais { get; set; }
 
-    /// <summary>For a closet: the room it opens into, where on their shared wall its door is, and the line in the room's entrance that opens it.</summary>
+    /// <summary>For a closet: the room it opens into, where on their shared wall its door is, and the lines that open it (the room's entrance, or the edges of a key's dais).</summary>
     public int ClosetOf { get; set; } = -1;
 
     public (double X, double Y) ClosetDoor { get; set; }
 
-    public (double X, double Y) Trigger { get; set; }
+    public List<(double X, double Y)> Triggers { get; } = [];
 
     /// <summary>The room's outline, corner by corner, clockwise as the Room tool draws (its rectangle with its corners cut).</summary>
     public IReadOnlyList<(int X, int Y)> Outline()

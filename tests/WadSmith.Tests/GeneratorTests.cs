@@ -149,8 +149,13 @@ public sealed class GeneratorTests
                 var door = g.SectorAt(new(inside.Item1, inside.Item2));
                 Assert.NotNull(door);
                 Assert.NotNull(Editor.Smart.Doors.Recognise(g, door!));
-                var trigger = g.LineNear(new(closet.Trigger.X, closet.Trigger.Y), 4)!;
-                Assert.Equal((Editor.Smart.Doors.DoorOpen, door!.Tag, true), (trigger.Special, trigger.Args[0], trigger.Flag("playercross")));
+                Assert.NotEmpty(closet.Triggers);
+                foreach (var (tx, ty) in closet.Triggers)
+                {
+                    var trigger = g.LineNear(new(tx, ty), 4)!;
+                    Assert.Equal((Editor.Smart.Doors.DoorOpen, door!.Tag, true), (trigger.Special, trigger.Args[0], trigger.Flag("playercross")));
+                }
+
                 Assert.NotEqual(0, door.Tag);
             }
         }

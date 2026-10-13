@@ -216,14 +216,14 @@ public static class MapMaker
             }
         }
 
-        Line($"# Monster closets: a door, opened when the player walks into the room");
+        Line($"# Monster closets: a door, opened when the player walks into the room or steps up to its key");
         foreach (var closet in plan.Rooms.Where(r => r.Role == RoomRole.Closet))
         {
             var (dx, dy) = closet.ClosetDoor;
             Line($"door {dx} {dy}");
             var b = closet.Box;
             var (ix, iy) = Math.Abs(dy - b.Y0) < 1 ? (dx, dy + 8) : Math.Abs(dy - b.Y1) < 1 ? (dx, dy - 8) : Math.Abs(dx - b.X0) < 1 ? (dx + 8, dy) : (dx - 8, dy);
-            Line($"trigger {closet.Trigger.X} {closet.Trigger.Y} {ix} {iy}");
+            foreach (var (tx, ty) in closet.Triggers) Line($"trigger {tx} {ty} {ix} {iy}");
         }
 
         Line($"# Secrets, teleporters and the exit");

@@ -30,12 +30,12 @@ public static class Planner
             // A layout that cannot keep its size's loops, or has no window, is laid again (the last tries take what they get).
             if (attempt < 48 && plan.Links.Count(l => l.Loop && l.OneWayFrom < 0) < LoopsFor(settings.Size)) continue;
             Shape(plan, root.Fork("shapes"));
+            if (settings.Traps) Closets(plan, root.Fork("closets"));
             Windows(plan, root.Fork("windows"));
             if (attempt < 48 && plan.Windows.Count == 0) continue;
 
             // And one with no balcony and no drop: somewhere to be above the player, or to drop from (D59).
             if (attempt < 48 && !plan.Rooms.Any(r => r.Ledge is not null) && !plan.Links.Any(l => l.Kind == LinkKind.Drop)) continue;
-            if (settings.Traps) Closets(plan, root.Fork("closets"));
             Dress(plan, root.Fork("looks"));
             Populate(plan, palette, root.Fork("things"));
             return plan;
@@ -427,21 +427,36 @@ public static class Planner
     // ── Closets ─────────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Monster closets: a small room 96 deep against a side of a room that has no corridor and no exit switch, inside the
+    /// Monster closets: a small room 96 or 128 deep against a side of a room that has no corridor, window or balcony, inside the
     /// room's cell (so it touches nothing else), whose door opens the first time the player walks into the room through its
-    /// entrance. Only rooms whose entrance line is free for the trigger (no door, lock or lift on it) get one.
+    /// entrance — or, in a key room (D59: the key that springs the ambush), the first time the player steps onto the key's
+    /// dais. A room opened from its entrance needs that line free for the trigger (no door, lock or lift on it).
     /// </summary>
     private static void Closets(MapPlan plan, Seeded rng)
     {
-        const int depth = 96;
         foreach (var room in plan.Rooms.Where(r => r.Role is RoomRole.Path or RoomRole.Side or RoomRole.Key or RoomRole.Arena).ToList())
         {
-            if (room.Role != RoomRole.Arena && !rng.Chance(0.35)) continue;
-            var entry = plan.Links.FirstOrDefault(l => !l.Loop && Math.Max(l.A, l.B) == room.Index);
-            if (entry is null || entry.Kind == LinkKind.Lift || entry.Kind is LinkKind.Door or LinkKind.Locked && entry.DoorAt == room.Index) continue;
+            var keyTrap = room.Role == RoomRole.Key && room.Dais is not null;
+            if (room.Role != RoomRole.Arena && !keyTrap && !rng.Chance(0.55)) continue;
+            List<(double X, double Y)> triggers;
+            if (keyTrap)
+            {
+                var d = room.Dais!.Value;
+                triggers = [(d.CentreX, d.Y1), (d.CentreX, d.Y0), (d.X0, d.CentreY), (d.X1, d.CentreY)];
+            }
+            else
+            {
+                var entry = plan.Links.FirstOrDefault(l => !l.Loop && Math.Max(l.A, l.B) == room.Index);
+                if (entry is null || entry.Kind == LinkKind.Lift || entry.Kind is LinkKind.Door or LinkKind.Locked && entry.DoorAt == room.Index) continue;
+                triggers = [Mouth(entry, room)];
+            }
+
             var (cx, cy) = Middle(plan, room);
             var b = room.Box;
             var c = room.Cuts;
+
+            // 128 deep where the room leaves its cell room for it (holding more monsters), else 96.
+            var depth = Math.Max(Math.Max(b.Y1 - cy, cy - b.Y0), Math.Max(b.X1 - cx, cx - b.X0)) + 128 <= plan.MaxHalf ? 128 : 96;
 
             // The sides with no corridor: each with its flat stretch (between cut corners) along it.
             var sides = new List<(string Side, int From, int To)>();
@@ -453,10 +468,11 @@ public static class Planner
             if (Free("east") && b.X1 - cx + depth <= plan.MaxHalf) sides.Add(("east", b.Y0 + c.SE, b.Y1 - c.NE));
             if (Free("west") && cx - b.X0 + depth <= plan.MaxHalf) sides.Add(("west", b.Y0 + c.SW, b.Y1 - c.NW));
             rng.Shuffle(sides);
-            var wanted = room.Role == RoomRole.Arena ? 2 : 1;
-            foreach (var (side, from, to) in sides.Where(x => x.To - x.From >= 160 + 32).Take(wanted))
+            var wanted = room.Role == RoomRole.Arena || (keyTrap && rng.Chance(0.5)) ? 2 : 1;
+            foreach (var (side, from, to) in sides.Where(x => x.To - x.From >= (keyTrap ? 96 : 160) + 32))
             {
-                var width = Math.Min(rng.Between(4, 6) * 32, to - from - 32);
+                if (wanted == 0) break;
+                var width = Math.Min(rng.Between(keyTrap ? 3 : 4, 6) * 32, to - from - 32);
                 var start = from + 16 + rng.Next((to - from - 32 - width) / 16 + 1) * 16;
                 Box box = side switch
                 {
@@ -492,9 +508,11 @@ public static class Planner
                 var closet = new PlannedRoom
                 {
                     Index = plan.Rooms.Count, Cell = room.Cell, Role = RoomRole.Closet, Zone = room.Zone, Style = room.Style, Progress = room.Progress,
-                    Box = box, Floor = room.Floor, Ceiling = room.Floor + 112, ClosetOf = room.Index, ClosetDoor = door, Trigger = Mouth(entry, room),
+                    Box = box, Floor = room.Floor, Ceiling = room.Floor + 112, ClosetOf = room.Index, ClosetDoor = door,
                 };
+                closet.Triggers.AddRange(triggers);
                 plan.Rooms.Add(closet);
+                wanted--;
             }
         }
     }
@@ -528,6 +546,7 @@ public static class Planner
         const int pane = 16;
         var at = plan.Rooms.Where(r => r.Role is not (RoomRole.Closet or RoomRole.Secret)).ToDictionary(r => r.Cell, r => r);
         var candidates = new List<PlannedWindow>();
+        bool HasCloset(PlannedRoom r, string side) => plan.Rooms.Any(c => c.ClosetOf == r.Index && side switch { "north" => c.Box.Y0 == r.Box.Y1, "south" => c.Box.Y1 == r.Box.Y0, "east" => c.Box.X0 == r.Box.X1, _ => c.Box.X1 == r.Box.X0 });
         foreach (var a0 in at.Values)
         {
             foreach (var (di, dj) in Directions.Take(2))
@@ -544,6 +563,7 @@ public static class Planner
                 var bWall = alongX ? (forward > 0 ? b.Box.X0 : b.Box.X1) : (forward > 0 ? b.Box.Y0 : b.Box.Y1);
                 var gap = Math.Abs(bWall - aWall);
                 if (a.LedgeSide == aSide || b.LedgeSide == bSide) continue;
+                if (HasCloset(a, aSide) || HasCloset(b, bSide)) continue;
                 if (gap - pane < 32 || gap - pane > 2 * MaxNook) continue;
 
                 // Where along the walls: inside both rooms' straight runs, clear of the corridor between them (if any).
@@ -909,12 +929,12 @@ public static class Planner
         {
             var baseline = room.Role switch
             {
-                RoomRole.Path => 260.0,
-                RoomRole.Side => 160,
-                RoomRole.Key => 320,
+                RoomRole.Path => 320.0,
+                RoomRole.Side => 200,
+                RoomRole.Key => 380,
                 RoomRole.Arena => 900,
                 RoomRole.Exit => 120,
-                RoomRole.Closet => 160,
+                RoomRole.Closet => 260,
                 _ => 0,
             };
             if (baseline == 0) continue;
@@ -926,7 +946,7 @@ public static class Planner
             var entry = closet ? room.ClosetDoor : entries.GetValueOrDefault(room.Index, (room.Box.CentreX, room.Box.CentreY));
             var fits = closet ? pool.Where(m => m.Radius <= 24).ToList() : pool;
             if (fits.Count == 0) continue;
-            var ambush = s.Ambushes && room.Role is not (RoomRole.Arena or RoomRole.Closet) && rng.Chance(0.25);
+            var ambush = s.Ambushes && room.Role is not (RoomRole.Arena or RoomRole.Closet) && rng.Chance(0.5);
             // The bosses first, at the far end of the arena, so the arena's crowd never leaves them no room: one that does not
             // fit gives way to the next boss that does, smallest last.
             if (room.Role == RoomRole.Arena)
@@ -946,7 +966,7 @@ public static class Planner
             var placed = 0;
             for (var tries = 0; tries < 60 && budget > 0; tries++)
             {
-                var tier = rng.Chance(0.4) ? maxTier : rng.Between(1, maxTier);
+                var tier = rng.Chance(0.5) ? maxTier : rng.Between(1, maxTier);
                 var choices = fits.Where(m => m.Tier == tier).ToList();
                 for (var t = tier - 1; choices.Count == 0 && t >= 1; t--) choices = [.. fits.Where(m => m.Tier == t)];
                 if (choices.Count == 0) choices = fits;

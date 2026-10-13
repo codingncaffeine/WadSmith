@@ -112,7 +112,7 @@ public sealed class MakeMapInTheWindowTests
         Assert.Equal(
         [
             "page for Freedoom: Phase 2, base row Freedoom: Phase 2, plays in gzdoom, note True",
-            "Bleak Depot · 24 rooms · 3 keys · 3 secrets · 1 trap",
+            "Bleak Depot · 24 rooms · 3 keys · 3 secrets · 5 traps",
             "plan bosses 2, preview checked True",
             "opened Bleak Depot in Made maps, exit reached True, keys 3, settings kept True, project plays in gzdoom",
             "another like it: size 2, keys 3, bosses 2, new seed True",
