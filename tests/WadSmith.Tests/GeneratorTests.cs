@@ -425,12 +425,36 @@ public sealed class GeneratorTests
         heretic = GameResources.Load("heretic", null, [new FoundGame(GameCatalog.Get("heretic")!, hereticWad, new FileInfo(hereticWad).Length)], engine)!;
     }
 
+    /// <summary>An episode: maps in a row from the first slot, each with its own seed and title, the challenge rising, the bosses in the last (one halfway through five or more).</summary>
+    [Fact]
+    public void AnEpisodeRisesInChallengeWithItsBossesLast()
+    {
+        var five = Episodes.Of(For("doom", "grim-keep", bosses: 2) with { Maps = 5, Challenge = 0.5 });
+        Assert.Equal(["MAP01", "MAP02", "MAP03", "MAP04", "MAP05"], five.Select(m => m.Slot));
+        Assert.Equal(["grim-keep", "grim-keep-2", "grim-keep-3", "grim-keep-4", "grim-keep-5"], five.Select(m => m.Seed));
+        Assert.Equal([0, 0, 1, 0, 2], five.Select(m => m.Bosses));
+        Assert.True(five.Zip(five.Skip(1)).All(p => p.First.Challenge < p.Second.Challenge));
+        Assert.Equal(["E1M1", "E1M2", "E1M3"], Episodes.Of(For("heretic", "grim-keep") with { Maps = 3 }).Select(m => m.Slot));
+        Assert.Single(Episodes.Of(For("doom", "grim-keep")));
+        var settings = For("doom", "grim-keep") with { Maps = 3 };
+        Assert.Equal(3, Enumerable.Range(0, 3).Select(i => Episodes.TitleOf(settings, i)).Distinct().Count());
+        Assert.Equal("Grim Keep", Episodes.TitleOf(settings, 0));
+
+        using var temp = new TempFolder();
+        var (project, made) = MadeProjects.Create(Path.Combine(temp.Path, "Grim Keep"), settings);
+        Assert.Equal(["MAP01", "MAP02", "MAP03"], project.Info.Maps.Select(m => m.Slot));
+        Assert.Equal([null, null, WadSmith.Core.Projects.ProjectMapInfo.EndToTitle], project.Info.Maps.Select(m => m.Next));
+        Assert.All(made, m => Assert.Empty(Faults(m)));
+        Assert.True(made[2].Plan.MonsterCounts.Hard > 0);
+    }
+
     [Fact]
     public void MakeItWritesAProjectThatKeepsItsSettings()
     {
         using var temp = new TempFolder();
         var settings = For("doom", "bleak-depot", MapSize.Small) with { Monsters = [.. FamilyPalette.For("heretic")!.Monsters.Take(2)] };
-        var (project, made) = MadeProjects.Create(Path.Combine(temp.Path, "Bleak Depot"), Planner.Plan(settings), prepare: _ => new Lent(m => 20000 + m.Number));
+        var (project, all) = MadeProjects.Create(Path.Combine(temp.Path, "Bleak Depot"), settings, prepare: (_, _) => new Lent(m => 20000 + m.Number));
+        var made = all.Single();
         Assert.Empty(made.Failed);
         Assert.Equal("Bleak Depot", project.Info.Name);
         Assert.Equal("MAP01", project.Info.Maps.Single().Slot);

@@ -238,18 +238,26 @@ public static class MadeProjects
     public const string SettingsFile = "generator.json";
 
     /// <summary>
-    /// Creates the project in <paramref name="folder"/> for a made map, named after its seed, and saves the map in its slot with
-    /// the settings beside it. <paramref name="prepare"/> runs on the new project before the map is built (to carry in other
-    /// games' monsters, pictures, weapons and ammunition) and says how they are named there. Writes files: call it on a worker.
+    /// Creates the project in <paramref name="folder"/> for a made map — or an episode of them (<see cref="Episodes"/>) — named
+    /// after its seed: each map planned, built and saved in its slot with its title, the last one of an episode ending the
+    /// game, and the settings beside them. <paramref name="prepare"/> runs on the project before each map is built (to carry in
+    /// other games' monsters, pictures, weapons and ammunition) and says how they are named there. Writes files: call it on a worker.
     /// </summary>
-    public static (WadSmith.Core.Projects.Project Project, MadeMap Made) Create(string folder, MapPlan plan, string target = WadSmith.Core.Projects.Targets.GZDoom, Func<WadSmith.Core.Projects.Project, Lent?>? prepare = null)
+    public static (WadSmith.Core.Projects.Project Project, IReadOnlyList<MadeMap> Made) Create(string folder, GeneratorSettings settings, string target = WadSmith.Core.Projects.Targets.GZDoom, Func<WadSmith.Core.Projects.Project, MapPlan, Lent?>? prepare = null)
     {
-        var s = plan.Settings;
-        var name = SeedWords.Title(s.Seed);
-        var project = WadSmith.Core.Projects.Project.Create(folder, name, s.GameId, target);
-        var made = MapMaker.Build(plan, prepare?.Invoke(project));
-        project.SaveMap(made.Map.Frame.ToModel(), name, new WadSmith.Core.Projects.MapOrigin { Kind = "generated", Game = s.GameId, Map = SeedWords.Tidy(s.Seed) });
-        project.WriteFile(SettingsFile, System.Text.Encoding.UTF8.GetBytes(SettingsJson.Write(s)));
+        var project = WadSmith.Core.Projects.Project.Create(folder, SeedWords.Title(settings.Seed), settings.GameId, target);
+        var maps = Episodes.Of(settings);
+        var made = new List<MadeMap>();
+        for (var i = 0; i < maps.Count; i++)
+        {
+            var plan = Planner.Plan(maps[i]);
+            var map = MapMaker.Build(plan, prepare?.Invoke(project, plan));
+            project.SaveMap(map.Map.Frame.ToModel(), Episodes.TitleOf(settings, i), new WadSmith.Core.Projects.MapOrigin { Kind = "generated", Game = settings.GameId, Map = SeedWords.Tidy(maps[i].Seed) });
+            made.Add(map);
+        }
+
+        if (maps.Count > 1) project.UpdateMap(maps[^1].Slot, m => m with { Next = WadSmith.Core.Projects.ProjectMapInfo.EndToTitle });
+        project.WriteFile(SettingsFile, System.Text.Encoding.UTF8.GetBytes(SettingsJson.Write(settings)));
         return (project, made);
     }
 }

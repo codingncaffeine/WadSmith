@@ -53,6 +53,9 @@ public sealed record GeneratorSettings
 
     public MapSize Size { get; init; } = MapSize.Medium;
 
+    /// <summary>How many maps: one, or an episode of several in a row, rising in challenge, the bosses in the last.</summary>
+    public int Maps { get; init; } = 1;
+
     public MapStyle Style { get; init; } = MapStyle.Base;
 
     public OutdoorShare Outdoors { get; init; } = OutdoorShare.Some;
@@ -150,4 +153,43 @@ public sealed record GeneratorSettings
         "strife" => Look.For("strife") with { Wall = "BRKGRY01", Floor = "F_DIRT1", Ceiling = "F_SKY001", CeilingHeight = 256, Light = 208 },
         _ => null,
     };
+}
+
+/// <summary>
+/// An episode (D50 "later": maps that share a style and rise in challenge): the settings of each of its maps — its slot after
+/// the first (MAP01, MAP02 … or E1M1, E1M2 …), a seed of its own (the first map keeps the episode's), the challenge rising by
+/// 0.3 from the first map to the last round the chosen one, and the bosses in the last map (one waits halfway through an
+/// episode of five or more).
+/// </summary>
+public static class Episodes
+{
+    public static IReadOnlyList<GeneratorSettings> Of(GeneratorSettings s)
+    {
+        var n = Math.Clamp(s.Maps, 1, 8);
+        if (n == 1) return [s];
+        var seed = SeedWords.Tidy(s.Seed);
+        return [.. Enumerable.Range(0, n).Select(i => s with
+        {
+            Maps = 1,
+            Slot = SlotAfter(s.Slot, i),
+            Seed = i == 0 ? seed : $"{seed}-{i + 1}",
+            Challenge = Math.Clamp(s.Challenge - 0.15 + 0.3 * i / (n - 1), 0, 1),
+            Bosses = i == n - 1 ? s.Bosses : n >= 5 && i == n / 2 ? Math.Min(1, s.Bosses) : 0,
+        })];
+    }
+
+    /// <summary>The slot <paramref name="i"/> maps after <paramref name="first"/>: MAP01 → MAP03, E1M1 → E1M3.</summary>
+    public static string SlotAfter(string first, int i)
+    {
+        if (first.Length == 4 && first[0] is 'E' or 'e' && first[2] is 'M' or 'm') return $"E{first[1]}M{first[3] - '0' + i}";
+        return $"MAP{int.Parse(first.AsSpan(3), System.Globalization.CultureInfo.InvariantCulture) + i:00}";
+    }
+
+    /// <summary>The title of an episode's map: the first map has the episode's own; each other one, two words of its own from the seed.</summary>
+    public static string TitleOf(GeneratorSettings episode, int i)
+    {
+        if (i == 0) return SeedWords.Title(episode.Seed);
+        var words = new Seeded(SeedWords.Tidy(episode.Seed)).Fork($"title {i}");
+        return SeedWords.Title(SeedWords.Pick(words));
+    }
 }

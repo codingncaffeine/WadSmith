@@ -116,4 +116,51 @@ public sealed class MakeMapInTheWindowTests
             "card: Bleak Depot, Grim Keep",
         ], log);
     }
+
+    /// <summary>An episode as the user makes one: the Maps segment, Make it, the first map open; the slot's button lists the three maps and opens the second.</summary>
+    [Fact]
+    public async Task AnEpisodeOpensItsFirstMapAndTheSlotButtonOpensTheOthers()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var log = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(temp.Path, Path.GetDirectoryName(wad)!);
+            var said = new List<string>();
+            try
+            {
+                var tile = vm.Welcome.Games.First(t => t.Found.Game.Id == "freedoom2");
+                var card = Shown<ContentPresenter>(window, p => ReferenceEquals(p.DataContext, tile));
+                Click(window, card.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "Make me a map…")));
+                var page = (MakeMapViewModel)vm.Page;
+                Click(window, Shown<ToggleButton>(window, b => ReferenceEquals(b.DataContext, page.Maps.Items[1])));
+                Shown<TextBox>(window, t => t.Text == page.Seed).Text = "eerie-works";
+                for (var i = 0; i < 200 && !page.Facts.StartsWith("Eerie Works · map 1 of 3", StringComparison.Ordinal); i++) Ui.Pump(0.05);
+                said.Add(page.Facts.Split(" · ")[1]);
+
+                Click(window, Shown<Button>(window, b => Equals(b.Content, "Make it")));
+                for (var i = 0; i < 600 && vm.Page is not EditorViewModel; i++) Ui.Pump(0.05);
+                var editor = (EditorViewModel)vm.Page;
+                Ui.Pump(0.5);
+                said.Add($"opened {editor.Session.Slot}, maps {string.Join(", ", editor.ProjectMaps.Select(m => m.Slot))}, last ends {editor.Session.Project.Info.Maps[^1].Next}");
+                var chooser = Shown<Button>(window, b => Equals(b.Content, "MAP01 ▾"));
+                Click(window, chooser);
+                editor.ProjectMaps.Single(m => m.Slot == "MAP02").Open.Execute(null);
+                for (var i = 0; i < 400 && (vm.Page as EditorViewModel)?.Session.Slot != "MAP02"; i++) Ui.Pump(0.05);
+                var second = (EditorViewModel)vm.Page;
+                Ui.Pump(0.5);
+                said.Add($"switched to {second.Session.Slot} \"{second.Session.Project.Info.Maps[1].Title}\", rooms {second.Session.Map.Sectors.Count(x => x.OnMap) > 10}, first map's session closed {editor.Session.IsDisposed}");
+            }
+            finally
+            {
+                window.Close();
+            }
+
+            return said;
+        });
+        Assert.Equal(3, log.Count);
+        Assert.Equal("map 1 of 3", log[0]);
+        Assert.Equal("opened MAP01, maps MAP01, MAP02, MAP03, last ends EndTitle", log[1]);
+        Assert.Matches("^switched to MAP02 \"[A-Z][a-z]+ [A-Z][a-z]+\", rooms True, first map's session closed True$", log[2]);
+    }
 }

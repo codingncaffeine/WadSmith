@@ -172,7 +172,8 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         for (var k = 1; k <= Math.Min(3, FamilyPalette.For(_game.Engine)?.Keys.Count ?? 0); k++) keys.Add((k.ToString(CultureInfo.InvariantCulture), $"{k} locked door{(k > 1 ? "s" : "")}, each with its key earlier on the way: {string.Join(", then ", keyNames.Take(k))}."));
         Keys = new SegmentGroup(keys, Math.Min(2, keys.Count - 1));
         Bosses = new SegmentGroup([("None", "No boss: the exit room ends the map."), ("1", "One boss in an arena before the exit."), ("2", "Two bosses in the arena."), ("3", "Three bosses in the arena.")], 1);
-        foreach (var g in new[] { Size, Style, Outdoors, Keys, Bosses }) g.Changed += Remake;
+        Maps = new SegmentGroup([("One", "One map."), ("3", "An episode of three maps in a row, each harder than the last, the bosses in the last."), ("5", "An episode of five maps, a boss halfway and the rest in the last."), ("8", "An episode of eight maps: an evening's play.")], 0);
+        foreach (var g in new[] { Size, Style, Outdoors, Keys, Bosses, Maps }) g.Changed += Remake;
         _seed = SeedWords.Shuffle(Random.Shared);
         _preview = new LatestOnWorker<(MapPlan?, string, string, string?)>(MainViewModel.PostToUi, Show, "make-me-a-map preview");
         BuildSources(game);
@@ -195,6 +196,11 @@ internal sealed partial class MakeMapViewModel : ObservableObject
     public SegmentGroup Size { get; }
 
     public SegmentGroup Style { get; }
+
+    /// <summary>One map, or an episode of several.</summary>
+    public SegmentGroup Maps { get; }
+
+    private static readonly int[] MapCounts = [1, 3, 5, 8];
 
     public SegmentGroup Outdoors { get; }
 
@@ -377,6 +383,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
     private void Apply(GeneratorSettings s)
     {
         Size.Index = (int)s.Size;
+        Maps.Index = Math.Max(0, Array.IndexOf(MapCounts, s.Maps));
         Style.Index = (int)s.Style;
         Outdoors.Index = (int)s.Outdoors;
         Keys.Index = Math.Clamp(s.Keys, 0, Keys.Items.Count - 1);
@@ -395,8 +402,11 @@ internal sealed partial class MakeMapViewModel : ObservableObject
     }
 
     /// <summary>The track the seed picks from the tracks of the games whose Music box is checked (those read so far).</summary>
-    private (string Game, string Track)? PickMusic(GeneratorSettings s) =>
-        MadeMusic.Pick(s.Seed, Sources.Where(r => r.Music && r.CanMusic && r.Resources is not null).SelectMany(r => r.Resources!.Music.Select(t => (r.Game.Game.Id, t))));
+    private (string Game, string Track)? PickMusic(GeneratorSettings s) => MadeMusic.Pick(s.Seed, MusicPool());
+
+    /// <summary>The tracks of the games whose Music box is checked (those read so far), by game.</summary>
+    private List<(string Game, string Track)> MusicPool() =>
+        [.. Sources.Where(r => r.Music && r.CanMusic && r.Resources is not null).SelectMany(r => r.Resources!.Music.Select(t => (r.Game.Game.Id, t)))];
 
     /// <summary>The page's choices as the generator's settings.</summary>
     public GeneratorSettings Settings()
@@ -405,6 +415,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         {
             GZDoom = !Targets.IsClassic(Target),
             Size = (MapSize)Size.Index,
+            Maps = MapCounts[Maps.Index],
             Style = (MapStyle)Style.Index,
             Outdoors = (OutdoorShare)Outdoors.Index,
             Challenge = Challenge,
@@ -449,7 +460,8 @@ internal sealed partial class MakeMapViewModel : ObservableObject
     {
         try
         {
-            var plan = Planner.Plan(s);
+            // An episode's first map, as it will be made (its challenge, no bosses before the last map).
+            var plan = Planner.Plan(Episodes.Of(s)[0]);
             var made = MapMaker.Build(plan, new Lent(m => m.Number, null, (_, number) => number));
             var g = MapGeometry.Build(made.Map.Frame);
             var walk = Progression.Walk(g, s.Family);
@@ -459,7 +471,8 @@ internal sealed partial class MakeMapViewModel : ObservableObject
             var keys = plan.Links.Count(l => l.Key is not null);
             var secrets = plan.Rooms.Count(r => r.Role == RoomRole.Secret);
             var traps = plan.Rooms.Count(r => r.Role == RoomRole.Closet);
-            var facts = $"{SeedWords.Title(s.Seed)} · {plan.Rooms.Count - traps} rooms · {Count(keys, "key")} · {Count(secrets, "secret")}{(traps > 0 ? $" · {Count(traps, "trap")}" : "")} · about {Count(plan.Minutes, "minute")}";
+            var episode = s.Maps > 1 ? $" · map 1 of {s.Maps}" : "";
+            var facts = $"{SeedWords.Title(s.Seed)}{episode} · {plan.Rooms.Count - traps} rooms · {Count(keys, "key")} · {Count(secrets, "secret")}{(traps > 0 ? $" · {Count(traps, "trap")}" : "")} · about {Count(plan.Minutes, "minute")}";
             var verdict = new List<string> { $"{hard} monsters on {names[3]}, {normal} on {names[2]}, {easy} on {names[1]}." };
             if (s.Family == "doom" && s.Monsters.All(m => m.Family == "doom") && things is not null && Balance.Read(made.Map.Things, things, s.Family) is { } balance)
             {
@@ -531,6 +544,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         var r = Random.Shared;
         Size.Index = r.Next(4);
         Style.Index = r.Next(4);
+        Maps.Index = r.Next(2) == 0 ? 0 : r.Next(4);
         Outdoors.Index = r.Next(3);
         Keys.Index = r.Next(Keys.Items.Count);
         Bosses.Index = r.Next(4);
@@ -590,40 +604,42 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         Status = "Making the map…";
         var s = Settings();
         var rows = Sources.ToList();
-        var music = PickMusic(s);
+        var tracks = MusicPool();
         GameResources? madeInto = null;
         try
         {
             var engine = _services.EngineData;
             var (session, notes) = await Task.Run(() =>
             {
-                var plan = Planner.Plan(s);
                 var folder = UniqueFolder(_services.MadeMapsFolder, SeedWords.Title(s.Seed));
-                IReadOnlyList<string> said = [];
-                var (project, _) = MadeProjects.Create(folder, plan, Target, project =>
+                var said = new List<string>();
+                GameResources? From(string family, bool doom2) => rows.FirstOrDefault(r => r.Family == family && (r.IsBase || r.Doom2Only == doom2) && !(r.IsBase && doom2))?.Resources
+                    ?? rows.FirstOrDefault(r => r.Family == family && !r.IsBase)?.Resources;
+                var (project, made) = MadeProjects.Create(folder, s, Target, (project, plan) =>
                 {
-                    if (_services.ResourcesFor(project) is not { } into) return null;
-                    madeInto = into;
-                    GameResources? From(string family, bool doom2) => rows.FirstOrDefault(r => r.Family == family && (r.IsBase || r.Doom2Only == doom2) && !(r.IsBase && doom2))?.Resources
-                        ?? rows.FirstOrDefault(r => r.Family == family && !r.IsBase)?.Resources;
+                    // The project's game is opened once, for the first map; each map then carries in what it uses.
+                    madeInto ??= _services.ResourcesFor(project);
+                    if (madeInto is not { } into) return null;
                     var (lent, notes) = Editor.Generate.Sources.Carry(project, into, m => From(m.Family, m.Doom2 && m.Family == s.Family), l => From(l.Family, false), family => From(family, false), plan, engine);
-                    said = notes;
+                    said.AddRange(notes.Where(n => !said.Contains(n)));
                     return lent;
                 });
-                // The music the seed picks, once the map is in the project.
-                if (music is { } pick && madeInto is { } inGame && rows.FirstOrDefault(r => r.Game.Game.Id == pick.Game)?.Resources is { } from)
+
+                // Each map's music, picked by its own seed, once the maps are in the project.
+                foreach (var map in made)
                 {
+                    if (MadeMusic.Pick(map.Plan.Settings.Seed, tracks) is not { } pick || madeInto is not { } inGame || rows.FirstOrDefault(r => r.Game.Game.Id == pick.Game)?.Resources is not { } from) continue;
                     try
                     {
-                        MadeMusic.Use(project, inGame, from, pick.Track, plan.Settings.Slot, engine);
+                        MadeMusic.Use(project, inGame, from, pick.Track, map.Plan.Settings.Slot, engine);
                     }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
                     {
-                        said = [.. said, $"The music {pick.Track} could not be copied: {ex.Message}"];
+                        said.Add($"The music {pick.Track} could not be copied: {ex.Message}");
                     }
                 }
 
-                return (EditorSession.Open(project, plan.Settings.Slot, MainViewModel.HooksFor(_services.ResourcesFor(project), engine)), said);
+                return (EditorSession.Open(project, made[0].Plan.Settings.Slot, MainViewModel.HooksFor(_services.ResourcesFor(project), engine)), (IReadOnlyList<string>)said);
             }).ConfigureAwait(true);
             _services.Settings.Current.LastMadeMap = SettingsJson.Write(s);
             _services.Settings.Save();

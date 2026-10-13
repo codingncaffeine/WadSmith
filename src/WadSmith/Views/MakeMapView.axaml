@@ -81,6 +81,9 @@
                     <TextBlock Classes="section" Text="SIZE" Margin="0,12,0,0" />
                     <ContentControl Content="{Binding Size}" ContentTemplate="{StaticResource Segments}" />
 
+                    <TextBlock Classes="section" Text="MAPS" Margin="0,12,0,0" />
+                    <ContentControl Content="{Binding Maps}" ContentTemplate="{StaticResource Segments}" />
+
                     <TextBlock Classes="section" Text="STYLE" Margin="0,12,0,0" />
                     <ContentControl Content="{Binding Style}" ContentTemplate="{StaticResource Segments}" />
 

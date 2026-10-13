@@ -80,6 +80,9 @@ public static class SeedWords
         "cistern", "dungeon", "factory", "hollow", "lab", "ruins", "station", "tomb", "works", "yard",
     ];
 
+    /// <summary>A seed drawn from the generator's own stream (an episode's map titles).</summary>
+    public static string Pick(Seeded random) => $"{Adjectives[random.Next(Adjectives.Length)]}-{Nouns[random.Next(Nouns.Length)]}";
+
     /// <summary>A new seed from <paramref name="random"/>.</summary>
     public static string Shuffle(Random random) => $"{Adjectives[random.Next(Adjectives.Length)]}-{Nouns[random.Next(Nouns.Length)]}";
 
