@@ -134,23 +134,23 @@ public static class Doors
     /// <summary>The stretch of a long wall a door clicked on it takes: <paramref name="width"/> wide in its middle, on whole units.</summary>
     public static (double From, double To) Centred(Line wall, double width = 64) => (Math.Round((wall.Length - width) / 2), Math.Round((wall.Length + width) / 2));
 
+    /// <summary>How deep each frame of a doorway is: the piece either side of the door whose ceiling is the door's height.</summary>
+    public const double FrameDepth = 8;
+
     /// <summary>
-    /// Makes a door in a wall between two rooms through <paramref name="edit"/>, as Doom's own doors are
-    /// made: an area 16 deep and as wide as the wall (or the stretch of it <paramref name="span"/> gives, from the wall's
-    /// start), flush with it on the side of the narrower room (a
-    /// corridor's end), closed (its ceiling on its floor); its two walls facing the rooms open it when
-    /// used, by players and monsters, again and again (Door_Raise, Doom's DR door); they show the game's
-    /// door texture, and its side walls the door track texture, anchored at the bottom so they do not
-    /// move with the door. Returns the door's area, or null and the reason it cannot be made there.
-    /// <paramref name="before"/> must show the map as it is.
+    /// Makes a door into the opening <paramref name="wall"/>, over <paramref name="span"/> of it (the whole of it when none),
+    /// as Doom's own doors are made: an area <see cref="Depth"/> deep in the corridor's side (the room with walls running on
+    /// from both ends of the opening), closed (its ceiling on its floor); its two faces open it when used, by players and
+    /// monsters, again and again (Door_Raise, Doom's DR door), showing the game's door picture; its sides show the door track,
+    /// anchored at the bottom so they do not move with the door. In a room taller than the door's picture (its height from
+    /// <paramref name="heightOf"/>) the door gets a doorway: a frame <see cref="FrameDepth"/> deep either side whose ceiling
+    /// is the picture's height, so the wall shows above the door — the picture hangs from the door's top edge and would
+    /// repeat upward otherwise. With <paramref name="fill"/>, the rest of the opening either side of the door is closed with
+    /// wall — a door in a wall, which is what a door between two rooms means — as closed slabs of the same depth; with
+    /// <paramref name="door"/> false, the whole opening becomes wall and no door is made ("wall it off"). Returns the door's
+    /// area, or null and the reason it cannot be made there. <paramref name="before"/> must show the map as it is.
     /// </summary>
-    /// <summary>
-    /// Makes a door into the opening <paramref name="wall"/>, over <paramref name="span"/> of it (the whole of it when none).
-    /// With <paramref name="fill"/>, the rest of the opening either side of the door is closed with wall — a door in a
-    /// wall, which is what a door between two rooms means — as closed slabs of the same depth; with <paramref name="door"/>
-    /// false, the whole opening becomes wall and no door is made ("wall it off").
-    /// </summary>
-    public static (Sector? Door, string? Why) Make(StructureEdit edit, MapGeometry before, Line wall, Look look, (double From, double To)? span = null, bool fill = false, bool door = true)
+    public static (Sector? Door, string? Why) Make(StructureEdit edit, MapGeometry before, Line wall, Look look, (double From, double To)? span = null, bool fill = false, bool door = true, Func<string, double?>? heightOf = null)
     {
         if (wall.Back is null) return (null, door ? "A door goes in a wall between two rooms; this wall has a room on one side only." : "This wall already has a room on one side only.");
         var (front, back) = (wall.Front.Sector, wall.Back.Sector);
@@ -168,58 +168,61 @@ public static class Doors
 
         // The door goes into the corridor: the room with walls running on from both ends of this one.
         var sides = new[] { back, front }.OrderByDescending(r => Corridor(before, wall, r)).ToList();
+        var texture = width <= 64 ? look.Door : look.BigDoor;
+        var height = door ? heightOf?.Invoke(texture) : null;
         foreach (var into in sides)
         {
-            // Wall either side of the door: the whole opening is carved as one strip, cut where the door starts and ends.
-            var whole = !door || (fill && (from > 0 || to < wall.Length));
-            var strip = Strip(wall, into, Depth, whole ? 0 : from, whole ? wall.Length : to);
-            if (!Clear(before, wall, strip)) continue;
-            var (nx, ny) = Normal(wall, into);
-            var (dx, dy) = ((wall.End.X - wall.Start.X) / wall.Length, (wall.End.Y - wall.Start.Y) / wall.Length);
-            MapPoint At(double along, double inward = 0) => new(wall.Start.X + dx * along + nx * inward, wall.Start.Y + dy * along + ny * inward);
-            var cuts = new List<(MapPoint A, MapPoint B)>();
-            if (whole && door)
+            // A doorway as tall as the door's picture when the room is taller; when there is no room for its frames, the door alone.
+            var framed = height is { } h && h > 0 && h < into.CeilingHeight - into.FloorHeight;
+            foreach (var withFrames in framed ? new[] { true, false } : [false])
             {
-                if (from > 0) cuts.Add((At(from), At(from, Depth)));
-                if (to < wall.Length) cuts.Add((At(to), At(to, Depth)));
-            }
+                var depth = withFrames ? Depth + 2 * FrameDepth : Depth;
 
-            var made = ShapeDrawing.Draw(edit, before, strip, look, cuts.Count > 0 ? cuts : null);
-            if (made.Count != 1 + cuts.Count) throw new InvalidOperationException(door ? "The door's area did not come out as one area." : "The wall's area did not come out as one area.");
-
-            // Which area is the door: the one across the span's middle; the rest are wall. Every slab is closed, ceiling on floor.
-            var touched = edit.Touched.Select(e => e switch { Line w => w, Side { Line: { } w } => w, _ => null }).OfType<Line>().Distinct().Where(l => l.OnMap).ToList();
-            double Along(Sector area)
-            {
-                var points = touched.Where(l => ReferenceEquals(l.Front.Sector, area) || ReferenceEquals(l.Back?.Sector, area)).SelectMany(l => new[] { l.Start, l.End }).ToList();
-                return points.Count == 0 ? double.NaN : points.Average(v => (v.X - wall.Start.X) * dx + (v.Y - wall.Start.Y) * dy);
-            }
-
-            var doorArea = door ? made.OrderBy(area => Math.Abs(Along(area) - (from + to) / 2)).First() : null;
-            foreach (var area in made) area.CeilingHeight = area.FloorHeight;
-            var texture = width <= 64 ? look.Door : look.BigDoor;
-            foreach (var slab in made)
-            {
-                var isDoor = ReferenceEquals(slab, doorArea);
-                foreach (var l in touched.Where(l => ReferenceEquals(l.Front.Sector, slab) || ReferenceEquals(l.Back?.Sector, slab)).ToList())
+                // Wall either side of the door: the whole opening is carved as one strip, cut where the door starts and ends.
+                var whole = !door || (fill && (from > 0 || to < wall.Length));
+                var strip = Strip(wall, into, depth, whole ? 0 : from, whole ? wall.Length : to);
+                if (!Clear(before, wall, strip)) continue;
+                var (nx, ny) = Normal(wall, into);
+                var (dx, dy) = ((wall.End.X - wall.Start.X) / wall.Length, (wall.End.Y - wall.Start.Y) / wall.Length);
+                MapPoint At(double along, double inward = 0) => new(wall.Start.X + dx * along + nx * inward, wall.Start.Y + dy * along + ny * inward);
+                var cuts = new List<(MapPoint A, MapPoint B)>();
+                if (whole && door)
                 {
-                    var other = ReferenceEquals(l.Front.Sector, slab) ? l.Back?.Sector : l.Front.Sector;
-                    if (other is not null && made.Contains(other)) continue;
-                    if (!isDoor)
-                    {
-                        // A piece of wall: the room's wall texture on its faces, hung from the ceiling like the walls beside it.
-                        if (other is null || !Parallel(l, wall)) continue;
-                        var face = ReferenceEquals(l.Front.Sector, slab) ? l.Back! : l.Front;
-                        edit.Set(face, x => x.Top, (x, v) => x.Top = v, look.Wall);
-                        edit.Set(face, x => x.Bottom, (x, v) => x.Bottom = v, look.Wall);
-                        edit.Flag(l, "dontpegtop", true);
-                        continue;
-                    }
+                    if (from > 0) cuts.Add((At(from), At(from, depth)));
+                    if (to < wall.Length) cuts.Add((At(to), At(to, depth)));
+                }
 
-                    var doorSector = slab;
-                    if (other is not null && Parallel(l, wall))
-                    {
-                    // A face of the door: the room in front, the door behind, so using it opens the door.
+                // The frames' walls across the door column, after the cuts along its sides so that they end on them.
+                if (withFrames)
+                {
+                    cuts.Add((At(from, FrameDepth), At(to, FrameDepth)));
+                    cuts.Add((At(from, FrameDepth + Depth), At(to, FrameDepth + Depth)));
+                }
+
+                var made = ShapeDrawing.Draw(edit, before, strip, look, cuts.Count > 0 ? cuts : null);
+                if (made.Count != 1 + cuts.Count) throw new InvalidOperationException(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{(door ? "The door's area" : "The wall's area")} did not come out as one area: {made.Count} areas for {cuts.Count} cuts."));
+
+                // Which areas are the door column: the ones across the span's middle; in it, by depth, the near frame, the door
+                // and the far frame. The rest are wall: closed at the room's ceiling (floor up on the ceiling), never on the floor,
+                // because the engine opens a door to the lowest ceiling beside it, and a slab closed on the floor would keep it shut.
+                // The door is closed on its floor; the frames are as tall as the door.
+                var touched = edit.Touched.Select(e => e switch { Line w => w, Side { Line: { } w } => w, _ => null }).OfType<Line>().Distinct().Where(l => l.OnMap).ToList();
+                IEnumerable<Vertex> Corners(Sector area) => touched.Where(l => ReferenceEquals(l.Front.Sector, area) || ReferenceEquals(l.Back?.Sector, area)).SelectMany(l => new[] { l.Start, l.End });
+                double Along(Sector area) => Corners(area).Select(v => (v.X - wall.Start.X) * dx + (v.Y - wall.Start.Y) * dy).DefaultIfEmpty(double.NaN).Average();
+                double Inward(Sector area) => Corners(area).Select(v => (v.X - wall.Start.X) * nx + (v.Y - wall.Start.Y) * ny).DefaultIfEmpty(double.NaN).Average();
+                var column = door ? made.OrderBy(area => Math.Abs(Along(area) - (from + to) / 2)).Take(withFrames ? 3 : 1).OrderBy(Inward).ToList() : [];
+                var doorArea = door ? column[withFrames ? 1 : 0] : null;
+                var frames = withFrames ? new HashSet<Sector>(ReferenceEqualityComparer.Instance) { column[0], column[2] } : new HashSet<Sector>(ReferenceEqualityComparer.Instance);
+                foreach (var area in made)
+                {
+                    if (frames.Contains(area)) area.CeilingHeight = area.FloorHeight + height!.Value;
+                    else if (ReferenceEquals(area, doorArea)) area.CeilingHeight = area.FloorHeight;
+                    else area.FloorHeight = area.CeilingHeight;
+                }
+
+                void DoorFace(Line l, Sector doorSector)
+                {
+                    // A face of the door: the room (or the frame) in front, the door behind, so using it opens the door.
                     if (ReferenceEquals(l.Front.Sector, doorSector)) Walls.Turn(edit, l);
                     edit.Set(l.Front, x => x.Top, (x, v) => x.Top = v, texture);
                     edit.Set(l.Front, x => x.OffsetX, (x, v) => x.OffsetX = v, 0);
@@ -236,16 +239,60 @@ public static class Doors
                     edit.Flag(l, "monsteruse", true);
                     edit.Flag(l, "repeatspecial", true);
                 }
-                else if (other is null)
-                {
-                    // A side of the door: the track, which stays put while the door moves.
-                    edit.Set(l.Front, x => x.Middle, (x, v) => x.Middle = v, look.Track);
-                    edit.Flag(l, "dontpegbottom", true);
-                }
-                }
-            }
 
-            return (doorArea, null);
+                foreach (var slab in made)
+                {
+                    var isDoor = ReferenceEquals(slab, doorArea);
+                    var isFrame = frames.Contains(slab);
+                    foreach (var l in touched.Where(l => ReferenceEquals(l.Front.Sector, slab) || ReferenceEquals(l.Back?.Sector, slab)).ToList())
+                    {
+                        var other = ReferenceEquals(l.Front.Sector, slab) ? l.Back?.Sector : l.Front.Sector;
+                        var mine = ReferenceEquals(l.Front.Sector, slab) ? l.Front : l.Back!;
+                        if (other is not null && made.Contains(other))
+                        {
+                            // Between two of the new areas: the door's face against a frame; the door's side against a piece of wall
+                            // (whose floor is up on the ceiling) shows the track below it; a frame's side against one shows the room's
+                            // wall, hung from the wall's top so it lines up with the walls beside.
+                            if (isDoor && frames.Contains(other)) DoorFace(l, slab);
+                            else if (isDoor) edit.Set(mine, x => x.Bottom, (x, v) => x.Bottom = v, look.Track);
+                            else if (isFrame && !ReferenceEquals(other, doorArea)) edit.Set(mine, x => x.Bottom, (x, v) => x.Bottom = v, look.Wall);
+                            continue;
+                        }
+
+                        if (!isDoor)
+                        {
+                            if (other is null)
+                            {
+                                // A frame's side in the corridor's own wall: its texture hung from the floor, in line with the wall beside.
+                                if (isFrame) edit.Flag(l, "dontpegbottom", true);
+                                continue;
+                            }
+
+                            // A piece of wall, or a frame, against a room: the room's wall texture on the wall's faces (a lower, up to
+                            // the slab's floor on the ceiling) and above the door, hung from the ceiling like the walls beside it.
+                            if (!Parallel(l, wall)) continue;
+                            var face = ReferenceEquals(l.Front.Sector, slab) ? l.Back! : l.Front;
+                            edit.Set(face, x => x.Top, (x, v) => x.Top = v, look.Wall);
+                            edit.Set(face, x => x.Bottom, (x, v) => x.Bottom = v, look.Wall);
+                            edit.Flag(l, "dontpegtop", true);
+                            continue;
+                        }
+
+                        if (other is not null && Parallel(l, wall))
+                        {
+                            DoorFace(l, slab);
+                        }
+                        else if (other is null)
+                        {
+                            // A side of the door: the track, which stays put while the door moves.
+                            edit.Set(l.Front, x => x.Middle, (x, v) => x.Middle = v, look.Track);
+                            edit.Flag(l, "dontpegbottom", true);
+                        }
+                    }
+                }
+
+                return (doorArea, null);
+            }
         }
 
         return (null, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"There is not room for {(door ? "a door" : "a wall")} {Depth:0} deep on either side of this wall."));

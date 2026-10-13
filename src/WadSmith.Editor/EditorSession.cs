@@ -1255,7 +1255,8 @@ public sealed class EditorSession : IDisposable
             (Sector? Door, string? Why) result = (null, null);
             var geometry = _geometry;
             var look = Look;
-            History.Record("Make a door", e => result = Doors.Make(e, geometry, wall, look, span, fill));
+            var resources = Resources;
+            History.Record("Make a door", e => result = Doors.Make(e, geometry, wall, look, span, fill, heightOf: t => resources?.Textures.FindWall(t)?.Height));
             if (result.Door is { } door) Selection.Set(door);
             else if (result.Why is { } why) Notice?.Invoke(why);
         }

@@ -187,15 +187,15 @@ public static class ShapeDrawing
             home.Holes?.Add(hole);
         }
 
-        // A region that touches the shape's outline becomes a new area, unless it already is one whole area
-        // (one area all round, which does not carry on outside the outline). Regions inside the shape that
-        // do not reach its outline (a room drawn around, a pillar's empty inside) stay as they were.
+        // A region that touches the shape's outline, or a cut (asked for across the inside), becomes a new area, unless it
+        // already is one whole area (one area all round, which does not carry on outside the outline). Regions inside the
+        // shape that reach neither (a room drawn around, a pillar's empty inside) stay as they were.
         var made = new List<Sector>();
         var emptied = new HashSet<Sector>(ReferenceEqualityComparer.Instance);
         foreach (var (cycle, _, faceHoles) in faces)
         {
             var all = cycle.Concat(faceHoles.SelectMany(h => h)).ToList();
-            if (!all.Any(h => h.Edge.Boundary)) continue;
+            if (!all.Any(h => h.Edge.Boundary || h.Edge.Cut)) continue;
             var first = all[0].Side?.Sector;
             if (first is not null && all.All(h => ReferenceEquals(h.Side?.Sector, first)) && !all.Any(h => h.Edge.Boundary && ReferenceEquals(new Half(h.Edge, !h.Forward).Side?.Sector, first))) continue;
 

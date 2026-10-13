@@ -68,7 +68,7 @@ public static class GuideBook
         [
             new("room", "Draw a room", "Pick {label:Room} at the top left{or:Room tool} and drag a rectangle against the room you have (or click corner by corner and double-click the last corner to finish). Where the two rooms touch they open into each other: in Doom there is no wall on that line (it is dashed on the plan), and it is where your door will go.", GuideTarget.RoomTool),
             new("look", "See it in 3D", "Press {key:Show the 3D view alone} to fill the window with the 3D view, and drag to turn round your rooms: where they meet there is no wall yet, they open into each other. {key:Show the 3D view alone} again brings the plan back.", GuideTarget.ThreeD),
-            new("door", "Put a door between them", "Pick Door{or:Door tool} and click the dashed line where your two rooms meet. A door is built into that opening, with wall either side of it: it opens when the player uses it and closes again behind them.", GuideTarget.DoorTool),
+            new("door", "Put a door between them", "Pick Door{or:Door tool} and click the dashed line where your two rooms meet. A door is built into that opening, with wall either side of it and above it (a doorway as tall as the door): it opens when the player uses it and closes again behind them.", GuideTarget.DoorTool),
             new("texture", "Give a wall a new look", "Open Textures on the right and drag a picture onto one of your walls, on the plan or in the 3D view.", GuideTarget.Textures),
             new("things", "Add a monster and a weapon", "Open {label:Objects} on the right and drag {monster} and {weapon} onto the floor of a room.", GuideTarget.Objects),
             new("exit", "Add a way out", "Click a wall on the plan where you want the way out, then press “Make it the exit switch” in the Inspector. The switch is one picture wide (64), so WadSmith cuts a piece that size out of the wall where you clicked and the rest stays wall. Using the switch in the game ends the map.", GuideTarget.Inspector),
@@ -87,7 +87,7 @@ public static class GuideBook
 
         new("doors", "Doors, keys and switches", "Make doors, lock them with keys and open them from switches.",
         [
-            new("door", "Make a door", "Pick {label:Door}{or:Door tool} and click the dashed line where two rooms meet. A door is built into that opening; it opens when the player uses it.", GuideTarget.DoorTool),
+            new("door", "Make a door", "Pick {label:Door}{or:Door tool} and click the dashed line where two rooms meet. A door is built into that opening, in a doorway as tall as the door; it opens when the player uses it.", GuideTarget.DoorTool),
             new("lock", "Lock it", "Click the door and choose a key under {label:Locked with} in the Inspector. The game tells the player which key it needs.", GuideTarget.Inspector),
             new("key", "Leave the key somewhere", "Open {label:Objects}, find the key of that colour and drag it into a room the player reaches without going through the door.", GuideTarget.Objects),
             new("switch", "Open a door from a switch", "Click a door, press “Add a switch that opens it” in the Inspector, then click a solid wall: part of it becomes the switch.", GuideTarget.Inspector),
