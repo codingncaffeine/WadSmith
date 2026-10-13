@@ -120,6 +120,9 @@ public sealed class GeneratorTests
         Assert.DoesNotContain(castle.Rooms, r => r.Cuts != default);
         Assert.Equal(with.Path.Select(i => with.Rooms[i].Cell), caves.Path.Select(i => caves.Rooms[i].Cell));
 
+        // A mixed map without locked doors still mixes: its styles change along the way.
+        Assert.Contains(Enumerable.Range(0, 5), i => Planner.Plan(For("doom", $"mixed-{i}", MapSize.Large, keys: 0, style: MapStyle.Mixed)).Rooms.Select(r => r.Style).Distinct().Count() > 1);
+
         // The challenge: more monsters, fewer spare supplies.
         var gentle = Planner.Plan(For("doom", "grim-keep") with { Challenge = 0 });
         var brutal = Planner.Plan(For("doom", "grim-keep") with { Challenge = 1 });

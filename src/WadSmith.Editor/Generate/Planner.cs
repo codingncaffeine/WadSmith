@@ -57,13 +57,15 @@ public static class Planner
         // The way: a self-avoiding walk that keeps a free cell beside each step, going on straight about a third of the time.
         var at = (I: 0, J: 0);
         var dir = rng.Next(4);
-        // A mixed map changes style with each part (each locked door starts a new one).
+        // A mixed map changes style with each part (each locked door starts a new one); with no locked doors, by thirds of
+        // the way. A room off the way has the style of the room it hangs off.
         MapStyle[] kinds = [MapStyle.Base, MapStyle.Caves, MapStyle.Castle];
-        var zoneStyles = Enumerable.Range(0, keys + 1).Select(_ => s.Style == MapStyle.Mixed ? rng.Pick(kinds) : s.Style).ToList();
-        if (s.Style == MapStyle.Mixed && keys == 0) zoneStyles[0] = rng.Pick(kinds);
-        PlannedRoom Add((int I, int J) cell, RoomRole role, int zone)
+        var parts = keys > 0 ? keys + 1 : 3;
+        var partStyles = Enumerable.Range(0, parts).Select(_ => s.Style == MapStyle.Mixed ? rng.Pick(kinds) : s.Style).ToList();
+        MapStyle StyleAt(int pathIndex, int zone) => keys > 0 ? partStyles[zone] : partStyles[Math.Min(2, pathIndex * 3 / Math.Max(1, pathLength))];
+        PlannedRoom Add((int I, int J) cell, RoomRole role, int zone, MapStyle style)
         {
-            var room = new PlannedRoom { Index = plan.Rooms.Count, Cell = cell, Role = role, Zone = zone, Style = zoneStyles[zone] };
+            var room = new PlannedRoom { Index = plan.Rooms.Count, Cell = cell, Role = role, Zone = zone, Style = style };
             plan.Rooms.Add(room);
             cells[cell] = room.Index;
             return room;
@@ -82,7 +84,7 @@ public static class Planner
         }
 
         int ZoneOf(int pathIndex) => locks.Count(e => e < pathIndex);
-        Add(at, RoomRole.Start, 0);
+        Add(at, RoomRole.Start, 0, StyleAt(0, 0));
         plan.Path.Add(0);
         for (var k = 1; k < pathLength; k++)
         {
@@ -91,7 +93,7 @@ public static class Planner
             if (!(options.Contains(dir) && rng.Chance(0.35))) dir = rng.Pick(options);
             at = (at.I + Directions[dir].Di, at.J + Directions[dir].Dj);
             var role = k == pathLength - 1 ? RoomRole.Exit : arena && k == pathLength - 2 ? RoomRole.Arena : RoomRole.Path;
-            var room = Add(at, role, ZoneOf(k));
+            var room = Add(at, role, ZoneOf(k), StyleAt(k, ZoneOf(k)));
             Link(plan, plan.Path[^1], room.Index, rng);
             if (locks.Contains(k - 1))
             {
@@ -113,7 +115,7 @@ public static class Planner
             if (open.Count == 0) return null;
             var parent = rng.Pick(open);
             var ways = Directions.Select(d => (parent.Cell.I + d.Di, parent.Cell.J + d.Dj)).Where(c => Free(c)).ToList();
-            var room = Add(rng.Pick(ways), role, parent.Zone);
+            var room = Add(rng.Pick(ways), role, parent.Zone, parent.Style);
             room.Progress = parent.Progress;
             Link(plan, parent.Index, room.Index, rng);
             return room;
