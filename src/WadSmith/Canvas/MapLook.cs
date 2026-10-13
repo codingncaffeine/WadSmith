@@ -19,6 +19,9 @@ internal enum MapViewMode
 
     /// <summary>Walls only, in the automap's colours.</summary>
     Lines,
+
+    /// <summary>Areas in greys by brightness, black for 0 and white for 255 (Eureka's lighting view).</summary>
+    Brightness,
 }
 
 /// <summary>

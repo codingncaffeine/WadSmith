@@ -71,6 +71,17 @@ public sealed class GameLookTests
     }
 
     [Fact]
+    public void BrightnessShowsOneGreyPerLightLevelAsBrightAsIt()
+    {
+        var geometry = Map01();
+        var lights = geometry.Frame.Sectors.Where(s => s.Element is not null && geometry.LoopsAt(s.Element.Slot).Count > 0).Select(s => Math.Clamp(s.Light, 0, 255)).Distinct().Order().ToList();
+        var picture = CanvasSnapshot.Take(geometry, new MapLook(Freedoom.Value), MapViewMode.Brightness);
+        Assert.True(lights.Count > 1);
+        Assert.Equal(lights, picture.AreaStyles.Select(s => (int)s.Solid.Red).Order());
+        Assert.All(picture.AreaStyles, s => Assert.True(s.Flat is null && s.Solid.Red == s.Solid.Green && s.Solid.Green == s.Solid.Blue));
+    }
+
+    [Fact]
     public void ShrunkCopiesHalveEachTime()
     {
         var flat = new MapLook(Freedoom.Value).Flat("FLOOR4_8");

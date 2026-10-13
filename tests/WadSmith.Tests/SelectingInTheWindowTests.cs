@@ -108,4 +108,54 @@ public sealed class SelectingInTheWindowTests
             "Inspector, Same floor picture: drawn room + start room",
         ], seen);
     }
+
+    [Fact]
+    public async Task TheRoomsEffectTheLightViewAndTheNextMap()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var seen = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(temp.Path, Path.GetDirectoryName(wad)!);
+            try
+            {
+                var editor = Ui.NewMap(vm);
+                var session = editor.Session;
+                var room = session.Map.Sectors.Single(s => s.OnMap);
+                var said = new List<string>();
+
+                // The Inspector's Effect: chosen by name, the secret it already was kept.
+                session.MakeSecret(room);
+                session.Selection.Set(room);
+                Ui.Pump(0.2);
+                var effect = editor.Inspector.Rows.OfType<ChoiceRow>().Single(r => r.Label == "Effect");
+                effect.Value = effect.Options.ToList().IndexOf("Hurts a little (5% a second, nukage)");
+                Ui.Pump(0.1);
+                said.Add($"effect: special {room.Special}, shown as {effect.Options[effect.Value]}");
+
+                // The toolbar's Brightness button paints the plan in greys by brightness.
+                var light = window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ToggleButton>().Single(b => b.Content as string == "Brightness");
+                light.IsChecked = true;
+                Ui.Pump(0.1);
+                said.Add($"Brightness: {editor.ViewMode}");
+
+                // A second map in the project: Next map opens it, Previous map comes back.
+                var first = session.Slot;
+                var second = first == "MAP01" ? "MAP02" : "E1M2";
+                session.Project.SaveMap(Editor.StarterRoom.Create(second, "doom"));
+                editor.Commands().Single(c => c.Name == "Next map").Run();
+                for (var i = 0; i < 100 && (vm.Page as EditorViewModel)?.Session.Slot != second; i++) Ui.Pump(0.05);
+                said.Add($"Next map: {((vm.Page as EditorViewModel)?.Session.Slot == second ? "the second" : (vm.Page as EditorViewModel)?.Session.Slot)}");
+                ((EditorViewModel)vm.Page!).Commands().Single(c => c.Name == "Previous map").Run();
+                for (var i = 0; i < 100 && (vm.Page as EditorViewModel)?.Session.Slot != first; i++) Ui.Pump(0.05);
+                said.Add($"Previous map: {((vm.Page as EditorViewModel)?.Session.Slot == first ? "the first" : (vm.Page as EditorViewModel)?.Session.Slot)}");
+                return said;
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+        Assert.Equal(["effect: special 1095, shown as Hurts a little (5% a second, nukage)", "Brightness: Brightness", "Next map: the second", "Previous map: the first"], seen);
+    }
 }

@@ -61,6 +61,13 @@ public static class Problems
         }
         NoStart(geometry, engine, found);
         ManyStarts(f, found);
+        OnNoDifficulty(f, found);
+        if (classic?.Target == Targets.Vanilla)
+        {
+            DeathmatchStarts(f, found);
+            if (resources is not null) VanillaPictures(f, resources, found);
+        }
+
         NoExit(f, found);
         Unclosed(f, found);
         MissingTextures(f, look, found);
@@ -134,6 +141,85 @@ public static class Problems
         var starts = f.Things.Where(t => t.Element is not null && t.Type == 1).Select(t => (Element)t.Element!).ToList();
         if (starts.Count < 2) return;
         found.Add(new Problem("many-starts", Severity.Warning, string.Create(CultureInfo.InvariantCulture, $"There are {starts.Count} player starts. The game starts the player at the last one, and the others become stand-ins that move with the player (voodoo dolls), which some maps use on purpose."), starts));
+    }
+
+    private static readonly string[] Skills = ["skill1", "skill2", "skill3", "skill4", "skill5"];
+
+    // Objects that are not put on the map per difficulty: player and deathmatch starts, Hexen's extra starts and polyobject spots.
+    private static bool Unspawned(int type) => type is >= 1 and <= 4 or 11 or (>= 9100 and <= 9103) or (>= 9300 and <= 9303);
+
+    /// <summary>Objects on no difficulty at all (Eureka's "unspawnable things"): the game never puts them on the map. The fix puts them on every one.</summary>
+    private static void OnNoDifficulty(MapFrame f, List<Problem> found)
+    {
+        var never = f.Things.Where(t => t.Element is not null && !Unspawned(t.Type) && !Skills.Any(s => Flag(t.Extra, s))).Select(t => (Element)t.Element!).ToList();
+        if (never.Count == 0) return;
+        found.Add(new Problem("no-difficulty", Severity.Warning, $"{Count(never.Count, "An object is", "objects are")} on no difficulty, so the game never puts {(never.Count == 1 ? "it" : "them")} on the map.", never, "Put them on every difficulty", e =>
+        {
+            foreach (var t in never.OfType<Thing>().Where(t => t.OnMap))
+            {
+                foreach (var s in Skills) e.Flag(t, s, true);
+            }
+        }));
+    }
+
+    /// <summary>Vanilla Doom stops with an error when deathmatch starts on a map with fewer than four deathmatch starts (G_DeathMatchSpawnPlayer); none is fine, it is then not a deathmatch map.</summary>
+    private static void DeathmatchStarts(MapFrame f, List<Problem> found)
+    {
+        var starts = f.Things.Where(t => t.Element is not null && t.Type == 11).Select(t => (Element)t.Element!).ToList();
+        if (starts.Count is 0 or >= 4) return;
+        found.Add(new Problem("few-deathmatch-starts", Severity.Warning, string.Create(CultureInfo.InvariantCulture, $"The map has {starts.Count} deathmatch start{(starts.Count == 1 ? "" : "s")}; vanilla Doom refuses to start a deathmatch with fewer than 4. Add more, or take them out."), starts));
+    }
+
+    /// <summary>
+    /// Pictures vanilla Doom cannot draw where they are (Eureka's texture checks; Boom and GZDoom fixed both): a see-through
+    /// middle built from overlapping patches (the Medusa effect), and on a solid wall a picture with see-through parts, or
+    /// shorter than 128 with more of the wall showing than the picture has (tutti-frutti).
+    /// </summary>
+    private static void VanillaPictures(MapFrame f, GameResources resources, List<Problem> found)
+    {
+        var textures = resources.Textures;
+        var medusa = new List<Element>();
+        var noise = new List<Element>();
+        foreach (var l in f.Lines)
+        {
+            if (l.Element is null || l.Front < 0) continue;
+            if (l.Back >= 0)
+            {
+                if (new[] { l.Front, l.Back }.Any(s => f.Sides[s].Middle is var m && m != "-" && textures.StacksPatches(m))) medusa.Add(l.Element);
+                continue;
+            }
+
+            var face = f.Sides[l.Front];
+            if (face.Middle == "-" || face.Sector < 0) continue;
+            if (textures.HasHoles(face.Middle))
+            {
+                noise.Add(l.Element);
+                continue;
+            }
+
+            if (textures.FindWall(face.Middle) is not { Height: < 128 } info) continue;
+            var room = f.Sectors[face.Sector];
+            var open = room.CeilingHeight - room.FloorHeight;
+            var y = face.OffsetY;
+            var outside = Flag(l.Extra, "dontpegbottom") ? y > 0 || y < info.Height - open : y < 0 || y > info.Height - open;
+            if (open > info.Height || outside) noise.Add(l.Element);
+        }
+
+        if (medusa.Count > 0)
+        {
+            found.Add(new Problem("medusa", Severity.Warning, $"{Count(medusa.Count, "An opening has", "openings have")} a middle picture made of overlapping patches, which vanilla Doom draws as streaks of colour (the Medusa effect) and can crash on.", medusa, "Take the middle pictures off", e =>
+            {
+                foreach (var l in medusa.OfType<Line>().Where(l => l.OnMap))
+                {
+                    foreach (var side in new[] { l.Front, l.Back! }.Where(s => s.Middle != "-" && textures.StacksPatches(s.Middle))) e.Set(side, x => x.Middle, (x, v) => x.Middle = v, "-");
+                }
+            }));
+        }
+
+        if (noise.Count > 0)
+        {
+            found.Add(new Problem("tutti-frutti", Severity.Warning, $"{Count(noise.Count, "A wall shows", "walls show")} more of {(noise.Count == 1 ? "its" : "their")} picture than it has, or see-through parts of it, which vanilla Doom fills with coloured noise (tutti-frutti). Use a picture at least as tall as the wall, or play the map in GZDoom.", noise));
+        }
     }
 
     private static void NoExit(MapFrame f, List<Problem> found)

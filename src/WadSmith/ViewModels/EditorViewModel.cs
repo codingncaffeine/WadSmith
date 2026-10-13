@@ -482,6 +482,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Show ceilings on the plan", "View", "", "ceiling textures|flats", () => IsCeilings = true),
             new("Show heights as colours", "View", "", "floor heights|elevation", () => ShowHeights = !ShowHeights),
             new("Show only the walls", "View", "", "lines|automap|wireframe|linedefs", () => IsLines = true),
+            new("Show brightness as greys", "View", "", "light levels|lighting|sector lights|dark rooms|brightness view", () => IsBrightness = true),
             new("Show the player's size", "View", K("G", ""), "fit|player fit|ghost|clearance", () => ShowFit = !ShowFit),
             new("Show the whole map", "View", "Home", "zoom to fit|fit map|overview|center in screen", () => FitMap?.Invoke()),
             new("Show the selection", "View", "Shift+Home", "zoom to selection|frame selected|go to selection|center on selection", () => FitSelection?.Invoke(), Selected),
@@ -502,6 +503,8 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Explain this map", "Panels", "", "about|summary|statistics|stats|key flow|monster count|what is in it|map analysis", () => ExplainMapCommand.Execute(null)),
             new("Problems", "Panels", K("", "F4"), "errors|map analysis|check|error checker", () => ShowProblems = !ShowProblems),
             new("Keep a version", "Panels", "", "snapshot|save a copy|backup", () => KeepVersionCommand.Execute(null)),
+            new("Next map", "Map", "", "flip map|next level|following map|episode", () => _ = OtherMapAsync(1), () => Session.Project.Info.Maps.Count > 1),
+            new("Previous map", "Map", "", "flip map|previous level|last map|episode", () => _ = OtherMapAsync(-1), () => Session.Project.Info.Maps.Count > 1),
             new("Make another like it", "Map", "", "make me a map|generate|random map|procedural|new map like this|reroll", () => _ = MakeAnotherAsync(), () => Session.Origin?.Kind == "generated"),
 
             new("Play", "Play", "F9", "test|test map|run|launch|gzdoom", () => PlayCommand.Execute(null), () => !Playing),
@@ -1136,6 +1139,14 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     private IReadOnlyList<ProjectMapChoice>? _projectMaps;
 
+    /// <summary>Opens the project's next (+1) or previous (−1) map in the editor, round from the last to the first (Eureka's FlipMap).</summary>
+    private Task OtherMapAsync(int way)
+    {
+        var maps = Session.Project.Info.Maps;
+        var at = maps.FindIndex(m => string.Equals(m.Slot, Session.Slot, StringComparison.OrdinalIgnoreCase));
+        return maps.Count < 2 ? Task.CompletedTask : _main.SwitchMapAsync(Session.Project, maps[((at < 0 ? 0 : at) + way + maps.Count) % maps.Count].Slot);
+    }
+
     /// <summary>"MAP01 ▾": the button that lists the project's maps.</summary>
     public string MapChooserLabel => $"{Session.Slot} ▾";
 
@@ -1147,7 +1158,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>How the map is painted (D45); floors by default.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowHeights), nameof(IsFloors), nameof(IsCeilings), nameof(IsLines))]
+    [NotifyPropertyChangedFor(nameof(ShowHeights), nameof(IsFloors), nameof(IsCeilings), nameof(IsLines), nameof(IsBrightness))]
     private Canvas.MapViewMode _viewMode;
 
     public bool ShowHeights
@@ -1176,6 +1187,16 @@ internal sealed partial class EditorViewModel : ObservableObject
         set
         {
             if (value) ViewMode = Canvas.MapViewMode.Ceilings;
+            else OnPropertyChanged();
+        }
+    }
+
+    public bool IsBrightness
+    {
+        get => ViewMode == Canvas.MapViewMode.Brightness;
+        set
+        {
+            if (value) ViewMode = Canvas.MapViewMode.Brightness;
             else OnPropertyChanged();
         }
     }

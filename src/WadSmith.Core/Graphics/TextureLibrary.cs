@@ -88,6 +88,41 @@ public sealed class TextureLibrary
         return _walls.TryGetValue(name, out var wall) ? _cache.GetOrAdd((false, wall.Name), _ => Render(wall)) : null;
     }
 
+    /// <summary>
+    /// Whether a wall texture has a column that two or more patches cover: vanilla Doom builds such a column as one
+    /// composite, which a see-through middle cannot draw (the Medusa effect). False for an unknown texture or a single
+    /// picture.
+    /// </summary>
+    public bool StacksPatches(string name) => _walls.TryGetValue(name, out var info) && info.Composite is { Patches.Count: >= 2 } t && _stacks.GetOrAdd(info.Name, _ =>
+    {
+        var covered = new byte[Math.Max(1, t.Width)];
+        foreach (var p in t.Patches)
+        {
+            if (GetPatch(p.Patch) is not { } patch) continue;
+            for (var x = Math.Max(0, p.X); x < Math.Min(covered.Length, p.X + patch.Width); x++)
+            {
+                if (++covered[x] >= 2) return true;
+            }
+        }
+
+        return false;
+    });
+
+    /// <summary>Whether a wall texture's picture has any see-through pixel (on a solid wall vanilla Doom draws what is behind it as noise).</summary>
+    public bool HasHoles(string name) => _walls.TryGetValue(name, out var info) && _holes.GetOrAdd(info.Name, _ =>
+    {
+        if (GetWall(name) is not { } image) return false;
+        for (var i = 3; i < image.Pixels.Length; i += 4)
+        {
+            if (image.Pixels[i] < 128) return true;
+        }
+
+        return false;
+    });
+
+    private readonly ConcurrentDictionary<string, bool> _stacks = new(LumpName.Comparer);
+    private readonly ConcurrentDictionary<string, bool> _holes = new(LumpName.Comparer);
+
     private void AddContainer(ResourceContainer c)
     {
         // TEXTURE1 / TEXTURE2 against this file's PNAMES (or the nearest earlier one).

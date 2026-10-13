@@ -87,6 +87,8 @@
                                       ToolTip.Tip="Shows each area's ceiling texture, as if looking up through the map." />
                         <ToggleButton Classes="segment" Content="Heights" Classes.guide="{Binding Marks.Heights}" IsChecked="{Binding ShowHeights}"
                                       ToolTip.Tip="Colours every area by its floor height, blue for low and red for high, so steps, pits and platforms stand out." />
+                        <ToggleButton Classes="segment" Content="Brightness" IsChecked="{Binding IsBrightness}"
+                                      ToolTip.Tip="Paints every area in a grey as bright as its light: black for the darkest, white for the brightest, so dark corners and light pools stand out." />
                         <ToggleButton Classes="segment last" Content="Lines" IsChecked="{Binding IsLines}"
                                       ToolTip.Tip="Shows only the walls, in the colours of the game's automap." />
                     </StackPanel>

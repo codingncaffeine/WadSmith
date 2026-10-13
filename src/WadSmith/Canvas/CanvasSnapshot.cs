@@ -135,7 +135,23 @@ internal sealed class CanvasSnapshot
 
         var styles = new List<AreaStyle>();
         var groupOf = new int[sectors.Count];
-        if (mode == MapViewMode.Heights)
+        if (mode == MapViewMode.Brightness)
+        {
+            // One grey per brightness the map uses, as the game's light levels go: 0 black, 255 white.
+            var index = new Dictionary<int, int>();
+            for (var i = 0; i < sectors.Count; i++)
+            {
+                var light = Math.Clamp(f.Sectors[sectors[i]].Light, 0, 255);
+                if (!index.TryGetValue(light, out var g))
+                {
+                    g = index[light] = styles.Count;
+                    styles.Add(new AreaStyle(null, 255, new SKColor((byte)light, (byte)light, (byte)light)));
+                }
+
+                groupOf[i] = g;
+            }
+        }
+        else if (mode == MapViewMode.Heights)
         {
             var (min, max) = geometry.FloorRange ?? (0, 0);
             var span = Math.Max(max - min, 1);
@@ -215,7 +231,7 @@ internal sealed class CanvasSnapshot
         if (_paints.TryGetValue((group, detail, smooth, level), out var paint)) return paint;
         var style = AreaStyles[group];
         paint = new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = smooth };
-        if (Mode == MapViewMode.Heights)
+        if (Mode is MapViewMode.Heights or MapViewMode.Brightness)
         {
             paint.Color = style.Solid;
         }

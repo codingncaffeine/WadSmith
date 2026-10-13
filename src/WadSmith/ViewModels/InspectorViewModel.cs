@@ -866,7 +866,12 @@ internal sealed partial class InspectorViewModel : ObservableObject
         AddFlatPlacement(s, ceiling: false);
         AddFlatPlacement(s, ceiling: true);
         Rows.Add(new FlagRow("Counts as a secret", "Finding this area counts toward the secrets at the end of the map (sector type 1024).", () => (s.Special & 1024) != 0, on => Set(s, on ? "Make a secret" : "Unmake a secret", e => e.Special, (e, x) => e.Special = x, on ? s.Special | 1024 : s.Special & ~1024)));
-        Rows.Add(new InfoRow("Effect", "What the area does to the player or its light (sector type).", () => (s.Special & ~1024) == 0 ? "None" : (s.Special & ~1024).ToString(CultureInfo.InvariantCulture)));
+        // The effect by name (Eureka's sector-type browser); one the list does not name stays as it is, listed by its number.
+        var effects = RoomEffects.All.ToList();
+        if (!effects.Any(x => x.Number == (s.Special & RoomEffects.Mask))) effects.Add((s.Special & RoomEffects.Mask, RoomEffects.NameOf(s.Special)));
+        Rows.Add(new ChoiceRow("Effect", "What the area does to the player or its light: blinking or flickering light, floors that hurt or heal, ice, a door that shuts by itself (sector type).", [.. effects.Select(x => x.Name)],
+            () => Math.Max(0, effects.FindIndex(x => x.Number == (s.Special & RoomEffects.Mask))),
+            i => Set(s, "Change the room's effect", e => e.Special, (e, x) => e.Special = x, RoomEffects.With(s.Special, effects[i].Number))));
         Rows.Add(new NumberRow("Tag", "A number that links a switch or trigger to this area (sector tag, id).", () => s.Tag, v => Set(s, "Change tag", e => e.Tag, (e, x) => e.Tag = x, (int)v), 1, 0, 65535));
     }
 

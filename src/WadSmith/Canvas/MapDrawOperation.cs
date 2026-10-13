@@ -555,7 +555,7 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
     /// </summary>
     private void DrawAreas(SKCanvas canvas, CellPaths areas, (List<int> Cells, int Shapes, bool All) visible, bool dense, bool gpu)
     {
-        var heights = snapshot!.Mode == MapViewMode.Heights;
+        var heights = snapshot!.Mode is MapViewMode.Heights or MapViewMode.Brightness;
         var texel = view.Zoom;
         var detail = texel >= 1 ? AreaDetail.Sharp : texel * 64 >= 4 ? AreaDetail.Smooth : AreaDetail.Average;
         var smooth = heights && !dense;
