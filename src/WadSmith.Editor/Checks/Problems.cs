@@ -68,6 +68,7 @@ public static class Problems
         if (resources is not null) CannotShow(f, resources, found);
         TwoSidedFlag(f, found);
         ThingsOutside(geometry, resources, found);
+        Slivers(geometry, found);
         StuckInWalls(geometry, resources, found);
         TeleportsNowhere(geometry, found);
         TagsNowhere(geometry, found);
@@ -138,6 +139,52 @@ public static class Problems
     {
         if (f.Lines.Any(l => l.Element is not null && l.Special is Exits.Normal or Exits.Secret or 74 or 75)) return;
         found.Add(new Problem("no-exit", Severity.Warning, "There's no way to finish the map yet. Select a wall and choose Make it the exit switch.", []));
+    }
+
+    /// <summary>The thinnest a room can be before it counts as a sliver: frames of doorways are 8 deep, so less than that.</summary>
+    private const double Sliver = 6;
+
+    /// <summary>
+    /// Slivers: open rooms only a few units across, left where two rooms' walls nearly met (2026-10-12, a user's map: a strip
+    /// 2–4 units deep between a room and the room north of it, with a door opening into it). The player cannot stand in one,
+    /// and on the plan its walls lie on top of the walls beside it, so clicks land on the sliver. The fix joins it to the
+    /// open room it shares the most wall with, at the same heights.
+    /// </summary>
+    private static void Slivers(MapGeometry geometry, List<Problem> found)
+    {
+        var f = geometry.Frame;
+        foreach (var s in f.Sectors)
+        {
+            if (s.Element is not { } room || s.CeilingHeight <= s.FloorHeight || geometry.WallBoundsAt(room.Slot) is not { } b) continue;
+            var thin = Math.Min(b.MaxX - b.MinX, b.MaxY - b.MinY);
+            if (thin >= Sliver) continue;
+
+            // The room beside it to join: open, at the same heights, sharing the most wall.
+            var shared = new Dictionary<Sector, double>(ReferenceEqualityComparer.Instance);
+            foreach (var l in geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY))
+            {
+                if (!l.OnMap || l.Back is null) continue;
+                var other = ReferenceEquals(l.Front.Sector, room) ? l.Back.Sector : ReferenceEquals(l.Back.Sector, room) ? l.Front.Sector : null;
+                if (other is null || ReferenceEquals(other, room) || other.FloorHeight != room.FloorHeight || other.CeilingHeight != room.CeilingHeight) continue;
+                shared[other] = shared.GetValueOrDefault(other) + l.Length;
+            }
+
+            var across = string.Create(CultureInfo.InvariantCulture, $"{thin:0.#}");
+            if (shared.Count == 0)
+            {
+                found.Add(new Problem("sliver", Severity.Warning, $"A room only {across} units across lies between other rooms, where walls nearly met: the player cannot stand in it, and on the plan clicks land on it instead of the walls beside it. Move a corner so the rooms share their wall.", [room]));
+                continue;
+            }
+
+            var into = shared.MaxBy(kv => kv.Value).Key;
+            found.Add(new Problem("sliver", Severity.Warning, $"A room only {across} units across lies between other rooms, where walls nearly met: the player cannot stand in it, and on the plan clicks land on it instead of the walls beside it.", [room],
+                "Join it to the room beside it", e =>
+                {
+                    // Joined against the map as it was checked; after another change the check runs again first.
+                    if (geometry.Version != e.Map.Version || !room.OnMap || !into.OnMap) return;
+                    Editing.Rooms.Join(e, geometry, [into, room]);
+                }));
+        }
     }
 
     /// <summary>
