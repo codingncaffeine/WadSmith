@@ -189,6 +189,7 @@ public static class MapConversion
                         }
                     }
 
+                    FoldFractions(s);
                     m.Sides.Add(s);
                     break;
                 }
@@ -310,13 +311,23 @@ public static class MapConversion
         {
             var b = new UdmfBlock("sidedef");
             var f = b.Fields;
-            if (s.OffsetX != 0) f["offsetx"] = Number(s.OffsetX);
-            if (s.OffsetY != 0) f["offsety"] = Number(s.OffsetY);
+            // UDMF's offsetx and offsety are integers (GZDoom says "Integer value expected" over a fraction and drops it):
+            // the whole part goes there and the fraction onto each part's own offset, which the engine adds to it.
+            var (wholeX, partX) = Split(s.OffsetX);
+            var (wholeY, partY) = Split(s.OffsetY);
+            if (wholeX != 0) f["offsetx"] = UdmfValue.Int(wholeX);
+            if (wholeY != 0) f["offsety"] = UdmfValue.Int(wholeY);
             if (s.Top != "-") f["texturetop"] = s.Top;
             if (s.Bottom != "-") f["texturebottom"] = s.Bottom;
             if (s.Middle != "-") f["texturemiddle"] = s.Middle;
             f["sector"] = s.Sector;
             foreach (var (k, val) in s.Extra) f[k] = val;
+            foreach (var part in SideParts)
+            {
+                if (partX != 0) f["offsetx_" + part] = Number((s.Extra.TryGet("offsetx_" + part, out var x) ? x.AsFloat() : 0) + partX);
+                if (partY != 0) f["offsety_" + part] = Number((s.Extra.TryGet("offsety_" + part, out var y) ? y.AsFloat() : 0) + partY);
+            }
+
             doc.Blocks.Add(b);
         }
 
@@ -542,6 +553,31 @@ public static class MapConversion
         }
 
         return c;
+    }
+
+    /// <summary>A side's three parts, as UDMF names their own offsets.</summary>
+    private static readonly string[] SideParts = ["top", "mid", "bottom"];
+
+    /// <summary>An offset as UDMF's integer field and the fraction left over (toward zero, as the engine adds the two).</summary>
+    private static (long Whole, double Part) Split(double v)
+    {
+        var whole = Math.Truncate(v);
+        return ((long)whole, v - whole);
+    }
+
+    /// <summary>
+    /// The way back from <see cref="Split"/>: one fraction on all three parts' offsets (none whole) is the side's own
+    /// offset's fraction, so it comes back to the side as it was written.
+    /// </summary>
+    private static void FoldFractions(MapSide s)
+    {
+        foreach (var axis in new[] { "offsetx_", "offsety_" })
+        {
+            var values = SideParts.Select(p => s.Extra.TryGet(axis + p, out var v) ? v.AsFloat() : double.NaN).ToArray();
+            if (values.Any(double.IsNaN) || values.Distinct().Count() != 1 || Math.Abs(values[0]) >= 1 || values[0] == 0) continue;
+            if (axis == "offsetx_") s.OffsetX += values[0]; else s.OffsetY += values[0];
+            foreach (var p in SideParts) s.Extra.Remove(axis + p);
+        }
     }
 
     /// <summary>An integer token when the value is whole (heights and offsets usually are), a float otherwise.</summary>
