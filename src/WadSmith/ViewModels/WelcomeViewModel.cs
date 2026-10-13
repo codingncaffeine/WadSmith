@@ -108,6 +108,12 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
     /// <summary>Starts a new map for this game (set by the welcome screen).</summary>
     public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<GameTileViewModel>? NewMap { get; set; }
 
+    /// <summary>Opens "Make me a map" for this game (set by the welcome screen).</summary>
+    public CommunityToolkit.Mvvm.Input.IRelayCommand<GameTileViewModel>? MakeMap { get; set; }
+
+    /// <summary>Whether WadSmith can make maps for this game (the Doom, Heretic, Hexen and Strife families).</summary>
+    public bool CanMakeMap => WadSmith.Editor.Generate.GeneratorSettings.CanMake(Found.Game);
+
     /// <summary>Starts a new map for this game with the guided first map running (set by the welcome screen).</summary>
     public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<GameTileViewModel>? GuidedMap { get; set; }
 }
@@ -342,10 +348,13 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     public async Task RefreshProjectsAsync()
     {
         var folder = _services.Paths.Projects;
+        // The maps made for the user (D50) sit in a folder of their own: the chosen one, the default "Made maps", and the
+        // folders of maps opened lately, so maps made before the folder was changed stay on their cards.
+        string[] places = [folder, _services.MadeMapsFolder, _services.DefaultMadeMapsFolder, .. _services.Settings.Current.Recent.Select(Path.GetDirectoryName).OfType<string>()];
         IReadOnlyList<Project.Found> found;
         try
         {
-            found = await Task.Run(() => Project.List(folder)).ConfigureAwait(true);
+            found = await Task.Run(() => (IReadOnlyList<Project.Found>)[.. places.Distinct(StringComparer.Ordinal).SelectMany(Project.List).DistinctBy(p => p.Folder, StringComparer.Ordinal).OrderByDescending(p => p.Modified)]).ConfigureAwait(true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -410,7 +419,8 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     {
         try
         {
-            var projects = _services.Paths.Projects;
+            // Into the Deleted folder beside it: a made map's goes into its own folder's.
+            var projects = Path.GetDirectoryName(choice.Folder) ?? _services.Paths.Projects;
             var where = await Task.Run(() => Project.Delete(choice.Folder, projects)).ConfigureAwait(true);
             _services.Settings.Current.Recent.RemoveAll(r => string.Equals(r, choice.Folder, StringComparison.Ordinal));
             _services.Settings.Save();
@@ -510,7 +520,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         Games.Clear();
         foreach (var g in found.Where(g => g.Game.IsBaseGame && g.Game.Supported).GroupBy(g => g.Game.Id).Select(g => g.First()).OrderBy(g => g.Game.Title, StringComparer.Ordinal))
         {
-            var tile = new GameTileViewModel(g) { Remix = RemixCommand, NewMap = NewMapCommand, GuidedMap = GuidedMapCommand, EditPackMap = EditPackMapCommand };
+            var tile = new GameTileViewModel(g) { Remix = RemixCommand, NewMap = NewMapCommand, GuidedMap = GuidedMapCommand, EditPackMap = EditPackMapCommand, MakeMap = MakeMapCommand };
             tile.PackMaps = [.. packs.Where(f => f.Games.Any(x => x.Game.Id == g.Game.Id)).OrderBy(f => f.File.Name, StringComparer.OrdinalIgnoreCase).SelectMany(f => f.File.Maps.Order(StringComparer.OrdinalIgnoreCase).Select(m => new PackMapChoice(f.File, m, tile)))];
             tile.PackMapsLabel = $"Maps found near your games · {tile.PackMaps.Count} ▾";
             Games.Add(tile);
@@ -709,6 +719,10 @@ internal sealed partial class WelcomeViewModel : ObservableObject
             return (project, choice.Slot);
         }).ConfigureAwait(true);
     }
+
+    /// <summary>Opens "Make me a map" (D50) for the tile's game.</summary>
+    [RelayCommand]
+    private void MakeMap(GameTileViewModel tile) => _main.OpenMakeMap(tile.Found, tile.Target);
 
     [RelayCommand]
     private Task NewMapAsync(GameTileViewModel tile) => NewMap(tile, guide: false);

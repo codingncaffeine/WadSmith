@@ -214,6 +214,35 @@ internal sealed partial class PreferencesViewModel : ObservableObject
         _foldersChanged = true;
     }
 
+    /// <summary>Where "Make me a map" puts the maps it makes.</summary>
+    public string MadeMapsFolder => _services.MadeMapsFolder;
+
+    /// <summary>Whether the folder is the one chosen here (else the default).</summary>
+    public bool MadeMapsFolderChosen => _services.Settings.Current.MadeMapsFolder is { Length: > 0 };
+
+    [RelayCommand]
+    private async Task ChooseMadeMapsFolderAsync()
+    {
+        if (PickFolder is null) return;
+        var folder = await PickFolder("Choose the folder maps made for you go to").ConfigureAwait(true);
+        if (folder is null) return;
+        _services.Settings.Current.MadeMapsFolder = folder;
+        _services.Settings.Save();
+        OnPropertyChanged(nameof(MadeMapsFolder));
+        OnPropertyChanged(nameof(MadeMapsFolderChosen));
+        _foldersChanged = true;
+    }
+
+    [RelayCommand]
+    private void DefaultMadeMapsFolder()
+    {
+        _services.Settings.Current.MadeMapsFolder = null;
+        _services.Settings.Save();
+        OnPropertyChanged(nameof(MadeMapsFolder));
+        OnPropertyChanged(nameof(MadeMapsFolderChosen));
+        _foldersChanged = true;
+    }
+
     [RelayCommand]
     private void Close()
     {

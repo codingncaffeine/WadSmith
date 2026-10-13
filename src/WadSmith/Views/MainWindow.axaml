@@ -18,6 +18,7 @@
         <DataTemplate DataType="vm:WelcomeViewModel"><views:WelcomeView /></DataTemplate>
         <DataTemplate DataType="vm:EditorViewModel"><views:EditorView /></DataTemplate>
         <DataTemplate DataType="vm:PreferencesViewModel"><views:PreferencesView /></DataTemplate>
+        <DataTemplate DataType="vm:MakeMapViewModel"><views:MakeMapView /></DataTemplate>
     </Window.DataTemplates>
 
     <Border BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Name="Frame">

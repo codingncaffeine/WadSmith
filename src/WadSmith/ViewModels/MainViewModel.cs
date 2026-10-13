@@ -250,6 +250,20 @@ internal sealed partial class MainViewModel : ObservableObject
         Welcome.RefreshRecent();
     }
 
+    /// <summary>Back to the start screen from a page that is not the editor (Make me a map).</summary>
+    public void ShowWelcome()
+    {
+        Page = Welcome;
+        Title = "WadSmith";
+    }
+
+    /// <summary>Opens "Make me a map" (D50) for a game found on this computer, for a map that plays in <paramref name="target"/>.</summary>
+    public void OpenMakeMap(FoundGame game, string target)
+    {
+        Page = new MakeMapViewModel(Services, this, game, target);
+        Title = $"Make me a map · {game.Game.Title} · WadSmith";
+    }
+
     private void Remember(string folder)
     {
         var recent = Services.Settings.Current.Recent;

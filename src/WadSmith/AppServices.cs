@@ -52,6 +52,12 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
     /// <summary>GZDoom's own data file, needed to remix classic maps; null when GZDoom is not installed.</summary>
     public string? EngineData { get; } = EngineDataFinder(settings.Current);
 
+    /// <summary>Where "Make me a map" puts the maps it makes: the folder chosen in Preferences, else "Made maps" in the projects folder.</summary>
+    public string MadeMapsFolder => Settings.Current.MadeMapsFolder is { Length: > 0 } chosen ? chosen : DefaultMadeMapsFolder;
+
+    /// <summary>The "Made maps" folder inside the projects folder: where made maps go until another is chosen.</summary>
+    public string DefaultMadeMapsFolder => Path.Combine(Paths.Projects, "Made maps");
+
     /// <summary>The games the last scan found (the welcome screen scans at start).</summary>
     public IReadOnlyList<FoundGame>? Games
     {

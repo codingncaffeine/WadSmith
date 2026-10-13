@@ -87,6 +87,17 @@
                             ToolTip.Tip="Tell WadSmith about a folder that holds your games." />
                     </StackPanel>
 
+                    <TextBlock Classes="section" Text="MAPS MADE FOR YOU" Margin="0,12,0,0" />
+                    <TextBlock Classes="secondary" TextWrapping="Wrap"
+                               Text="Where Make me a map puts the maps it makes. Each one is a folder of its own, listed on its game's card with your other maps." />
+                    <Grid ColumnDefinitions="*,Auto,Auto">
+                        <TextBlock Text="{Binding MadeMapsFolder}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding MadeMapsFolder}" />
+                        <Button Grid.Column="1" Classes="metal" Content="Change…" Margin="10,0,0,0" Command="{Binding ChooseMadeMapsFolderCommand}"
+                                ToolTip.Tip="Pick the folder maps made for you go to. Maps already made stay where they are." />
+                        <Button Grid.Column="2" Classes="metal" Content="Use the default" Margin="10,0,0,0" Command="{Binding DefaultMadeMapsFolderCommand}" IsVisible="{Binding MadeMapsFolderChosen}"
+                                ToolTip.Tip="Put them in the Made maps folder inside WadSmith's projects folder again." />
+                    </Grid>
+
                     <TextBlock Classes="section" Text="ABOUT" Margin="0,12,0,0" />
                     <StackPanel Orientation="Horizontal" Spacing="18">
                         <Image Source="/Assets/icon.png" Width="104" Height="104" VerticalAlignment="Top" />

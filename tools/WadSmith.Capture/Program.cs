@@ -265,6 +265,21 @@ void Save(string name)
     Console.WriteLine(file);
 }
 
+// Clicks the button showing <content> with real pointer events at its middle, as the user would; false when none shows.
+bool ClickButton(string content, Avalonia.Visual? within = null)
+{
+    var button = (within ?? window).GetVisualDescendants().OfType<Avalonia.Controls.Button>().FirstOrDefault(b => b.IsEffectivelyVisible && Equals(b.Content, content));
+    if (button is null) return false;
+    Avalonia.Controls.ControlExtensions.BringIntoView(button);
+    Pump(0.3);
+    var middle = button.TranslatePoint(new Avalonia.Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window) ?? throw new InvalidOperationException($"{content} is not in the window.");
+    window.MouseMove(middle, Avalonia.Input.RawInputModifiers.None);
+    window.MouseDown(middle, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+    window.MouseUp(middle, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+    Pump(0.3);
+    return true;
+}
+
 // Wait for the game scan and the tiles' pictures.
 for (var i = 0; i < 400 && vm.Welcome.Scanning; i++) Pump(0.05);
 Pump(1.5);
@@ -273,6 +288,53 @@ foreach (var pose in poses)
 {
     switch (pose)
     {
+        case "make-map":
+        {
+            // Make me a map (D50), as the user goes: the card's button, the page, Make it, the editor.
+            var tile = vm.Welcome.Games.FirstOrDefault(g => g.CanMakeMap && (map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase)));
+            var card = tile is null ? null : window.GetVisualDescendants().OfType<Avalonia.Controls.Presenters.ContentPresenter>().FirstOrDefault(p => ReferenceEquals(p.DataContext, tile));
+            if (card is null || !ClickButton("Make me a map…", card))
+            {
+                Console.Error.WriteLine("No game card with Make me a map; pass --games=FOLDER.");
+                return 1;
+            }
+
+            if (vm.Page is not MakeMapViewModel page) throw new InvalidOperationException("The page did not open.");
+            page.Seed = args.FirstOrDefault(a => a.StartsWith("--seed=", StringComparison.Ordinal))?["--seed=".Length..] ?? "misty-cavern";
+            if (args.Contains("--borrow"))
+            {
+                // Every other game's boxes ticked by clicking them, as the user would.
+                foreach (var box in window.GetVisualDescendants().OfType<Avalonia.Controls.CheckBox>().Where(b => b.DataContext is SourceRow { IsBase: false } && b.IsEffectivelyVisible).ToList())
+                {
+                    var at = box.TranslatePoint(new Avalonia.Point(box.Bounds.Height / 2, box.Bounds.Height / 2), window)!.Value;
+                    window.MouseDown(at, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    window.MouseUp(at, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+                    Pump(0.1);
+                }
+
+                // The rows' games are read on a worker: wait for them before making.
+                for (var i = 0; i < 400 && page.Sources.Any(s => s.Resources is null); i++) Pump(0.05);
+            }
+
+            for (var i = 0; i < 100 && (page.Plan is null || page.Facts.Length == 0 || !page.Facts.StartsWith(WadSmith.Editor.Generate.SeedWords.Title(page.Seed), StringComparison.Ordinal)); i++) Pump(0.05);
+            Pump(1.0);
+            Console.WriteLine($"make-map: {page.Facts}\n{page.Verdict}\nsources: {string.Join("; ", page.Sources.Select(s => $"{s.Title} ({s.Note})"))}");
+            Save("make-map");
+            if (args.Contains("--make"))
+            {
+                ClickButton("Make it");
+                var making = System.Diagnostics.Stopwatch.StartNew();
+                for (var i = 0; i < 6000 && vm.Page is not EditorViewModel; i++) Pump(0.05);
+                Console.WriteLine($"make-map: made in {making.Elapsed.TotalSeconds:0.0} s");
+                if (vm.Page is not EditorViewModel made) throw new InvalidOperationException($"The map was not made: {page.Status}");
+                Pump(3.0);
+                Console.WriteLine($"make-map: opened {made.Session.Project.Folder}, {made.Session.Map.Sectors.Count(s => s.OnMap)} rooms, {made.Session.Map.Things.Count(t => t.OnMap)} things");
+                Save("make-map-editor");
+            }
+
+            break;
+        }
+
         case "welcome":
             // After an editor pose, back to the start screen first: it then shows the map just made on its game's tile.
             if (vm.Page is EditorViewModel)

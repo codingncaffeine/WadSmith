@@ -28,6 +28,12 @@ public sealed class AppSettings
     /// <summary>Recently opened projects and files, newest first.</summary>
     public List<string> Recent { get; set; } = [];
 
+    /// <summary>Where "Make me a map" puts the maps it makes (D50); null means the "Made maps" folder inside the projects folder.</summary>
+    public string? MadeMapsFolder { get; set; }
+
+    /// <summary>The page's choices the last time a map was made, so the next one starts from them.</summary>
+    public string? LastMadeMap { get; set; }
+
     /// <summary>The engine to play with, when the user picked one; null means the first one found.</summary>
     public string? EnginePath { get; set; }
 

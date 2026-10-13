@@ -143,7 +143,8 @@ public static class MapMaker
                     Line($"light {t.X} {t.Y}");
                     break;
                 default:
-                    var number = t.Monster is { } m && m.Family != s.Family ? numberOf?.Invoke(m) : t.Number;
+                    // A monster from another game (or one this game lacks) is placed by the number it was carried in as; none, and it is left out.
+                    var number = t.Monster is { } m ? numberOf?.Invoke(m) ?? (m.Family == s.Family && (s.Doom2Things || !m.Doom2) ? t.Number : null) : t.Number;
                     if (number is not { } n) break;
                     var skill = t.FromSkill switch { 1 => " normal", 2 => " hard", _ => "" };
                     Line($"thing {n} {t.X} {t.Y} {t.Angle}{skill}{(t.Ambush ? " ambush" : "")}");

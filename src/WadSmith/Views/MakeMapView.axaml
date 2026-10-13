@@ -1,0 +1,147 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WadSmith.App.ViewModels"
+             xmlns:canvas="using:WadSmith.App.Canvas"
+             x:Class="WadSmith.App.Views.MakeMapView"
+             x:DataType="vm:MakeMapViewModel">
+
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Escape" Command="{Binding BackCommand}" />
+    </UserControl.KeyBindings>
+
+    <UserControl.Resources>
+        <!-- A row of segments: one of them chosen. -->
+        <DataTemplate x:Key="Segments" x:DataType="vm:SegmentGroup">
+            <ItemsControl ItemsSource="{Binding Items}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SegmentChoice">
+                        <ToggleButton Classes="segment" Classes.first="{Binding IsFirst}" Classes.last="{Binding IsLast}" MinWidth="72" HorizontalContentAlignment="Center"
+                                      Content="{Binding Label}" IsChecked="{Binding IsChecked}" ToolTip.Tip="{Binding Tooltip}" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="32,22,32,18">
+        <!-- Heading: back to the games, the game it is for, and the dice. -->
+        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,14">
+            <Button Classes="metal" Content="‹ Your games" Command="{Binding BackCommand}" VerticalAlignment="Center"
+                    ToolTip.Tip="Back to the start screen (Escape). Nothing is made until you press Make it." />
+            <StackPanel Grid.Column="1" Margin="18,0,0,0" VerticalAlignment="Center">
+                <TextBlock Classes="title" FontSize="24" Text="Make me a map" />
+                <TextBlock Classes="secondary" Text="{Binding GameTitle, StringFormat='For {0}. Choose what goes in; the map is redrawn as you choose.'}" />
+            </StackPanel>
+            <Button Grid.Column="2" Classes="metal" Content="Surprise me" Command="{Binding SurpriseMeCommand}" VerticalAlignment="Center"
+                    ToolTip.Tip="Every choice on this page at random, and a new seed." />
+        </Grid>
+
+        <Grid Grid.Row="1" ColumnDefinitions="560,*">
+            <ScrollViewer Padding="0,0,16,0">
+                <StackPanel Spacing="8">
+                    <!-- The user's games, each with what it may lend (D50 "Use things from"). -->
+                    <TextBlock Classes="section" Text="USE THINGS FROM" />
+                    <TextBlock Classes="secondary" TextWrapping="Wrap" FontSize="12"
+                               Text="Your games WadSmith found. Another game's monsters and textures are copied into the map's folder when it uses them; it still plays in your base game. Weapons, ammunition and health come from the base game." />
+                    <Grid ColumnDefinitions="*,90,90" Margin="0,4,0,0">
+                        <TextBlock Classes="secondary" FontSize="12" Text="Game" />
+                        <TextBlock Grid.Column="1" Classes="secondary" FontSize="12" Text="Textures" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Classes="secondary" FontSize="12" Text="Monsters" HorizontalAlignment="Center" />
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Sources}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SourceRow">
+                                <Border BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1" Padding="0,5">
+                                    <Grid ColumnDefinitions="*,90,90">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Game.Path}" />
+                                            <TextBlock Text="{Binding Note}" Classes="secondary" FontSize="12" />
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="1" HorizontalAlignment="Center" IsChecked="{Binding Textures}" IsVisible="{Binding CanTextures}"
+                                                  ToolTip.Tip="Rooms may look like this game's: its walls, floors and ceilings. With none checked, the base game's own are used." />
+                                        <CheckBox Grid.Column="2" HorizontalAlignment="Center" IsChecked="{Binding Monsters}"
+                                                  ToolTip.Tip="This game's monsters may be in the map. With none checked, the base game's own are used." />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Classes="section" Text="SIZE" Margin="0,12,0,0" />
+                    <ContentControl Content="{Binding Size}" ContentTemplate="{StaticResource Segments}" />
+
+                    <TextBlock Classes="section" Text="OPEN TO THE SKY" Margin="0,12,0,0" />
+                    <ContentControl Content="{Binding Outdoors}" ContentTemplate="{StaticResource Segments}" />
+
+                    <TextBlock Classes="section" Text="CHALLENGE" Margin="0,12,0,0" />
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <TextBlock Text="Gentle" Classes="secondary" VerticalAlignment="Center" />
+                        <Slider Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding Challenge}" Margin="12,0"
+                                ToolTip.Tip="How many monsters, how tough, and how much ammunition and health there is to spare. Every map holds monsters for every difficulty; this scales them all." />
+                        <TextBlock Grid.Column="2" Text="Brutal" Classes="secondary" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Text="{Binding ChallengeLabel}" TextWrapping="Wrap" />
+
+                    <StackPanel IsVisible="{Binding HasKeys}" Spacing="8">
+                        <TextBlock Classes="section" Text="LOCKED DOORS" Margin="0,12,0,0" />
+                        <ContentControl Content="{Binding Keys}" ContentTemplate="{StaticResource Segments}" />
+                        <TextBlock Text="{Binding KeysLabel}" Classes="secondary" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <TextBlock Classes="section" Text="BOSSES" Margin="0,12,0,0" />
+                    <ContentControl Content="{Binding Bosses}" ContentTemplate="{StaticResource Segments}" />
+                    <TextBlock Text="{Binding BossesLabel}" Classes="secondary" TextWrapping="Wrap" />
+
+                    <TextBlock Classes="section" Text="WITH" Margin="0,12,0,0" />
+                    <WrapPanel>
+                        <CheckBox Content="Secrets" IsChecked="{Binding Secrets}" Margin="0,0,18,4" ToolTip.Tip="Small hidden rooms off the way, each with something worth finding." />
+                        <CheckBox Content="Stairs" IsChecked="{Binding Stairs}" Margin="0,0,18,4" ToolTip.Tip="Rooms at different heights, joined by stairs." />
+                        <CheckBox Content="Lifts" IsChecked="{Binding Lifts}" Margin="0,0,18,4" ToolTip.Tip="Lifts up to higher rooms: press Use on the lift's side to bring it down." />
+                        <CheckBox Content="Teleporters" IsChecked="{Binding Teleporters}" Margin="0,0,18,4" ToolTip.Tip="A pad at a dead end that sends the player back to where that part of the map begins." />
+                        <CheckBox Content="Dark places" IsChecked="{Binding DarkPlaces}" Margin="0,0,18,4" ToolTip.Tip="Some rooms dim, with a light glowing in them." />
+                        <CheckBox Content="Ambushes" IsChecked="{Binding Ambushes}" Margin="0,0,18,4" ToolTip.Tip="In some rooms the monsters wait silently until they see the player." />
+                        <CheckBox Content="Decorations" IsChecked="{Binding Decorations}" Margin="0,0,18,4" ToolTip.Tip="Lamps, columns and barrels in the rooms' corners, trees under the sky." />
+                    </WrapPanel>
+
+                    <TextBlock Classes="section" Text="SEED" Margin="0,12,0,0" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBox Text="{Binding Seed}" Width="260"
+                                 ToolTip.Tip="Two words the map is made from, and named after. The same words and choices make the same map, on any computer: share them and a friend gets your map." />
+                        <Button Classes="metal" Content="Shuffle" Command="{Binding ShuffleCommand}" ToolTip.Tip="Two new words: a new map with the same choices." />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- The plan, redrawn as the choices change, and what the editor's own checks say about it. -->
+            <Grid Grid.Column="1" RowDefinitions="*,Auto" Margin="8,0,0,0">
+                <Border CornerRadius="6" ClipToBounds="True" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="1">
+                    <canvas:PlanPreview Plan="{Binding Plan}"
+                                        ToolTip.Tip="The map from above. The orange line is the way from the start (green) to the exit (white); a locked door and its key share a colour; the arena is red, secrets violet, rooms under the sky green, teleporter pads blue outlines." />
+                </Border>
+                <StackPanel Grid.Row="1" Spacing="4" Margin="0,10,0,0">
+                    <TextBlock Text="{Binding Facts}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Verdict}" Classes="secondary" TextWrapping="Wrap" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+
+        <!-- Where it goes, and the two ways to make it. -->
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,14,0,0">
+            <StackPanel VerticalAlignment="Center" Spacing="2">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding SaveLabel}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="620" ToolTip.Tip="{Binding SaveFolder}" />
+                    <Button Classes="metal" Content="Change…" Command="{Binding ChangeFolderCommand}" Padding="10,3" FontSize="12"
+                            ToolTip.Tip="Pick the folder maps made for you go to (also in Preferences)." />
+                </StackPanel>
+                <TextBlock Text="{Binding Status}" TextWrapping="Wrap" IsVisible="{Binding Status.Length}" />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="metal" Content="Make it and play" Command="{Binding MakeAndPlayCommand}" IsEnabled="{Binding !Busy}" Margin="0,0,10,0"
+                    ToolTip.Tip="Makes the map, opens it in the editor, and plays it in GZDoom straight away." />
+            <Button Grid.Column="2" Classes="primary" Content="Make it" Command="{Binding MakeCommand}" IsEnabled="{Binding !Busy}"
+                    ToolTip.Tip="Makes the map as a project of its own, named after the seed, and opens it in the editor. Everything in it can be changed." />
+        </Grid>
+    </Grid>
+</UserControl>

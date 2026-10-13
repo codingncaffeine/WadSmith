@@ -116,6 +116,8 @@
                                     <Button Classes="metal" Content="New map" Command="{Binding NewMap}" CommandParameter="{Binding}"
                                             ToolTip.Tip="Start with one lit room and a player start, ready to play." />
                                 </StackPanel>
+                                <Button Classes="metal" Content="Make me a map…" Command="{Binding MakeMap}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" IsVisible="{Binding CanMakeMap}"
+                                        ToolTip.Tip="WadSmith makes a whole map for this game for you: choose which of your games it uses monsters and textures from, its size, locked doors, bosses and challenge. It opens as ordinary rooms and doors you can change." />
                                 <!-- What a map started here plays in (D51): GZDoom, or a classic port's format and limits. -->
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Text="Plays in" VerticalAlignment="Center" Classes="secondary" />

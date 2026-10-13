@@ -30,6 +30,14 @@ public sealed class TooltipCoverageTests
         {
             missing.AddRange(Untipped(window, "start screen"));
 
+            // Make me a map (D50), from the first game's card.
+            var tile = vm.Welcome.Games.First(t => t.CanMakeMap);
+            tile.MakeMap!.Execute(tile);
+            Ui.Pump(1.0);
+            missing.AddRange(Untipped(window, "make me a map"));
+            ((WadSmith.App.ViewModels.MakeMapViewModel)vm.Page).BackCommand.Execute(null);
+            Ui.Pump(0.3);
+
             var editor = Ui.NewMap(vm);
             missing.AddRange(Untipped(window, "editor"));
             foreach (var layout in new[] { MapLayout.Plan, MapLayout.ThreeD, MapLayout.Split })
