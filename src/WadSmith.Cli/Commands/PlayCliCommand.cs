@@ -72,7 +72,8 @@ internal sealed class PlayCliCommand : ICommand
 
             var exportId = port.ExportFor(project.Info.Target);
             var wad = Path.Combine(Path.GetFullPath(data), "play", $"play-{exportId}.wad");
-            var report = ProjectExport.Write(project, exportId, wad, EngineData.Find(), null);
+            var gameFiles = new[] { request.Iwad }.Concat(request.Files.Take(request.Files.Count - 1).Where(f => found.Any(g => g.Path == f))).ToList();
+            var report = ProjectExport.Write(project, exportId, wad, EngineData.Find(), new BaseGame(new WadSmith.Core.Containers.ResourceStack(gameFiles.Select(WadSmith.Core.Containers.ResourceContainer.Open))));
             foreach (var loss in report.Losses) error.WriteLine($"lost in {exportId}: {(loss.Map is null ? "" : loss.Map + ": ")}{loss.Title}");
             // The game's own add-on and the project's add-ons that are WADs; the project itself is the exported file.
             var wads = request.Files.Take(request.Files.Count - 1).Where(f => f.EndsWith(".wad", StringComparison.OrdinalIgnoreCase)).ToList();

@@ -201,10 +201,11 @@ public sealed class ExportTests
         Assert.Contains("levelname = \"Proving Grounds\"", umapinfo);
         Assert.Contains("skytexture = \"SKY2\"", umapinfo);
         Assert.Contains("endgame = true", umapinfo);
-        Assert.Equal(["project:Your own wall and floor pictures"], Keys(boom));
+        // A picture the maps do not use is not a loss: pictures are carried, or listed, by the maps' use of them.
+        Assert.Empty(boom.Losses);
 
         var vanilla = ProjectExport.Write(project, "vanilla", Path.Combine(temp.Path, "out", "vanilla.wad"), engine);
-        Assert.Equal(["map:info", "project:Your own wall and floor pictures"], Keys(vanilla));
+        Assert.Equal(["map:info"], Keys(vanilla));
         Assert.DoesNotContain(WadContainer.Open(Path.Combine(temp.Path, "out", "vanilla.wad")).Entries, e => e.Name == "UMAPINFO");
 
         var pk3File = Path.Combine(temp.Path, "out", "p.pk3");

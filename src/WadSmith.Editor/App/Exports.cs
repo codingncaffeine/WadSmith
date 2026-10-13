@@ -18,8 +18,12 @@ public sealed record PreparedExport(string ExportId, string File, string Extensi
 /// </summary>
 public static class Exports
 {
-    /// <summary>The base game's picture names, read once per set of game files.</summary>
-    private static readonly ConcurrentDictionary<string, PictureNames> Pictures = new(StringComparer.Ordinal);
+    /// <summary>The base game, read once per set of game files.</summary>
+    private static readonly ConcurrentDictionary<string, BaseGame> Games = new(StringComparer.Ordinal);
+
+    /// <summary>The base game of <paramref name="files"/> (the IWAD, then an add-on over it), or null without them.</summary>
+    public static BaseGame? GameOf(IReadOnlyList<string> files) =>
+        files.Count == 0 ? null : Games.GetOrAdd(string.Join('|', files), _ => new BaseGame(new ResourceStack(files.Select(ResourceContainer.Open))));
 
     /// <summary>
     /// Saves the map, then exports the project for <paramref name="exportId"/> into <paramref name="folder"/> on a worker.
@@ -36,15 +40,9 @@ public static class Exports
         var extension = ProjectExport.ChoicesFor(project.ClassicNamespace).FirstOrDefault(c => c.Id == exportId).Extension ?? ".wad";
         return await Task.Run(() =>
         {
-            PictureNames? pictures = null;
-            if (exportId != ProjectExport.GZDoom && files.Count > 0)
-            {
-                pictures = Pictures.GetOrAdd(string.Join('|', files), _ => ProjectExport.PicturesOf(new ResourceStack(files.Select(ResourceContainer.Open))));
-            }
-
             Directory.CreateDirectory(folder);
             var file = Path.Combine(folder, "export-" + exportId + extension);
-            var report = ProjectExport.Write(project, exportId, file, engineData, pictures);
+            var report = ProjectExport.Write(project, exportId, file, engineData, exportId == ProjectExport.GZDoom ? null : GameOf(files));
             return new PreparedExport(exportId, file, extension, report, Rows(report, frame, slot));
         }).ConfigureAwait(false);
     }

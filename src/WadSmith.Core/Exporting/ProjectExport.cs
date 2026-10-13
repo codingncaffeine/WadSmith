@@ -3,7 +3,6 @@ using System.IO.Compression;
 using System.Text;
 using WadSmith.Core.Containers;
 using WadSmith.Core.Games;
-using WadSmith.Core.Graphics;
 using WadSmith.Core.Projects;
 using WadSmith.Core.Translation;
 
@@ -27,22 +26,14 @@ public static class ProjectExport
     public static IReadOnlyList<(string Id, string Title, string Extension)> ChoicesFor(string family) =>
         [(GZDoom, "GZDoom and UZDoom", ".pk3"), .. ClassicPorts.ForFamily(family).Select(p => (p.Id, p.Title, ".wad"))];
 
-    /// <summary>The picture names a base game holds (its own walls and floors), for <see cref="MapExport"/>'s check.</summary>
-    public static PictureNames PicturesOf(ResourceStack baseGame)
-    {
-        var library = new TextureLibrary(baseGame);
-        var walls = new HashSet<string>(library.Walls.Select(w => w.Name), StringComparer.OrdinalIgnoreCase);
-        var flats = new HashSet<string>(library.Flats.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
-        return new PictureNames(walls.Contains, flats.Contains);
-    }
-
     /// <summary>
     /// Writes <paramref name="project"/> exported for <paramref name="exportId"/> (<see cref="GZDoom"/> or a classic port's
     /// id) to <paramref name="outFile"/> and returns what it lost. The engine's data (gzdoom.pk3) is needed for a classic
-    /// port: its tables say what each classic type means. <paramref name="pictures"/> are the base game's, when known.
+    /// port: its tables say what each classic type means. <paramref name="game"/> is the base game, when known: its
+    /// pictures are checked against, and the project's own pictures it lacks are carried in.
     /// Reads and writes files: call it on a worker.
     /// </summary>
-    public static ExportReport Write(Project project, string exportId, string outFile, string? engineData, PictureNames? pictures = null)
+    public static ExportReport Write(Project project, string exportId, string outFile, string? engineData, BaseGame? game = null)
     {
         var report = new ExportReport();
         byte[] data;
@@ -53,7 +44,7 @@ public static class ProjectExport
         else
         {
             var port = ClassicPorts.Get(exportId) ?? throw new ArgumentException($"{exportId} is not a port WadSmith exports for.", nameof(exportId));
-            data = Wad(project, port, engineData, pictures, report);
+            data = Wad(project, port, engineData, game, report);
         }
 
         var folder = Path.GetDirectoryName(Path.GetFullPath(outFile))!;
@@ -90,7 +81,7 @@ public static class ProjectExport
     }
 
     /// <summary>Every map for a classic port, in one .wad, with UMAPINFO and its music for the ports that read it.</summary>
-    private static byte[] Wad(Project project, ClassicPort port, string? engineData, PictureNames? pictures, ExportReport report)
+    private static byte[] Wad(Project project, ClassicPort port, string? engineData, BaseGame? game, ExportReport report)
     {
         var family = project.ClassicNamespace;
         if (port.For(family) is null) throw new ArgumentException($"{port.Title} does not play {GameCatalog.Get(project.Info.Game)?.Title ?? project.Info.Game} maps.", nameof(port));
@@ -102,14 +93,29 @@ public static class ProjectExport
         }
 
         var exMy = GameCatalog.Get(project.Info.Game)?.MapNames == "ExMy";
-        var lumps = new List<(string Name, byte[] Data)>();
-        foreach (var entry in project.Maps())
+        var models = project.Maps().Select(entry =>
         {
             var model = project.LoadMap(entry.Slot);
-            if (model.Namespace != "zdoom") model = MapTranslation.ToZDoom(model, xlat, []);
-            lumps.AddRange(MapExport.ForPort(model, port, family, xlat, report, pictures, exMy));
+            return model.Namespace == "zdoom" ? model : MapTranslation.ToZDoom(model, xlat, []);
+        }).ToList();
+
+        // The project's own pictures the game lacks, carried in (floors only for the ports that read them from a WAD).
+        PictureNames? pictures = null;
+        CarriedPictures? carried = null;
+        if (game is not null)
+        {
+            static bool Storable(string n) => n != "-" && n.Length is > 0 and <= 8;
+            var walls = models.SelectMany(m => m.Sides).SelectMany(s => new[] { s.Top, s.Bottom, s.Middle }).Where(n => Storable(n) && !game.Pictures.Wall(n));
+            var flats = models.SelectMany(m => m.Sectors).SelectMany(s => new[] { s.FloorTexture, s.CeilingTexture }).Where(n => Storable(n) && !game.Pictures.Flat(n));
+            carried = PictureCarry.Carry(game, ResourceContainer.Open(project.Folder), walls, flats, flatsToo: port.Id != ClassicPorts.Vanilla);
+            var (w, f) = (carried.Walls, carried.Flats);
+            pictures = new PictureNames(n => game.Pictures.Wall(n) || w.Contains(n), n => game.Pictures.Flat(n) || f.Contains(n));
+            report.Notes.AddRange(carried.Notes);
         }
 
+        var lumps = new List<(string Name, byte[] Data)>();
+        foreach (var model in models) lumps.AddRange(MapExport.ForPort(model, port, family, xlat, report, pictures, exMy));
+        if (carried is not null) lumps.AddRange(carried.Lumps);
         MapInfo(project, port, lumps, report);
         ProjectFiles(project, report);
         return WadWriter.Write(WadKind.Pwad, lumps.Select(l => (l.Name, (ReadOnlyMemory<byte>)l.Data)));
@@ -192,15 +198,18 @@ public static class ProjectExport
             var parts = Path.GetRelativePath(project.Folder, file).Split(Path.DirectorySeparatorChar);
             if (parts[0].StartsWith('.') || parts[0] == Project.DeletedFolderName || parts[0] is "maps" or "music" || Bookkeeping.Contains(relative, StringComparer.OrdinalIgnoreCase)) continue;
             if (relative.Equals(ProjectMapInfo.FileName, StringComparison.OrdinalIgnoreCase)) continue;
-            var kind = parts[0].ToLowerInvariant() switch
+            string? kind = parts[0].ToLowerInvariant() switch
             {
-                "textures" or "flats" or "patches" or "materials" => "Your own wall and floor pictures",
+                // Pictures are carried by the maps' use of them, and each one the game still lacks is listed with its map.
+                "textures" or "flats" or "patches" => null,
+                "materials" => "Materials (GZDoom's lighting maps)",
                 "sprites" => "Pictures of objects brought in from other games or files",
                 "sounds" or "sndinfo.txt" => "Sounds",
                 "models" or "voxels" or "modeldef.txt" or "voxeldef.txt" => "3D models and voxels",
                 "skies" => "Skies from pictures",
                 _ => "GZDoom's own definitions",
             };
+            if (kind is null) continue;
             (kinds.TryGetValue(kind, out var list) ? list : kinds[kind] = []).Add(relative);
         }
 

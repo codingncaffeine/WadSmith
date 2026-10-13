@@ -20,7 +20,8 @@ internal sealed class ExportCommand : ICommand
         in the classic format with WadSmith's nodes in a .wad (Boom and MBF21 also get a UMAPINFO with the maps'
         names, music, skies and next maps). Prints what the export lost, map by map: what the port has no type,
         flag or field for, what it does not know (objects, the game's pictures, found in --games or the usual
-        folders), and the format's limits. Exit code 0 when nothing in the export stops the port with an error,
+        folders), and the format's limits. The project's own pictures the game lacks are carried in, in the game's
+        colours (floors not for vanilla, which reads floors from the game only). Exit code 0 when nothing in the export stops the port with an error,
         1 when something does (the file is written either way).
         """;
 
@@ -38,7 +39,7 @@ internal sealed class ExportCommand : ICommand
 
         string? Env(string name) => name == "HOME" && home is not null ? home : Environment.GetEnvironmentVariable(name);
         var project = Project.Open(args.Positional[0]);
-        PictureNames? pictures = null;
+        BaseGame? over = null;
         if (exportFor != ProjectExport.GZDoom)
         {
             var found = GameLocator.Scan([.. GameLocator.StandardFolders(Env), .. games is null ? Array.Empty<string>() : [games]]);
@@ -47,7 +48,7 @@ internal sealed class ExportCommand : ICommand
                 var stack = new ResourceStack();
                 if (game.Game.AddOnFor is { } baseId && found.FirstOrDefault(g => g.Game.Id == baseId) is { } baseGame) stack.Add(ResourceContainer.Open(baseGame.Path));
                 stack.Add(ResourceContainer.Open(game.Path));
-                pictures = ProjectExport.PicturesOf(stack);
+                over = new BaseGame(stack);
             }
             else
             {
@@ -55,7 +56,7 @@ internal sealed class ExportCommand : ICommand
             }
         }
 
-        var report = ProjectExport.Write(project, exportFor, outFile, enginePath, pictures);
+        var report = ProjectExport.Write(project, exportFor, outFile, enginePath, over);
         output.WriteLine($"Wrote {Path.GetFullPath(outFile)}.");
         output.Write(report.ToText(verbose));
         return report.Breaks ? ExitCode.Failed : ExitCode.Ok;
