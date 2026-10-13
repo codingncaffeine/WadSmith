@@ -117,7 +117,7 @@ public static class ProjectExport
         var lumps = new List<(string Name, byte[] Data)>();
         for (var i = 0; i < models.Count; i++) lumps.AddRange(MapExport.ForPort(models[i], port, family, xlat, report, pictures, exMy, entries[i].Next));
         if (carried is not null) lumps.AddRange(carried.Lumps);
-        MapInfo(project, port, lumps, report);
+        MapInfo(project, port, lumps, report, game, engineData);
         ProjectFiles(project, report);
         return WadWriter.Write(WadKind.Pwad, lumps.Select(l => (l.Name, (ReadOnlyMemory<byte>)l.Data)));
     }
@@ -126,20 +126,21 @@ public static class ProjectExport
     /// The maps' names, music, skies and next maps: a UMAPINFO for the ports that read it (with the music files they
     /// name, when the file is MUS or MIDI), lost for the others.
     /// </summary>
-    private static void MapInfo(Project project, ClassicPort port, List<(string Name, byte[] Data)> lumps, ExportReport report)
+    private static void MapInfo(Project project, ClassicPort port, List<(string Name, byte[] Data)> lumps, ExportReport report, BaseGame? game, string? engineData)
     {
         var maps = project.Maps().Where(m => m.Title.Length > 0 || m.Music is not null || m.Sky is not null || m.Next is not null).ToList();
         if (maps.Count == 0) return;
         if (!port.Umapinfo)
         {
+            var played = SlotMusic(project, port, lumps, report, game, engineData, maps);
             foreach (var m in maps)
             {
                 var what = new List<string>();
                 if (m.Title.Length > 0) what.Add($"name \"{m.Title}\"");
-                if (m.Music is not null) what.Add($"music {m.Music}");
+                if (m.Music is not null && !played.Contains(m.Slot)) what.Add($"music {m.Music}");
                 if (m.Sky is not null) what.Add($"sky {m.Sky}");
-                if (m.Next is not null) what.Add($"next map {m.Next}");
-                report.Add(new ExportLoss(m.Slot, "map:info", $"The map's {string.Join(", ", what)}", "map", [], false, $"{port.Title} has no place for them; the slot's own are used"));
+                if (m.Next is not null) what.Add(m.Next == ProjectMapInfo.EndToTitle ? "the game ending after it" : $"next map {m.Next}");
+                if (what.Count > 0) report.Add(new ExportLoss(m.Slot, "map:info", $"The map's {string.Join(", ", what)}", "map", [], false, $"{port.Title} has no place for them; the slot's own are used"));
             }
 
             return;
@@ -176,6 +177,54 @@ public static class ProjectExport
         }
 
         lumps.Add(("UMAPINFO", Encoding.ASCII.GetBytes(text.ToString())));
+    }
+
+    /// <summary>
+    /// A map's own music where the port has no place to name it: written under the lump the slot plays by default
+    /// (Doom II's MAP01 plays D_RUNNIN), from the project's music file or another of the game's own songs. MUS plays
+    /// everywhere; MIDI in every port but the DOS game, which a note says. Returns the slots whose music is carried.
+    /// </summary>
+    private static HashSet<string> SlotMusic(Project project, ClassicPort port, List<(string Name, byte[] Data)> lumps, ExportReport report, BaseGame? game, string? engineData, IReadOnlyList<ProjectMap> maps)
+    {
+        var carried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (game is null || engineData is null || !File.Exists(engineData) || GameCatalog.Get(project.Info.Game) is not { } definition) return carried;
+        var withMusic = maps.Where(m => m.Music is not null).ToList();
+        if (withMusic.Count == 0) return carried;
+        var definitions = Games.MapInfo.For(definition, game.Stack.Containers, engineData);
+        var taken = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var m in withMusic)
+        {
+            var standard = definitions.Resolve(definitions.For(m.Slot)?.Text("music"));
+            if (standard is null) continue;
+            // Lump names are upper case in a WAD; the engines look them up that way.
+            var slotLump = game.Lump(standard) is not null ? standard.ToUpperInvariant() : game.Lump("D_" + standard) is not null ? ("D_" + standard).ToUpperInvariant() : null;
+            if (slotLump is null) continue;
+            var data = MusicFile(project, m.Music!) is { } file ? SharedFiles.ReadAllBytes(file) : game.Lump(m.Music!);
+            if (data is null) continue;
+            if (!IsMusOrMidi(data))
+            {
+                report.Add(new ExportLoss(m.Slot, "map:music-format", $"Music {m.Music} is neither MUS nor MIDI", "map", [], false, "the slot's own music plays"));
+                carried.Add(m.Slot);
+                continue;
+            }
+
+            var midi = data[0] == 'M' && data[1] == 'T';
+            if (midi && port.VanillaLimits) report.Notes.Add($"{m.Slot}: its music {m.Music} is MIDI: Chocolate Doom and the re-release play it, the DOS game only MUS.");
+
+            if (taken.TryGetValue(slotLump, out var other))
+            {
+                report.Add(new ExportLoss(m.Slot, "map:music-shared", $"Music {m.Music}: {other} already plays its own under {slotLump}, the music this slot shares with it", "map", [], false, $"{other}'s music plays"));
+                carried.Add(m.Slot);
+                continue;
+            }
+
+            taken[slotLump] = m.Slot;
+            lumps.Add((slotLump, data));
+            carried.Add(m.Slot);
+            report.Notes.Add($"{m.Slot}: its music {m.Music} written as {slotLump}, the music the slot plays.");
+        }
+
+        return carried;
     }
 
     private static string Quote(string s) => "\"" + s.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";

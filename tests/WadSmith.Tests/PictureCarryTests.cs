@@ -86,6 +86,21 @@ public sealed class PictureCarryTests
     }
 
     [Fact]
+    public void AMapsOwnMusicPlaysUnderTheSlotsSongWhereThePortCannotNameIt()
+    {
+        using var temp = new TempFolder();
+        var (project, engine, game) = Setup(temp);
+        project.UpdateMap("MAP01", m => m with { Music = "D_SHAWN" });
+        var file = Path.Combine(temp.Path, "vanilla.wad");
+        var report = ProjectExport.Write(project, "vanilla", file, engine, game);
+        Assert.DoesNotContain(report.Losses, l => l.Key == "map:info");
+        Assert.Contains(report.Notes, n => n == "MAP01: its music D_SHAWN written as D_RUNNIN, the music the slot plays.");
+        // Freedoom's songs are MIDI: carried, with the one engine that cannot play them named.
+        Assert.Contains(report.Notes, n => n.StartsWith("MAP01: its music D_SHAWN is MIDI", StringComparison.Ordinal));
+        Assert.Equal(game.Lump("D_SHAWN"), WadContainer.Open(file).Entries.Single(e => e.Name == "D_RUNNIN").Read());
+    }
+
+    [Fact]
     public void VanillaTakesTheWallsAndSaysItsGameStopsOverTheFloors()
     {
         using var temp = new TempFolder();
