@@ -1000,21 +1000,29 @@ public sealed class EditorSession : IDisposable
         }
 
         (Line? Switch, string? Why) made = (null, null);
-        var geometry = _geometry;
-        var look = Look;
-        History.Record("Make a switch", e => made = Switches.Make(e, geometry, wall, at, target, look));
+        var (geometry, look, resources) = (_geometry, Look, Resources);
+        History.Record("Make a switch", e => made = Switches.Make(e, geometry, wall, at, target, look, t => SizeOf(resources, t)));
         if (made.Switch is { } done) Selection.Set(done);
         else if (made.Why is { } why) Notice?.Invoke(why);
     }
 
-    /// <summary>Makes a wall the exit (see <see cref="Exits.Make"/>), one undo step, and selects what became it: on a solid wall, the piece that is the switch, round <paramref name="at"/> when given.</summary>
+    /// <summary>Makes a wall the exit (see <see cref="Exits.Make"/>), one undo step, and selects what became it: on a solid wall, the wall carrying the switch, round <paramref name="at"/> when given.</summary>
     public void MakeExit(Line wall, bool secret, MapPoint? at = null)
     {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => MakeExit(wall, secret, at);
+            return;
+        }
+
         Line? made = null;
-        var look = Look;
-        History.Record("Make the exit", e => made = Exits.Make(e, wall, secret, look, at));
+        var (geometry, look, resources) = (_geometry, Look, Resources);
+        History.Record("Make the exit", e => made = Exits.Make(e, geometry, wall, secret, look, at, t => SizeOf(resources, t)));
         if (made is { } exit) Selection.Set(exit);
     }
+
+    /// <summary>A wall texture's size in the game's data, for the tools that size what they build by a picture; null when unknown.</summary>
+    private static (int Width, int Height)? SizeOf(GameResources? resources, string texture) => resources?.Textures.FindWall(texture) is { } t ? (t.Width, t.Height) : null;
 
     /// <summary>Makes a room a teleport pad sending to a spot (see <see cref="Teleports.Make"/>), one undo step, and selects the arrival spot; says why when it cannot.</summary>
     public void MakeTeleporter(Sector pad, MapPoint at, int angle)

@@ -168,7 +168,7 @@ public static class EditScript
                 break;
             case "exit":
                 var exitWall = Wall(1);
-                Record("Make the exit", e => Exits.Make(e, exitWall, false, l, P(1)));
+                Record("Make the exit", e => Exits.Make(e, g, exitWall, false, l, P(1)));
                 made = "the exit switch";
                 break;
             case "split":

@@ -45,10 +45,13 @@ public sealed class ExitSwitchInTheWindowTests
 
                 editor.Inspector.Rows.OfType<App.ViewModels.ActionRow>().Single(r => r.Label == "Make it the exit switch").Command.Execute(null);
                 Ui.Pump(1.0);
+
+                // With the game's own picture (32 wide, 72 tall) in a 128 room: the switch sits in an alcove 8 deep behind the wall, where the click was.
                 var exit = session.Selection.Items.OfType<Line>().Single();
-                string Shown(Line l) => l.Front.Middle == look.ExitSwitch ? "switch" : l.Front.Middle == look.Wall ? "wall" : l.Front.Middle;
+                var alcove = exit.Front.Sector;
+                string Shown(Line l) => l.Back is not null ? "opening" : l.Front.Middle == look.ExitSwitch ? "switch" : l.Front.Middle == look.Wall ? "wall" : l.Front.Middle;
                 var pieces = session.Map.Lines.Where(l => l.OnMap && l.Start.X == x && l.End.X == x).OrderBy(l => Math.Min(l.Start.Y, l.End.Y)).Select(l => $"{l.Length} {Shown(l)}{(l.Special == 0 ? "" : " (exit)")}");
-                said.Add($"made: {editor.Inspector.Heading}, the switch {exit.Length} long starting {Math.Min(exit.Start.Y, exit.End.Y) - y0} up the wall; the wall is now {string.Join(" · ", pieces)}");
+                said.Add($"made: {editor.Inspector.Heading}, the switch {exit.Length} long and {Math.Abs(exit.Start.X - x)} behind the wall in an alcove {alcove.CeilingHeight - alcove.FloorHeight} tall, starting {Math.Min(exit.Start.Y, exit.End.Y) - y0} up the wall; the wall is now {string.Join(" · ", pieces)}");
                 said.Add($"step {guide.Index + 1}: {guide.Title}");
                 return said;
             }
@@ -57,6 +60,6 @@ public sealed class ExitSwitchInTheWindowTests
                 window.Close();
             }
         });
-        Assert.Equal(["step 6: Add a way out", "clicked a 512 wall: Solid wall, at a point", "made: Exit switch, the switch 64 long starting 352 up the wall; the wall is now 352 wall · 64 switch (exit) · 96 wall", "step 7: Play it"], seen);
+        Assert.Equal(["step 6: Add a way out", "clicked a 512 wall: Solid wall, at a point", "made: Exit switch, the switch 32 long and 8 behind the wall in an alcove 72 tall, starting 368 up the wall; the wall is now 368 wall · 32 opening · 112 wall", "step 7: Play it"], seen);
     }
 }

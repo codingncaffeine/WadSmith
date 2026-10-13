@@ -71,7 +71,7 @@ public static class GuideBook
             new("door", "Put a door between them", "Pick Door{or:Door tool} and click the dashed line where your two rooms meet. A door is built into that opening, with wall either side of it and above it (a doorway as tall as the door): it opens when the player uses it and closes again behind them.", GuideTarget.DoorTool),
             new("texture", "Give a wall a new look", "Open Textures on the right and drag a picture onto one of your walls, on the plan or in the 3D view.", GuideTarget.Textures),
             new("things", "Add a monster and a weapon", "Open {label:Objects} on the right and drag {monster} and {weapon} onto the floor of a room.", GuideTarget.Objects),
-            new("exit", "Add a way out", "Click a wall on the plan where you want the way out, then press “Make it the exit switch” in the Inspector. The switch is one picture wide (64), so WadSmith cuts a piece that size out of the wall where you clicked and the rest stays wall. Using the switch in the game ends the map.", GuideTarget.Inspector),
+            new("exit", "Add a way out", "Click a wall on the plan where you want the way out, then press “Make it the exit switch” in the Inspector. The switch picture is set into the wall where you clicked, as wide and as tall as the picture, with the wall above it; the rest stays wall. Using the switch in the game ends the map.", GuideTarget.Inspector),
             new("play", "Play it", "Press {label:Play} at the top ({key:Play}). WadSmith checks the map first and offers to fix anything that would spoil it.", GuideTarget.Play),
         ],
         "Everything in it can be changed, and nothing needs saving. Each chapter below takes a few minutes on this map; Ctrl+K finds anything else.", "door"),

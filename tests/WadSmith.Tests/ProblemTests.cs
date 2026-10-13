@@ -28,7 +28,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
     {
         var map = EditorMap.FromModel(StarterRoom.Create("MAP01", "doom"));
         var history = new History(map);
-        history.Record("Make the exit", e => Exits.Make(e, map.Lines[0], false, Look.For("doom"), new MapPoint(-256, 200)));
+        history.Record("Make the exit", e => Exits.Make(e, MapGeometry.Build(map.Frame), map.Lines[0], false, Look.For("doom"), new MapPoint(-256, 200)));
         return (map, history);
     }
 
@@ -227,7 +227,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
         {
             e.Add(new Thing { X = 64, Y = 64, Type = 1 });
             e.Flag(shared, "twosided", false);
-            Exits.Make(e, map.Lines.First(l => l.OnMap && l.Back is null), false, Look.For("doom"));
+            Exits.Make(e, MapGeometry.Build(map.Frame), map.Lines.First(l => l.OnMap && l.Back is null), false, Look.For("doom"));
         });
         FixAndCheckClean(map, history, Only(map, "two-sided"));
     }
@@ -297,7 +297,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
         history.Record("Start and exit", e =>
         {
             e.Add(new Thing { X = 128, Y = 128, Type = 1 });
-            Exits.Make(e, map.Lines.First(l => l.OnMap && l.Back is null && l.Front.Sector == rooms[0]), false, Look.For("doom"));
+            Exits.Make(e, MapGeometry.Build(map.Frame), map.Lines.First(l => l.OnMap && l.Back is null && l.Front.Sector == rooms[0]), false, Look.For("doom"));
         });
         return (map, history, rooms);
     }
@@ -392,7 +392,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
         history.Record("Start and exit", e =>
         {
             e.Add(new Thing { X = 128, Y = 128, Type = 1 });
-            Exits.Make(e, map.Lines.First(l => l.OnMap && l.Back is null && l.Front.Sector == rooms[0]), false, Look.For("doom"));
+            Exits.Make(e, MapGeometry.Build(map.Frame), map.Lines.First(l => l.OnMap && l.Back is null && l.Front.Sector == rooms[0]), false, Look.For("doom"));
         });
         Assert.Empty(Check(map));
         var track = map.Lines.First(l => l.OnMap && l.Flag("dontpegbottom"));

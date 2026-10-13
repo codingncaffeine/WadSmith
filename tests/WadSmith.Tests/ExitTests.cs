@@ -48,9 +48,9 @@ public sealed class ExitTests
         var before = Udmf(map.ToModel());
         var wall = map.Lines[0];
         Line? made = null;
-        history.Record("Make the exit", e => made = Exits.Make(e, wall, false, Look.For("doom")));
+        history.Record("Make the exit", e => made = Exits.Make(e, MapGeometry.Build(map.Frame), wall, false, Look.For("doom")));
 
-        // The west wall is 512 long: the middle 64 of it is the switch, and the rest stays wall, its texture running on past the switch.
+        // The west wall is 512 long: with no picture size known, the middle 64 of it is the switch, and the rest stays wall, its texture running on past the switch.
         var exit = Assert.IsType<Line>(made);
         Assert.True(Exits.IsExit(exit));
         Assert.Equal((Exits.Normal, "SW1EXIT", true), (exit.Special, exit.Front.Middle, exit.Flag("playeruse")));
@@ -76,14 +76,14 @@ public sealed class ExitTests
         var map = EditorMap.FromModel(StarterRoom.Create("MAP01", "doom"));
         var history = new History(map);
         Line? made = null;
-        history.Record("Make the exit", e => made = Exits.Make(e, map.Lines[0], false, Look.For("doom"), new MapPoint(-250, 200)));
+        history.Record("Make the exit", e => made = Exits.Make(e, MapGeometry.Build(map.Frame), map.Lines[0], false, Look.For("doom"), new MapPoint(-250, 200)));
         Assert.Equal((168.0, 232.0), (made!.Start.Y, made.End.Y));
         Assert.Equal(6, map.Lines.Count(l => l.OnMap));
         history.Undo();
         Assert.Equal(4, map.Lines.Count(l => l.OnMap));
 
         // Clicked at the very end: the switch stops at the corner.
-        history.Record("Make the exit", e => made = Exits.Make(e, map.Lines[0], false, Look.For("doom"), new MapPoint(-256, 250)));
+        history.Record("Make the exit", e => made = Exits.Make(e, MapGeometry.Build(map.Frame), map.Lines[0], false, Look.For("doom"), new MapPoint(-256, 250)));
         Assert.Equal((192.0, 256.0), (made!.Start.Y, made.End.Y));
         Assert.Equal(5, map.Lines.Count(l => l.OnMap));
 
@@ -91,10 +91,54 @@ public sealed class ExitTests
         var (small, smallHistory, _) = MovingTests.Drawn((0, 0, 80, 128));
         var shortWall = small.Lines.First(l => l.OnMap && l.Length == 80);
         var walls = small.Lines.Count(l => l.OnMap);
-        smallHistory.Record("Make the exit", e => made = Exits.Make(e, shortWall, false, Look.For("doom"), new MapPoint(10, 0)));
+        smallHistory.Record("Make the exit", e => made = Exits.Make(e, MapGeometry.Build(small.Frame), shortWall, false, Look.For("doom"), new MapPoint(10, 0)));
         Assert.Same(shortWall, made);
         Assert.Equal(walls, small.Lines.Count(l => l.OnMap));
         Assert.Equal("SW1EXIT", shortWall.Front.Middle);
+    }
+
+    [Fact]
+    public void TheExitSwitchSitsInAnAlcoveAsTallAsItsPictureWhenTheRoomIsTaller()
+    {
+        // Doom's exit switch picture is 32 wide and 72 tall; the room is 128 tall.
+        var map = EditorMap.FromModel(StarterRoom.Create("MAP01", "doom"));
+        var history = new History(map);
+        var before = Udmf(map.ToModel());
+        Line? made = null;
+        history.Record("Make the exit", e => made = Exits.Make(e, MapGeometry.Build(map.Frame), map.Lines[0], false, Look.For("doom"), new MapPoint(-256, 200), t => t == "SW1EXIT" ? (32, 72) : null));
+        DrawingTests.AssertSound(map);
+
+        // The switch is the alcove's back wall: 32 wide, 8 outside the room, the picture hung from the alcove's ceiling.
+        var exit = Assert.IsType<Line>(made);
+        Assert.Null(exit.Back);
+        Assert.Equal((Exits.Normal, "SW1EXIT", true, 32.0, -264.0, -264.0, 0.0), (exit.Special, exit.Front.Middle, exit.Flag("playeruse"), exit.Length, exit.Start.X, exit.End.X, exit.Front.OffsetY));
+        var alcove = exit.Front.Sector;
+        Assert.Equal((72.0, 0.0), (alcove.CeilingHeight - alcove.FloorHeight, alcove.FloorHeight));
+
+        // Its mouth in the west wall, where the click was: 32 wide, no action, the room's wall above it hung from the ceiling.
+        var mouth = map.Lines.Single(l => l.OnMap && l.Back is not null && (ReferenceEquals(l.Front.Sector, alcove) || ReferenceEquals(l.Back.Sector, alcove)));
+        var roomSide = ReferenceEquals(mouth.Front.Sector, alcove) ? mouth.Back! : mouth.Front;
+        Assert.Equal((32.0, 184.0, 216.0, 0, "STARTAN3", "-", true), (mouth.Length, Math.Min(mouth.Start.Y, mouth.End.Y), Math.Max(mouth.Start.Y, mouth.End.Y), mouth.Special, roomSide.Top, roomSide.Middle, mouth.Flag("dontpegtop")));
+
+        // The alcove's sides hang their texture from the floor, in line with the room's wall; the rest of the west wall is as it was.
+        var sides = map.Lines.Where(l => l.OnMap && l.Back is null && ReferenceEquals(l.Front.Sector, alcove) && !ReferenceEquals(l, exit)).ToList();
+        Assert.Equal(2, sides.Count);
+        Assert.All(sides, s => Assert.Equal((8.0, true, "STARTAN3"), (s.Length, s.Flag("dontpegbottom"), s.Front.Middle)));
+        Assert.Equal([440.0, 32.0, 40.0], map.Lines.Where(l => l.OnMap && l.Start.X == -256 && l.End.X == -256).OrderBy(l => Math.Min(l.Start.Y, l.End.Y)).Select(l => l.Length));
+        Assert.True(Exits.IsExit(exit));
+        Assert.Equal("uses it", Exits.How(exit));
+
+        // A wall no taller than the picture gets the picture flat on the wall, as wide as the picture.
+        var (low, lowHistory, _) = MovingTests.Drawn((0, 0, 256, 256));
+        var lowRoom = low.Sectors.Single(s => s.OnMap);
+        lowHistory.Record("Lower", e => e.Set(lowRoom, s => s.CeilingHeight, (s, v) => s.CeilingHeight = v, 72.0));
+        var lowWall = low.Lines.First(l => l.OnMap && l.Start.X == 0 && l.End.X == 0);
+        lowHistory.Record("Make the exit", e => made = Exits.Make(e, MapGeometry.Build(low.Frame), lowWall, false, Look.For("doom"), new MapPoint(0, 128), t => t == "SW1EXIT" ? (32, 72) : null));
+        Assert.Equal((32.0, 0.0, "SW1EXIT"), (made!.Length, made.Start.X, made.Front.Middle));
+        Assert.Single(low.Sectors, s => s.OnMap);
+
+        history.Undo();
+        Assert.Equal(before, Udmf(map.ToModel()));
     }
 
     [Fact]
@@ -102,7 +146,7 @@ public sealed class ExitTests
     {
         var (map, history, _) = MovingTests.Drawn((0, 0, 128, 128), (128, 0, 256, 128));
         var shared = map.Lines.Single(l => l.OnMap && l.Back is not null);
-        history.Record("Make the exit", e => Exits.Make(e, shared, false, Look.For("doom")));
+        history.Record("Make the exit", e => Exits.Make(e, MapGeometry.Build(map.Frame), shared, false, Look.For("doom")));
         Assert.True(shared.Flag("playercross"));
         Assert.Equal("walks across it", Exits.How(shared));
         Assert.Equal("-", shared.Front.Middle);

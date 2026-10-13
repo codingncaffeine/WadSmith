@@ -19,15 +19,16 @@ public static class Exits
     public static string How(Line l) => l.Flag("playeruse") ? "uses it" : l.Flag("playercross") ? "walks across it" : l.Flag("impact") ? "shoots it" : "sets it off";
 
     /// <summary>
-    /// Makes a wall an exit through <paramref name="edit"/> and returns the exit: on a solid wall, a piece as wide as
-    /// the switch picture (see <see cref="Switches.Piece"/>) round <paramref name="at"/>, the wall's middle when null,
-    /// becomes the exit switch (the game's exit switch texture, used to end the map) and the rest stays the wall it was,
-    /// a short wall becoming the switch whole; a wall between rooms ends the map when walked across.
-    /// <paramref name="secret"/> goes on to the secret map instead of the next one.
+    /// Makes a wall an exit through <paramref name="edit"/> and returns the exit: on a solid wall, the game's exit switch
+    /// picture goes on the wall round <paramref name="at"/> (the wall's middle when null) as <see cref="Switches.Place"/>
+    /// puts a switch — as wide as the picture, in an alcove as tall as the picture when the room is taller, the rest
+    /// staying the wall it was — and the wall carrying it ends the map when used; a wall between rooms ends the map when
+    /// walked across. <paramref name="secret"/> goes on to the secret map instead of the next one. <paramref name="before"/>
+    /// must show the map as it is, untouched by this edit.
     /// </summary>
-    public static Line Make(StructureEdit edit, Line wall, bool secret, Look look, MapPoint? at = null)
+    public static Line Make(StructureEdit edit, MapGeometry before, Line wall, bool secret, Look look, MapPoint? at = null, Func<string, (int Width, int Height)?>? sizeOf = null)
     {
-        var exit = wall.Back is null ? Switches.Piece(edit, wall, at) : wall;
+        var exit = wall.Back is null ? Switches.Place(edit, before, wall, at, look, look.ExitSwitch, sizeOf) : wall;
         edit.Set(exit, l => l.Special, (l, v) => l.Special = v, secret ? Secret : Normal);
         for (var i = 0; i < 5; i++)
         {
@@ -38,9 +39,6 @@ public static class Exits
         if (exit.Back is null)
         {
             edit.Flag(exit, "playeruse", true);
-            edit.Set(exit.Front, s => s.Middle, (s, v) => s.Middle = v, look.ExitSwitch);
-            edit.Set(exit.Front, s => s.OffsetX, (s, v) => s.OffsetX = v, 0);
-            edit.Set(exit.Front, s => s.OffsetY, (s, v) => s.OffsetY = v, 0);
         }
         else
         {
