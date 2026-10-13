@@ -591,6 +591,54 @@ public sealed class EditorSession : IDisposable
     /// <summary>A picture from another game the user owns onto one surface of the 3D view (D43): copied into the project first, then put on.</summary>
     public void PaintBorrowedSurface(GameResources from, string name, bool flat, SurfaceTarget target, MapPoint? section = null) => Borrow(from, name, flat, chosen => PaintSurface(target, chosen, section));
 
+    /// <summary>
+    /// Places an object from another game the user owns (D55): carried into the project on a worker the first time (its
+    /// sprites, sounds and a number in the project's MAPINFO), then placed at <paramref name="at"/> on the UI thread.
+    /// </summary>
+    public void PlaceBorrowedThing(GameResources from, int number, MapPoint at, double? standAt = null)
+    {
+        if (Resources is not { } into || from.Things.Find(number) is not { } thing)
+        {
+            Notice?.Invoke("Objects from your other games need this map's own game to be found first.");
+            return;
+        }
+
+        if (Project.ClassicFormat)
+        {
+            Notice?.Invoke($"{thing.Name} is {from.Game.Title}'s: objects from other games play in GZDoom only. Change what the project plays in under Map settings to use it.");
+            return;
+        }
+
+        if (ActorBorrowing.WhyNot(into, from, thing) is { } why)
+        {
+            Notice?.Invoke(why);
+            return;
+        }
+
+        var engineData = Hooks.EngineData;
+        Task.Run(() =>
+        {
+            CarriedActor carried;
+            try
+            {
+                carried = ActorBorrowing.Carry(Project, into, from, thing);
+                ProjectMapInfo.Refresh(Project, into.Game, into.Files, engineData);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Carrying {thing.ClassName} from {from.Game.Title} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"{thing.Name} could not be brought in from {from.Game.Title}. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                PlaceThing(carried.Number, at, standAt);
+                if (carried.New) Notice?.Invoke($"{thing.Name} was brought in from {from.Game.Title}: its pictures and sounds are copied into this project, so the map plays it in GZDoom.");
+            });
+        });
+    }
+
     /// <summary>Copies a picture from another game into the project on a worker, then <paramref name="paint"/>s it (its name here) on the UI thread, saying what happened.</summary>
     private void Borrow(GameResources from, string name, bool flat, Func<string, string?> paint)
     {

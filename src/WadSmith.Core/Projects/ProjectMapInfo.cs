@@ -49,9 +49,13 @@ public static class ProjectMapInfo
     }
 
     /// <summary>The file for the project's maps; null when none needs a block.</summary>
-    public static string? Text(IEnumerable<ProjectMap> maps, MapDefinitions definitions, Func<ProjectMap, IReadOnlyList<string>> switches)
+    public static string? Text(IEnumerable<ProjectMap> maps, MapDefinitions definitions, Func<ProjectMap, IReadOnlyList<string>> switches, IEnumerable<CopiedAsset>? copies = null)
     {
         var blocks = maps.Select(m => (Map: m, Switches: switches(m))).Where(x => Needed(x.Map, x.Switches)).Select(x => Block(x.Map, definitions.For(x.Map.Slot), x.Switches)).ToList();
+
+        // Objects carried in from other games (D55): the numbers the map places them by.
+        var actors = (copies ?? []).Where(c => c.Kind == "actor").ToList();
+        if (actors.Count > 0) blocks.Add("DoomEdNums\n{\n" + string.Concat(actors.Select(a => $"    {a.Name} = {a.Original}\n")) + "}\n");
         return blocks.Count == 0 ? null : Mark + "\n\n" + string.Join("\n", blocks);
     }
 
@@ -64,11 +68,11 @@ public static class ProjectMapInfo
     public static bool Refresh(Project project, GameDefinition game, IReadOnlyList<string> gameFiles, string? engineDataPath)
     {
         var maps = project.Maps();
-        if (engineDataPath is null || !File.Exists(engineDataPath) || gameFiles.Count == 0) return Write(project, Text(maps, MapDefinitions.None, _ => []));
+        if (engineDataPath is null || !File.Exists(engineDataPath) || gameFiles.Count == 0) return Write(project, Text(maps, MapDefinitions.None, _ => [], project.Info.Copied));
         var containers = gameFiles.Select(ResourceContainer.Open).ToList();
         var definitions = MapInfo.For(game, containers, engineDataPath);
         var switches = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-        return Write(project, Text(maps, definitions, m => SwitchesFor(m, containers[0], engineDataPath, switches)));
+        return Write(project, Text(maps, definitions, m => SwitchesFor(m, containers[0], engineDataPath, switches), project.Info.Copied));
     }
 
     /// <summary>The switches a remix runs with (its original's), none for a map made here or imported; one look-up per checksum.</summary>

@@ -1761,7 +1761,9 @@ internal sealed class MapCanvas : Control
         {
             var m = ToMap(p);
             var step = GridStep();
-            session.DropThing(drop.Thing, m, (e.KeyModifiers & KeyModifiers.Shift) != 0 ? m : new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step), 14 / _zoom);
+            var snapped = (e.KeyModifiers & KeyModifiers.Shift) != 0 ? m : new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step);
+            if (drop.From is { } other) session.PlaceBorrowedThing(other, drop.Thing, snapped);
+            else session.DropThing(drop.Thing, m, snapped, 14 / _zoom);
         }
 
         Focus();

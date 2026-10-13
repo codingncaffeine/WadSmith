@@ -18,9 +18,12 @@ internal sealed record ShelfDrop(string? Texture, int Thing, string Label, WadSm
 }
 
 /// <summary>One picture on a shelf: what it is, in words, and what dragging it puts on the map.</summary>
-internal sealed class ShelfTile(string label, string tooltip, string group, string search, Bitmap? picture, ShelfDrop drop)
+internal sealed class ShelfTile(string label, string tooltip, string group, string search, Bitmap? picture, ShelfDrop drop, string? game = null)
 {
     public string Label { get; } = label;
+
+    /// <summary>The game it is from: null for the map's own game.</summary>
+    public string? Game { get; } = game;
 
     public string Tooltip { get; } = tooltip;
 
@@ -58,6 +61,16 @@ internal sealed partial class ShelfViewModel : ObservableObject
     }
 
     public ObservableCollection<ShelfTile> Tiles { get; } = [];
+
+    /// <summary>The games the shelf can show (D55): the map's own first, then the user's other games as their pictures arrive.</summary>
+    public ObservableCollection<string> Games { get; } = [];
+
+    [ObservableProperty]
+    private int _gameIndex;
+
+    private string? _ownGame;
+
+    partial void OnGameIndexChanged(int value) => Filter();
 
     /// <summary>The groups to show: "All" first.</summary>
     public IReadOnlyList<string> Groups { get; }
@@ -99,6 +112,16 @@ internal sealed partial class ShelfViewModel : ObservableObject
                 {
                     if (opening != _opened) return;
                     _all = replace ? tiles : [.. _all, .. tiles];
+                    var chosen = GameIndex > 0 && GameIndex < Games.Count ? Games[GameIndex] : null;
+                    var names = new List<string> { _ownGame ?? "This game" };
+                    names.AddRange(_all.Select(t => t.Game).OfType<string>().Distinct(StringComparer.Ordinal));
+                    if (!names.SequenceEqual(Games))
+                    {
+                        Games.Clear();
+                        foreach (var n in names) Games.Add(n);
+                        GameIndex = chosen is null ? 0 : Math.Max(0, names.IndexOf(chosen));
+                    }
+
                     Filter();
                 });
             }
@@ -112,26 +135,25 @@ internal sealed partial class ShelfViewModel : ObservableObject
     private void Filter()
     {
         var group = Group > 0 && Group < Groups.Count ? Groups[Group] : null;
+        var game = GameIndex > 0 && GameIndex < Games.Count ? Games[GameIndex] : null;
         var words = Search.Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         Tiles.Clear();
         foreach (var t in _all)
         {
-            if ((group is null || t.Group == group) && words.All(t.Search.Contains)) Tiles.Add(t);
+            if ((group is null || t.Group == group) && t.Game == game && words.All(t.Search.Contains)) Tiles.Add(t);
         }
 
         Note = _all.Count == 0 ? "Nothing here: the game's files were not found." : Tiles.Count == 0 ? "Nothing matches." : $"{Tiles.Count} of {_all.Count}. Drag one onto the map.";
     }
-
-    private const string OtherGamesGroup = "From your other games";
 
     /// <summary>
     /// The game's wall textures and floor and ceiling pictures, by name; then those of the user's other games
     /// (<paramref name="others"/> opens them on the worker), copied into the project when used. From a game of the same
     /// family (Doom for a Doom II map) only the pictures this game lacks.
     /// </summary>
-    public static ShelfViewModel Textures(GameResources? game, Func<IReadOnlyList<GameResources>>? others = null) => new(
+    public static ShelfViewModel Textures(GameResources? game, Func<IReadOnlyList<GameResources>>? others = null) => new ShelfViewModel(
         game is null ? "Choose a base game to see its textures." : "",
-        ["All", "Walls", "Floors and ceilings", OtherGamesGroup],
+        ["All", "Walls", "Floors and ceilings"],
         () =>
         {
             if (game is null) return [];
@@ -164,13 +186,13 @@ internal sealed partial class ShelfViewModel : ObservableObject
                         var image = flat ? other.Textures.GetFlat(info.Name) : other.Textures.GetWall(info.Name);
                         if (image is null) continue;
                         var kind = flat ? "floor or ceiling" : "wall texture";
-                        tiles.Add(new ShelfTile(info.Name, $"{other.Game.Title}'s {kind} {info.Name}, {image.Width} × {image.Height}. Drag it onto a wall, a floor or a ceiling: it is copied into this project, in its own colours.", OtherGamesGroup, $"{info.Name} {other.Game.Title}".ToLowerInvariant(), Imaging.ToBitmap(Shrink(image)), new ShelfDrop(info.Name, 0, $"{info.Name} from {other.Game.Title}", From: other, Flat: flat)));
+                        tiles.Add(new ShelfTile(info.Name, $"{other.Game.Title}'s {kind} {info.Name}, {image.Width} × {image.Height}. Drag it onto a wall, a floor or a ceiling: it is copied into this project, in its own colours.", flat ? "Floors and ceilings" : "Walls", $"{info.Name} {other.Game.Title}".ToLowerInvariant(), Imaging.ToBitmap(Shrink(image)), new ShelfDrop(info.Name, 0, $"{info.Name} from {other.Game.Title}", From: other, Flat: flat), other.Game.Title));
                     }
                 }
             }
 
             return tiles;
-        });
+        }) { _ownGame = game?.Game.Title };
 
     /// <summary>The words each kind of object is shown under.</summary>
     private static readonly (ThingCategory Category, string Name)[] Kinds =
@@ -186,7 +208,7 @@ internal sealed partial class ShelfViewModel : ObservableObject
     /// The game's objects with their sprites, by kind: monsters, weapons, ammunition and so on; and the project's prefabs
     /// (<paramref name="prefabs"/> lists them on the worker), each pictured from above.
     /// </summary>
-    public static ShelfViewModel Objects(GameResources? game, Func<IReadOnlyList<WadSmith.Editor.Editing.Prefab>>? prefabs = null) => new(
+    public static ShelfViewModel Objects(GameResources? game, Func<IReadOnlyList<WadSmith.Editor.Editing.Prefab>>? prefabs = null, Func<IReadOnlyList<GameResources>>? others = null) => new ShelfViewModel(
         game is null ? "Choose a base game to see its monsters and items." : "",
         ["All", .. Kinds.Select(k => k.Name), PrefabGroup],
         () =>
@@ -223,7 +245,28 @@ internal sealed partial class ShelfViewModel : ObservableObject
             }
 
             return tiles;
-        });
+        },
+        () =>
+        {
+            // The user's other games (D55): their decorations and pickups, brought into the project when placed; those
+            // whose pictures share a name with this game's, and monsters and weapons, come in later updates.
+            var tiles = new List<ShelfTile>();
+            if (game is null) return tiles;
+            foreach (var other in others?.Invoke() ?? [])
+            {
+                foreach (var (category, group) in Kinds.Where(k => k.Category is ThingCategory.Decoration or ThingCategory.Health or ThingCategory.Armor or ThingCategory.Ammo or ThingCategory.Powerup))
+                {
+                    foreach (var t in other.Things.All.Where(t => t.Category == category && other.CanShow(t.Number)).OrderBy(t => t.Name, StringComparer.CurrentCulture))
+                    {
+                        if (WadSmith.Editor.Editing.ActorBorrowing.WhyNot(game, other, t) is not null) continue;
+                        var picture = other.SpriteFor(t.Number) is { } image ? Imaging.ToBitmap(Shrink(image)) : null;
+                        tiles.Add(new ShelfTile(t.Name, $"{other.Game.Title}'s {t.Name} ({t.ClassName}). Drag it onto the map: its pictures and sounds are copied into this project, and the map plays in GZDoom.", group, $"{t.Name} {t.ClassName} {group} {other.Game.Title}".ToLowerInvariant(), picture, new ShelfDrop(null, t.Number, $"{t.Name} from {other.Game.Title}", From: other), other.Game.Title));
+                    }
+                }
+            }
+
+            return tiles;
+        }) { _ownGame = game?.Game.Title };
 
     /// <summary>A picture shrunk to fit the tile, keeping its shape (nearest pixel, as the game's own pictures look).</summary>
     internal static RgbaImage Shrink(RgbaImage image)

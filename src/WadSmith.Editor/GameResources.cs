@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Collections.Concurrent;
 using WadSmith.Core.Containers;
 using WadSmith.Core.Games;
@@ -71,12 +72,32 @@ public sealed class GameResources
 
     public TextureLibrary Textures { get; }
 
-    public SpriteIndex Sprites { get; }
+    public SpriteIndex Sprites { get; private set; }
 
-    public ThingCatalog Things { get; }
+    public ThingCatalog Things { get; private set; }
 
     /// <summary>A floor or ceiling picture by name; null for "-" or a name the game does not have.</summary>
     public RgbaImage? Flat(string name) => Textures.GetFlat(name);
+
+    /// <summary>A lump of the game's files by name and namespace, the last file that has it winning; null when none has.</summary>
+    public ResourceEntry? Find(string name, ResourceNamespace ns) => _stack.Find(name, ns);
+
+    private readonly object _carried = new();
+
+    /// <summary>
+    /// Takes in objects carried into the project from another game (D55): their sprites, now in the project's folder, join
+    /// the sprite index, and the objects join the catalogue under their numbers here. Any thread.
+    /// </summary>
+    public void Carry(IEnumerable<ThingType> things, string projectFolder)
+    {
+        lock (_carried)
+        {
+            _stack.Add(ResourceContainer.Open(projectFolder));
+            Sprites = new SpriteIndex(_stack);
+            Things = Things.With(things);
+            _sprites.Clear();
+        }
+    }
 
     /// <summary>The front-facing first frame of an object's sprite (mirrored where the game stores it mirrored); null when it has none.</summary>
     /// <summary>
@@ -152,6 +173,27 @@ public sealed class GameResources
         var things = engineData is null
             ? ThingCatalog.Empty
             : Catalogues.GetOrAdd((engineData, found.Game.Engine), key => new Lazy<ThingCatalog>(() => ThingCatalog.Load(ResourceContainer.Open(key.Engine), key.Family))).Value;
+        // Objects carried in from the user's other games (D55), by the numbers the project gave them.
+        if (projectFolder is not null && engineData is not null && File.Exists(Path.Combine(projectFolder, Core.Projects.Project.SidecarName)))
+        {
+            try
+            {
+                var carried = new List<ThingType>();
+                foreach (var copy in Core.Projects.Project.Open(projectFolder).Info.Copied.Where(c => c.Kind == "actor"))
+                {
+                    if (GameCatalog.Get(copy.Game) is not { } source || !int.TryParse(copy.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)) continue;
+                    var family = Catalogues.GetOrAdd((engineData, source.Engine), key => new Lazy<ThingCatalog>(() => ThingCatalog.Load(ResourceContainer.Open(key.Engine), key.Family))).Value;
+                    if (family.FindClass(copy.Original) is { } t) carried.Add(t with { Number = number });
+                }
+
+                if (carried.Count > 0) things = things.With(carried);
+            }
+            catch (Exception ex) when (ex is IOException or Core.CorruptDataException)
+            {
+                Log.Warn($"The objects carried into {projectFolder} could not be read: {ex.Message}");
+            }
+        }
+
         return new GameResources(found.Game, files, stack, new TextureLibrary(stack), new SpriteIndex(stack), things, FindMusic(stack));
     }
 

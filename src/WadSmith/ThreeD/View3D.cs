@@ -284,7 +284,9 @@ internal sealed class View3D : Control
         }
 
         const double step = 8;
-        session.PlaceThing(drop.Thing, shift ? new MapPoint(floor.X, floor.Y) : new MapPoint(Math.Round(floor.X / step) * step, Math.Round(floor.Y / step) * step), floor.Platform ? floor.Z : null);
+        var at = shift ? new MapPoint(floor.X, floor.Y) : new MapPoint(Math.Round(floor.X / step) * step, Math.Round(floor.Y / step) * step);
+        if (drop.From is { } other) session.PlaceBorrowedThing(other, drop.Thing, at, floor.Platform ? floor.Z : null);
+        else session.PlaceThing(drop.Thing, at, floor.Platform ? floor.Z : null);
     }
 
     private void OnDragOver(object? sender, DragEventArgs e)

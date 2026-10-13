@@ -9,6 +9,7 @@ public sealed class SoundInfo
 {
     private readonly Dictionary<string, string> _lumps = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _aliases = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<string>> _randoms = new(StringComparer.OrdinalIgnoreCase);
 
     public static SoundInfo Empty { get; } = new();
 
@@ -33,6 +34,39 @@ public sealed class SoundInfo
         return null;
     }
 
+    /// <summary>
+    /// What <paramref name="name"/> needs to play from another table: the SNDINFO lines that define it (its own line, its
+    /// <c>$alias</c> or <c>$random</c> and the lines of what they name) and the lumps those lines name. Empty when the table has none.
+    /// </summary>
+    public (IReadOnlyList<string> Lines, IReadOnlyList<string> Lumps) Needs(string name)
+    {
+        var lines = new List<string>();
+        var lumps = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Walk(string n, int depth)
+        {
+            if (depth > 8 || !seen.Add(n)) return;
+            if (_randoms.TryGetValue(n, out var members))
+            {
+                lines.Add($"$random {n} {{ {string.Join(' ', members)} }}");
+                foreach (var m in members) Walk(m, depth + 1);
+            }
+            else if (_aliases.TryGetValue(n, out var to))
+            {
+                lines.Add($"$alias {n} {to}");
+                Walk(to, depth + 1);
+            }
+            else if (_lumps.TryGetValue(n, out var lump))
+            {
+                lines.Add($"{n} {lump}");
+                lumps.Add(lump);
+            }
+        }
+
+        Walk(name, 0);
+        return (lines, lumps);
+    }
+
     private void Read(string text)
     {
         var lines = text.Replace("\r", "", StringComparison.Ordinal).Split('\n');
@@ -50,6 +84,7 @@ public sealed class SoundInfo
                 while (!rest.Contains('}', StringComparison.Ordinal) && i + 1 < lines.Length) rest += " " + Uncommented(lines[++i], ref inComment);
                 members.AddRange(rest.Split((char[])[' ', '\t', '{', '}'], StringSplitOptions.RemoveEmptyEntries));
                 if (members.Count > 0) Alias(words[1], members[0]);
+                _randoms[words[1]] = members;
                 continue;
             }
 

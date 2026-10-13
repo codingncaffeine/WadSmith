@@ -34,6 +34,9 @@ public enum ThingCategory
 /// </summary>
 public sealed record ThingType(int Number, string ClassName, string Name, string? Sprite, char Frame, double Radius, double Height, double ScaleX, double ScaleY, bool OnCeiling, ThingCategory Category = ThingCategory.Decoration, string? Sound = null, int? Health = null, int Amount = 0, string? AmmoType = null, int AmmoGive = 0);
 
+/// <summary>What an object needs carried into another game (see <see cref="ThingCatalog.Needs"/>).</summary>
+public sealed record ActorNeeds(string ClassName, IReadOnlyList<string> Classes, IReadOnlyList<string> OwnSprites, IReadOnlyList<string> Sprites, IReadOnlyList<string> Sounds);
+
 /// <summary>
 /// The objects of one game family, read from the engine's own data (gzdoom.pk3): the MAPINFO
 /// <c>DoomEdNums</c> give each number its class, the ZScript actor classes give size, tag and the
@@ -43,10 +46,80 @@ public sealed record ThingType(int Number, string ClassName, string Name, string
 public sealed partial class ThingCatalog
 {
     private readonly Dictionary<int, ThingType> _byNumber;
+    private readonly Dictionary<string, ActorClass> _classes;
 
-    private ThingCatalog(Dictionary<int, ThingType> byNumber) => _byNumber = byNumber;
+    private ThingCatalog(Dictionary<int, ThingType> byNumber, Dictionary<string, ActorClass>? classes = null, WadSmith.Core.Audio.SoundInfo? sounds = null)
+    {
+        _byNumber = byNumber;
+        _classes = classes ?? new(StringComparer.OrdinalIgnoreCase);
+        Sounds = sounds ?? WadSmith.Core.Audio.SoundInfo.Empty;
+    }
 
     public static ThingCatalog Empty { get; } = new([]);
+
+    /// <summary>The family's sound table, as the engine reads it for these games.</summary>
+    public WadSmith.Core.Audio.SoundInfo Sounds { get; }
+
+    /// <summary>The object of a class, by its class name; null when the catalogue has no number for it.</summary>
+    public ThingType? FindClass(string className) => _byNumber.Values.FirstOrDefault(t => string.Equals(t.ClassName, className, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>This catalogue with <paramref name="extra"/> objects added (objects carried in from another game); the classes stay shared.</summary>
+    public ThingCatalog With(IEnumerable<ThingType> extra)
+    {
+        var numbers = new Dictionary<int, ThingType>(_byNumber);
+        foreach (var t in extra) numbers[t.Number] = t;
+        return new ThingCatalog(numbers, _classes, Sounds);
+    }
+
+    /// <summary>
+    /// What an object of <paramref name="className"/> needs carried into another game (D55): every class it is made of or
+    /// names (what it fires, drops or spawns, written in quotes in its definition), with their ancestors; the sprite names
+    /// their states show; and the sound names their definitions use that this family's table knows. <c>Own</c> are the
+    /// sprites the class itself and its ancestors show (the ones whose names must not clash).
+    /// </summary>
+    public ActorNeeds Needs(string className)
+    {
+        var classes = new List<string>();
+        var queue = new Queue<string>([className]);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (queue.Count > 0)
+        {
+            var name = queue.Dequeue();
+            for (var c = _classes.GetValueOrDefault(name); c is not null; c = c.Parent is null ? null : _classes.GetValueOrDefault(c.Parent))
+            {
+                // The engine's own base classes are in every game, and name the engine's whole common stock: the walk stops there.
+                if (EngineBases.Contains(c.Name) || !seen.Add(c.Name)) break;
+                classes.Add(c.Name);
+                foreach (Match m in QuotedWord().Matches(c.Body))
+                {
+                    var word = m.Groups[1].Value;
+                    if (_classes.ContainsKey(word) && !seen.Contains(word)) queue.Enqueue(word);
+                }
+            }
+        }
+
+        IEnumerable<string> SpritesOf(IEnumerable<string> names) => names.Select(n => _classes[n]).SelectMany(c => c.States).Select(StateSprite).OfType<string>();
+        var own = new List<string>();
+        for (var c = _classes.GetValueOrDefault(className); c is not null && !EngineBases.Contains(c.Name); c = c.Parent is null ? null : _classes.GetValueOrDefault(c.Parent)) own.Add(c.Name);
+        var sounds = classes.Select(n => _classes[n].Body).SelectMany(b => QuotedWord().Matches(b).Select(m => m.Groups[1].Value)).Where(w => Sounds.LumpFor(w) is not null);
+        return new ActorNeeds(className, classes, [.. SpritesOf(own).Distinct(StringComparer.Ordinal)], [.. SpritesOf(classes).Distinct(StringComparer.Ordinal)], [.. sounds.Distinct(StringComparer.OrdinalIgnoreCase)]);
+    }
+
+    /// <summary>The engine's base classes, the same in every game: an object's needs stop at them.</summary>
+    private static readonly HashSet<string> EngineBases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Object", "Thinker", "Actor", "StateProvider", "Inventory", "CustomInventory", "FakeInventory", "Weapon", "WeaponGiver", "Ammo", "BackpackItem",
+        "Health", "HealthPickup", "Armor", "BasicArmor", "BasicArmorPickup", "BasicArmorBonus", "HexenArmor", "Powerup", "PowerupGiver", "Key",
+        "PuzzleItem", "MapRevealer", "ScoreItem", "SwitchableDecoration", "SwitchingDecoration", "RandomSpawner", "SpecialSpot", "BossSpot",
+    };
+
+    /// <summary>The sprite a state line shows ("SRTC ABC 4 Bright" → SRTC); null for a jump, a stop or a placeholder.</summary>
+    private static string? StateSprite(string line)
+    {
+        if (StateLine().Match(line) is not { Success: true } m) return null;
+        var sprite = m.Groups[1].Value;
+        return sprite is "TNT1" or "####" or "----" or "GOTO" or "STOP" or "LOOP" or "WAIT" or "FAIL" ? null : sprite;
+    }
 
     public IReadOnlyCollection<ThingType> All => _byNumber.Values;
 
@@ -151,7 +224,7 @@ public sealed partial class ThingCatalog
             types[number] = new ThingType(number, declared, name, sprite, frame, radius, height, scaleX, scaleY, ceiling, category, sound is null ? null : sounds.LumpFor(sound), Inherited(classes, className, c => c.Health), Inherited(classes, className, c => c.Amount) ?? 0, ammoType, Inherited(classes, className, c => c.AmmoGive) ?? 0);
         }
 
-        return new ThingCatalog(types);
+        return new ThingCatalog(types, classes, sounds);
     }
 
     /// <summary>The ammunition a pickup is: the class in its chain whose parent is Ammo (a box of bullets is Clip).</summary>
@@ -196,6 +269,9 @@ public sealed partial class ThingCatalog
         public required string Name { get; init; }
 
         public string? Parent { get; init; }
+
+        /// <summary>The class's whole definition, for what it names (D55).</summary>
+        public string Body { get; init; } = "";
 
         public double? Radius { get; set; }
 
@@ -486,7 +562,7 @@ public sealed partial class ThingCatalog
             var close = MatchingBrace(text, open);
             if (close < 0) continue;
             var body = text[(open + 1)..close];
-            var c = new ActorClass { Name = m.Groups[1].Value, Parent = m.Groups[2].Success ? m.Groups[2].Value : null };
+            var c = new ActorClass { Name = m.Groups[1].Value, Parent = m.Groups[2].Success ? m.Groups[2].Value : null, Body = body };
 
             if (BlockAfter(body, DefaultHeader()) is { } defaults)
             {
@@ -650,6 +726,12 @@ public sealed partial class ThingCatalog
 
     [GeneratedRegex(@"(?i)\bStates\s*(\([^)]*\))?\s*\{")]
     private static partial Regex StatesHeader();
+
+    [GeneratedRegex(@"""([A-Za-z0-9_/.\-]{2,64})""")]
+    private static partial Regex QuotedWord();
+
+    [GeneratedRegex(@"^""?([A-Z0-9_#-]{4})""?\s+""?[A-Z\[\]\\^#""]+")]
+    private static partial Regex StateLine();
 
     [GeneratedRegex(@"^([A-Za-z_][\w.]*)\s*:(?!:)")]
     private static partial Regex LeadingLabel();
