@@ -212,15 +212,15 @@ public partial class EditorView : UserControl
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }
 
-    /// <summary>The file picker for "Add a material…": any picture of the set.</summary>
+    /// <summary>The file picker for "Add a picture or material…".</summary>
     private async Task<string?> PickMaterialAsync()
     {
         if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage) return null;
         var picked = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
         {
-            Title = "Add a material: pick any picture of the set",
+            Title = "Add a picture, an animation, or a material (any picture of its set)",
             AllowMultiple = false,
-            FileTypeFilter = [new("Pictures (PNG, JPG, TGA)") { Patterns = ["*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.tga", "*.TGA"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
+            FileTypeFilter = [new("Pictures and animations (PNG, JPG, GIF, WebP, TGA)") { Patterns = ["*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.gif", "*.GIF", "*.webp", "*.WEBP", "*.tga", "*.TGA", "*.bmp", "*.BMP"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
         }).ConfigureAwait(true);
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }

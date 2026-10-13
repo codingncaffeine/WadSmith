@@ -211,7 +211,7 @@ public sealed class ModelPropInTheWindowTests
                 var shelf = editor.TextureShelf;
                 for (var i = 0; i < 400 && shelf.Tiles.Count == 0; i++) Ui.Pump(0.05);
                 editor.PickMaterial = () => Task.FromResult<string?>(Path.Combine(source, "Tiles012_1K-PNG_NormalGL.png"));
-                Click(window, window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && AutomationProperties.GetName(b) == "Add a material…"));
+                Click(window, window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && AutomationProperties.GetName(b) == "Add a picture or material…"));
                 for (var i = 0; i < 400 && !shelf.Tiles.Any(t => t.Label == "TILES012"); i++) Ui.Pump(0.05);
                 var tile = shelf.Tiles.FirstOrDefault(t => t.Label == "TILES012");
                 return $"{tile?.Label}:{tile?.Group}:{tile?.Picture is not null}; status '{editor.Status}'";

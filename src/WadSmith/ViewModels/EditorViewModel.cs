@@ -67,8 +67,8 @@ internal sealed partial class EditorViewModel : ObservableObject
 
         Problems = new ProblemsViewModel(session);
         TextureShelf = ShelfViewModel.Textures(session.Resources, () => services.OtherGameOpeners(session.Resources));
-        TextureShelf.AddLabel = "Add a material…";
-        TextureShelf.AddTip = "Brings in a PBR material set of your own (a colour picture with its normal, roughness, metal or occlusion maps, as ambientCG and Poly Haven give them): pick any picture of the set. It becomes a texture for walls, doors and floors, and GZDoom lights it by its maps.";
+        TextureShelf.AddLabel = "Add a picture or material…";
+        TextureShelf.AddTip = "Brings in a picture of your own as a texture for walls, doors and floors: a still picture, an animated GIF, WebP or PNG (GZDoom plays it at its own pace), or any picture of a PBR material set (a colour picture with its normal, roughness, metal or occlusion maps, as ambientCG and Poly Haven give them; GZDoom lights it by its maps).";
         TextureShelf.Add = () => _ = AddMaterialAsync();
         session.TexturesChanged += TextureShelf.Refresh;
         _looks = [.. Look.Available(session.Engine, session.Resources)];
@@ -324,7 +324,7 @@ internal sealed partial class EditorViewModel : ObservableObject
     private async Task AddMaterialAsync()
     {
         if (PickMaterial is null || await PickMaterial().ConfigureAwait(true) is not { } path) return;
-        Session.ImportMaterial(path);
+        Session.ImportPicture(path);
     }
 
     /// <summary>The numbers of the props this project brought in from 3D models (read on the shelf's worker).</summary>

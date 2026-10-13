@@ -1181,41 +1181,56 @@ public sealed class EditorSession : IDisposable
     public event Action? PropsChanged;
 
     /// <summary>
-    /// Brings the PBR material set <paramref name="path"/> belongs to into the project as a texture (Phase 11) on a worker: its
-    /// colour picture and its maps where GZDoom finds them. Raises <see cref="TexturesChanged"/>.
+    /// Brings a picture of the user's own into the project as a texture on a worker: a PBR material set's picture as the
+    /// material (its colour and its maps, Phase 11), an animated GIF, WebP or APNG as frames GZDoom plays (D15), any other
+    /// picture as it is. Raises <see cref="TexturesChanged"/>.
     /// </summary>
-    public void ImportMaterial(string path)
+    public void ImportPicture(string path)
     {
         var file = Path.GetFileName(path);
         if (Resources is not { } into)
         {
-            Notice?.Invoke("Materials need this map's own game to be found first.");
+            Notice?.Invoke("Pictures need this map's own game to be found first.");
             return;
         }
 
-        Notice?.Invoke($"Bringing in the material {file} belongs to…");
+        Notice?.Invoke($"Bringing in {file}…");
+        var classic = Project.ClassicFormat;
         Task.Run(() =>
         {
-            ImportedMaterial made;
+            string said;
             try
             {
-                made = Materials.Import(Project, into, path);
+                if (Core.Graphics.PbrSet.Of(path) is not null)
+                {
+                    var material = Materials.Import(Project, into, path);
+                    said = $"The material is the texture {material.Texture}, with {Materials.Words(material.Layers)}: under Textures, ready for walls, doors and floors. GZDoom lights it by its maps under dynamic lights."
+                        + (classic ? " It plays in GZDoom only; this project plays in a classic port, which shows none of it." : "") + Notes(material.Notes);
+                }
+                else
+                {
+                    var picture = Pictures.Import(Project, into, path);
+                    said = (picture.Frames > 1
+                        ? $"{file} is the texture {picture.Texture}, {picture.Width}×{picture.Height}, moving through its {picture.Frames} frames as GZDoom plays it (the editor shows its first): under Textures, ready for walls, doors and floors."
+                        : $"{file} is the texture {picture.Texture}, {picture.Width}×{picture.Height}: under Textures, ready for walls, doors and floors.")
+                        + (classic ? " Pictures of your own play in GZDoom only; this project plays in a classic port." : "") + Notes(picture.Notes);
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
             {
-                Log.Warn($"Bringing in the material of {path} failed: {ex.Message}");
+                Log.Warn($"Bringing in {path} failed: {ex.Message}");
                 _onUiThread(() => Notice?.Invoke($"{file} could not be brought in. {ex.Message}"));
                 return;
             }
 
             _onUiThread(() =>
             {
-                var notes = made.Notes.Count == 0 ? "" : " " + string.Join(" ", made.Notes);
-                var classic = Project.ClassicFormat ? " It plays in GZDoom only; this project plays in a classic port, which shows none of it." : "";
-                Notice?.Invoke($"The material is the texture {made.Texture}, with {Materials.Words(made.Layers)}: under Textures, ready for walls, doors and floors. GZDoom lights it by its maps under dynamic lights.{classic}{notes}");
+                Notice?.Invoke(said);
                 TexturesChanged?.Invoke();
             });
         });
+
+        static string Notes(IReadOnlyList<string> notes) => notes.Count == 0 ? "" : " " + string.Join(" ", notes);
     }
 
     /// <summary>
