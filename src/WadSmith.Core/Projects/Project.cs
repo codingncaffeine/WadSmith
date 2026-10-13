@@ -80,6 +80,7 @@ public sealed record ProjectInfo
     public List<ProjectMap> Maps { get; init; } = [];
 
     /// <summary>Add-on files the project needs loaded before itself, in order.</summary>
+    /// <summary>Files loaded with the game, before the project, in play and in the editor: the map pack a map was started from.</summary>
     public List<string> AddOns { get; init; } = [];
 
     /// <summary>What was copied in from the user's other games.</summary>
@@ -237,6 +238,14 @@ public sealed class Project
 
     /// <summary>Where deleted projects go, inside the projects folder: nothing is lost, only moved.</summary>
     public const string DeletedFolderName = "Deleted";
+
+    /// <summary>Adds a file the project loads with its game (a map pack it was started from), in play and in the editor, and saves the record.</summary>
+    public void AddAddOn(string path)
+    {
+        if (Info.AddOns.Contains(path, StringComparer.Ordinal)) return;
+        Info.AddOns.Add(path);
+        SaveInfo();
+    }
 
     /// <summary>Gives the project a new name (its folder stays where it is).</summary>
     public void Rename(string name)

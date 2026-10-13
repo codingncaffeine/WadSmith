@@ -115,6 +115,24 @@
                                 <Button Classes="metal" Content="Guided first map · 10 minutes" Command="{Binding GuidedMap}" CommandParameter="{Binding}" HorizontalAlignment="Stretch"
                                         IsVisible="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).GuidePrompts}"
                                         ToolTip.Tip="A new map, and seven short steps beside it: a room, a door, a texture, a monster and a weapon, a way out, then Play. You can skip or stop at any time." />
+                                <!-- The map packs found near the games that are for this game (D52): one click from editing a map in one. -->
+                                <Button Classes="metal" Content="{Binding PackMapsLabel}" IsVisible="{Binding PackMaps.Count}" HorizontalAlignment="Stretch"
+                                        ToolTip.Tip="Maps found in your folders that are for this game (map packs, loose or inside ZIPs): pick one to edit. The file is never changed; your changes become a project of your own, played with the pack.">
+                                    <Button.Flyout>
+                                        <Flyout Placement="BottomEdgeAlignedLeft">
+                                            <ScrollViewer MaxHeight="440" Width="360">
+                                                <ItemsControl ItemsSource="{Binding PackMaps}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:PackMapChoice">
+                                                            <Button Content="{Binding Label}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                                    Background="Transparent" Command="{Binding Tile.EditPackMap}" CommandParameter="{Binding}" />
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
                                 <!-- The user's own maps for this game, on the card: the thing they come back for. -->
                                 <StackPanel IsVisible="{Binding Projects.Count}" Spacing="2" Margin="0,8,0,0">
                                     <TextBlock Classes="section" Text="{Binding ProjectsLabel}" ToolTip.Tip="The maps you made for this game, newest first: open one, or rename, copy or delete it." />

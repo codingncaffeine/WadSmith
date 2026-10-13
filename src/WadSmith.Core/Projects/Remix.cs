@@ -38,6 +38,36 @@ public static class Remix
     }
 
     /// <summary>
+    /// Starts a project from a map in a map pack (a WAD that is not a base game) made for <paramref name="game"/>: the map
+    /// comes in as a remix does, and the pack goes with the project as an add-on, so its own textures, sounds and things
+    /// show in the editor and play with it. The pack is only read, never changed.
+    /// </summary>
+    /// <param name="projectFolder">Where the new project goes; it must not exist yet.</param>
+    /// <param name="packPath">The pack, a WAD on disk (see <see cref="Games.MapPacks.Materialise"/>).</param>
+    /// <param name="mapName">The map's slot in the pack, such as MAP01.</param>
+    /// <param name="game">The base game the pack is for.</param>
+    /// <param name="engineDataPath">The engine's gzdoom.pk3, whose rules translate the map.</param>
+    /// <param name="notes">Gets anything the translation could not carry over.</param>
+    /// <param name="projectName">The name the project is shown by; "PACK SLOT" when null.</param>
+    public static Project CreateFromPack(string projectFolder, string packPath, string mapName, GameDefinition game, string engineDataPath, List<string> notes, string? projectName = null)
+    {
+        var pack = ResourceContainer.Open(packPath);
+        var lumps = MapLocator.Find(pack).FirstOrDefault(m => LumpName.Comparer.Equals(m.Name, mapName))
+            ?? throw new CorruptDataException($"{pack.DisplayName} has no map called {mapName}.");
+        var model = MapConversion.Read(lumps, game.MapNamespace);
+        var engine = new ResourceStack([ResourceContainer.Open(engineDataPath)]);
+        var xlat = lumps.Format == MapFormat.Doom ? XlatTranslator.Load(engine, XlatTranslator.PathFor(model.Namespace)) : null;
+        var zdoom = MapTranslation.ToZDoom(model, xlat, notes);
+        var checksum = MapChecksum.Compute(lumps);
+        if (CompatibilityRepairs.Load(engine)?.Apply(zdoom, checksum, notes) == true) notes.Add($"GZDoom's own repairs for {lumps.Name} were applied, as the engine applies them to the original.");
+
+        var project = Project.Create(projectFolder, projectName ?? $"{Path.GetFileNameWithoutExtension(packPath)} {lumps.Name}", game.Id);
+        project.AddAddOn(Path.GetFullPath(packPath));
+        project.SaveMap(zdoom, origin: new MapOrigin { Kind = "import", Game = game.Id, Map = lumps.Name, Checksum = checksum, File = Path.GetFullPath(packPath) });
+        return project;
+    }
+
+    /// <summary>
     /// A base game's map as a remix starts from it: in GZDoom's format, with the engine's own repairs. Also how the
     /// editor sees what a remix was before it was changed.
     /// </summary>

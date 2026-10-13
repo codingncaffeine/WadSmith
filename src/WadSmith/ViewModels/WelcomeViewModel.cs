@@ -20,6 +20,12 @@ internal sealed record MapChoice(string Slot, string Title, GameTileViewModel Ti
     public string Label => Title.Length > 0 ? $"{Slot} · {Title}" : Slot;
 }
 
+/// <summary>A map in a map pack found near the games, offered for editing under the game it is for.</summary>
+internal sealed record PackMapChoice(MapFile Pack, string Slot, GameTileViewModel Tile)
+{
+    public string Label => $"{Pack.Name} › {Slot}";
+}
+
 /// <summary>One base game found on this computer.</summary>
 internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObject
 {
@@ -34,6 +40,17 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
 
     [ObservableProperty]
     private IReadOnlyList<MapChoice> _maps = [];
+
+    /// <summary>The maps in the map packs found near the games that are for this game (D52), by pack then slot.</summary>
+    [ObservableProperty]
+    private IReadOnlyList<PackMapChoice> _packMaps = [];
+
+    /// <summary>"Maps found near your games · 12", the button that opens the list.</summary>
+    [ObservableProperty]
+    private string _packMapsLabel = "Maps found near your games";
+
+    /// <summary>Starts a project from a map in a pack found near the games (set by the welcome screen).</summary>
+    public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<PackMapChoice>? EditPackMap { get; set; }
 
     /// <summary>The user's own maps for this game, newest first.</summary>
     public ObservableCollection<ProjectChoice> Projects { get; } = [];
@@ -382,9 +399,10 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         var progress = new Progress<string>(s => Status = s);
         ScanReport report;
         IReadOnlyList<FoundGame> found;
+        IReadOnlyList<PackFit> packs;
         try
         {
-            (report, found, ScanMemory) = await Task.Run(() =>
+            (report, found, packs, ScanMemory) = await Task.Run(() =>
             {
                 var cache = ArchiveCache.Load(cachePath);
                 var r = GameLocator.Report(targets, cache, progress, _services.ShuttingDown);
@@ -399,7 +417,34 @@ internal sealed partial class WelcomeViewModel : ObservableObject
                 }
 
                 Log.Info($"Game scan: {cache.Hits} archive(s) remembered, {cache.Count} known.");
-                return (r, usable, (cache.Hits, cache.Count));
+
+                // The map packs near the games, matched to the game each is for (D52); a game's textures are read once.
+                var started = System.Diagnostics.Stopwatch.StartNew();
+                if (r.MapFiles.Any()) ((IProgress<string>)progress).Report("Reading the map packs near your games…");
+                var names = new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal);
+                IReadOnlySet<string> NamesOf(string path)
+                {
+                    if (!names.TryGetValue(path, out var set))
+                    {
+                        try
+                        {
+                            set = MapPacks.TextureNamesOf(path);
+                        }
+                        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+                        {
+                            Log.Warn($"The textures of {Path.GetFileName(path)} could not be listed: {ex.Message}");
+                            set = new HashSet<string>();
+                        }
+
+                        names[path] = set;
+                    }
+
+                    return set;
+                }
+
+                var fits = MapPacks.Fit(r.MapFiles, usable, NamesOf, _services.ShuttingDown);
+                Log.Info($"Game scan: {fits.Count} of {r.MapFiles.Count()} map pack(s) fit a game found, in {started.ElapsedMilliseconds} ms.");
+                return (r, usable, fits, (cache.Hits, cache.Count));
             }, _services.ShuttingDown).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
@@ -411,7 +456,9 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         Games.Clear();
         foreach (var g in found.Where(g => g.Game.IsBaseGame && g.Game.Supported).GroupBy(g => g.Game.Id).Select(g => g.First()).OrderBy(g => g.Game.Title, StringComparer.Ordinal))
         {
-            var tile = new GameTileViewModel(g) { Remix = RemixCommand, NewMap = NewMapCommand, GuidedMap = GuidedMapCommand };
+            var tile = new GameTileViewModel(g) { Remix = RemixCommand, NewMap = NewMapCommand, GuidedMap = GuidedMapCommand, EditPackMap = EditPackMapCommand };
+            tile.PackMaps = [.. packs.Where(f => f.Games.Any(x => x.Game.Id == g.Game.Id)).OrderBy(f => f.File.Name, StringComparer.OrdinalIgnoreCase).SelectMany(f => f.File.Maps.Order(StringComparer.OrdinalIgnoreCase).Select(m => new PackMapChoice(f.File, m, tile)))];
+            tile.PackMapsLabel = $"Maps found near your games · {tile.PackMaps.Count} ▾";
             Games.Add(tile);
             _ = LoadTileAsync(tile);
         }
@@ -568,6 +615,22 @@ internal sealed partial class WelcomeViewModel : ObservableObject
             var project = Remix.Create(folder, found.Path, slot, engine, notes, mapTitle.Length > 0 ? $"{mapTitle} remix" : null);
             foreach (var n in notes) Log.Info($"Remix note: {n}");
             return (project, slot);
+        }).ConfigureAwait(true);
+    }
+
+    /// <summary>Starts a project from a map in a pack found near the games (D52): the pack goes with the project as an add-on.</summary>
+    [RelayCommand]
+    private async Task EditPackMapAsync(PackMapChoice choice)
+    {
+        await StartAsync(() =>
+        {
+            var engine = _services.EngineData ?? throw new CorruptDataException("Editing a map from a pack needs GZDoom installed: WadSmith reads the engine's own rules for what each line does.");
+            var pack = MapPacks.Materialise(choice.Pack, Path.Combine(_services.Paths.Cache, "packs"));
+            var folder = UniqueFolder($"{Path.GetFileNameWithoutExtension(pack)} {choice.Slot}");
+            var notes = new List<string>();
+            var project = Remix.CreateFromPack(folder, pack, choice.Slot, choice.Tile.Found.Game, engine, notes);
+            foreach (var n in notes) Log.Info($"Pack map note: {n}");
+            return (project, choice.Slot);
         }).ConfigureAwait(true);
     }
 

@@ -176,6 +176,12 @@ public static class PlayRequests
             files.Add(game.Path);
         }
 
+        // The project's add-ons (a map pack it was started from) load before the project, as in the editor.
+        foreach (var addOn in project.Info.AddOns)
+        {
+            if (File.Exists(addOn)) files.Add(Path.GetFullPath(addOn));
+        }
+
         files.Add(Path.GetFullPath(project.Folder));
         return (new PlayRequest(iwad, files, slot, Math.Clamp(skill, 1, 5), config, log), null);
     }

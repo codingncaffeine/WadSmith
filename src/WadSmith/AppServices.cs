@@ -57,7 +57,7 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
         var games = Games ?? GameLocator.Scan(GameLocator.StandardFolders(Environment.GetEnvironmentVariable).Concat(Settings.Current.GameFolders).Distinct(), cancel: ShuttingDown);
         try
         {
-            return GameResources.Load(project.Info.Game, project.Folder, games, EngineData);
+            return GameResources.Load(project.Info.Game, project.Folder, games, EngineData, project.Info.AddOns);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Core.CorruptDataException)
         {

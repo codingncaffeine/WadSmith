@@ -117,10 +117,11 @@ public sealed class GameResources
     });
 
     /// <summary>
-    /// Opens the game <paramref name="gameId"/> from the games found on this computer, with the
+    /// Opens the game <paramref name="gameId"/> from the games found on this computer, with the project's
+    /// <paramref name="addOns"/> (a map pack it was started from; ones no longer there are skipped) and then the
     /// project folder on top. Null when the game is not among them.
     /// </summary>
-    public static GameResources? Load(string gameId, string? projectFolder, IReadOnlyList<FoundGame> games, string? engineData)
+    public static GameResources? Load(string gameId, string? projectFolder, IReadOnlyList<FoundGame> games, string? engineData, IReadOnlyList<string>? addOns = null)
     {
         var found = games.FirstOrDefault(g => g.Game.Id == gameId);
         if (found is null)
@@ -132,6 +133,12 @@ public sealed class GameResources
         var files = new List<string>();
         if (found.Game.AddOnFor is { } baseId && games.FirstOrDefault(g => g.Game.Id == baseId) is { } baseGame) files.Add(baseGame.Path);
         files.Add(found.Path);
+        foreach (var addOn in addOns ?? [])
+        {
+            if (File.Exists(addOn)) files.Add(addOn);
+            else Log.Warn($"{Path.GetFileName(addOn)} is no longer there; the map is shown without what it brought.");
+        }
+
         var stack = new ResourceStack(files.Select(ResourceContainer.Open));
         if (projectFolder is not null && Directory.Exists(projectFolder)) stack.Add(ResourceContainer.Open(projectFolder));
 
