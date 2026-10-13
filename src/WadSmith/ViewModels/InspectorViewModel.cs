@@ -10,6 +10,8 @@ using WadSmith.Editor.App;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Model;
 using WadSmith.Editor.Scene;
+using Avalonia.Media.Imaging;
+using WadSmith.Core.Graphics;
 using WadSmith.Editor.Smart;
 
 namespace WadSmith.App.ViewModels;
@@ -30,6 +32,70 @@ internal abstract partial class InspectorRow(string label, string tooltip) : Obs
 
     /// <summary>Re-reads the value after any change to the map (an undo, an edit elsewhere).</summary>
     public abstract void Refresh();
+}
+
+/// <summary>One picture to choose from (a door's look): its name, its picture when it has arrived, and whether it is the one in use.</summary>
+internal sealed partial class PictureChoice : ObservableObject
+{
+    private readonly Func<bool> _current;
+    private readonly Action _choose;
+    private bool _refreshing;
+
+    public PictureChoice(string name, string tooltip, Func<bool> isCurrent, Action choose, Func<RgbaImage?> image, Action<Action> onUi)
+    {
+        Name = name;
+        Tooltip = tooltip;
+        _current = isCurrent;
+        _choose = choose;
+        Refresh();
+
+        // The picture is rendered on a worker and shown when it arrives.
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var bitmap = image() is { } i ? Imaging.ToBitmap(ShelfViewModel.Shrink(i)) : null;
+                if (bitmap is not null) onUi(() => Picture = bitmap);
+            }
+            catch (Exception ex) when (ex is WadSmith.Core.CorruptDataException or IOException or InvalidOperationException)
+            {
+                WadSmith.Editor.App.Log.Warn($"The picture {name} could not be shown: {ex.Message}");
+            }
+        });
+    }
+
+    public string Name { get; }
+
+    public string Tooltip { get; }
+
+    [ObservableProperty]
+    private Bitmap? _picture;
+
+    [ObservableProperty]
+    private bool _isCurrent;
+
+    partial void OnIsCurrentChanged(bool value)
+    {
+        if (value && !_refreshing) _choose();
+    }
+
+    public void Refresh()
+    {
+        _refreshing = true;
+        IsCurrent = _current();
+        _refreshing = false;
+    }
+}
+
+/// <summary>A choice among pictures (a door's look), shown as a strip of them.</summary>
+internal sealed class PictureChoiceRow(string label, string tooltip, IReadOnlyList<PictureChoice> choices) : InspectorRow(label, tooltip)
+{
+    public IReadOnlyList<PictureChoice> Choices { get; } = choices;
+
+    public override void Refresh()
+    {
+        foreach (var c in Choices) c.Refresh();
+    }
 }
 
 /// <summary>A number the user can type or step; every change is one undoable edit.</summary>
@@ -570,7 +636,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 if (l.Special == 0)
                 {
                     Rows.Add(l.Back is null
-                        ? new ActionRow("Make it the exit switch", "A piece of this wall as wide as the switch picture (64) becomes the exit switch, where you clicked it (its middle when it was not clicked), and the rest stays wall; a short wall becomes the switch whole. The player uses the switch to end the map (Exit_Normal).", () => _session.MakeExit(l, false, _session.Selection.At))
+                        ? new ActionRow("Make it the exit switch", "The exit switch picture is set into this wall where you clicked it (its middle when it was not clicked): a piece as wide as the picture, in an alcove as tall as the picture with the wall above it when the room is taller; the rest stays wall. The player uses the switch to end the map (Exit_Normal).", () => _session.MakeExit(l, false, _session.Selection.At))
                         : new ActionRow("End the map when walked across", "Crossing this wall ends the map and goes on to the next one (Exit_Normal).", () => _session.MakeExit(l, false)));
                 }
 
@@ -753,6 +819,24 @@ internal sealed partial class InspectorViewModel : ObservableObject
     }
 
     /// <summary>For a locked door: place its key when the map has none of that colour, else select the key.</summary>
+    /// <summary>The door's look: a strip of the game's own door pictures; the chosen one goes on its faces and sets its doorway's height.</summary>
+    private void AddDoorLooks(Sector area)
+    {
+        if (_session.Resources is not { } resources) return;
+        var looks = Doors.Looks(resources.Game.Engine, resources.Textures.Walls);
+        if (looks.Count == 0) return;
+        Door? Now() => Doors.Recognise(_session.Geometry, area);
+        string Current() => Now()?.Own.FirstOrDefault()?.Front.Top ?? "";
+        var choices = looks.Select(t => new PictureChoice(t.Name, $"{t.Name}, {t.Width} × {t.Height}: the door shows this picture, and its doorway becomes {t.Height} tall.",
+            () => string.Equals(Current(), t.Name, StringComparison.OrdinalIgnoreCase),
+            () =>
+            {
+                if (Now() is { } door) _session.History.Record("Change the door's look", e => Doors.Dress(e, _session.Geometry, door, t.Name, (t.Width, t.Height)));
+            },
+            () => resources.Textures.GetWall(t.Name), _session.OnUiThread)).ToList();
+        Rows.Add(new PictureChoiceRow("Looks like", "The door's picture, one of the game's own doors. The doorway takes the picture's height: the wall shows above a short door, and a tall one fills the doorway. Right-click the door on the plan for the same choice.", choices));
+    }
+
     private void AddDoorKey(Sector area)
     {
         if (_session.Look != Look.For("doom") || Doors.Recognise(_session.Geometry, area) is not { Settings.Lock: not 0 } door || Keys.ColourOfLock(door.Settings.Lock) is not { } colour) return;
@@ -1195,6 +1279,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             v => Change(d => (d.Settings with { StaysOpen = v == 1 }, d.Monsters, d.StartsOpen), "Change what the door does after opening")));
         if (_session.Look == Look.For("doom"))
         {
+            AddDoorLooks(area);
             Rows.Add(new ChoiceRow("Locked with", "The key the player needs to open it; the card or the skull of that colour both work, as in Doom (lock).", [.. Doors.DoomLocks.Select(k => k.Name)],
                 () => Now() is { } d ? Math.Max(0, Doors.DoomLocks.ToList().FindIndex(k => k.Lock == d.Settings.Lock)) : 0,
                 v => Change(d => (d.Settings with { Lock = Doors.DoomLocks[v].Lock }, d.Monsters, d.StartsOpen), "Change the door's lock")));

@@ -606,6 +606,27 @@ internal sealed partial class EditorViewModel : ObservableObject
     public GuideMarks Marks => GuideMarks.For(Guide?.Target ?? GuideTarget.None);
 
     /// <summary>The Guide's chapters, for the Guide menu.</summary>
+    /// <summary>
+    /// The choices a right-click on the plan offers for an element: a door (its area, or one of its faces) gets its looks,
+    /// the game's own door pictures; anything else gets none, and no menu opens.
+    /// </summary>
+    public Func<Element, IReadOnlyList<MenuChoice>> ContextMenuFor => element =>
+    {
+        if (Session.Resources is not { } resources) return [];
+        var area = element switch
+        {
+            Sector s => s,
+            Line l => Doors.Recognise(Session.Geometry, l.Front.Sector) is not null ? l.Front.Sector : l.Back is { } b && Doors.Recognise(Session.Geometry, b.Sector) is not null ? b.Sector : null,
+            _ => null,
+        };
+        if (area is null || Doors.Recognise(Session.Geometry, area) is null) return [];
+        var looks = Doors.Looks(resources.Game.Engine, resources.Textures.Walls);
+        return [.. looks.Select(t => new MenuChoice($"Looks like {t.Name}", $"{t.Name}, {t.Width} × {t.Height}: the door shows this picture, and its doorway becomes {t.Height} tall.", () =>
+        {
+            if (Doors.Recognise(Session.Geometry, area) is { } door) Session.History.Record("Change the door's look", e => Doors.Dress(e, Session.Geometry, door, t.Name, (t.Width, t.Height)));
+        }))];
+    };
+
     public IReadOnlyList<GuideLink> GuideMenu => _guideMenu ??= [.. GuideBook.Chapters.Select(c => new GuideLink(c.Title, c.Summary, new RelayCommand(() => StartGuide(c.Id)))),
         new GuideLink("Feature tour: a map of examples", "A small map with a room for each feature and a sign in each, built for your game. Play it to walk round; Remix it to change it.", OpenTourCommand)];
 

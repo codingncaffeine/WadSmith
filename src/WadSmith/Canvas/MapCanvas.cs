@@ -6,6 +6,7 @@ using SkiaSharp;
 using WadSmith.Editor;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Geometry;
+using WadSmith.App.ViewModels;
 using WadSmith.Editor.Model;
 
 namespace WadSmith.App.Canvas;
@@ -1080,6 +1081,15 @@ internal sealed class MapCanvas : Control
         e.Handled = true;
     }
 
+    /// <summary>The choices a right-click on an element offers (a door's looks), set by the editor; nothing opens when it gives none.</summary>
+    public static readonly StyledProperty<Func<Element, IReadOnlyList<MenuChoice>>?> ContextMenuForProperty = AvaloniaProperty.Register<MapCanvas, Func<Element, IReadOnlyList<MenuChoice>>?>(nameof(ContextMenuFor));
+
+    public Func<Element, IReadOnlyList<MenuChoice>>? ContextMenuFor
+    {
+        get => GetValue(ContextMenuForProperty);
+        set => SetValue(ContextMenuForProperty, value);
+    }
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         Focus();
@@ -1089,6 +1099,23 @@ internal sealed class MapCanvas : Control
             // Another button while drawing lets go of the room.
             CancelDrawing();
             e.Pointer.Capture(null);
+            e.Handled = true;
+            return;
+        }
+
+        // A right-click on something with choices (a door's looks): it is selected, and the choices open at the pointer.
+        if (props.IsRightButtonPressed && Session is not null && _corners.Count == 0 && HitTest(e.GetPosition(this)) is { } under && ContextMenuFor?.Invoke(under) is { Count: > 0 } choices)
+        {
+            Session.Selection.Pick(under, ToMap(e.GetPosition(this)));
+            var flyout = new MenuFlyout { Placement = PlacementMode.Pointer };
+            foreach (var c in choices)
+            {
+                var item = new MenuItem { Header = c.Header, Command = new CommunityToolkit.Mvvm.Input.RelayCommand(c.Act) };
+                ToolTip.SetTip(item, c.Tip);
+                flyout.Items.Add(item);
+            }
+
+            flyout.ShowAt(this, true);
             e.Handled = true;
             return;
         }

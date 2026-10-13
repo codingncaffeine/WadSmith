@@ -106,7 +106,7 @@
         <Grid Grid.Row="1" ColumnDefinitions="*,4,356">
             <Grid x:Name="MapViews" ColumnDefinitions="*,4,*">
             <Panel x:Name="PlanPane">
-                <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" Tool="{Binding Tool}" ShowFit="{Binding ShowFit}" Picks="{Binding Picks}" />
+                <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" Tool="{Binding Tool}" ShowFit="{Binding ShowFit}" Picks="{Binding Picks}" ContextMenuFor="{Binding ContextMenuFor}" />
 
                 <!-- Tools: what a left drag on the plan does, in a column down the plan's left edge (§3.3). -->
                 <StackPanel Orientation="Vertical" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
@@ -388,6 +388,30 @@
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
                                         <TextBlock Text="{Binding HintText}" Classes="secondary" FontSize="12" Margin="0,3,0,0" IsVisible="{Binding HintText.Length}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:PictureChoiceRow">
+                                    <StackPanel Spacing="4" Margin="0,4,0,8">
+                                        <TextBlock Text="{Binding Label}" Classes="secondary" ToolTip.Tip="{Binding Tooltip}" />
+                                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                            <ItemsControl ItemsSource="{Binding Choices}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate DataType="vm:PictureChoice">
+                                                        <ToggleButton Classes="segment preset first last" IsChecked="{Binding IsCurrent}" ToolTip.Tip="{Binding Tooltip}" Padding="4" Width="76">
+                                                            <StackPanel Spacing="3">
+                                                                <Border Width="64" Height="64" Background="#000000" CornerRadius="3" ClipToBounds="True">
+                                                                    <Image Source="{Binding Picture}" Stretch="Uniform" />
+                                                                </Border>
+                                                                <TextBlock Text="{Binding Name}" FontSize="10" HorizontalAlignment="Center" />
+                                                            </StackPanel>
+                                                        </ToggleButton>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
                                     </StackPanel>
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:TextRow">

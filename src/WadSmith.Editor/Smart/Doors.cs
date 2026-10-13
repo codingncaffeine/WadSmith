@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+using WadSmith.Core.Graphics;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
@@ -40,8 +42,90 @@ public sealed record Door(Sector Area, IReadOnlyList<Line> Openers, DoorSettings
 /// open it with a door action naming no tag: used from either room, the engine opens the area behind
 /// the wall) and changing how they behave.
 /// </summary>
-public static class Doors
+public static partial class Doors
 {
+    /// <summary>
+    /// The game's door pictures, for a door's "Looks like": the walls named as the family names its doors, at least 32 wide
+    /// and 64 tall (tracks and key trims are narrow), by name.
+    /// </summary>
+    public static IReadOnlyList<TextureInfo> Looks(string engine, IEnumerable<TextureInfo> walls)
+    {
+        var pattern = engine switch
+        {
+            "heretic" => HereticDoors(),
+            "hexen" => HexenDoors(),
+            "strife" => StrifeDoors(),
+            _ => DoomDoors(),
+        };
+        return [.. walls.Where(w => pattern.IsMatch(w.Name) && w.Width >= 32 && w.Height >= 64).OrderBy(w => w.Name, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// The frames of a doorway (see <see cref="Make"/>): for each of the door's own faces, the area in front of it when it
+    /// is a frame, <see cref="FrameDepth"/> deep, with the room beyond it.
+    /// </summary>
+    public static IReadOnlyList<(Sector Frame, Sector Room)> FramesOf(MapGeometry geometry, Door door)
+    {
+        var frames = new List<(Sector, Sector)>();
+        foreach (var opener in door.Own)
+        {
+            var frame = opener.Front.Sector;
+            if (ReferenceEquals(frame, door.Area) || geometry.WallBoundsAt(frame.Slot) is not { } b) continue;
+            foreach (var l in geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY))
+            {
+                if (!l.OnMap || ReferenceEquals(l, opener) || !Parallel(l, opener) || !(ReferenceEquals(l.Front.Sector, frame) || ReferenceEquals(l.Back?.Sector, frame))) continue;
+                var room = ReferenceEquals(l.Front.Sector, frame) ? l.Back?.Sector : l.Front.Sector;
+                if (room is null || ReferenceEquals(room, door.Area) || Apart(l, opener) > FrameDepth + 0.5) continue;
+                frames.Add((frame, room));
+                break;
+            }
+        }
+
+        return frames;
+    }
+
+    /// <summary>
+    /// Gives a door the picture <paramref name="texture"/> on its faces through <paramref name="edit"/>, hung from the door's
+    /// top edge as before, and its doorway's frames the picture's height (<paramref name="size"/>) when it has them, so the
+    /// wall shows above a short door and a tall one fills the doorway.
+    /// </summary>
+    public static void Dress(StructureEdit edit, MapGeometry geometry, Door door, string texture, (int Width, int Height)? size)
+    {
+        foreach (var l in door.Own)
+        {
+            edit.Set(l.Front, x => x.Top, (x, v) => x.Top = v, texture);
+            edit.Set(l.Front, x => x.OffsetX, (x, v) => x.OffsetX = v, 0);
+            edit.Set(l.Front, x => x.OffsetY, (x, v) => x.OffsetY = v, 0);
+        }
+
+        if (size is not { Height: > 0 } s) return;
+        foreach (var (frame, room) in FramesOf(geometry, door))
+        {
+            var ceiling = Math.Min(room.CeilingHeight, frame.FloorHeight + s.Height);
+            edit.Set(frame, x => x.CeilingHeight, (x, v) => x.CeilingHeight = v, ceiling);
+        }
+    }
+
+    /// <summary>The distance between two parallel walls.</summary>
+    private static double Apart(Line a, Line b)
+    {
+        var (dx, dy) = (b.End.X - b.Start.X, b.End.Y - b.Start.Y);
+        var length = Math.Sqrt(dx * dx + dy * dy);
+        return length <= 0 ? 0 : Math.Abs((a.Start.X - b.Start.X) * dy - (a.Start.Y - b.Start.Y) * dx) / length;
+    }
+
+    [GeneratedRegex("^(BIGDOOR[0-9]|DOOR[0-9]|EXITDOOR|SPCDOOR[0-9])", RegexOptions.IgnoreCase)]
+    private static partial Regex DoomDoors();
+
+    [GeneratedRegex("^DOOR", RegexOptions.IgnoreCase)]
+    private static partial Regex HereticDoors();
+
+    [GeneratedRegex("^D_", RegexOptions.IgnoreCase)]
+    private static partial Regex HexenDoors();
+
+    [GeneratedRegex("^DOR", RegexOptions.IgnoreCase)]
+    private static partial Regex StrifeDoors();
+
     /// <summary>GZDoom's door actions: Door_Open (stays open), Door_Raise (opens, waits, closes), Door_LockedRaise.</summary>
     public const int DoorOpen = 11;
     public const int DoorRaise = 12;

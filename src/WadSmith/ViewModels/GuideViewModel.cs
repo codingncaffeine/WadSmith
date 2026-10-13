@@ -10,6 +10,9 @@ namespace WadSmith.App.ViewModels;
 /// <summary>A chapter of the Guide offered by name: in the Guide menu and on a finished chapter's card.</summary>
 internal sealed record GuideLink(string Title, string Tip, ICommand Open);
 
+/// <summary>One choice of a right-click menu on the plan: what it says, its tooltip, and what it does.</summary>
+internal sealed record MenuChoice(string Header, string Tip, Action Act);
+
 /// <summary>
 /// A Guide chapter while it runs (§3.9): the open step, what to do, the control it points at, and the checks that finish
 /// each step, read from the map on a worker after every change. It never blocks the editor: the user can do anything
