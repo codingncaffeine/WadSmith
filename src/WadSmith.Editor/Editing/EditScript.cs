@@ -35,6 +35,7 @@ public static class EditScript
         teleport X Y TOX TOY        the room at the point sends to the second point
         secret X Y                  the room at the point becomes a secret
         switch X Y WALLX WALLY      a switch on the wall nearest the second point for the door or lift at the first
+        trigger X Y DOORX DOORY     the line nearest the first point opens the door at the second the first time it is walked over
         exit X Y                    the wall nearest the point gets the exit switch, a piece of it round the point
         split X Y X Y …             a line across a room splits it
         join X Y X Y …              the rooms at the points join into the first
@@ -185,6 +186,12 @@ public static class EditScript
                 var rooms = Enumerable.Range(0, (w.Length - 1) / 2).Select(i => Room(1 + 2 * i)).Distinct().ToList();
                 Record("Join rooms", e => Rooms.Join(e, g, rooms));
                 made = $"{rooms.Count} rooms joined";
+                break;
+            case "trigger":
+                var crossed = Wall(1);
+                var opened = Room(3);
+                Record("Make a trigger", e => why = WalkOvers.Make(e, g, crossed, opened));
+                made = "a line that opens the door when walked over";
                 break;
             case "brightness":
                 var dim = Room(1);

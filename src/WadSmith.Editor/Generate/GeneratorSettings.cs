@@ -9,6 +9,15 @@ public enum MapSize
     Huge,
 }
 
+/// <summary>What the rooms are like: tech-base rectangles, caves with cut corners, castle halls with pillars, or a mix by part of the map.</summary>
+public enum MapStyle
+{
+    Base,
+    Caves,
+    Castle,
+    Mixed,
+}
+
 /// <summary>The share of rooms open to the sky.</summary>
 public enum OutdoorShare
 {
@@ -44,6 +53,8 @@ public sealed record GeneratorSettings
 
     public MapSize Size { get; init; } = MapSize.Medium;
 
+    public MapStyle Style { get; init; } = MapStyle.Base;
+
     public OutdoorShare Outdoors { get; init; } = OutdoorShare.Some;
 
     /// <summary>From 0 (gentle) to 1 (brutal): how many monsters, how tough, and how much ammunition and health to spare.</summary>
@@ -68,6 +79,9 @@ public sealed record GeneratorSettings
 
     /// <summary>Monsters lying in wait (deaf until they see the player) in some rooms.</summary>
     public bool Ambushes { get; init; } = true;
+
+    /// <summary>Monster closets: small rooms beside a room whose door opens when the player walks in.</summary>
+    public bool Traps { get; init; } = true;
 
     /// <summary>Decorations in the rooms: lamps, barrels, columns, trees outside.</summary>
     public bool Decorations { get; init; } = true;

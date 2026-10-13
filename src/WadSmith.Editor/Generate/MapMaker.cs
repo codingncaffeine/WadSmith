@@ -41,8 +41,24 @@ public static class MapMaker
         foreach (var room in plan.Rooms)
         {
             UseLook(LookFor(room));
-            Line($"room {room.Box.X0} {room.Box.Y0} {room.Box.X1} {room.Box.Y1}");
-            Heights(room.Box, room.Floor, room.Ceiling, room.Light);
+            if (room.Cuts == default) Line($"room {room.Box.X0} {room.Box.Y0} {room.Box.X1} {room.Box.Y1}");
+            else Line($"shape {string.Join(' ', room.Outline().Select(p => FormattableString.Invariant($"{p.X} {p.Y}")))}");
+
+            // Heights are set at the cell's middle, which cut corners and pillars leave clear (a closet's own middle for a closet).
+            var (hx, hy) = room.Role == RoomRole.Closet ? (room.Box.CentreX, room.Box.CentreY) : Planner.Middle(plan, room);
+            Line($"floor {hx} {hy} {room.Floor}");
+            Line($"ceiling {hx} {hy} {room.Ceiling}");
+            Line($"brightness {hx} {hy} {room.Light}");
+        }
+
+        Line($"# Pillars: columns closed floor to ceiling");
+        foreach (var room in plan.Rooms)
+        {
+            foreach (var p in room.Pillars)
+            {
+                Line($"room {p.X0} {p.Y0} {p.X1} {p.Y1}");
+                Line($"ceiling {p.CentreX} {p.CentreY} {room.Floor}");
+            }
         }
 
         Line($"# Corridors");
@@ -119,6 +135,16 @@ public static class MapMaker
                 var (ix, iy) = link.AlongX ? (Math.Abs(mx - room.Box.X1) < 1 ? mx + 8 : mx - 8, my) : (mx, Math.Abs(my - room.Box.Y1) < 1 ? my + 8 : my - 8);
                 Line($"lock {ix} {iy} {key.Lock}");
             }
+        }
+
+        Line($"# Monster closets: a door, opened when the player walks into the room");
+        foreach (var closet in plan.Rooms.Where(r => r.Role == RoomRole.Closet))
+        {
+            var (dx, dy) = closet.ClosetDoor;
+            Line($"door {dx} {dy}");
+            var b = closet.Box;
+            var (ix, iy) = Math.Abs(dy - b.Y0) < 1 ? (dx, dy + 8) : Math.Abs(dy - b.Y1) < 1 ? (dx, dy - 8) : Math.Abs(dx - b.X0) < 1 ? (dx + 8, dy) : (dx - 8, dy);
+            Line($"trigger {closet.Trigger.X} {closet.Trigger.Y} {ix} {iy}");
         }
 
         Line($"# Secrets, teleporters and the exit");

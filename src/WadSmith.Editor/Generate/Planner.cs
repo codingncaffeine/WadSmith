@@ -11,13 +11,10 @@ namespace WadSmith.Editor.Generate;
 /// </summary>
 public static class Planner
 {
-    /// <summary>The lattice's cell: one room to a cell.</summary>
-    public const int Cell = 1024;
-
-    /// <summary>The most a room reaches from its cell's middle: the cell less the band kept clear at its edge.</summary>
-    public const int MaxHalf = 448;
-
     private static readonly (int Di, int Dj)[] Directions = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+
+    /// <summary>The middle of a room's cell: where its corridors' middle lines cross, which cut corners and pillars leave clear.</summary>
+    public static (double X, double Y) Middle(MapPlan plan, PlannedRoom room) => (room.Cell.I * plan.Cell, room.Cell.J * plan.Cell);
 
     /// <summary>Plans a map; throws when the settings name a game family the generator does not know.</summary>
     public static MapPlan Plan(GeneratorSettings settings)
@@ -29,6 +26,8 @@ public static class Planner
             var plan = new MapPlan { Settings = settings };
             if (!Lay(plan, palette, root.Fork($"layout {attempt}"))) continue;
             Heights(plan, root.Fork("heights"));
+            Shape(plan, root.Fork("shapes"));
+            if (settings.Traps) Closets(plan, root.Fork("closets"));
             Dress(plan, root.Fork("looks"));
             Populate(plan, palette, root.Fork("things"));
             return plan;
@@ -58,9 +57,13 @@ public static class Planner
         // The way: a self-avoiding walk that keeps a free cell beside each step, going on straight about a third of the time.
         var at = (I: 0, J: 0);
         var dir = rng.Next(4);
+        // A mixed map changes style with each part (each locked door starts a new one).
+        MapStyle[] kinds = [MapStyle.Base, MapStyle.Caves, MapStyle.Castle];
+        var zoneStyles = Enumerable.Range(0, keys + 1).Select(_ => s.Style == MapStyle.Mixed ? rng.Pick(kinds) : s.Style).ToList();
+        if (s.Style == MapStyle.Mixed && keys == 0) zoneStyles[0] = rng.Pick(kinds);
         PlannedRoom Add((int I, int J) cell, RoomRole role, int zone)
         {
-            var room = new PlannedRoom { Index = plan.Rooms.Count, Cell = cell, Role = role, Zone = zone };
+            var room = new PlannedRoom { Index = plan.Rooms.Count, Cell = cell, Role = role, Zone = zone, Style = zoneStyles[zone] };
             plan.Rooms.Add(room);
             cells[cell] = room.Index;
             return room;
@@ -156,7 +159,7 @@ public static class Planner
     /// <summary>Sizes the rooms of a new link's ends (once each) and lays the corridor between them along their cells' middle line.</summary>
     private static PlannedLink Link(MapPlan plan, int a, int b, Seeded rng)
     {
-        foreach (var r in new[] { plan.Rooms[a], plan.Rooms[b] }) Size(r, rng);
+        foreach (var r in new[] { plan.Rooms[a], plan.Rooms[b] }) Size(plan, r, rng);
         var (ra, rb) = (plan.Rooms[a], plan.Rooms[b]);
         var alongX = ra.Cell.J == rb.Cell.J;
         var (first, second) = (alongX ? ra.Cell.I < rb.Cell.I : ra.Cell.J < rb.Cell.J) ? (ra, rb) : (rb, ra);
@@ -165,12 +168,12 @@ public static class Planner
         Box box;
         if (alongX)
         {
-            var y = first.Cell.J * Cell;
+            var y = first.Cell.J * plan.Cell;
             box = new Box(first.Box.X1, y - half, second.Box.X0, y + half);
         }
         else
         {
-            var x = first.Cell.I * Cell;
+            var x = first.Cell.I * plan.Cell;
             box = new Box(x - half, first.Box.Y1, x + half, second.Box.Y0);
         }
 
@@ -179,23 +182,127 @@ public static class Planner
         return link;
     }
 
-    /// <summary>Gives a room its rectangle round its cell's middle, once: its reach each way by what it is for.</summary>
-    private static void Size(PlannedRoom room, Seeded rng)
+    /// <summary>Gives a room its rectangle round its cell's middle, once: its reach each way by what it is for and its style.</summary>
+    private static void Size(MapPlan plan, PlannedRoom room, Seeded rng)
     {
         if (room.Box.Width > 0) return;
+        var castle = room.Style == MapStyle.Castle;
         var (min, max) = room.Role switch
         {
-            RoomRole.Start => (192, 288),
-            RoomRole.Key => (128, 256),
+            RoomRole.Start => castle ? (256, 352) : (192, 288),
+            RoomRole.Key => castle ? (192, 320) : (128, 256),
             RoomRole.Secret => (96, 128),
-            RoomRole.Arena => (384, MaxHalf),
-            RoomRole.Exit => (160, 256),
-            RoomRole.Side => (128, 320),
-            _ => (128, 384),
+            RoomRole.Arena => castle ? (448, plan.MaxHalf) : (384, plan.MaxHalf),
+            RoomRole.Exit => castle ? (224, 320) : (160, 256),
+            RoomRole.Side => castle ? (224, 448) : room.Style == MapStyle.Caves ? (192, 384) : (160, 352),
+            _ => castle ? (320, plan.MaxHalf) : room.Style == MapStyle.Caves ? (224, 416) : (192, 416),
         };
-        int Reach() => rng.Between(min / 32, max / 32) * 32;
-        var (cx, cy) = (room.Cell.I * Cell, room.Cell.J * Cell);
+        int Reach() => Math.Min(rng.Between(min / 32, max / 32) * 32, plan.MaxHalf);
+        var (cx, cy) = (room.Cell.I * plan.Cell, room.Cell.J * plan.Cell);
         room.Box = new Box(cx - Reach(), cy - Reach(), cx + Reach(), cy + Reach());
+    }
+
+    // ── Shapes: caves' cut corners, castle halls' pillars ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Cuts a cave room's corners (each by its own amount, keeping every side's middle — where corridors and the exit meet
+    /// it — straight for 80 either way of the cell's middle line) and stands pillars in a castle hall's floor (in rows, clear
+    /// of the cell's middle lines so the way across and the room's middle stay open, 128 or more from the walls).
+    /// </summary>
+    private static void Shape(MapPlan plan, Seeded rng)
+    {
+        foreach (var room in plan.Rooms.Where(r => r.Role != RoomRole.Secret))
+        {
+            var b = room.Box;
+            var (cx, cy) = Middle(plan, room);
+            var (west, east, south, north) = ((int)(cx - b.X0), (int)(b.X1 - cx), (int)(cy - b.Y0), (int)(b.Y1 - cy));
+            if (room.Style == MapStyle.Caves)
+            {
+                int Cut(int across, int along)
+                {
+                    var most = Math.Min(across, along) - 80;
+                    return most < 48 ? 0 : rng.Between(3, most / 16) * 16;
+                }
+
+                room.Cuts = (Cut(west, south), Cut(west, north), Cut(east, north), Cut(east, south));
+            }
+            else if (room.Style == MapStyle.Castle && b.Width >= 640 && b.Height >= 640 && room.Role is not (RoomRole.Key or RoomRole.Exit))
+            {
+                var step = rng.Pick([192, 224, 256]);
+                for (var x = b.X0 + 160; x + 64 <= b.X1 - 128; x += step)
+                {
+                    for (var y = b.Y0 + 160; y + 64 <= b.Y1 - 128; y += step)
+                    {
+                        if (Math.Abs(x + 32 - cx) < 144 || Math.Abs(y + 32 - cy) < 144) continue;
+                        room.Pillars.Add(new Box(x, y, x + 64, y + 64));
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Closets ─────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Monster closets: a small room 96 deep against a side of a room that has no corridor and no exit switch, inside the
+    /// room's cell (so it touches nothing else), whose door opens the first time the player walks into the room through its
+    /// entrance. Only rooms whose entrance line is free for the trigger (no door, lock or lift on it) get one.
+    /// </summary>
+    private static void Closets(MapPlan plan, Seeded rng)
+    {
+        const int depth = 96;
+        foreach (var room in plan.Rooms.Where(r => r.Role is RoomRole.Path or RoomRole.Side or RoomRole.Key or RoomRole.Arena).ToList())
+        {
+            if (room.Role != RoomRole.Arena && !rng.Chance(0.35)) continue;
+            var entry = plan.Links.FirstOrDefault(l => !l.Loop && Math.Max(l.A, l.B) == room.Index);
+            if (entry is null || entry.Kind == LinkKind.Lift || entry.Kind is LinkKind.Door or LinkKind.Locked && entry.DoorAt == room.Index) continue;
+            var (cx, cy) = Middle(plan, room);
+            var b = room.Box;
+            var c = room.Cuts;
+
+            // The sides with no corridor: each with its flat stretch (between cut corners) along it.
+            var sides = new List<(string Side, int From, int To)>();
+            bool Free(string side) => !plan.Links.Any(l => (l.A == room.Index || l.B == room.Index) && SideOf(l, room) == side);
+            if (Free("north") && b.Y1 - cy + depth <= plan.MaxHalf) sides.Add(("north", b.X0 + c.NW, b.X1 - c.NE));
+            if (Free("south") && cy - b.Y0 + depth <= plan.MaxHalf) sides.Add(("south", b.X0 + c.SW, b.X1 - c.SE));
+            if (Free("east") && b.X1 - cx + depth <= plan.MaxHalf) sides.Add(("east", b.Y0 + c.SE, b.Y1 - c.NE));
+            if (Free("west") && cx - b.X0 + depth <= plan.MaxHalf) sides.Add(("west", b.Y0 + c.SW, b.Y1 - c.NW));
+            rng.Shuffle(sides);
+            var wanted = room.Role == RoomRole.Arena ? 2 : 1;
+            foreach (var (side, from, to) in sides.Where(x => x.To - x.From >= 160 + 32).Take(wanted))
+            {
+                var width = Math.Min(rng.Between(4, 6) * 32, to - from - 32);
+                var start = from + 16 + rng.Next((to - from - 32 - width) / 16 + 1) * 16;
+                Box box = side switch
+                {
+                    "north" => new(start, b.Y1, start + width, b.Y1 + depth),
+                    "south" => new(start, b.Y0 - depth, start + width, b.Y0),
+                    "east" => new(b.X1, start, b.X1 + depth, start + width),
+                    _ => new(b.X0 - depth, start, b.X0, start + width),
+                };
+                var door = side switch
+                {
+                    "north" => (start + width / 2.0, (double)b.Y1),
+                    "south" => (start + width / 2.0, (double)b.Y0),
+                    "east" => ((double)b.X1, start + width / 2.0),
+                    _ => ((double)b.X0, start + width / 2.0),
+                };
+                var closet = new PlannedRoom
+                {
+                    Index = plan.Rooms.Count, Cell = room.Cell, Role = RoomRole.Closet, Zone = room.Zone, Style = room.Style, Progress = room.Progress,
+                    Box = box, Floor = room.Floor, Ceiling = room.Floor + 112, ClosetOf = room.Index, ClosetDoor = door, Trigger = Mouth(entry, room),
+                };
+                plan.Rooms.Add(closet);
+            }
+        }
+    }
+
+    /// <summary>Which side of <paramref name="room"/> a corridor meets: north, south, east or west.</summary>
+    private static string SideOf(PlannedLink link, PlannedRoom room)
+    {
+        var (x, y) = Mouth(link, room);
+        var b = room.Box;
+        return Math.Abs(y - b.Y1) < 1 ? "north" : Math.Abs(y - b.Y0) < 1 ? "south" : Math.Abs(x - b.X1) < 1 ? "east" : "west";
     }
 
     // ── Heights and the kinds of link ────────────────────────────────────────────────────────────────────
@@ -231,6 +338,9 @@ public static class Planner
             {
                 delta = rng.Pick([-24, -16, -8, 0, 0, 0, 8, 16, 24]);
                 link.Kind = rng.Chance(to.Role is RoomRole.Path or RoomRole.Arena or RoomRole.Exit ? 0.45 : 0.3) ? LinkKind.Door : LinkKind.Open;
+
+                // A door at either end of its corridor: the end leaving one room or the end entering the next.
+                if (link.Kind == LinkKind.Door && rng.Chance(0.5)) link.DoorAt = from.Index;
             }
 
             if (from.Floor + delta is < -256 or > 512) delta = -delta;
@@ -251,11 +361,14 @@ public static class Planner
 
         foreach (var room in plan.Rooms)
         {
+            // Caves are low, castle halls tall.
             var height = room.Role switch
             {
                 RoomRole.Arena => rng.Between(10, 12) * 32,
                 RoomRole.Secret => 128,
                 RoomRole.Key => rng.Between(4, 6) * 32,
+                _ when room.Style == MapStyle.Caves => rng.Between(4, 6) * 32,
+                _ when room.Style == MapStyle.Castle => rng.Between(7, 11) * 32,
                 _ => rng.Between(4, 8) * 32,
             };
             room.Ceiling = room.Floor + height;
@@ -279,16 +392,41 @@ public static class Planner
         var outdoor = looks.Where(l => l.Outdoors).ToList();
         if (indoor.Count == 0) indoor = [.. GeneratorSettings.OwnLooks(s.Family).Where(l => !l.Outdoors)];
         rng.Shuffle(indoor);
+
+        // Each style prefers looks that suit it, by their names; with none of those chosen, any look does.
+        IReadOnlyList<LookChoice> Suiting(MapStyle style)
+        {
+            string[] words = style switch
+            {
+                MapStyle.Caves => ["stone", "rock", "hell", "flesh", "moss", "waste", "forest", "brown brick"],
+                MapStyle.Castle => ["stone", "castle", "monastery", "wood", "sandstone", "brick", "brown"],
+                _ => ["tech", "metal", "brown halls", "grey brick", "brick"],
+            };
+            var suiting = indoor.Where(l => words.Any(w => l.Name.Contains(w, StringComparison.OrdinalIgnoreCase))).ToList();
+            return suiting.Count > 0 ? suiting : indoor;
+        }
+
+        var zoneLooks = new Dictionary<(int, MapStyle), LookChoice>();
         var share = s.Outdoors switch { OutdoorShare.None => 0, OutdoorShare.Some => 0.2, _ => 0.45 };
         var counts = new Dictionary<RoomRole, int>();
         foreach (var room in plan.Rooms)
         {
+            // A closet is part of its room: the same look and light.
+            if (room.Role == RoomRole.Closet)
+            {
+                var of = plan.Rooms[room.ClosetOf];
+                (room.Look, room.Light, room.Name) = (of.Look, of.Light, $"Closet off {of.Name}");
+                continue;
+            }
+
             var sky = outdoor.Count > 0 && room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Arena or RoomRole.Start && rng.Chance(share);
-            room.Look = sky ? rng.Pick(outdoor) : rng.Chance(0.15) ? rng.Pick(indoor) : indoor[room.Zone % indoor.Count];
+            var suits = Suiting(room.Style);
+            if (!zoneLooks.TryGetValue((room.Zone, room.Style), out var zoneLook)) zoneLooks[(room.Zone, room.Style)] = zoneLook = suits[(room.Zone + zoneLooks.Count) % suits.Count];
+            room.Look = sky ? rng.Pick(outdoor) : rng.Chance(0.15) ? rng.Pick(suits) : zoneLook;
             room.Outdoors = sky;
             if (sky) room.Ceiling = Math.Max(room.Ceiling, room.Floor + rng.Between(8, 10) * 32);
-            room.Dark = s.DarkPlaces && !sky && room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Key && rng.Chance(0.22);
-            room.Light = sky ? 224 : room.Dark ? rng.Pick([96, 112, 128]) : room.Role == RoomRole.Secret ? 160 : rng.Pick([160, 176, 192, 208]);
+            room.Dark = s.DarkPlaces && !sky && room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Key && rng.Chance(room.Style == MapStyle.Caves ? 0.4 : 0.22);
+            room.Light = sky ? 224 : room.Dark ? rng.Pick([96, 112, 128]) : room.Role == RoomRole.Secret ? 160 : room.Style == MapStyle.Caves ? rng.Pick([128, 144, 160]) : rng.Pick([160, 176, 192, 208]);
             counts[room.Role] = counts.GetValueOrDefault(room.Role) + 1;
             room.Name = room.Role switch
             {
@@ -331,7 +469,7 @@ public static class Planner
                     y = b.Y0 + inset + rng.Next((int)((b.Height - 2 * inset) / 16) + 1) * 16;
                 }
 
-                if (Taken.All(t => Math.Abs(t.X - x) >= t.R + radius + 8 || Math.Abs(t.Y - y) >= t.R + radius + 8))
+                if (Room.Holds(x, y, radius + 16) && Taken.All(t => Math.Abs(t.X - x) >= t.R + radius + 8 || Math.Abs(t.Y - y) >= t.R + radius + 8))
                 {
                     Taken.Add((x, y, radius));
                     return (x, y);
@@ -365,11 +503,15 @@ public static class Planner
             }
         }
 
-        // The exit's switch on the wall facing the way in.
+        // Each closet's door and the strip in front of it kept clear.
+        foreach (var closet in plan.Rooms.Where(r => r.Role == RoomRole.Closet)) spots[closet.ClosetOf].Taken.Add((closet.ClosetDoor.X, closet.ClosetDoor.Y, 72));
+
+        // The exit's switch on the wall facing the way in, on the cell's middle line (straight even in a cave).
         var exitRoom = plan.Rooms[plan.Path[^1]];
-        var (ex, ey) = entries.GetValueOrDefault(exitRoom.Index, (exitRoom.Box.X0, exitRoom.Box.CentreY));
+        var (mx, my) = Middle(plan, exitRoom);
+        var (ex, ey) = entries.GetValueOrDefault(exitRoom.Index, (exitRoom.Box.X0, my));
         var eb = exitRoom.Box;
-        plan.Exit = Math.Abs(ex - eb.X0) < 1 ? (eb.X1, eb.CentreY) : Math.Abs(ex - eb.X1) < 1 ? (eb.X0, eb.CentreY) : Math.Abs(ey - eb.Y0) < 1 ? (eb.CentreX, eb.Y1) : (eb.CentreX, eb.Y0);
+        plan.Exit = Math.Abs(ex - eb.X0) < 1 ? (eb.X1, my) : Math.Abs(ex - eb.X1) < 1 ? (eb.X0, my) : Math.Abs(ey - eb.Y0) < 1 ? (mx, eb.Y1) : (mx, eb.Y0);
         spots[exitRoom.Index].Taken.Add((plan.Exit.X, plan.Exit.Y, 96));
 
         // Teleporters: a pad in a dead-end side room, back to where its part of the map begins.
@@ -382,17 +524,17 @@ public static class Planner
             {
                 var to = plan.Path.Select(i => plan.Rooms[i]).First(r => r.Zone == room.Zone);
                 if (to.Index == room.Index) continue;
-                var (cx, cy) = (Math.Round(room.Box.CentreX / 16) * 16, Math.Round(room.Box.CentreY / 16) * 16);
+                var (cx, cy) = Middle(plan, room);
                 var pad = new Box((int)cx - 64, (int)cy - 64, (int)cx + 64, (int)cy + 64);
                 spots[room.Index].Taken.Add((cx, cy, 96));
-                if (spots[to.Index].Find(32, rng, (to.Box.CentreX, to.Box.CentreY)) is not { } landing) continue;
+                if (spots[to.Index].Find(32, rng, Middle(plan, to)) is not { } landing) continue;
                 plan.Teleports.Add(new PlannedTeleport(room.Index, pad, to.Index, landing.X, landing.Y));
             }
         }
 
         // The start, facing the way on.
         var start = plan.Rooms[plan.Path[0]];
-        var startSpot = (X: start.Box.CentreX, Y: start.Box.CentreY);
+        var startSpot = Middle(plan, start);
         spots[start.Index].Taken.Add((startSpot.X, startSpot.Y, 48));
         var firstMouth = plan.Path.Count > 1 ? entries[plan.Path[1]] : (startSpot.X + 64, startSpot.Y);
         plan.Things.Add(new PlannedThing(ThingRole.Start, 1, startSpot.X, startSpot.Y, AngleTo(startSpot, firstMouth), Room: start.Index));
@@ -400,7 +542,7 @@ public static class Planner
         // Keys in their rooms' middles.
         foreach (var keyRoom in plan.Rooms.Where(r => r.Key is not null))
         {
-            var at = spots[keyRoom.Index].Find(20, rng, (keyRoom.Box.CentreX, keyRoom.Box.CentreY)) ?? (keyRoom.Box.CentreX, keyRoom.Box.CentreY);
+            var at = spots[keyRoom.Index].Find(20, rng, Middle(plan, keyRoom)) ?? Middle(plan, keyRoom);
             plan.Things.Add(new PlannedThing(ThingRole.Key, keyRoom.Key!.Number, at.X, at.Y, 90, Room: keyRoom.Index));
         }
 
@@ -442,20 +584,42 @@ public static class Planner
                 RoomRole.Key => 320,
                 RoomRole.Arena => 900,
                 RoomRole.Exit => 120,
+                RoomRole.Closet => 160,
                 _ => 0,
             };
             if (baseline == 0) continue;
             var budget = baseline * factor * (0.7 + 0.9 * room.Progress);
             var maxTier = room.Role == RoomRole.Arena ? 4 : Math.Clamp(1 + (int)Math.Floor(room.Progress * (2.2 + 2 * c) + c), 1, 4);
-            var entry = entries.GetValueOrDefault(room.Index, (room.Box.CentreX, room.Box.CentreY));
-            var ambush = s.Ambushes && room.Role != RoomRole.Arena && rng.Chance(0.25);
+
+            // A closet's monsters face its door; they are small enough to stand in it, and wait for it to open.
+            var closet = room.Role == RoomRole.Closet;
+            var entry = closet ? room.ClosetDoor : entries.GetValueOrDefault(room.Index, (room.Box.CentreX, room.Box.CentreY));
+            var fits = closet ? pool.Where(m => m.Radius <= 24).ToList() : pool;
+            if (fits.Count == 0) continue;
+            var ambush = s.Ambushes && room.Role is not (RoomRole.Arena or RoomRole.Closet) && rng.Chance(0.25);
+            // The bosses first, at the far end of the arena, so the arena's crowd never leaves them no room: one that does not
+            // fit gives way to the next boss that does, smallest last.
+            if (room.Role == RoomRole.Arena)
+            {
+                var far = (X: 2 * room.Box.CentreX - entry.Item1, Y: 2 * room.Box.CentreY - entry.Item2);
+                for (var b = 0; b < Math.Clamp(s.Bosses, 0, 3); b++)
+                {
+                    foreach (var kind in bosses.Skip(b % bosses.Count).Concat(bosses.Take(b % bosses.Count)).Concat(bosses.OrderBy(m => m.Radius)))
+                    {
+                        if (spots[room.Index].Find(kind.Radius, rng, far) is not { } at) continue;
+                        plan.Things.Add(new PlannedThing(ThingRole.Boss, kind.Number, at.X, at.Y, AngleTo(at, entry), 0, false, kind, room.Index));
+                        break;
+                    }
+                }
+            }
+
             var placed = 0;
             for (var tries = 0; tries < 60 && budget > 0; tries++)
             {
                 var tier = rng.Chance(0.4) ? maxTier : rng.Between(1, maxTier);
-                var choices = pool.Where(m => m.Tier == tier).ToList();
-                for (var t = tier - 1; choices.Count == 0 && t >= 1; t--) choices = [.. pool.Where(m => m.Tier == t)];
-                if (choices.Count == 0) choices = pool;
+                var choices = fits.Where(m => m.Tier == tier).ToList();
+                for (var t = tier - 1; choices.Count == 0 && t >= 1; t--) choices = [.. fits.Where(m => m.Tier == t)];
+                if (choices.Count == 0) choices = fits;
                 var kind = rng.Pick(choices);
                 if (placed > 0 && kind.Health > budget * 1.5) continue;
                 if (spots[room.Index].Find(kind.Radius, rng) is not { } at) continue;
@@ -463,17 +627,6 @@ public static class Planner
                 plan.Things.Add(new PlannedThing(ThingRole.Monster, kind.Number, at.X, at.Y, AngleTo(at, entry), skill, ambush, kind, room.Index));
                 budget -= kind.Health;
                 placed++;
-            }
-
-            if (room.Role == RoomRole.Arena)
-            {
-                for (var b = 0; b < Math.Clamp(s.Bosses, 0, 3); b++)
-                {
-                    var kind = bosses[b % bosses.Count];
-                    var far = (X: 2 * room.Box.CentreX - entry.Item1, Y: 2 * room.Box.CentreY - entry.Item2);
-                    if (spots[room.Index].Find(kind.Radius, rng, far) is not { } at) continue;
-                    plan.Things.Add(new PlannedThing(ThingRole.Boss, kind.Number, at.X, at.Y, AngleTo(at, entry), 0, false, kind, room.Index));
-                }
             }
         }
 
@@ -490,7 +643,8 @@ public static class Planner
     {
         var s = plan.Settings;
         var c = Math.Clamp(s.Challenge, 0, 1);
-        double HealthIn(int room) => plan.Things.Where(t => t.Room == room && t.Monster is { } m).Sum(t => (double)t.Monster!.Health);
+        // A closet's monsters count with the room it opens into, where its supplies go.
+        double HealthIn(int room) => plan.Things.Where(t => t.Room >= 0 && (t.Room == room || plan.Rooms[t.Room].ClosetOf == room) && t.Monster is not null).Sum(t => (double)t.Monster!.Health);
         var total = plan.Rooms.Sum(r => HealthIn(r.Index));
         var target = total * (1.6 - 0.45 * c);
         var have = palette.StartDamage + weaponAt.Keys.Sum(w => weapons[w].Gives * (palette.AmmoOf(weapons[w].Ammo)?.Damage ?? 0));
@@ -506,7 +660,7 @@ public static class Planner
         }
 
         var startAmmo = palette.Ammo[0];
-        foreach (var room in plan.Rooms.Where(r => HealthIn(r.Index) > 0).OrderBy(Position))
+        foreach (var room in plan.Rooms.Where(r => r.Role != RoomRole.Closet && HealthIn(r.Index) > 0).OrderBy(Position))
         {
             var share = total <= 0 ? 0 : deficit * HealthIn(room.Index) / total;
             var position = Position(room);
@@ -555,7 +709,7 @@ public static class Planner
     /// <summary>Decorations in the corners of rooms big enough for them: the game's lamps and columns inside, its trees outside.</summary>
     private static void Decorate(MapPlan plan, FamilyPalette palette, List<Spots> spots, Seeded rng)
     {
-        foreach (var room in plan.Rooms.Where(r => r.Role is not RoomRole.Secret && r.Box.Width >= 256 && r.Box.Height >= 256))
+        foreach (var room in plan.Rooms.Where(r => r.Role is not (RoomRole.Secret or RoomRole.Closet) && r.Box.Width >= 256 && r.Box.Height >= 256))
         {
             var kinds = room.Outdoors && palette.OutdoorDecorations.Count > 0 ? palette.OutdoorDecorations : palette.Decorations;
             if (kinds.Count == 0 || !rng.Chance(0.7)) continue;
@@ -563,7 +717,7 @@ public static class Planner
             var b = room.Box;
             foreach (var (x, y) in new[] { (b.X0 + 48.0, b.Y0 + 48.0), (b.X1 - 48.0, b.Y0 + 48.0), (b.X0 + 48.0, b.Y1 - 48.0), (b.X1 - 48.0, b.Y1 - 48.0) })
             {
-                if (spots[room.Index].Taken.Any(t => Math.Abs(t.X - x) < t.R + 32 && Math.Abs(t.Y - y) < t.R + 32)) continue;
+                if (!room.Holds(x, y, 24) || spots[room.Index].Taken.Any(t => Math.Abs(t.X - x) < t.R + 32 && Math.Abs(t.Y - y) < t.R + 32)) continue;
                 spots[room.Index].Taken.Add((x, y, 24));
                 plan.Things.Add(new PlannedThing(ThingRole.Decoration, kind, x, y, 90, Room: room.Index));
             }

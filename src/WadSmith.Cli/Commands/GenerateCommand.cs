@@ -19,7 +19,8 @@ internal sealed class GenerateCommand : ICommand
     public string Usage => """
         Usage: wadsmith-cli generate (--out=FILE.wad | --project=FOLDER) [--game=doom2] [--seed=misty-cavern]
                [--size=small|medium|large|huge] [--challenge=0..1] [--keys=0..3] [--bosses=0..3]
-               [--outdoors=none|some|lots] [--without=secrets,stairs,lifts,teleporters,dark,ambushes,decorations]
+               [--outdoors=none|some|lots] [--style=base|caves|castle|mixed]
+               [--without=secrets,stairs,lifts,teleporters,dark,ambushes,decorations,traps]
                [--script]
 
         Plans a map from the seed and the settings, builds it with the editor's own tools (an edit script,
@@ -38,6 +39,7 @@ internal sealed class GenerateCommand : ICommand
         var s = GeneratorSettings.ForGame(game);
         if (args.Option("seed") is { } seed) s = s with { Seed = SeedWords.Tidy(seed) };
         if (args.Option("size") is { } size) s = s with { Size = Enum.TryParse<MapSize>(size, true, out var z) ? z : throw new UsageException("--size is small, medium, large or huge.") };
+        if (args.Option("style") is { } style) s = s with { Style = Enum.TryParse<MapStyle>(style, true, out var y) ? y : throw new UsageException("--style is base, caves, castle or mixed.") };
         if (args.Option("outdoors") is { } outdoors) s = s with { Outdoors = Enum.TryParse<OutdoorShare>(outdoors, true, out var o) ? o : throw new UsageException("--outdoors is none, some or lots.") };
         if (args.Option("challenge") is { } challenge) s = s with { Challenge = double.TryParse(challenge, NumberStyles.Float, CultureInfo.InvariantCulture, out var c) && c is >= 0 and <= 1 ? c : throw new UsageException("--challenge is a number from 0 to 1.") };
         if (args.Option("keys") is { } keys) s = s with { Keys = int.TryParse(keys, out var k) && k is >= 0 and <= 3 ? k : throw new UsageException("--keys is 0 to 3.") };
@@ -53,7 +55,8 @@ internal sealed class GenerateCommand : ICommand
                 "dark" => s with { DarkPlaces = false },
                 "ambushes" => s with { Ambushes = false },
                 "decorations" => s with { Decorations = false },
-                var other => throw new UsageException($"--without takes secrets, stairs, lifts, teleporters, dark, ambushes and decorations, not {other}."),
+                "traps" => s with { Traps = false },
+                var other => throw new UsageException($"--without takes secrets, stairs, lifts, teleporters, dark, ambushes, decorations and traps, not {other}."),
             };
         }
 
@@ -78,7 +81,7 @@ internal sealed class GenerateCommand : ICommand
 
         var counts = plan.MonsterCounts;
         output.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"{SeedWords.Title(s.Seed)} for {game.Title}: {plan.Rooms.Count} rooms, {plan.Links.Count(l => l.Key is not null)} locked doors, {plan.Rooms.Count(r => r.Role == RoomRole.Secret)} secrets, monsters {counts.Easy}/{counts.Normal}/{counts.Hard} (easy/normal/hard), about {plan.Minutes} minutes; the exit {(walk.ExitReached ? "can" : "CANNOT")} be reached."));
+            $"{SeedWords.Title(s.Seed)} for {game.Title}: {plan.Rooms.Count(r => r.Role != RoomRole.Closet)} rooms, {plan.Rooms.Count(r => r.Role == RoomRole.Closet)} traps, {plan.Links.Count(l => l.Key is not null)} locked doors, {plan.Rooms.Count(r => r.Role == RoomRole.Secret)} secrets, monsters {counts.Easy}/{counts.Normal}/{counts.Hard} (easy/normal/hard), about {plan.Minutes} minutes; the exit {(walk.ExitReached ? "can" : "CANNOT")} be reached."));
         if (outPath is not null)
         {
             var model = made.Map.Frame.ToModel();

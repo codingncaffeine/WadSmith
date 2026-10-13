@@ -10,6 +10,9 @@ public enum RoomRole
     Secret,
     Arena,
     Exit,
+
+    /// <summary>A monster closet beside a room, opened when the player walks in.</summary>
+    Closet,
 }
 
 /// <summary>How two rooms are joined: an open corridor, a door, a locked door, stairs, or a lift.</summary>
@@ -62,6 +65,56 @@ public sealed class PlannedRoom
     public LookChoice? Look { get; set; }
 
     public bool Outdoors { get; set; }
+
+    /// <summary>What the room is like (by its part of the map when the style is mixed).</summary>
+    public MapStyle Style { get; set; }
+
+    /// <summary>How much is cut off each corner (south-west, north-west, north-east, south-east): a cave's rough outline.</summary>
+    public (int SW, int NW, int NE, int SE) Cuts { get; set; }
+
+    /// <summary>Solid columns standing in the room (a castle hall's).</summary>
+    public List<Box> Pillars { get; } = [];
+
+    /// <summary>For a closet: the room it opens into, where on their shared wall its door is, and the line in the room's entrance that opens it.</summary>
+    public int ClosetOf { get; set; } = -1;
+
+    public (double X, double Y) ClosetDoor { get; set; }
+
+    public (double X, double Y) Trigger { get; set; }
+
+    /// <summary>The room's outline, corner by corner, clockwise as the Room tool draws (its rectangle with its corners cut).</summary>
+    public IReadOnlyList<(int X, int Y)> Outline()
+    {
+        var (b, c) = (Box, Cuts);
+        if (c == default) return [(b.X0, b.Y0), (b.X0, b.Y1), (b.X1, b.Y1), (b.X1, b.Y0)];
+        List<(int, int)> points = [];
+        void Add(int x, int y)
+        {
+            if (points.Count == 0 || points[^1] != (x, y)) points.Add((x, y));
+        }
+
+        Add(b.X0, b.Y0 + c.SW);
+        Add(b.X0, b.Y1 - c.NW);
+        Add(b.X0 + c.NW, b.Y1);
+        Add(b.X1 - c.NE, b.Y1);
+        Add(b.X1, b.Y1 - c.NE);
+        Add(b.X1, b.Y0 + c.SE);
+        Add(b.X1 - c.SE, b.Y0);
+        Add(b.X0 + c.SW, b.Y0);
+        if (points[^1] == points[0]) points.RemoveAt(points.Count - 1);
+        return points;
+    }
+
+    /// <summary>Whether a circle of <paramref name="radius"/> at the point stands inside the room, clear of its walls, cut corners and pillars.</summary>
+    public bool Holds(double x, double y, double radius)
+    {
+        var b = Box;
+        if (x - radius <= b.X0 || x + radius >= b.X1 || y - radius <= b.Y0 || y + radius >= b.Y1) return false;
+        var slack = radius * Math.Sqrt(2);
+        var c = Cuts;
+        if (x - b.X0 + (y - b.Y0) < c.SW + slack || x - b.X0 + (b.Y1 - y) < c.NW + slack || b.X1 - x + (b.Y1 - y) < c.NE + slack || b.X1 - x + (y - b.Y0) < c.SE + slack) return false;
+        return Pillars.All(p => x + radius <= p.X0 || x - radius >= p.X1 || y + radius <= p.Y0 || y - radius >= p.Y1);
+    }
 
     /// <summary>The key a key room holds.</summary>
     public KeyKind? Key { get; set; }
@@ -132,6 +185,12 @@ public sealed record PlannedTeleport(int Room, Box Pad, int ToRoom, double ToX, 
 public sealed class MapPlan
 {
     public required GeneratorSettings Settings { get; init; }
+
+    /// <summary>The lattice's cell: one room to a cell (castle halls need bigger ones).</summary>
+    public int Cell => Settings.Style is MapStyle.Castle or MapStyle.Mixed ? 1280 : 1024;
+
+    /// <summary>The most a room reaches from its cell's middle: the cell less the band kept clear at its edge.</summary>
+    public int MaxHalf => Cell / 2 - 64;
 
     public List<PlannedRoom> Rooms { get; } = [];
 

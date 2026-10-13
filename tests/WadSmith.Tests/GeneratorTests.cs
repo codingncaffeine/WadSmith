@@ -16,8 +16,9 @@ namespace WadSmith.Tests;
 /// </summary>
 public sealed class GeneratorTests
 {
-    private static GeneratorSettings For(string family, string seed, MapSize size = MapSize.Medium, int keys = 2, int bosses = 1) => new()
+    private static GeneratorSettings For(string family, string seed, MapSize size = MapSize.Medium, int keys = 2, int bosses = 1, MapStyle style = MapStyle.Base) => new()
     {
+        Style = style,
         GameId = family switch { "heretic" => "heretic", "hexen" => "hexen", "strife" => "strife", _ => "doom2" },
         Family = family,
         Slot = family == "heretic" ? "E1M1" : "MAP01",
@@ -53,19 +54,23 @@ public sealed class GeneratorTests
     }
 
     [Theory]
-    [InlineData("doom", MapSize.Small, 30)]
-    [InlineData("doom", MapSize.Medium, 30)]
-    [InlineData("doom", MapSize.Large, 20)]
-    [InlineData("doom", MapSize.Huge, 10)]
-    [InlineData("heretic", MapSize.Medium, 15)]
-    [InlineData("hexen", MapSize.Medium, 15)]
-    [InlineData("strife", MapSize.Medium, 15)]
-    public void EveryMadeMapIsSoundCleanAndCanBeFinished(string family, MapSize size, int seeds)
+    [InlineData("doom", MapSize.Small, MapStyle.Base, 30)]
+    [InlineData("doom", MapSize.Medium, MapStyle.Base, 30)]
+    [InlineData("doom", MapSize.Large, MapStyle.Base, 20)]
+    [InlineData("doom", MapSize.Huge, MapStyle.Base, 10)]
+    [InlineData("doom", MapSize.Medium, MapStyle.Caves, 20)]
+    [InlineData("doom", MapSize.Medium, MapStyle.Castle, 20)]
+    [InlineData("doom", MapSize.Large, MapStyle.Mixed, 15)]
+    [InlineData("doom", MapSize.Huge, MapStyle.Mixed, 8)]
+    [InlineData("heretic", MapSize.Medium, MapStyle.Mixed, 15)]
+    [InlineData("hexen", MapSize.Medium, MapStyle.Mixed, 15)]
+    [InlineData("strife", MapSize.Medium, MapStyle.Mixed, 15)]
+    public void EveryMadeMapIsSoundCleanAndCanBeFinished(string family, MapSize size, MapStyle style, int seeds)
     {
         var faults = new List<string>();
         for (var i = 0; i < seeds; i++)
         {
-            var made = MapMaker.Make(For(family, $"test-{i}", size, keys: i % 4, bosses: i % 4));
+            var made = MapMaker.Make(For(family, $"test-{i}", size, keys: i % 4, bosses: i % 4, style) with { Outdoors = (OutdoorShare)(i % 3) });
             faults.AddRange(Faults(made).Select(f => $"seed test-{i}: {f}"));
         }
 
@@ -94,9 +99,9 @@ public sealed class GeneratorTests
             Assert.Equal(keys > 0, plan.Rooms.Any(r => r.Role == RoomRole.Arena));
         }
 
-        foreach (var size in Enum.GetValues<MapSize>()) Assert.Equal(GeneratorSettings.RoomsFor(size), Planner.Plan(For("doom", "grim-keep", size, keys: 1)).Rooms.Count);
-        var without = Planner.Plan(For("doom", "grim-keep", MapSize.Huge) with { Secrets = false, Stairs = false, Lifts = false, Teleporters = false, DarkPlaces = false, Ambushes = false, Decorations = false });
-        Assert.DoesNotContain(without.Rooms, r => r.Role == RoomRole.Secret || r.Dark);
+        foreach (var size in Enum.GetValues<MapSize>()) Assert.Equal(GeneratorSettings.RoomsFor(size), Planner.Plan(For("doom", "grim-keep", size, keys: 1)).Rooms.Count(r => r.Role != RoomRole.Closet));
+        var without = Planner.Plan(For("doom", "grim-keep", MapSize.Huge) with { Secrets = false, Stairs = false, Lifts = false, Teleporters = false, DarkPlaces = false, Ambushes = false, Decorations = false, Traps = false });
+        Assert.DoesNotContain(without.Rooms, r => r.Role is RoomRole.Secret or RoomRole.Closet || r.Dark);
         Assert.DoesNotContain(without.Links, l => l.Kind is LinkKind.Stairs or LinkKind.Lift);
         Assert.Empty(without.Teleports);
         Assert.DoesNotContain(without.Things, t => t.Ambush || t.Role is ThingRole.Decoration or ThingRole.Light);
@@ -104,6 +109,16 @@ public sealed class GeneratorTests
         Assert.Contains(with.Rooms, r => r.Role == RoomRole.Secret);
         Assert.Contains(with.Links, l => l.Kind is LinkKind.Stairs or LinkKind.Lift);
         Assert.NotEmpty(with.Teleports);
+        Assert.Contains(with.Rooms, r => r.Role == RoomRole.Closet);
+
+        // The styles: caves cut their corners, castle halls stand pillars; the same seed keeps the same way through.
+        var caves = Planner.Plan(For("doom", "grim-keep", MapSize.Huge, style: MapStyle.Caves));
+        var castle = Planner.Plan(For("doom", "grim-keep", MapSize.Huge, style: MapStyle.Castle));
+        Assert.Contains(caves.Rooms, r => r.Cuts != default);
+        Assert.DoesNotContain(caves.Rooms, r => r.Pillars.Count > 0);
+        Assert.Contains(castle.Rooms, r => r.Pillars.Count > 0);
+        Assert.DoesNotContain(castle.Rooms, r => r.Cuts != default);
+        Assert.Equal(with.Path.Select(i => with.Rooms[i].Cell), caves.Path.Select(i => caves.Rooms[i].Cell));
 
         // The challenge: more monsters, fewer spare supplies.
         var gentle = Planner.Plan(For("doom", "grim-keep") with { Challenge = 0 });
@@ -112,6 +127,54 @@ public sealed class GeneratorTests
         Assert.True(Health(brutal) > 3 * Health(gentle), $"{Health(brutal)} against {Health(gentle)}");
         Assert.True(brutal.MonsterCounts.Hard > gentle.MonsterCounts.Hard);
         Assert.Equal(gentle.Rooms.Select(r => r.Box), brutal.Rooms.Select(r => r.Box));
+    }
+
+    /// <summary>Each closet's door opens from a line the player walks over on the way into its room, and only the room's way in does it.</summary>
+    [Fact]
+    public void EveryClosetOpensWhenThePlayerWalksIntoItsRoom()
+    {
+        var closets = 0;
+        for (var i = 0; i < 12; i++)
+        {
+            var made = MapMaker.Make(For("doom", $"closet-{i}", MapSize.Large, style: (MapStyle)(i % 4)));
+            var g = Editor.Geometry.MapGeometry.Build(made.Map.Frame);
+            foreach (var closet in made.Plan.Rooms.Where(r => r.Role == RoomRole.Closet))
+            {
+                closets++;
+                var (dx, dy) = closet.ClosetDoor;
+                var inside = closet.Box.Contains(dx, dy + 8) ? (dx, dy + 8) : closet.Box.Contains(dx, dy - 8) ? (dx, dy - 8) : closet.Box.Contains(dx + 8, dy) ? (dx + 8, dy) : (dx - 8, dy);
+                var door = g.SectorAt(new(inside.Item1, inside.Item2));
+                Assert.NotNull(door);
+                Assert.NotNull(Editor.Smart.Doors.Recognise(g, door!));
+                var trigger = g.LineNear(new(closet.Trigger.X, closet.Trigger.Y), 4)!;
+                Assert.Equal((Editor.Smart.Doors.DoorOpen, door!.Tag, true), (trigger.Special, trigger.Args[0], trigger.Flag("playercross")));
+                Assert.NotEqual(0, door.Tag);
+            }
+        }
+
+        Assert.True(closets > 5, $"only {closets} closets in 12 large maps");
+    }
+
+    /// <summary>Every boss asked for stands in the arena, in every size and style, even at the top challenge's crowd (the arena once filled before the second boss came, and the Spider Mastermind had no room).</summary>
+    [Fact]
+    public void EveryBossAskedForIsInTheArena()
+    {
+        var missing = new List<string>();
+        foreach (var size in Enum.GetValues<MapSize>())
+        {
+            foreach (var style in Enum.GetValues<MapStyle>())
+            {
+                for (var i = 0; i < 6; i++)
+                {
+                    var bosses = 1 + i % 3;
+                    var plan = Planner.Plan(For("doom", $"boss-{i}", size, bosses: bosses, style: style) with { Challenge = 1 });
+                    var placed = plan.Things.Count(t => t.Role == ThingRole.Boss);
+                    if (placed != bosses) missing.Add($"{size} {style} boss-{i}: {placed} of {bosses}");
+                }
+            }
+        }
+
+        Assert.Empty(missing);
     }
 
     [Fact]
@@ -127,13 +190,12 @@ public sealed class GeneratorTests
     {
         for (var i = 0; i < 20; i++)
         {
-            var plan = Planner.Plan(For("doom", $"crowd-{i}", MapSize.Large, bosses: 3) with { Challenge = 1 });
+            var plan = Planner.Plan(For("doom", $"crowd-{i}", MapSize.Large, bosses: 3, style: (MapStyle)(i % 4)) with { Challenge = 1 });
             var monsters = plan.Things.Where(t => t.Monster is not null).ToList();
             foreach (var m in monsters)
             {
-                var room = plan.Rooms[m.Room].Box;
-                var r = m.Monster!.Radius;
-                Assert.True(m.X - r > room.X0 && m.X + r < room.X1 && m.Y - r > room.Y0 && m.Y + r < room.Y1, $"{m.Monster.Class} at ({m.X}, {m.Y}) reaches out of its room {room}");
+                var room = plan.Rooms[m.Room];
+                Assert.True(room.Holds(m.X, m.Y, m.Monster!.Radius), $"{m.Monster.Class} at ({m.X}, {m.Y}) reaches out of its room {room.Box} (cut {room.Cuts}, {room.Pillars.Count} pillars)");
             }
 
             foreach (var (a, b) in monsters.SelectMany((a, i) => monsters.Skip(i + 1).Select(b => (a, b))))
