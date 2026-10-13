@@ -32,6 +32,7 @@ public partial class EditorView : UserControl
             };
             vm.FitMap = Canvas.FitMap;
             vm.PickModel = PickModelAsync;
+            vm.PickMaterial = PickMaterialAsync;
             vm.ViewSize = () =>
             {
                 var scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
@@ -206,6 +207,19 @@ public partial class EditorView : UserControl
             Title = "Add a 3D model",
             AllowMultiple = false,
             FileTypeFilter = [new("3D models and voxels (OBJ, glTF, MD3, IQM, VOX, KVX)") { Patterns = ["*.obj", "*.OBJ", "*.glb", "*.GLB", "*.gltf", "*.GLTF", "*.md3", "*.MD3", "*.iqm", "*.IQM", "*.vox", "*.VOX", "*.kvx", "*.KVX"] }, new("Block sets (any picture of one: NAME_side.png, NAME_top.png…)") { Patterns = ["*_side.*", "*_top.*", "*_bottom.*", "*_front.*", "*_back.*", "*_left.*", "*_right.*"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
+        }).ConfigureAwait(true);
+        return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
+    }
+
+    /// <summary>The file picker for "Add a material…": any picture of the set.</summary>
+    private async Task<string?> PickMaterialAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage) return null;
+        var picked = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "Add a material: pick any picture of the set",
+            AllowMultiple = false,
+            FileTypeFilter = [new("Pictures (PNG, JPG, TGA)") { Patterns = ["*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.tga", "*.TGA"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
         }).ConfigureAwait(true);
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }

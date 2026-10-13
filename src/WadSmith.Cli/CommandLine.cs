@@ -45,6 +45,7 @@ public static class CommandLine
         new Commands.ScriptCommand(),
         new Commands.GenerateCommand(),
         new Commands.AddModelCommand(),
+        new Commands.AddMaterialCommand(),
         new Commands.RecogniseCommand(),
         new Commands.LandmarksCommand(),
         new Commands.TourCommand(),

@@ -67,6 +67,10 @@ internal sealed partial class EditorViewModel : ObservableObject
 
         Problems = new ProblemsViewModel(session);
         TextureShelf = ShelfViewModel.Textures(session.Resources, () => services.OtherGameOpeners(session.Resources));
+        TextureShelf.AddLabel = "Add a material…";
+        TextureShelf.AddTip = "Brings in a PBR material set of your own (a colour picture with its normal, roughness, metal or occlusion maps, as ambientCG and Poly Haven give them): pick any picture of the set. It becomes a texture for walls, doors and floors, and GZDoom lights it by its maps.";
+        TextureShelf.Add = () => _ = AddMaterialAsync();
+        session.TexturesChanged += TextureShelf.Refresh;
         _looks = [.. Look.Available(session.Engine, session.Resources)];
         LookNames = [.. _looks.Select(l => l.Name)];
         ObjectShelf = ShelfViewModel.Objects(session.Resources, () => WadSmith.Editor.Editing.Prefabs.In(session.Project.Folder), () => services.OtherGameOpeners(session.Resources), ModelNumbers);
@@ -312,6 +316,16 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>Asks the user for a 3D model file (set by the view); null when they chose none.</summary>
     public Func<Task<string?>>? PickModel { get; set; }
+
+    /// <summary>Asks the user for a picture of a material set (set by the view); null when they chose none.</summary>
+    public Func<Task<string?>>? PickMaterial { get; set; }
+
+    /// <summary>"Add a material…": the file picker, then the set brought in as a texture on a worker.</summary>
+    private async Task AddMaterialAsync()
+    {
+        if (PickMaterial is null || await PickMaterial().ConfigureAwait(true) is not { } path) return;
+        Session.ImportMaterial(path);
+    }
 
     /// <summary>The numbers of the props this project brought in from 3D models (read on the shelf's worker).</summary>
     private IReadOnlyCollection<int> ModelNumbers() =>

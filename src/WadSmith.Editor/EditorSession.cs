@@ -1134,6 +1134,47 @@ public sealed class EditorSession : IDisposable
     public event Action? PropsChanged;
 
     /// <summary>
+    /// Brings the PBR material set <paramref name="path"/> belongs to into the project as a texture (Phase 11) on a worker: its
+    /// colour picture and its maps where GZDoom finds them. Raises <see cref="TexturesChanged"/>.
+    /// </summary>
+    public void ImportMaterial(string path)
+    {
+        var file = Path.GetFileName(path);
+        if (Resources is not { } into)
+        {
+            Notice?.Invoke("Materials need this map's own game to be found first.");
+            return;
+        }
+
+        Notice?.Invoke($"Bringing in the material {file} belongs to…");
+        Task.Run(() =>
+        {
+            ImportedMaterial made;
+            try
+            {
+                made = Materials.Import(Project, into, path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Bringing in the material of {path} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"{file} could not be brought in. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                var notes = made.Notes.Count == 0 ? "" : " " + string.Join(" ", made.Notes);
+                var classic = Project.ClassicFormat ? " It plays in GZDoom only; this project plays in a classic port, which shows none of it." : "";
+                Notice?.Invoke($"The material is the texture {made.Texture}, with {Materials.Words(made.Layers)}: under Textures, ready for walls, doors and floors. GZDoom lights it by its maps under dynamic lights.{classic}{notes}");
+                TexturesChanged?.Invoke();
+            });
+        });
+    }
+
+    /// <summary>Raised on the UI thread when the project gained textures of its own (a material brought in).</summary>
+    public event Action? TexturesChanged;
+
+    /// <summary>
     /// Puts a copy of a prefab with its middle near <paramref name="at"/> (in whole 64-unit steps from where it was saved),
     /// joined to the map as a paste is, one undo step; the prefab is read on a worker.
     /// </summary>

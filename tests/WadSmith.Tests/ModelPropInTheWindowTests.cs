@@ -114,4 +114,38 @@ public sealed class ModelPropInTheWindowTests
 
         Assert.Equal("red → not red; row shows 1; status 'The model is turned; every one placed turns with it, in the editor and in GZDoom.'", said);
     }
+
+    [Fact]
+    public async Task TheTextureShelfsButtonBringsAMaterialInAsATexture()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var source = Path.Combine(temp.Path, "source");
+        Directory.CreateDirectory(source);
+        var image = new WadSmith.Core.Graphics.RgbaImage(4, 4);
+        foreach (var name in new[] { "Tiles012_1K-PNG_Color.png", "Tiles012_1K-PNG_NormalGL.png" }) File.WriteAllBytes(Path.Combine(source, name), WadSmith.Core.Graphics.ImageCodec.EncodePng(image));
+        var said = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(Path.Combine(temp.Path, "profile"), Path.GetDirectoryName(wad)!);
+            try
+            {
+                var editor = Ui.NewMap(vm);
+                editor.ShowTextures = true;
+                Ui.Pump(0.5);
+                var shelf = editor.TextureShelf;
+                for (var i = 0; i < 400 && shelf.Tiles.Count == 0; i++) Ui.Pump(0.05);
+                editor.PickMaterial = () => Task.FromResult<string?>(Path.Combine(source, "Tiles012_1K-PNG_NormalGL.png"));
+                Click(window, window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && AutomationProperties.GetName(b) == "Add a material…"));
+                for (var i = 0; i < 400 && !shelf.Tiles.Any(t => t.Label == "TILES012"); i++) Ui.Pump(0.05);
+                var tile = shelf.Tiles.FirstOrDefault(t => t.Label == "TILES012");
+                return $"{tile?.Label}:{tile?.Group}:{tile?.Picture is not null}; status '{editor.Status}'";
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.Equal("TILES012:Walls:True; status 'The material is the texture TILES012, with a normal map: under Textures, ready for walls, doors and floors. GZDoom lights it by its maps under dynamic lights.'", said);
+    }
 }
