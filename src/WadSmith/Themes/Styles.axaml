@@ -53,6 +53,10 @@
         <Setter Property="CornerRadius" Value="0" />
         <Setter Property="Padding" Value="11,6" />
     </Style>
+    <!-- Rows of segments that share a crowded bar (the view modes, the side panel's tabs): a little less padding. -->
+    <Style Selector="ToggleButton.segment.compact">
+        <Setter Property="Padding" Value="8,6" />
+    </Style>
     <!-- The plan's tools: a column down its left edge (§3.3), each button as wide as the widest. -->
     <Style Selector="ToggleButton.segment.tool">
         <Setter Property="Padding" Value="11,6" />

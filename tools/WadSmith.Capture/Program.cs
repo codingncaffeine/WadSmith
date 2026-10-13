@@ -385,7 +385,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-make-exit" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-model" or "editor-3d-picture" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-climb" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark" or "landmark-sheet" or "editor-explain" or "editor-tour":
+        case "editor" or "editor-find" or "editor-brightness" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-make-exit" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-model" or "editor-3d-picture" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-climb" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark" or "landmark-sheet" or "editor-explain" or "editor-tour":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -2651,6 +2651,25 @@ foreach (var pose in poses)
                 }
 
                 break;
+            }
+
+            if (pose == "editor-find")
+            {
+                // Find and replace (D58): the start room's floor picture looked for, the panel listing what it found.
+                var room = editor.Session.Map.Sectors.First(s => s.OnMap);
+                editor.ShowFind = true;
+                editor.Find.KindIndex = 1;
+                editor.Find.What = room.FloorTexture;
+                editor.Find.With = "NUKAGE1";
+                for (var i = 0; i < 100 && !editor.Find.AnyFound; i++) Pump(0.05);
+                Save("editor-find");
+            }
+
+            if (pose == "editor-brightness")
+            {
+                editor.IsBrightness = true;
+                Pump(0.5);
+                Save("editor-brightness");
             }
 
             if (pose == "editor-versions")

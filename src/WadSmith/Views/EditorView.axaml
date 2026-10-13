@@ -81,15 +81,15 @@
                 </Grid>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" Spacing="0" Margin="0,0,10,0">
-                        <ToggleButton Classes="segment first" Content="Floors" IsChecked="{Binding IsFloors}"
+                        <ToggleButton Classes="segment first compact" Content="Floors" IsChecked="{Binding IsFloors}"
                                       ToolTip.Tip="Shows each area's floor as it looks in the game, lit by its brightness." />
-                        <ToggleButton Classes="segment" Content="Ceilings" IsChecked="{Binding IsCeilings}"
+                        <ToggleButton Classes="segment compact" Content="Ceilings" IsChecked="{Binding IsCeilings}"
                                       ToolTip.Tip="Shows each area's ceiling texture, as if looking up through the map." />
-                        <ToggleButton Classes="segment" Content="Heights" Classes.guide="{Binding Marks.Heights}" IsChecked="{Binding ShowHeights}"
+                        <ToggleButton Classes="segment compact" Content="Heights" Classes.guide="{Binding Marks.Heights}" IsChecked="{Binding ShowHeights}"
                                       ToolTip.Tip="Colours every area by its floor height, blue for low and red for high, so steps, pits and platforms stand out." />
-                        <ToggleButton Classes="segment" Content="Brightness" IsChecked="{Binding IsBrightness}"
+                        <ToggleButton Classes="segment compact" Content="Brightness" IsChecked="{Binding IsBrightness}"
                                       ToolTip.Tip="Paints every area in a grey as bright as its light: black for the darkest, white for the brightest, so dark corners and light pools stand out." />
-                        <ToggleButton Classes="segment last" Content="Lines" IsChecked="{Binding IsLines}"
+                        <ToggleButton Classes="segment last compact" Content="Lines" IsChecked="{Binding IsLines}"
                                       ToolTip.Tip="Shows only the walls, in the colours of the game's automap." />
                     </StackPanel>
                     <SplitButton Content="{Binding Faces.Play.Label, StringFormat='▶ {0}'}" Classes.guide="{Binding Marks.Play}" Command="{Binding PlayCommand}" Margin="0,0,10,0" IsEnabled="{Binding !Playing}"
@@ -336,15 +336,17 @@
             <GridSplitter Grid.Column="1" Background="{DynamicResource Brush.Border.Subtle}" ResizeDirection="Columns" />
             <Border Grid.Column="2" Classes="panel" BorderThickness="1,0,0,0">
                 <Grid RowDefinitions="Auto,*">
-                <StackPanel Orientation="Horizontal" Margin="18,12,18,2">
-                    <ToggleButton Classes="segment first" Content="Inspector" Classes.guide="{Binding Marks.Inspector}" IsChecked="{Binding ShowInspector}"
+                <StackPanel Orientation="Horizontal" Margin="12,12,12,2">
+                    <ToggleButton Classes="segment first compact" Content="Inspector" Classes.guide="{Binding Marks.Inspector}" IsChecked="{Binding ShowInspector}"
                                   ToolTip.Tip="What you selected and its settings." />
-                    <ToggleButton Classes="segment" Content="Textures" Classes.guide="{Binding Marks.Textures}" IsChecked="{Binding ShowTextures}"
+                    <ToggleButton Classes="segment compact" Content="Textures" Classes.guide="{Binding Marks.Textures}" IsChecked="{Binding ShowTextures}"
                                   ToolTip.Tip="The game's textures. Drag one onto a wall, a floor or a ceiling." />
-                    <ToggleButton Classes="segment" Content="{Binding Faces.Objects.Label}" Classes.guide="{Binding Marks.Objects}" IsChecked="{Binding ShowObjects}"
+                    <ToggleButton Classes="segment compact" Content="{Binding Faces.Objects.Label}" Classes.guide="{Binding Marks.Objects}" IsChecked="{Binding ShowObjects}"
                                   ToolTip.Tip="{Binding Faces.Objects.Tip}" />
-                    <ToggleButton Classes="segment last" Content="Versions" IsChecked="{Binding ShowVersions}"
+                    <ToggleButton Classes="segment compact" Content="Versions" IsChecked="{Binding ShowVersions}"
                                   ToolTip.Tip="Copies of this map WadSmith kept for you. Go back to any of them." />
+                    <ToggleButton Classes="segment last compact" Content="Find" IsChecked="{Binding ShowFind}"
+                                  ToolTip.Tip="Find and replace (Ctrl+F): pictures, objects, actions, room effects and tags, all over the map." />
                 </StackPanel>
                 <DockPanel Grid.Row="1" IsVisible="{Binding ShowTextures}" Margin="18,8,12,8">
                     <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="0,0,0,8"
@@ -372,6 +374,44 @@
                                                     ToolTip.Tip="Makes this copy the map again. The map as it is now is kept as a version first, so you can come back to it." />
                                         </StackPanel>
                                     </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+                <!-- Find and replace (D58): what to look for, the list of what was found, and what to put in its place. -->
+                <ScrollViewer Grid.Row="1" IsVisible="{Binding ShowFind}">
+                    <StackPanel Margin="18,6,18,18" Spacing="8" DataContext="{Binding Find}">
+                        <TextBlock Classes="section" Text="FIND AND REPLACE" />
+                        <ComboBox ItemsSource="{Binding Kinds}" SelectedIndex="{Binding KindIndex}" HorizontalAlignment="Stretch"
+                                  ToolTip.Tip="What to look for: pictures on walls, on floors and ceilings, objects, the actions on walls, the effects of rooms, or a tag." />
+                        <TextBox Text="{Binding What}" PlaceholderText="{Binding WhatHint}"
+                                 ToolTip.Tip="A name, or a few letters of one, or a number. For pictures, * stands for any letters and ? for one." />
+                        <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsObjects}">
+                            <CheckBox Content="Easy" IsChecked="{Binding OnEasy}" ToolTip.Tip="Finds the objects that appear on the easiest difficulties." />
+                            <CheckBox Content="Normal" IsChecked="{Binding OnNormal}" ToolTip.Tip="Finds the objects that appear on the middle difficulty." />
+                            <CheckBox Content="Hard" IsChecked="{Binding OnHard}" ToolTip.Tip="Finds the objects that appear on the hardest difficulties." />
+                        </StackPanel>
+                        <CheckBox Content="Only in the selection" IsChecked="{Binding InSelection}"
+                                  ToolTip.Tip="Looks only at what is selected now, so a replacement changes only that part of the map." />
+                        <TextBlock Text="{Binding Summary}" Classes="secondary" TextWrapping="Wrap" />
+                        <Button Classes="metal" Content="Select them all" Command="{Binding SelectFoundCommand}" IsEnabled="{Binding AnyFound}" HorizontalAlignment="Left"
+                                ToolTip.Tip="Selects everything found and brings it into view, to change it in the Inspector or move it." />
+                        <TextBox Text="{Binding With}" PlaceholderText="{Binding WithHint}" Margin="0,6,0,0"
+                                 ToolTip.Tip="What to put in place of what was found: a picture's name, or an object's, action's or effect's number or whole name, or a tag." />
+                        <Button Classes="metal" Content="Replace all" Command="{Binding ReplaceAllCommand}" IsEnabled="{Binding AnyFound}" HorizontalAlignment="Left"
+                                ToolTip.Tip="Puts it in place of everything found, as one step: Ctrl+Z takes it all back." />
+                        <ItemsControl ItemsSource="{Binding Results}" Margin="0,6,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="vm:FoundRow">
+                                    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Label}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding Where}" Classes="secondary" FontSize="12" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="metal" Content="Show" Command="{Binding Show}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                ToolTip.Tip="Selects it and brings it into view on the map." />
+                                    </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>

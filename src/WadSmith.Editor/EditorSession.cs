@@ -67,6 +67,7 @@ public sealed class EditorSession : IDisposable
     private readonly LatestOnWorker<MapGeometry> _shapes;
     private readonly LatestOnWorker<(long Version, MoveSet Set, Func<MoveSet, Placement?> Make)> _placings;
     private readonly LatestOnWorker<(IReadOnlyList<Element> Picked, Func<IReadOnlyList<Element>, string?>? Say)> _selects;
+    private readonly LatestOnWorker<(long Search, IReadOnlyList<Found> Found, Action<IReadOnlyList<Found>> Done)> _finds;
     private MapGeometry _geometry;
     private long _savedVersion;
     private Task _lastSave = Task.CompletedTask;
@@ -115,6 +116,11 @@ public sealed class EditorSession : IDisposable
             History.Run(new TransformEdit(r.Set, placement, FlatSize), gesture);
             if (r.Set.Count <= MoveSet.LiveLimit) FinishMove(r.Set, gesture);
         }, "what a turn moves");
+        _finds = new(onUiThread, r =>
+        {
+            // Only the newest search's answer counts: one typed over it meanwhile wins.
+            if (!_disposed && r.Search == _search) r.Done(r.Found);
+        }, "a search of the map");
         _selects = new(onUiThread, r =>
         {
             if (_disposed) return;
@@ -2217,6 +2223,50 @@ public sealed class EditorSession : IDisposable
 
         var geometry = _geometry;
         _selects.Request(() => (pick(geometry), say));
+    }
+
+    private long _search;
+
+    /// <summary>
+    /// Searches the map (Find and replace) on a worker once the shapes have caught up with the map, and hands what it
+    /// found to <paramref name="done"/> on the UI thread; a newer search makes an older one's answer go unheard.
+    /// <paramref name="within"/> keeps only what is in it (a face counts by its wall); null searches the whole map.
+    /// </summary>
+    public void Find(FindQuery query, IReadOnlyCollection<Element>? within, Action<IReadOnlyList<Found>> done) => Find(++_search, query, within, done);
+
+    private void Find(long search, FindQuery query, IReadOnlyCollection<Element>? within, Action<IReadOnlyList<Found>> done)
+    {
+        if (search != _search) return;
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => Find(search, query, within, done);
+            return;
+        }
+
+        var geometry = _geometry;
+        var things = Resources?.Things;
+        var keep = within is null ? null : new HashSet<Element>(within, ReferenceEqualityComparer.Instance);
+        _finds.Request(() =>
+        {
+            var found = Finding.Find(geometry, query, things);
+            if (keep is not null) found = [.. found.Where(x => keep.Contains(x.Element) || x.Element is Side { Line: { } l } && keep.Contains(l))];
+            return (search, found, done);
+        });
+    }
+
+    /// <summary>Puts <paramref name="with"/> in place of what a search found, as one undo step, and says how many changed; null when it was refused (the reason is told).</summary>
+    public int? ReplaceFound(FindQuery query, IReadOnlyList<Found> found, string with)
+    {
+        if (Finding.WhyNotReplace(query, with, Resources?.Things, Resources is { } r ? r.Textures.Has : null) is { } why)
+        {
+            Notice?.Invoke(why);
+            return null;
+        }
+
+        var count = 0;
+        History.Record($"Replace {query.What.Trim()} with {with.Trim()}", e => count = Finding.Replace(e, query, found, with, Resources?.Things));
+        Notice?.Invoke(count == 0 ? "Nothing was changed: what was found has changed since." : $"Replaced in {count} {(count == 1 ? "place" : "places")}. Ctrl+Z takes it all back.");
+        return count;
     }
 
     /// <summary>Selects everything of the kind <paramref name="only"/> picks (Ctrl+A).</summary>

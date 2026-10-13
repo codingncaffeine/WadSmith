@@ -20,6 +20,7 @@ internal enum SidePanel
     Textures,
     Objects,
     Versions,
+    Find,
 }
 
 /// <summary>
@@ -212,7 +213,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>What the right-hand panel shows.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowInspector), nameof(ShowTextures), nameof(ShowObjects), nameof(ShowVersions))]
+    [NotifyPropertyChangedFor(nameof(ShowInspector), nameof(ShowTextures), nameof(ShowObjects), nameof(ShowVersions), nameof(ShowFind))]
     private SidePanel _panel;
 
     public bool ShowInspector
@@ -239,10 +240,21 @@ internal sealed partial class EditorViewModel : ObservableObject
         set => Show(SidePanel.Versions, value);
     }
 
+    public bool ShowFind
+    {
+        get => Panel == SidePanel.Find;
+        set => Show(SidePanel.Find, value);
+    }
+
+    /// <summary>Find and replace (Ctrl+F): the panel's search, made when it is first shown.</summary>
+    public FindViewModel Find => _find ??= new FindViewModel(Session, () => FitSelection?.Invoke());
+
+    private FindViewModel? _find;
+
     private void Show(SidePanel panel, bool on)
     {
         if (on) Panel = panel;
-        else OnPropertyChanged(panel switch { SidePanel.Textures => nameof(ShowTextures), SidePanel.Objects => nameof(ShowObjects), SidePanel.Versions => nameof(ShowVersions), _ => nameof(ShowInspector) });
+        else OnPropertyChanged(panel switch { SidePanel.Textures => nameof(ShowTextures), SidePanel.Objects => nameof(ShowObjects), SidePanel.Versions => nameof(ShowVersions), SidePanel.Find => nameof(ShowFind), _ => nameof(ShowInspector) });
     }
 
     [ObservableProperty]
@@ -505,6 +517,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Textures shelf", "Panels", "", "textures|flats|wall pictures", () => ShowTextures = true),
             new("Objects shelf", "Panels", "", "things|monsters|items|prefabs", () => ShowObjects = true),
             new("Versions", "Panels", "", "history|snapshots|backups", () => ShowVersions = true),
+            new("Find and replace", "Panels", "Ctrl+F", "find|search|replace|search and replace|where is|texture search", () => ShowFind = true),
             new("Explain this map", "Panels", "", "about|summary|statistics|stats|key flow|monster count|what is in it|map analysis", () => ExplainMapCommand.Execute(null)),
             new("Problems", "Panels", K("", "F4"), "errors|map analysis|check|error checker", () => ShowProblems = !ShowProblems),
             new("Keep a version", "Panels", "", "snapshot|save a copy|backup", () => KeepVersionCommand.Execute(null)),
@@ -1066,6 +1079,8 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     partial void OnPanelChanged(SidePanel value)
     {
+        Find.Active = value == SidePanel.Find;
+        if (value == SidePanel.Find) Find.Search();
         switch (value)
         {
             case SidePanel.Versions:
