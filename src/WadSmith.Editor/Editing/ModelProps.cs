@@ -27,7 +27,7 @@ public static class ModelProps
     private const string DefinitionMark = "// Written by WadSmith: the 3D models brought into this project. Edits here are replaced.";
 
     /// <summary>The model files a prop can be made from.</summary>
-    public static readonly IReadOnlyList<string> Extensions = [".obj", ".md3", ".iqm"];
+    public static readonly IReadOnlyList<string> Extensions = [".obj", ".md3", ".iqm", ".glb", ".gltf"];
 
     /// <summary>Whether <paramref name="path"/> names a model file WadSmith brings in as a prop.</summary>
     public static bool IsModel(string path) => Extensions.Contains(Path.GetExtension(path).ToLowerInvariant());
@@ -60,6 +60,45 @@ public static class ModelProps
         return (1, $"read as map units: {Math.Max(4, Math.Ceiling(tall / Stretch))} units tall in the map");
     }
 
+    /// <summary>The size of a model in metres (glTF says so): 32 map units a metre, said like <see cref="SizeOf"/>.</summary>
+    public static (double Scale, string Note) Metres(Mesh mesh)
+    {
+        var tall = mesh.Max.Z - mesh.Min.Z;
+        return (UnitsPerMetre * Stretch, $"in metres: {tall.ToString("0.##", CultureInfo.InvariantCulture)} m tall, {Math.Max(4, Math.Ceiling(tall * UnitsPerMetre))} units in the map");
+    }
+
+    /// <summary>The widest a model's picture is copied (D15's cap for media): bigger ones are shrunk, keeping their shape.</summary>
+    public const int MaxSkin = 1024;
+
+    /// <summary>A picture shrunk to at most <paramref name="most"/> pixels across, by averaging the pixels each new one covers.</summary>
+    public static RgbaImage Shrink(RgbaImage image, int most)
+    {
+        var factor = (double)Math.Max(image.Width, image.Height) / most;
+        var (w, h) = (Math.Max(1, (int)Math.Round(image.Width / factor)), Math.Max(1, (int)Math.Round(image.Height / factor)));
+        var small = new RgbaImage(w, h);
+        for (var y = 0; y < h; y++)
+        {
+            int y0 = y * image.Height / h, y1 = Math.Max(y0 + 1, (y + 1) * image.Height / h);
+            for (var x = 0; x < w; x++)
+            {
+                int x0 = x * image.Width / w, x1 = Math.Max(x0 + 1, (x + 1) * image.Width / w);
+                long r = 0, g = 0, b = 0, a = 0, n = 0;
+                for (var sy = y0; sy < y1; sy++)
+                {
+                    for (var sx = x0; sx < x1; sx++)
+                    {
+                        var (pr, pg, pb, pa) = image.Get(sx, sy);
+                        (r, g, b, a, n) = (r + pr, g + pg, b + pb, a + pa, n + 1);
+                    }
+                }
+
+                small.Set(x, y, (byte)(r / n), (byte)(g / n), (byte)(b / n), (byte)(a / n));
+            }
+        }
+
+        return small;
+    }
+
     /// <summary>The model a placed object's number shows in <paramref name="project"/>, by its class; null for any other object.</summary>
     public static string? Of(Project project, int number)
     {
@@ -80,9 +119,11 @@ public static class ModelProps
         {
             ".md3" => Md3Model.Read(path, notes),
             ".iqm" => IqmModel.Read(path, notes),
+            ".glb" or ".gltf" => GltfModel.Read(path, notes),
             _ => ObjModel.Read(path, notes),
         };
-        var (scale, sizeNote) = SizeOf(mesh);
+        // glTF is in metres by its own rule; other formats say nothing, so their height is read.
+        var (scale, sizeNote) = kind is ".glb" or ".gltf" ? Metres(mesh) : SizeOf(mesh);
 
         var className = ClassName(project, into, Path.GetFileNameWithoutExtension(path));
         var sprite = SpriteName(project, into);
@@ -96,6 +137,12 @@ public static class ModelProps
         {
             if (mesh.Surfaces[s].Image is not { } image) continue;
             pictures[s] = $"skin{s}.png";
+            if (Math.Max(image.Width, image.Height) > MaxSkin)
+            {
+                notes.Add($"Its {image.Width}×{image.Height} picture was made {MaxSkin} pixels across at most, to keep the project small.");
+                image = Shrink(image, MaxSkin);
+            }
+
             files.Add(($"{folder}/{pictures[s]}", ImageCodec.EncodePng(image)));
         }
 

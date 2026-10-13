@@ -13,10 +13,10 @@ internal sealed class AddModelCommand : ICommand
 {
     public string Name => "add-model";
 
-    public string Summary => "Bring a 3D model (OBJ, MD3, IQM) into a project as a prop, and place it on a map.";
+    public string Summary => "Bring a 3D model (OBJ, glTF, MD3, IQM) into a project as a prop, and place it on a map.";
 
     public string Usage => """
-        Usage: wadsmith-cli add-model PROJECT MODEL(.obj|.md3|.iqm) [--at="X Y"] [--map=SLOT] [--games=FOLDER] [--engine-data=gzdoom.pk3]
+        Usage: wadsmith-cli add-model PROJECT MODEL(.obj|.glb|.gltf|.md3|.iqm) [--at="X Y"] [--map=SLOT] [--games=FOLDER] [--engine-data=gzdoom.pk3]
 
         Copies the model and its pictures into the project, writes its MODELDEF entry and a decoration class
         with a number of the project's own, and bakes eight sprites from it, as the editor does. With --at it
