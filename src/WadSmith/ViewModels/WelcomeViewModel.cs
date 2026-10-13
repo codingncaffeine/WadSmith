@@ -38,6 +38,10 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
     [ObservableProperty]
     private Bitmap? _picture;
 
+    /// <summary>How the picture fills its box: a wide title screen fills it; a tall cover sits whole over its own blurred copy.</summary>
+    [ObservableProperty]
+    private Avalonia.Media.Stretch _pictureStretch = Avalonia.Media.Stretch.UniformToFill;
+
     [ObservableProperty]
     private IReadOnlyList<MapChoice> _maps = [];
 
@@ -568,6 +572,28 @@ internal sealed partial class WelcomeViewModel : ObservableObject
 
         tile.Maps = maps;
         if (picture is not null) tile.Picture = Imaging.ToBitmap(picture);
+
+        // The game's cover from its article (D53), fetched once when allowed and online: it replaces the title screen when it arrives.
+        if (!_services.Settings.Current.CoverPictures || _services.Http is not { } http || tile.Found.Game.Wiki is null) return;
+        try
+        {
+            var cover = await Task.Run(async () =>
+            {
+                var file = await CoverArt.FetchAsync(tile.Found.Game, Path.Combine(_services.Paths.Cache, "covers"), http, _services.ShuttingDown).ConfigureAwait(false);
+                return file is null ? null : new Bitmap(file);
+            }, _services.ShuttingDown).ConfigureAwait(true);
+            if (cover is null) return;
+            tile.PictureStretch = cover.Size.Width >= cover.Size.Height ? Avalonia.Media.Stretch.UniformToFill : Avalonia.Media.Stretch.Uniform;
+            tile.Picture = cover;
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutting down.
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or InvalidOperationException)
+        {
+            Log.Warn($"The cover picture for {tile.Title} could not be shown: {ex.Message}");
+        }
     }
 
     [RelayCommand]

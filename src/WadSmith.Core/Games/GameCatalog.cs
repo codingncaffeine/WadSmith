@@ -33,6 +33,9 @@ public sealed record GameDefinition
     /// <summary>An official add-on that loads over this base game (Deathkings over Hexen); null for a base game.</summary>
     public string? AddOnFor { get; init; }
 
+    /// <summary>The title of the game's English Wikipedia article, whose lead picture is the game's cover on the start screen (D53); null for a game without one.</summary>
+    public string? Wiki { get; init; }
+
     public bool IsBaseGame => AddOnFor is null;
 }
 

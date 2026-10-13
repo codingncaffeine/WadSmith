@@ -10,7 +10,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 N="${1:-3}"   # three for an ordinary push; five after a change to the tests, the harness or anything concurrent
-export SDL_AUDIODRIVER=dummy SDL_AUDIO_DRIVER=dummy PULSE_SERVER=unix:/nonexistent/wadsmith PIPEWIRE_REMOTE=/nonexistent/wadsmith
+export SDL_AUDIODRIVER=dummy SDL_AUDIO_DRIVER=dummy PULSE_SERVER=unix:/nonexistent/wadsmith PIPEWIRE_REMOTE=/nonexistent/wadsmith WADSMITH_OFFLINE=1
 games="${WADSMITH_GATE_GAMES:-$PWD/scratch/ci-games}"
 empty="$PWD/scratch/empty"
 [ -d "$games" ] || { echo "gate: $games is missing (the free game data CI tests with)"; exit 2; }

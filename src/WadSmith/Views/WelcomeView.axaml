@@ -88,7 +88,11 @@
                         <Border Classes="card" Width="400" Margin="0,0,18,18" Padding="12" ToolTip.Tip="{Binding Location}">
                             <StackPanel Spacing="10">
                                 <Border CornerRadius="6" ClipToBounds="True" Height="168" Background="#000000">
-                                    <Image Source="{Binding Picture}" Stretch="UniformToFill" />
+                                    <Panel>
+                                        <!-- A tall cover sits whole over a blurred copy of itself; a wide title screen fills the box and hides the copy. -->
+                                        <Image Source="{Binding Picture}" Stretch="UniformToFill" Opacity="0.5" Effect="blur(30)" />
+                                        <Image Source="{Binding Picture}" Stretch="{Binding PictureStretch}" />
+                                    </Panel>
                                 </Border>
                                 <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" />
                                 <StackPanel Orientation="Horizontal" Spacing="8">

@@ -2,6 +2,7 @@
 
 - **Your WADs are all you need** — WadSmith now looks where GZDoom's own settings look, inside ZIP files (taking a base game out when one is in there), and around any folder you point it at: the folder, the one above it and the ones beside it. A large collection is read once and remembered.
 - **Pick a game file** — Point WadSmith straight at DOOM2.WAD, HERETIC.WAD or a ZIP holding one, on the start screen or in Preferences.
+- **Cover pictures** — Each game's tile shows the game's cover, fetched once from its Wikipedia article and kept; the game's own title screen shows until it arrives, and when there is none. Preferences → "Show each game's cover picture" turns it off, and then nothing is fetched.
 - **Maps found near your games** — Map packs in your folders (WADs with maps, loose or inside ZIPs) are matched to the game they are for, by their map names, their maps' namespace and the textures they use, and listed on that game's tile; pick a map to edit it. The pack is loaded with your project in the editor and when you play, so its own textures and things are there.
 - **Your maps, on the game they are for** — Each game's tile has "Your maps": open one, rename it, copy it or delete it (into a Deleted folder, never gone). Maps whose game is not found right now are listed under the tiles.
 - **The tools say how** — Pick Room and it says both ways to draw: drag a rectangle, or click corner by corner and double-click the last corner to finish; the Door and Window tools say what to click. While the Guide is open, the card shows the same line.

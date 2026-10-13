@@ -39,6 +39,16 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
     /// <summary>Cancelled when the application closes, so background work stops.</summary>
     public CancellationToken ShuttingDown => _shutdown.Token;
 
+    private readonly Lazy<HttpClient> _http = new(() =>
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd($"WadSmith/{typeof(AppServices).Assembly.GetName().Version?.ToString(3) ?? "0"} (+https://github.com/codingncaffeine/WadSmith)");
+        return client;
+    });
+
+    /// <summary>The web, for what is fetched once (a game's cover picture); null when WADSMITH_OFFLINE is set, as the tests and the gate set it, and nothing is fetched.</summary>
+    public HttpClient? Http => Environment.GetEnvironmentVariable("WADSMITH_OFFLINE") is "1" or "true" ? null : _http.Value;
+
     /// <summary>GZDoom's own data file, needed to remix classic maps; null when GZDoom is not installed.</summary>
     public string? EngineData { get; } = EngineDataFinder(settings.Current);
 

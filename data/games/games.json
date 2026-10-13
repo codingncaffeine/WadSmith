@@ -3,35 +3,35 @@
   "games": [
     { "id": "doom64", "title": "Doom 64", "engine": "doom64", "mapNamespace": "doom", "supported": false, "mustContain": ["MAP01", "SYMBOLS", "MOUNTA"] },
 
-    { "id": "freedm", "title": "FreeDM", "engine": "doom", "mapNamespace": "doom", "free": true, "mapNames": "MAPxx", "mustContain": ["MAP01", "FREEDM"] },
-    { "id": "freedoom2", "title": "Freedoom: Phase 2", "engine": "doom", "mapNamespace": "doom", "free": true, "mapNames": "MAPxx", "mustContain": ["MAP01", "FREEDOOM"] },
-    { "id": "freedoom1", "title": "Freedoom: Phase 1", "engine": "doom", "mapNamespace": "doom", "free": true, "mapNames": "ExMy", "mustContain": ["E1M1", "FREEDOOM"] },
+    { "id": "freedm", "wiki": "Freedoom", "title": "FreeDM", "engine": "doom", "mapNamespace": "doom", "free": true, "mapNames": "MAPxx", "mustContain": ["MAP01", "FREEDM"] },
+    { "id": "freedoom2", "wiki": "Freedoom", "title": "Freedoom: Phase 2", "engine": "doom", "mapNamespace": "doom", "free": true, "mapNames": "MAPxx", "mustContain": ["MAP01", "FREEDOOM"] },
+    { "id": "freedoom1", "wiki": "Freedoom", "title": "Freedoom: Phase 1", "engine": "doom", "mapNamespace": "doom", "free": true, "mapNames": "ExMy", "mustContain": ["E1M1", "FREEDOOM"] },
 
-    { "id": "chex3", "title": "Chex Quest 3", "engine": "chex", "mapNamespace": "doom", "mapNames": "ExMy", "mustContain": ["E1M1", "CYCLA1", "FLMBA1", "MAPINFO"] },
-    { "id": "chex", "title": "Chex Quest", "engine": "chex", "mapNamespace": "doom", "mapNames": "ExMy", "mustContain": ["E1M1", "E4M1", "W94_1", "POSSH0M0"] },
-    { "id": "hacx2", "title": "Hacx 2.0", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01", "HACX-E"] },
-    { "id": "hacx", "title": "Hacx", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01", "HACX-R"] },
+    { "id": "chex3", "wiki": "Chex Quest", "title": "Chex Quest 3", "engine": "chex", "mapNamespace": "doom", "mapNames": "ExMy", "mustContain": ["E1M1", "CYCLA1", "FLMBA1", "MAPINFO"] },
+    { "id": "chex", "wiki": "Chex Quest", "title": "Chex Quest", "engine": "chex", "mapNamespace": "doom", "mapNames": "ExMy", "mustContain": ["E1M1", "E4M1", "W94_1", "POSSH0M0"] },
+    { "id": "hacx2", "wiki": "HacX", "title": "Hacx 2.0", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01", "HACX-E"] },
+    { "id": "hacx", "wiki": "HacX", "title": "Hacx", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01", "HACX-R"] },
     { "id": "harmony", "title": "Harmony", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01", "0HAWK01", "0CARA3", "0NOSE1"] },
 
-    { "id": "strife-veteran", "title": "Strife: Veteran Edition", "engine": "strife", "mapNamespace": "strife", "mapNames": "MAPxx", "addOnFor": "strife", "mustContain": ["MAP35", "I_RELB", "FXAA_F"] },
-    { "id": "strife", "title": "Strife", "engine": "strife", "mapNamespace": "strife", "mapNames": "MAPxx", "mustContain": ["MAP01", "MAP33", "ENDSTRF"] },
-    { "id": "strife-teaser", "title": "Strife (teaser)", "engine": "strife", "mapNamespace": "strife", "mapNames": "MAPxx", "mustContain": ["MAP33", "ENDSTRF"] },
+    { "id": "strife-veteran", "wiki": "Strife (1996 video game)", "title": "Strife: Veteran Edition", "engine": "strife", "mapNamespace": "strife", "mapNames": "MAPxx", "addOnFor": "strife", "mustContain": ["MAP35", "I_RELB", "FXAA_F"] },
+    { "id": "strife", "wiki": "Strife (1996 video game)", "title": "Strife", "engine": "strife", "mapNamespace": "strife", "mapNames": "MAPxx", "mustContain": ["MAP01", "MAP33", "ENDSTRF"] },
+    { "id": "strife-teaser", "wiki": "Strife (1996 video game)", "title": "Strife (teaser)", "engine": "strife", "mapNamespace": "strife", "mapNames": "MAPxx", "mustContain": ["MAP33", "ENDSTRF"] },
 
-    { "id": "hexen", "title": "Hexen", "engine": "hexen", "mapNamespace": "hexen", "mapNames": "MAPxx", "mustContain": ["TITLE", "MAP01", "MAP40", "WINNOWR"] },
-    { "id": "hexen-deathkings", "title": "Hexen: Deathkings of the Dark Citadel", "engine": "hexen", "mapNamespace": "hexen", "mapNames": "MAPxx", "addOnFor": "hexen", "mustContain": ["TITLE", "MAP60", "CLUS1MSG"] },
-    { "id": "hexen-demo", "title": "Hexen (demo)", "engine": "hexen", "mapNamespace": "hexen", "mapNames": "MAPxx", "mustContain": ["TITLE", "MAP01", "WINNOWR"] },
+    { "id": "hexen", "wiki": "Hexen: Beyond Heretic", "title": "Hexen", "engine": "hexen", "mapNamespace": "hexen", "mapNames": "MAPxx", "mustContain": ["TITLE", "MAP01", "MAP40", "WINNOWR"] },
+    { "id": "hexen-deathkings", "wiki": "Hexen: Deathkings of the Dark Citadel", "title": "Hexen: Deathkings of the Dark Citadel", "engine": "hexen", "mapNamespace": "hexen", "mapNames": "MAPxx", "addOnFor": "hexen", "mustContain": ["TITLE", "MAP60", "CLUS1MSG"] },
+    { "id": "hexen-demo", "wiki": "Hexen: Beyond Heretic", "title": "Hexen (demo)", "engine": "hexen", "mapNamespace": "hexen", "mapNames": "MAPxx", "mustContain": ["TITLE", "MAP01", "WINNOWR"] },
 
     { "id": "blasphemer", "title": "Blasphemer", "engine": "heretic", "mapNamespace": "heretic", "free": true, "mapNames": "ExMy", "mustContain": ["E1M1", "E2M1", "TITLE", "BLASPHEM"] },
-    { "id": "heretic-sotsr", "title": "Heretic: Shadow of the Serpent Riders", "engine": "heretic", "mapNamespace": "heretic", "mapNames": "ExMy", "mustContain": ["E1M1", "E2M1", "TITLE", "MUS_E1M1", "EXTENDED"] },
-    { "id": "heretic", "title": "Heretic", "engine": "heretic", "mapNamespace": "heretic", "mapNames": "ExMy", "mustContain": ["E1M1", "E2M1", "TITLE", "MUS_E1M1"] },
-    { "id": "heretic-shareware", "title": "Heretic (shareware)", "engine": "heretic", "mapNamespace": "heretic", "mapNames": "ExMy", "mustContain": ["E1M1", "TITLE", "MUS_E1M1"] },
+    { "id": "heretic-sotsr", "wiki": "Heretic (video game)", "title": "Heretic: Shadow of the Serpent Riders", "engine": "heretic", "mapNamespace": "heretic", "mapNames": "ExMy", "mustContain": ["E1M1", "E2M1", "TITLE", "MUS_E1M1", "EXTENDED"] },
+    { "id": "heretic", "wiki": "Heretic (video game)", "title": "Heretic", "engine": "heretic", "mapNamespace": "heretic", "mapNames": "ExMy", "mustContain": ["E1M1", "E2M1", "TITLE", "MUS_E1M1"] },
+    { "id": "heretic-shareware", "wiki": "Heretic (video game)", "title": "Heretic (shareware)", "engine": "heretic", "mapNamespace": "heretic", "mapNames": "ExMy", "mustContain": ["E1M1", "TITLE", "MUS_E1M1"] },
 
-    { "id": "tnt", "title": "Final Doom: TNT: Evilution", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01", "REDTNT2"] },
-    { "id": "plutonia", "title": "Final Doom: The Plutonia Experiment", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01", "CAMO1"] },
-    { "id": "doom2", "title": "Doom II", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01"] },
+    { "id": "tnt", "wiki": "Final Doom", "title": "Final Doom: TNT: Evilution", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01", "REDTNT2"] },
+    { "id": "plutonia", "wiki": "Final Doom", "title": "Final Doom: The Plutonia Experiment", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01", "CAMO1"] },
+    { "id": "doom2", "wiki": "Doom II", "title": "Doom II", "engine": "doom", "mapNamespace": "doom", "mapNames": "MAPxx", "mustContain": ["MAP01"] },
 
-    { "id": "doom-ultimate", "title": "The Ultimate Doom", "engine": "doom", "mapNamespace": "doom", "mapNames": "ExMy", "mustContain": ["E1M1", "E2M1", "E3M1", "E4M1"] },
-    { "id": "doom", "title": "Doom", "engine": "doom", "mapNamespace": "doom", "mapNames": "ExMy", "mustContain": ["E1M1", "E2M1", "E3M1"] },
-    { "id": "doom-shareware", "title": "Doom (shareware)", "engine": "doom", "mapNamespace": "doom", "mapNames": "ExMy", "mustContain": ["E1M1"] }
+    { "id": "doom-ultimate", "wiki": "Doom (1993 video game)", "title": "The Ultimate Doom", "engine": "doom", "mapNamespace": "doom", "mapNames": "ExMy", "mustContain": ["E1M1", "E2M1", "E3M1", "E4M1"] },
+    { "id": "doom", "wiki": "Doom (1993 video game)", "title": "Doom", "engine": "doom", "mapNamespace": "doom", "mapNames": "ExMy", "mustContain": ["E1M1", "E2M1", "E3M1"] },
+    { "id": "doom-shareware", "wiki": "Doom (1993 video game)", "title": "Doom (shareware)", "engine": "doom", "mapNamespace": "doom", "mapNames": "ExMy", "mustContain": ["E1M1"] }
   ]
 }

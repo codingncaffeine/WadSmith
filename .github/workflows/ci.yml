@@ -30,6 +30,8 @@ jobs:
     env:
       DOTNET_NOLOGO: true
       DOTNET_CLI_TELEMETRY_OPTOUT: true
+      # The tests never reach the web (a game's cover picture is fetched by the app, never under test).
+      WADSMITH_OFFLINE: "1"
     steps:
       - uses: actions/checkout@v7
 

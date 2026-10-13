@@ -56,6 +56,17 @@ internal sealed partial class PreferencesViewModel : ObservableObject
         }
     }
 
+    public bool CoverPictures
+    {
+        get => _services.Settings.Current.CoverPictures;
+        set
+        {
+            _services.Settings.Current.CoverPictures = value;
+            _services.Settings.Save();
+            OnPropertyChanged();
+        }
+    }
+
     public bool CoachTips
     {
         get => _services.Settings.Current.CoachTips;

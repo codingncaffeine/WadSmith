@@ -59,6 +59,9 @@ public sealed class AppSettings
     // Comfort (D31).
     public bool LargeInterface { get; set; }
 
+    /// <summary>Whether the start screen fetches each game's cover picture from its Wikipedia article (once, kept in the cache); off, the game's own title screen shows and nothing is fetched.</summary>
+    public bool CoverPictures { get; set; } = true;
+
     /// <summary>The plan shows the player's size at the pointer and marks where the player cannot pass (D20).</summary>
     public bool ShowPlayerFit { get; set; } = true;
 

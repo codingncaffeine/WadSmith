@@ -22,6 +22,9 @@
                         <TextBlock Text="Takes effect the next time WadSmith starts." Classes="secondary" FontSize="12" Margin="28,0,0,0" />
                     </StackPanel>
 
+                    <CheckBox Content="Show each game's cover picture" IsChecked="{Binding CoverPictures}"
+                              ToolTip.Tip="The start screen fetches each game's cover from its Wikipedia article, once, and keeps it in WadSmith's cache. Off, the game's own title screen is shown instead, and nothing is fetched." />
+
                     <TextBlock Classes="section" Text="TEACHING" Margin="0,12,0,0" />
                     <StackPanel Spacing="4">
                         <CheckBox Content="Show tips in the status bar" IsChecked="{Binding CoachTips}"
