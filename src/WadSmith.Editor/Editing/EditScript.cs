@@ -34,6 +34,7 @@ public static class EditScript
         stairs X0 Y0 X1 Y1 [x|y]    stairs from the first point (bottom) to the second (top), running along x or y
         teleport X Y TOX TOY        the room at the point sends to the second point
         secret X Y                  the room at the point becomes a secret
+        hide DOORX DOORY X Y        the door at the first point looks like the wall beside it from outside the secret room at the second
         switch X Y WALLX WALLY      a switch on the wall nearest the second point for the door or lift at the first
         trigger X Y DOORX DOORY     the line nearest the first point opens the door at the second the first time it is walked over
         exit X Y                    the wall nearest the point gets the exit switch, a piece of it round the point
@@ -166,6 +167,12 @@ public static class EditScript
                 var secret = Room(1);
                 Record("Make a secret", e => Secrets.Make(e, g, secret));
                 made = "a secret";
+                break;
+            case "hide":
+                if (Doors.Recognise(g, Room(1)) is not { } hidden) throw new ArgumentException("no door there");
+                var behind = Room(3);
+                Record("Hide the door", e => Secrets.HideDoor(e, g, hidden, behind));
+                made = "a door that looks like the wall beside it";
                 break;
             case "switch":
                 var target = Room(1);

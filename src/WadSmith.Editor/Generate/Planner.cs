@@ -323,6 +323,9 @@ public static class Planner
             {
                 delta = rng.Pick([-16, -8, 0, 0, 8, 16]);
                 if (link.Kind != LinkKind.Locked) link.Kind = LinkKind.Door;
+
+                // A secret's door is flush with the room's wall, where it can pass for the wall.
+                if (to.Role == RoomRole.Secret) link.DoorAt = from.Index;
             }
             else if (s.Lifts && length >= 256 && rng.Chance(0.12))
             {

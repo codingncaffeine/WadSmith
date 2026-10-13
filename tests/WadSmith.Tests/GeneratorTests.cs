@@ -203,6 +203,33 @@ public sealed class GeneratorTests
         Assert.DoesNotContain(without.Map.Things, t => t.OnMap && t.Type > 21000);
     }
 
+    /// <summary>A secret's door is flush with its room's wall and looks like it from the room: the room's wall picture on its face, marked secret (the automap shows it as wall).</summary>
+    [Fact]
+    public void EverySecretDoorLooksLikeTheWallBesideIt()
+    {
+        var secrets = 0;
+        for (var i = 0; i < 10; i++)
+        {
+            var made = MapMaker.Make(For("doom", $"secret-{i}", MapSize.Huge, style: (MapStyle)(i % 4)));
+            var g = Editor.Geometry.MapGeometry.Build(made.Map.Frame);
+            foreach (var link in made.Plan.Links.Where(l => made.Plan.Rooms[l.A].Role == RoomRole.Secret || made.Plan.Rooms[l.B].Role == RoomRole.Secret))
+            {
+                secrets++;
+                var room = made.Plan.Rooms[link.DoorAt];
+                Assert.NotEqual(RoomRole.Secret, room.Role);
+                var (mx, my) = Planner.Mouth(link, room);
+                var face = g.LineNear(new(mx, my), 2)!;
+                var (cx, cy) = Planner.Middle(made.Plan, room);
+                var inRoom = g.SectorAt(new(cx, cy));
+                var side = ReferenceEquals(face.Front.Sector, inRoom) ? face.Front : face.Back!;
+                Assert.True(face.Flag("secret"), $"seed secret-{i}: the door's face at ({mx}, {my}) is not marked secret");
+                Assert.Equal((room.Look?.Look ?? Look.For("doom")).Wall, side.Top);
+            }
+        }
+
+        Assert.True(secrets >= 30, $"only {secrets} secrets in 10 huge maps");
+    }
+
     [Fact]
     public void EveryDifficultyHasMonstersAndTheHardOnesMore()
     {

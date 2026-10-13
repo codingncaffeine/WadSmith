@@ -153,7 +153,20 @@ public static class MapMaker
         }
 
         Line($"# Secrets, teleporters and the exit");
-        foreach (var room in plan.Rooms.Where(r => r.Role == RoomRole.Secret)) Line($"secret {room.Box.CentreX} {room.Box.CentreY}");
+        foreach (var room in plan.Rooms.Where(r => r.Role == RoomRole.Secret))
+        {
+            Line($"secret {room.Box.CentreX} {room.Box.CentreY}");
+
+            // Its door, flush with the room's wall, takes the wall's look from the room.
+            if (plan.Links.FirstOrDefault(l => (l.A == room.Index || l.B == room.Index) && l.Kind == LinkKind.Door && l.DoorAt != room.Index) is { } link)
+            {
+                var near = plan.Rooms[link.DoorAt];
+                var (mx, my) = Planner.Mouth(link, near);
+                var (ix, iy) = link.AlongX ? (Math.Abs(mx - near.Box.X1) < 1 ? mx + 8 : mx - 8, my) : (mx, Math.Abs(my - near.Box.Y1) < 1 ? my + 8 : my - 8);
+                Line($"hide {ix} {iy} {room.Box.CentreX} {room.Box.CentreY}");
+            }
+        }
+
         foreach (var t in plan.Teleports)
         {
             Line($"room {t.Pad.X0} {t.Pad.Y0} {t.Pad.X1} {t.Pad.Y1}");
