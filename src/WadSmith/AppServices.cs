@@ -70,7 +70,7 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
     /// <summary>The project's game opened for drawing; scans the game folders first when no scan has finished. Call on a worker.</summary>
     public GameResources? ResourcesFor(Project project)
     {
-        var games = Games ?? GameLocator.Scan(GameLocator.StandardFolders(Environment.GetEnvironmentVariable).Concat(Settings.Current.GameFolders).Distinct(), cancel: ShuttingDown);
+        var games = Games ?? GameLocator.Scan(GameLocator.StandardFolders(Environment.GetEnvironmentVariable, Settings.Current.EnginePath).Concat(Settings.Current.GameFolders).Distinct(), cancel: ShuttingDown);
         try
         {
             return GameResources.Load(project.Info.Game, project.Folder, games, EngineData, project.Info.AddOns);
@@ -112,7 +112,7 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
     }
 
     /// <summary>The games the last scan found, scanning first when none has finished. Call on a worker.</summary>
-    public IReadOnlyList<FoundGame> FoundGames() => Games ?? GameLocator.Scan(GameLocator.StandardFolders(Environment.GetEnvironmentVariable).Concat(Settings.Current.GameFolders).Distinct(), cancel: ShuttingDown);
+    public IReadOnlyList<FoundGame> FoundGames() => Games ?? GameLocator.Scan(GameLocator.StandardFolders(Environment.GetEnvironmentVariable, Settings.Current.EnginePath).Concat(Settings.Current.GameFolders).Distinct(), cancel: ShuttingDown);
 
     public void Shutdown()
     {

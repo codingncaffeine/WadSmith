@@ -8,28 +8,67 @@ public sealed record EngineInstall(string Name, string Program, string Kind);
 
 /// <summary>
 /// Finds the engines installed (§3.2) without running any of them (an engine started to ask its version starts the game):
-/// a path the user chose, GZDoom and UZDoom on the PATH, and the Flatpak GZDoom by its installed folder.
+/// a path the user chose, GZDoom and UZDoom on the PATH, and the Flatpak GZDoom by its installed folder. On Windows,
+/// where GZDoom is a folder unpacked anywhere, also its installer's and Scoop's folders.
 /// </summary>
 public static class EngineLocator
 {
     public static IReadOnlyList<EngineInstall> Find(string? custom, Func<string, string?> env)
     {
+        var windows = OperatingSystem.IsWindows();
         var found = new List<EngineInstall>();
-        if (!string.IsNullOrWhiteSpace(custom) && File.Exists(custom)) found.Add(new EngineInstall("Your engine", custom, "custom"));
-        var path = (env("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
-        string? OnPath(string name) => path.Select(d => Path.Combine(d, name)).FirstOrDefault(File.Exists);
-        foreach (var (file, name) in new[] { ("gzdoom", "GZDoom"), ("uzdoom", "UZDoom") })
+        void Add(string name, string program, string kind)
         {
-            if (OnPath(file) is { } program && found.All(f => f.Program != program)) found.Add(new EngineInstall(name, program, "native"));
+            if (found.All(f => !WindowsFolders.PathComparer.Equals(f.Program, program))) found.Add(new EngineInstall(name, program, kind));
+        }
+
+        if (!string.IsNullOrWhiteSpace(custom) && File.Exists(custom)) Add("Your engine", custom, "custom");
+        var path = (env("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+        string? OnPath(string name) => path.Select(d => Path.Combine(d, windows ? name + ".exe" : name)).FirstOrDefault(File.Exists);
+        var engines = new[] { ("gzdoom", "GZDoom"), ("uzdoom", "UZDoom") };
+        if (windows)
+        {
+            // The installer's folder and Scoop's, before the PATH: Scoop puts a stand-in program on the PATH, away from the engine's files.
+            var profile = WindowsFolders.UserProfile(env);
+            foreach (var (file, name) in engines)
+            {
+                var places = WindowsFolders.ProgramFiles(env).Select(p => Path.Combine(p, name, file + ".exe"));
+                if (profile is not null) places = places.Append(Path.Combine(profile, "scoop", "apps", file, "current", file + ".exe"));
+                if (places.FirstOrDefault(File.Exists) is { } program) Add(name, program, "native");
+            }
+        }
+
+        foreach (var (file, name) in engines)
+        {
+            if (OnPath(file) is { } program && !(windows && found.Any(f => f.Name == name) && Path.GetFileName(Path.GetDirectoryName(program)) == "shims")) Add(name, program, "native");
         }
 
         var home = env("HOME") ?? "";
-        if (OnPath("flatpak") is { } flatpak && new[] { Path.Combine(home, ".local/share/flatpak/app/org.zdoom.GZDoom"), "/var/lib/flatpak/app/org.zdoom.GZDoom" }.Any(Directory.Exists))
+        if (!windows && OnPath("flatpak") is { } flatpak && new[] { Path.Combine(home, ".local/share/flatpak/app/org.zdoom.GZDoom"), "/var/lib/flatpak/app/org.zdoom.GZDoom" }.Any(Directory.Exists))
         {
             found.Add(new EngineInstall("GZDoom (Flatpak)", flatpak, "flatpak"));
         }
 
         return found;
+    }
+
+    /// <summary>
+    /// The folders the engines found (and the one the user chose) are in, a link followed to the engine itself: on Windows
+    /// GZDoom keeps its data file there, and players put their games beside it.
+    /// </summary>
+    public static IReadOnlyList<string> Folders(string? custom, Func<string, string?> env) =>
+        [.. Find(custom, env).Where(e => e.Kind != "flatpak").Select(e => Path.GetDirectoryName(RealPath(e.Program))).OfType<string>().Distinct(WindowsFolders.PathComparer)];
+
+    private static string RealPath(string file)
+    {
+        try
+        {
+            return new FileInfo(file).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? file;
+        }
+        catch (IOException)
+        {
+            return file;
+        }
     }
 }
 
@@ -145,15 +184,20 @@ public static class PlayCommand
 /// </summary>
 public static class EngineConfig
 {
-    /// <summary>The settings file to pass with <c>-config</c>, copying the user's the first time.</summary>
-    public static string Prepare(string dataFolder, Func<string, string?> env)
+    /// <summary>
+    /// The settings file to pass with <c>-config</c>, copying the user's the first time. <paramref name="enginePath"/> is
+    /// the engine the user chose, beside which a Windows GZDoom may keep its settings.
+    /// </summary>
+    public static string Prepare(string dataFolder, Func<string, string?> env, string? enginePath = null)
     {
         var folder = Path.Combine(dataFolder, "engine");
         Directory.CreateDirectory(folder);
         var mine = Path.Combine(folder, "gzdoom.ini");
         if (File.Exists(mine)) return mine;
         var home = env("HOME") ?? "";
-        var theirs = new[] { Path.Combine(home, ".config/gzdoom/gzdoom.ini"), Path.Combine(home, ".var/app", PlayCommand.FlatpakApp, ".config/gzdoom/gzdoom.ini") }.FirstOrDefault(File.Exists);
+        var theirs = new[] { Path.Combine(home, ".config/gzdoom/gzdoom.ini"), Path.Combine(home, ".var/app", PlayCommand.FlatpakApp, ".config/gzdoom/gzdoom.ini") }
+            .Concat(OperatingSystem.IsWindows() ? Games.GameLocator.WindowsEngineSettings(env, EngineLocator.Folders(enginePath, env)).Select(s => s.File) : [])
+            .FirstOrDefault(File.Exists);
         if (theirs is not null) File.Copy(theirs, mine);
         return mine;
     }

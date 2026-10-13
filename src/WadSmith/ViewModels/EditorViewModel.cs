@@ -1524,7 +1524,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
         var data = _services.Paths.Data;
         var games = await Task.Run(_services.FoundGames).ConfigureAwait(true);
-        var config = WadSmith.Core.Engines.EngineConfig.Prepare(data, Environment.GetEnvironmentVariable);
+        var config = WadSmith.Core.Engines.EngineConfig.Prepare(data, Environment.GetEnvironmentVariable, _services.Settings.Current.EnginePath);
         var (request, why) = WadSmith.Core.Engines.PlayRequests.For(Session.Project, Session.Slot, games, config, Path.Combine(data, "engine", "view", "engine-view.log"), 3);
         if (request is null)
         {
@@ -1687,7 +1687,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
         var data = _services.Paths.Data;
         var games = await Task.Run(_services.FoundGames).ConfigureAwait(true);
-        var config = WadSmith.Core.Engines.EngineConfig.Prepare(data, Environment.GetEnvironmentVariable);
+        var config = WadSmith.Core.Engines.EngineConfig.Prepare(data, Environment.GetEnvironmentVariable, _services.Settings.Current.EnginePath);
         var log = Path.Combine(data, "engine", "last-play.log");
         var (request, why) = WadSmith.Core.Engines.PlayRequests.For(Session.Project, Session.Slot, games, config, log, Skill + 1);
         if (request is null)

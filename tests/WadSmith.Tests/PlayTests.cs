@@ -12,8 +12,9 @@ public sealed class PlayTests
     {
         using var temp = new TempFolder();
         var bin = Directory.CreateDirectory(Path.Combine(temp.Path, "bin")).FullName;
-        File.WriteAllText(Path.Combine(bin, "gzdoom"), "");
-        File.WriteAllText(Path.Combine(bin, "uzdoom"), "");
+        var exe = OperatingSystem.IsWindows() ? ".exe" : "";
+        File.WriteAllText(Path.Combine(bin, "gzdoom" + exe), "");
+        File.WriteAllText(Path.Combine(bin, "uzdoom" + exe), "");
         var mine = Path.Combine(temp.Path, "my-engine");
         File.WriteAllText(mine, "");
         string? Env(string name) => name switch { "PATH" => bin, "HOME" => temp.Path, _ => null };
@@ -21,7 +22,8 @@ public sealed class PlayTests
         var found = EngineLocator.Find(mine, Env);
         Assert.Equal(("Your engine", mine, "custom"), (found[0].Name, found[0].Program, found[0].Kind));
 
-        // The Flatpak one is known by its installed folder (with flatpak itself on the path).
+        // The Flatpak one is known by its installed folder (with flatpak itself on the path); there is none on Windows.
+        if (OperatingSystem.IsWindows()) return;
         File.WriteAllText(Path.Combine(bin, "flatpak"), "");
         Directory.CreateDirectory(Path.Combine(temp.Path, ".local/share/flatpak/app/org.zdoom.GZDoom"));
         Assert.Contains(EngineLocator.Find(null, Env), e => e.Kind == "flatpak");

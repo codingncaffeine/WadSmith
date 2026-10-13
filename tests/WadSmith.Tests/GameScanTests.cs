@@ -173,7 +173,8 @@ public sealed class GameScanTests
             Path=$HOME/soundfonts
             """);
         string? Env(string name) => name == "HOME" ? home : null;
-        Assert.Equal([Path.Combine(home, "mywads"), "/usr/share/games/doom", Path.Combine(home, "pwads")], GameLocator.EngineSearchFolders(home, Env));
+        // First, before any a Windows GZDoom of this computer's own adds from Documents\My Games.
+        Assert.Equal([Path.Combine(home, "mywads"), "/usr/share/games/doom", Path.Combine(home, "pwads")], GameLocator.EngineSearchFolders(home, Env).Take(3));
 
         // Only the ones that exist reach the standard list.
         Directory.CreateDirectory(Path.Combine(home, "pwads"));

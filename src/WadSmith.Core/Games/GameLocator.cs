@@ -54,15 +54,17 @@ public static partial class GameLocator
     /// <summary>A WAD inside an archive bigger than this is not read.</summary>
     private const long LargestInnerWad = 512L * 1024 * 1024;
 
-    /// <summary>The folders worth looking in on this computer, existing ones only.</summary>
-    public static IReadOnlyList<string> StandardFolders(Func<string, string?> environment) => StandardTargets(environment).Select(t => t.Folder).ToList();
+    /// <summary>The folders worth looking in on this computer, existing ones only; <paramref name="enginePath"/> is the engine the user chose.</summary>
+    public static IReadOnlyList<string> StandardFolders(Func<string, string?> environment, string? enginePath = null) => StandardTargets(environment, enginePath).Select(t => t.Folder).ToList();
 
     /// <summary>
     /// The folders worth looking in on this computer, existing ones only, each with whether its archives are read: the
-    /// game libraries (Steam, Heroic, Bottles) are not, every installed game there keeping its own ZIPs.
+    /// game libraries (Steam, GOG, Heroic, Bottles, the Xbox app) are not, every installed game there keeping its own ZIPs.
+    /// The home folder itself is only looked at, never searched down. <paramref name="enginePath"/> is the engine the user chose.
     /// </summary>
-    public static IReadOnlyList<ScanTarget> StandardTargets(Func<string, string?> environment)
+    public static IReadOnlyList<ScanTarget> StandardTargets(Func<string, string?> environment, string? enginePath = null)
     {
+        var windows = OperatingSystem.IsWindows();
         var home = environment("HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile, Environment.SpecialFolderOption.DoNotVerify);
         var folders = new List<string>
         {
@@ -73,15 +75,26 @@ public static partial class GameLocator
             Path.Combine(home, ".var/app/org.zdoom.GZDoom/.config/gzdoom"),
             Path.Combine(home, ".config/uzdoom"),
         };
+
+        // On Windows GZDoom is a folder unpacked anywhere, and its own folder ($PROGDIR) is where it looks for games first.
+        var engineFolders = windows ? Engines.EngineLocator.Folders(enginePath, environment) : [];
+        folders.AddRange(engineFolders);
         if (environment("DOOMWADDIR") is { Length: > 0 } waddir) folders.Add(waddir);
-        if (environment("DOOMWADPATH") is { Length: > 0 } wadpath) folders.AddRange(wadpath.Split(':', StringSplitOptions.RemoveEmptyEntries));
-        folders.AddRange(EngineSearchFolders(home, environment));
+        if (environment("DOOMWADPATH") is { Length: > 0 } wadpath) folders.AddRange(wadpath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries));
+        folders.AddRange(EngineSearchFolders(home, environment, engineFolders));
 
         var libraries = new List<string> { Path.Combine(home, "Games/Heroic"), Path.Combine(home, ".local/share/bottles/bottles") };
-        // Steam: every library folder's installed games.
-        foreach (var steam in new[] { ".local/share/Steam", ".steam/steam", ".var/app/com.valvesoftware.Steam/.local/share/Steam" })
+        var steams = new[] { ".local/share/Steam", ".steam/steam", ".var/app/com.valvesoftware.Steam/.local/share/Steam" }.Select(s => Path.Combine(home, s)).ToList();
+        if (windows)
         {
-            var vdf = Path.Combine(home, steam, "steamapps/libraryfolders.vdf");
+            steams.AddRange(WindowsSteam(environment));
+            libraries.AddRange(WindowsLibraries(environment));
+        }
+
+        // Steam: every library folder's installed games.
+        foreach (var steam in steams)
+        {
+            var vdf = Path.Combine(steam, "steamapps/libraryfolders.vdf");
             if (!File.Exists(vdf)) continue;
             try
             {
@@ -95,26 +108,97 @@ public static partial class GameLocator
             }
         }
 
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seen = new HashSet<string>(WindowsFolders.PathComparer);
         var targets = new List<ScanTarget>();
-        foreach (var f in folders.Where(Directory.Exists)) if (seen.Add(f)) targets.Add(new ScanTarget(f, DefaultDepth));
-        foreach (var f in libraries.Where(Directory.Exists)) if (seen.Add(f)) targets.Add(new ScanTarget(f, DefaultDepth, ReadArchives: false));
+        var homeFolder = Normalized(home);
+        foreach (var f in folders.Select(Normalized).OfType<string>().Where(Directory.Exists))
+        {
+            if (seen.Add(f)) targets.Add(new ScanTarget(f, WindowsFolders.PathComparer.Equals(f, homeFolder) ? 0 : DefaultDepth));
+        }
+
+        foreach (var f in libraries.Select(Normalized).OfType<string>().Where(Directory.Exists)) if (seen.Add(f)) targets.Add(new ScanTarget(f, DefaultDepth, ReadArchives: false));
         return targets;
+    }
+
+    /// <summary>A folder written one way (full, no separator at the end), or null when it is no path at all.</summary>
+    private static string? Normalized(string folder)
+    {
+        try
+        {
+            var full = Path.GetFullPath(folder);
+            return IsRoot(full) ? full : full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Where Steam is installed on Windows: as the registry says, else its usual folder.</summary>
+    private static IEnumerable<string> WindowsSteam(Func<string, string?> environment)
+    {
+        if (WindowsFolders.SteamFolder() is { } registered) yield return registered;
+        foreach (var programs in WindowsFolders.ProgramFiles(environment)) yield return Path.Combine(programs, "Steam");
+    }
+
+    /// <summary>
+    /// The game libraries on Windows other than Steam's: every GOG game's folder as GOG Galaxy registered it (GZDoom looks
+    /// in the same places), GOG's usual folders, and the Xbox app's XboxGames folder on each drive.
+    /// </summary>
+    private static IEnumerable<string> WindowsLibraries(Func<string, string?> environment)
+    {
+        foreach (var gog in WindowsFolders.GogGameFolders()) yield return gog;
+        foreach (var programs in WindowsFolders.ProgramFiles(environment)) yield return Path.Combine(programs, "GOG Galaxy", "Games");
+        if (environment("SystemDrive") is { Length: > 0 } system) yield return Path.Combine(system + Path.DirectorySeparatorChar, "GOG Games");
+        DriveInfo[] drives;
+        try
+        {
+            drives = DriveInfo.GetDrives();
+        }
+        catch (IOException)
+        {
+            yield break;
+        }
+
+        foreach (var drive in drives.Where(d => d.DriveType == DriveType.Fixed)) yield return Path.Combine(drive.RootDirectory.FullName, "XboxGames");
+    }
+
+    /// <summary>
+    /// A Windows GZDoom's (or UZDoom's) settings files, in the order the engine prefers them, each with the engine folder
+    /// <c>$PROGDIR</c> stands for in it when that is known: the portable file beside the engine, the one in Documents\My Games,
+    /// and the older places (%APPDATA%, and beside the engine named after the user).
+    /// </summary>
+    public static IReadOnlyList<(string File, string? ProgDir)> WindowsEngineSettings(Func<string, string?> environment, IReadOnlyList<string> engineFolders)
+    {
+        var settings = new List<(string, string?)>();
+        var user = environment("USERNAME");
+        foreach (var (name, lower) in new[] { ("GZDoom", "gzdoom"), ("UZDoom", "uzdoom") })
+        {
+            settings.AddRange(engineFolders.Select(f => (Path.Combine(f, lower + "_portable.ini"), (string?)f)));
+            settings.Add((Path.Combine(WindowsFolders.Documents, "My Games", name, lower + ".ini"), null));
+            if (WindowsFolders.RoamingAppData(environment) is { } roaming) settings.Add((Path.Combine(roaming, name, lower + ".ini"), null));
+            if (user is { Length: > 0 }) settings.AddRange(engineFolders.Select(f => (Path.Combine(f, $"{lower}-{user}.ini"), (string?)f)));
+            settings.AddRange(engineFolders.Select(f => (Path.Combine(f, lower + ".ini"), (string?)f)));
+        }
+
+        return settings;
     }
 
     /// <summary>
     /// The folders GZDoom and UZDoom were told to search for games (their settings' IWADSearch and FileSearch
-    /// directories): a player who already runs the engine has told it where the WADs are.
+    /// directories): a player who already runs the engine has told it where the WADs are. <paramref name="engineFolders"/>
+    /// are the Windows engines' folders, beside which their settings may be.
     /// </summary>
-    public static IEnumerable<string> EngineSearchFolders(string home, Func<string, string?> environment)
+    public static IEnumerable<string> EngineSearchFolders(string home, Func<string, string?> environment, IReadOnlyList<string>? engineFolders = null)
     {
-        var inis = new[]
+        var inis = new List<(string File, string? ProgDir)>
         {
-            Path.Combine(home, ".config/gzdoom/gzdoom.ini"),
-            Path.Combine(home, ".var/app/org.zdoom.GZDoom/.config/gzdoom/gzdoom.ini"),
-            Path.Combine(home, ".config/uzdoom/uzdoom.ini"),
+            (Path.Combine(home, ".config/gzdoom/gzdoom.ini"), null),
+            (Path.Combine(home, ".var/app/org.zdoom.GZDoom/.config/gzdoom/gzdoom.ini"), null),
+            (Path.Combine(home, ".config/uzdoom/uzdoom.ini"), null),
         };
-        foreach (var ini in inis)
+        if (OperatingSystem.IsWindows()) inis.AddRange(WindowsEngineSettings(environment, engineFolders ?? []));
+        foreach (var (ini, progDir) in inis)
         {
             string[] lines;
             try
@@ -139,8 +223,10 @@ public static partial class GameLocator
 
                 if (!inSearch || !line.StartsWith("Path=", StringComparison.OrdinalIgnoreCase)) continue;
                 var value = line[5..].Trim();
-                if (value is "." or "$PROGDIR" or "") continue;
-                value = Expand(Expand(value, "$HOME", home), "$DOOMWADDIR", environment("DOOMWADDIR"));
+                if (value is "." or "") continue;
+                // GZDoom reads $HOME from the environment, and on Windows that is usually not set: the entry then names no folder.
+                var homeValue = OperatingSystem.IsWindows() ? environment("HOME") : home;
+                value = Expand(Expand(Expand(value, "$PROGDIR", progDir), "$HOME", homeValue), "$DOOMWADDIR", environment("DOOMWADDIR"));
                 if (value.Contains('$') || !Path.IsPathRooted(value)) continue;
                 yield return value;
             }
@@ -153,7 +239,7 @@ public static partial class GameLocator
     /// </summary>
     private static string Expand(string value, string variable, string? with)
     {
-        if (with is null || !value.StartsWith(variable, StringComparison.Ordinal)) return value;
+        if (string.IsNullOrEmpty(with) || !value.StartsWith(variable, StringComparison.OrdinalIgnoreCase)) return value;
         var rest = value[variable.Length..].TrimStart('/', '\\');
         return rest.Length == 0 ? with : Path.Combine(with, rest.Replace('/', Path.DirectorySeparatorChar));
     }
@@ -195,8 +281,8 @@ public static partial class GameLocator
     {
         var folders = new List<FolderReport>();
         var games = new List<FoundGame>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var expanded = targets.SelectMany(t => t.Added ? Around(t.Folder, t.Depth) : [t]).GroupBy(t => Path.GetFullPath(t.Folder), StringComparer.Ordinal).Select(g => g.OrderByDescending(t => t.Depth).First());
+        var seen = new HashSet<string>(WindowsFolders.PathComparer);
+        var expanded = targets.SelectMany(t => t.Added ? Around(t.Folder, t.Depth) : [t]).GroupBy(t => Normalized(t.Folder) ?? t.Folder, WindowsFolders.PathComparer).Select(g => g.OrderByDescending(t => t.Depth).First());
         foreach (var target in expanded)
         {
             if (!Directory.Exists(target.Folder)) continue;

@@ -26,7 +26,7 @@ public static class EngineData
     /// <summary>
     /// The first engine data file found: in the usual install locations, then in the Flatpak GZDoom's files (a system or
     /// a user install), then in <paramref name="alsoIn"/> (the user's game folders and the chosen engine's folder: a
-    /// portable or Windows GZDoom keeps it beside its games), or null.
+    /// portable or Windows GZDoom keeps it beside its games), then on Windows beside the engines found there, or null.
     /// </summary>
     public static string? Find(IEnumerable<string>? alsoIn = null, Func<string, string?>? env = null) =>
         Find(alsoIn, env ?? Environment.GetEnvironmentVariable, Candidates);
@@ -34,7 +34,8 @@ public static class EngineData
     /// <summary>As <see cref="Find(IEnumerable{string}?, Func{string, string?}?)"/>, with the install locations given (a test passes none).</summary>
     public static string? Find(IEnumerable<string>? alsoIn, Func<string, string?> env, IReadOnlyList<string> installLocations) =>
         installLocations.FirstOrDefault(File.Exists)
-        ?? FlatpakFolders(env).Concat(alsoIn ?? []).Where(f => !string.IsNullOrEmpty(f)).SelectMany(f => Names.Select(n => Path.Combine(f, n))).FirstOrDefault(File.Exists);
+        ?? FlatpakFolders(env).Concat(alsoIn ?? []).Concat(OperatingSystem.IsWindows() ? Engines.EngineLocator.Folders(null, env) : [])
+            .Where(f => !string.IsNullOrEmpty(f)).SelectMany(f => Names.Select(n => Path.Combine(f, n))).FirstOrDefault(File.Exists);
 
     /// <summary>
     /// Where the Flatpak GZDoom (org.zdoom.GZDoom, a system or a user install) keeps its data: under the Flatpak's prefix,

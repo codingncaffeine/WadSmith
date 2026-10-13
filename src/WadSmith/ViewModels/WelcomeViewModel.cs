@@ -482,7 +482,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         Scanning = true;
         Status = "Looking for your games…";
         var added = _services.Settings.Current.GameFolders.ToList();
-        var targets = GameLocator.StandardTargets(Environment.GetEnvironmentVariable).Concat(added.Select(f => new ScanTarget(f, GameLocator.DefaultDepth, Added: true))).ToList();
+        var targets = GameLocator.StandardTargets(Environment.GetEnvironmentVariable, _services.Settings.Current.EnginePath).Concat(added.Select(f => new ScanTarget(f, GameLocator.DefaultDepth, Added: true))).ToList();
         var extracted = ExtractedFolder;
         var cachePath = Path.Combine(_services.Paths.Cache, "game-scan.json");
         var packCachePath = Path.Combine(_services.Paths.Cache, "pack-scan.json");
