@@ -54,7 +54,11 @@ public static class Problems
     {
         var f = geometry.Frame;
         var found = new List<Problem>();
-        if (classic is not null) NotClassic(f, classic, found);
+        if (classic is not null)
+        {
+            NotClassic(f, classic, found);
+            FormatLimits(f, classic, found);
+        }
         NoStart(geometry, engine, found);
         ManyStarts(f, found);
         NoExit(f, found);
@@ -155,6 +159,33 @@ public static class Problems
 
         var rooms = f.Sectors.Where(s => s.Element is not null && ClassicTranslation.SectorTypeOf(s.Special, On(s.Extra, "secret"), rules.Xlat) is null).Select(s => s.Element!).ToList();
         if (rooms.Count > 0) found.Add(new Problem("not-classic", Severity.Warning, $"{(rooms.Count == 1 ? "A room's" : string.Create(CultureInfo.InvariantCulture, $"{rooms.Count} rooms'"))} action has no type in {target} (a secret with another action, or an action the classic engine lacks): the map would play in GZDoom only.", rooms));
+    }
+
+    /// <summary>
+    /// The classic format's own limits (6b.4), for vanilla and limit-removing alike: texture and flat names of more than
+    /// eight letters, which the format cannot hold, and more walls, sides or rooms than its 16-bit numbers reach.
+    /// </summary>
+    private static void FormatLimits(MapFrame f, ClassicRules rules, List<Problem> found)
+    {
+        var target = Targets.TitleOf(rules.Target);
+        var longWalls = f.Sides.Where(s => s.Element is { Line: not null } && new[] { s.Top, s.Middle, s.Bottom }.Any(t => t.Length > 8)).Select(s => (Element)s.Element!.Line!).Distinct().ToList();
+        var longRooms = f.Sectors.Where(s => s.Element is not null && (s.FloorTexture.Length > 8 || s.CeilingTexture.Length > 8)).Select(s => (Element)s.Element!).ToList();
+        if (longWalls.Count + longRooms.Count > 0)
+        {
+            found.Add(new Problem("long-names", Severity.Error, $"{longWalls.Count + longRooms.Count} wall{(longWalls.Count + longRooms.Count == 1 ? "" : "s")} or floor{(longWalls.Count + longRooms.Count == 1 ? "" : "s")} use a picture whose name is longer than eight letters, which {target}'s format cannot hold. Choose one of the game's own pictures.", [.. longWalls, .. longRooms]));
+        }
+
+        const int Most = 32767;
+        var counts = new (string What, int Count)[]
+        {
+            ("walls", f.Lines.Count(l => l.Element is not null)),
+            ("wall sides", f.Sides.Count(s => s.Element is not null)),
+            ("rooms", f.Sectors.Count(s => s.Element is not null)),
+        };
+        foreach (var (what, count) in counts.Where(c => c.Count > Most))
+        {
+            found.Add(new Problem("format-limit", Severity.Error, string.Create(CultureInfo.InvariantCulture, $"The map has {count:N0} {what}; {target}'s format numbers them up to {Most:N0}. Split the map, or play it in GZDoom."), []));
+        }
     }
 
     /// <summary>

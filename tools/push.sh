@@ -3,11 +3,11 @@
 # first, this waits for that run, and main moves when it is green. A red run prints the failed tests and leaves main
 # as it was, so main is never red and a Windows-only failure is fixed before it lands. The content and identity scans
 # run first. Start it in the background after tools/gate.sh has passed and keep working.
-#   tools/push.sh
+#   tools/push.sh [COMMIT]     (default HEAD; tools/chain.sh passes the commit it gated)
 set -uo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p scratch/gate
-sha=$(git rev-parse HEAD)
+sha=$(git rev-parse "${1:-HEAD}")
 short=${sha:0:7}
 
 echo "── scans"
