@@ -188,6 +188,14 @@ public enum ThingRole
 /// </summary>
 public sealed record PlannedThing(ThingRole Role, int Number, double X, double Y, int Angle, int FromSkill = 0, bool Ambush = false, MonsterKind? Monster = null, int Room = -1, string? Family = null);
 
+/// <summary>
+/// A window between neighbouring rooms (D59: the community's maps show the player where they will go): a nook off
+/// <paramref name="From"/>'s wall reaching across the gap and a thin pane at its end — in <paramref name="To"/>'s wall, or, across
+/// a wider gap, between that nook and one off <paramref name="To"/>'s wall (<paramref name="FarNook"/>) — its sill above both floors so
+/// no one steps through, its top below both nooks' ceilings; the sides of each room it is on.
+/// </summary>
+public sealed record PlannedWindow(int From, int To, string FromSide, string ToSide, Box Nook, Box Pane, double NookCeiling, double Sill, double Top, Box? FarNook = null, double FarCeiling = 0);
+
 /// <summary>A teleporter: the pad's rectangle in a room and where it sends the player.</summary>
 public sealed record PlannedTeleport(int Room, Box Pad, int ToRoom, double ToX, double ToY);
 
@@ -212,6 +220,8 @@ public sealed class MapPlan
     public List<PlannedThing> Things { get; } = [];
 
     public List<PlannedTeleport> Teleports { get; } = [];
+
+    public List<PlannedWindow> Windows { get; } = [];
 
     /// <summary>The rooms of the way from the start to the exit, in order.</summary>
     public List<int> Path { get; } = [];

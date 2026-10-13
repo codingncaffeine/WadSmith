@@ -157,6 +157,62 @@ public sealed class GeneratorFloorTests
         Assert.True(checkedDoors > 0);
     }
 
+
+    /// <summary>
+    /// Windows (the study: about 140 see-through walls a map, ours had none): every map has at least one; each looks between
+    /// two rooms the player reaches (neither a secret nor a closet) through a pane no one steps through (sill 32 or more
+    /// above both floors, 40 or more of opening, under both nooks' ceilings); its nook starts at the first room's wall and
+    /// the pane or the far nook ends at the other's; nothing of it overlaps a room, a closet, a corridor or another window.
+    /// </summary>
+    [Fact]
+    public void EveryMapHasAWindowNoOneStepsThrough()
+    {
+        foreach (var plan in Sweep())
+        {
+            var seed = plan.Settings.Seed;
+            Assert.True(plan.Windows.Count >= 1, $"{seed}: no window");
+            var solid = plan.Rooms.Select(r => r.Box).Concat(plan.Links.Select(l => l.Box)).ToList();
+            var parts = new List<Box>();
+            foreach (var w in plan.Windows)
+            {
+                var (a, b) = (plan.Rooms[w.From], plan.Rooms[w.To]);
+                Assert.DoesNotContain(a.Role, new[] { RoomRole.Secret, RoomRole.Closet });
+                Assert.DoesNotContain(b.Role, new[] { RoomRole.Secret, RoomRole.Closet });
+                Assert.True(w.Sill >= Math.Max(a.Floor, b.Floor) + 32, $"{seed}: a sill at {w.Sill} can be stepped onto");
+                Assert.True(w.Top - w.Sill >= 40 && w.Top <= w.NookCeiling - 16 && (w.FarNook is null ? w.Top <= b.Ceiling - 16 : w.Top <= w.FarCeiling - 16), $"{seed}: the pane {w.Sill}–{w.Top} does not fit its nooks");
+                bool Touches(Box p, Box r) => p.X0 == r.X1 || p.X1 == r.X0 || p.Y0 == r.Y1 || p.Y1 == r.Y0;
+                Assert.True(Touches(w.Nook, a.Box), $"{seed}: the nook does not start at {a.Name}'s wall");
+                Assert.True(Touches(w.FarNook ?? w.Pane, b.Box), $"{seed}: the window does not reach {b.Name}'s wall");
+                foreach (var part in new[] { w.Nook, w.Pane }.Concat(w.FarNook is { } f ? [f] : []))
+                {
+                    bool Overlaps(Box o) => part.X0 < o.X1 && o.X0 < part.X1 && part.Y0 < o.Y1 && o.Y0 < part.Y1;
+                    Assert.False(solid.Any(Overlaps), $"{seed}: a window's part {part} overlaps a room or corridor");
+                    Assert.False(parts.Any(Overlaps), $"{seed}: two windows overlap at {part}");
+                    parts.Add(part);
+                }
+            }
+        }
+    }
+
+    /// <summary>In the built map a window's pane is an area at its sill and top, open on both sides (its walls two-sided).</summary>
+    [Fact]
+    public void AWindowIsBuiltAsAPaneOpenOnBothSides()
+    {
+        foreach (var plan in Sweep().Where((_, i) => i % 9 == 0))
+        {
+            var made = MapMaker.Make(plan.Settings);
+            Assert.Empty(made.Failed);
+            var g = Editor.Geometry.MapGeometry.Build(made.Map.Frame);
+            foreach (var w in made.Plan.Windows)
+            {
+                var pane = g.SectorAt(new(w.Pane.CentreX, w.Pane.CentreY));
+                Assert.NotNull(pane);
+                Assert.Equal((w.Sill, w.Top), (pane!.FloorHeight, pane.CeilingHeight));
+                var walls = made.Map.Lines.Where(l => l.OnMap && (l.Front.Sector == pane || l.Back?.Sector == pane)).ToList();
+                Assert.Equal(2, walls.Count(l => l.Back is not null && Math.Abs(l.Length - (w.Pane.Width == 16 ? w.Pane.Height : w.Pane.Width)) < 1));
+            }
+        }
+    }
     /// <summary>Whether the link's two rooms are joined by the other links.</summary>
     private static bool Joined(MapPlan plan, PlannedLink without)
     {

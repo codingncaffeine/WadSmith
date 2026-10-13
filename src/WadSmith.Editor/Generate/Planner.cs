@@ -27,9 +27,11 @@ public static class Planner
             if (!Lay(plan, palette, root.Fork($"layout {attempt}"))) continue;
             Heights(plan, root.Fork("heights"));
 
-            // A layout that cannot keep its size's loops is laid again (the last tries take what they get).
+            // A layout that cannot keep its size's loops, or has no window, is laid again (the last tries take what they get).
             if (attempt < 48 && plan.Links.Count(l => l.Loop && l.OneWayFrom < 0) < LoopsFor(settings.Size)) continue;
             Shape(plan, root.Fork("shapes"));
+            Windows(plan, root.Fork("windows"));
+            if (attempt < 48 && plan.Windows.Count == 0) continue;
             if (settings.Traps) Closets(plan, root.Fork("closets"));
             Dress(plan, root.Fork("looks"));
             Populate(plan, palette, root.Fork("things"));
@@ -361,7 +363,8 @@ public static class Planner
 
             // The sides with no corridor: each with its flat stretch (between cut corners) along it.
             var sides = new List<(string Side, int From, int To)>();
-            bool Free(string side) => !plan.Links.Any(l => (l.A == room.Index || l.B == room.Index) && SideOf(l, room) == side);
+            bool Free(string side) => !plan.Links.Any(l => (l.A == room.Index || l.B == room.Index) && SideOf(l, room) == side)
+                && !plan.Windows.Any(w => (w.From == room.Index && w.FromSide == side) || (w.To == room.Index && w.ToSide == side));
             if (Free("north") && b.Y1 - cy + depth <= plan.MaxHalf) sides.Add(("north", b.X0 + c.NW, b.X1 - c.NE));
             if (Free("south") && cy - b.Y0 + depth <= plan.MaxHalf) sides.Add(("south", b.X0 + c.SW, b.X1 - c.SE));
             if (Free("east") && b.X1 - cx + depth <= plan.MaxHalf) sides.Add(("east", b.Y0 + c.SE, b.Y1 - c.NE));
@@ -409,6 +412,99 @@ public static class Planner
         var (x, y) = Mouth(link, room);
         var b = room.Box;
         return Math.Abs(y - b.Y1) < 1 ? "north" : Math.Abs(y - b.Y0) < 1 ? "south" : Math.Abs(x - b.X1) < 1 ? "east" : "west";
+    }
+
+    // ── Windows ─────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The fewest windows a map of <paramref name="size"/> gets when its rooms have the neighbours for them (D59).</summary>
+    public static int WindowsFor(MapSize size) => size switch { MapSize.Small => 1, MapSize.Medium => 2, MapSize.Large => 3, _ => 5 };
+
+    /// <summary>The deepest nook a window is reached through (one off each room across a wide gap); farther apart, no window.</summary>
+    private const int MaxNook = 224;
+
+    /// <summary>
+    /// Windows between neighbouring rooms (D59: the community's maps have about 140 see-through walls; the player sees where
+    /// they will go, the anticipation reviewers praise): for pairs of rooms on neighbouring cells, neither a secret nor a
+    /// closet, floors no more than 64 apart and no more than two <see cref="MaxNook"/>s and the pane between them, a nook off
+    /// the nearer-to-start room's wall and a 16-deep pane at its end (in the other's wall, or before a nook off it), clear
+    /// of the corridor between them, cut corners and pools at the nooks' mouths. The size's few, then about half the other
+    /// pairs, one a pair of sides.
+    /// </summary>
+    private static void Windows(MapPlan plan, Seeded rng)
+    {
+        const int pane = 16;
+        var at = plan.Rooms.Where(r => r.Role is not (RoomRole.Closet or RoomRole.Secret)).ToDictionary(r => r.Cell, r => r);
+        var candidates = new List<PlannedWindow>();
+        foreach (var a0 in at.Values)
+        {
+            foreach (var (di, dj) in Directions.Take(2))
+            {
+                if (!at.TryGetValue((a0.Cell.I + di, a0.Cell.J + dj), out var b0)) continue;
+
+                // From the room nearer the start (it looks ahead); floors close enough that one pane serves both.
+                var (a, b) = a0.Progress <= b0.Progress ? (a0, b0) : (b0, a0);
+                if (Math.Abs(a.Floor - b.Floor) > 64) continue;
+                var alongX = di != 0;
+                var forward = alongX ? Math.Sign(b.Cell.I - a.Cell.I) : Math.Sign(b.Cell.J - a.Cell.J);
+                var (aSide, bSide) = alongX ? (forward > 0 ? ("east", "west") : ("west", "east")) : (forward > 0 ? ("north", "south") : ("south", "north"));
+                var aWall = alongX ? (forward > 0 ? a.Box.X1 : a.Box.X0) : (forward > 0 ? a.Box.Y1 : a.Box.Y0);
+                var bWall = alongX ? (forward > 0 ? b.Box.X0 : b.Box.X1) : (forward > 0 ? b.Box.Y0 : b.Box.Y1);
+                var gap = Math.Abs(bWall - aWall);
+                if (gap - pane < 32 || gap - pane > 2 * MaxNook) continue;
+
+                // Where along the walls: inside both rooms' straight runs, clear of the corridor between them (if any).
+                (int From, int To) Straight(PlannedRoom r, string side) => side switch
+                {
+                    "north" => (r.Box.X0 + r.Cuts.NW, r.Box.X1 - r.Cuts.NE),
+                    "south" => (r.Box.X0 + r.Cuts.SW, r.Box.X1 - r.Cuts.SE),
+                    "east" => (r.Box.Y0 + r.Cuts.SE, r.Box.Y1 - r.Cuts.NE),
+                    _ => (r.Box.Y0 + r.Cuts.SW, r.Box.Y1 - r.Cuts.NW),
+                };
+                var (sa, sb) = (Straight(a, aSide), Straight(b, bSide));
+                var (lo, hi) = (Math.Max(sa.From, sb.From) + 32, Math.Min(sa.To, sb.To) - 32);
+                var width = rng.Pick([96, 128]);
+                var middle = alongX ? a.Cell.J * plan.Cell : a.Cell.I * plan.Cell;
+                var linked = plan.Links.FirstOrDefault(l => (l.A == a.Index && l.B == b.Index) || (l.A == b.Index && l.B == a.Index));
+                var spots = new List<int>();
+                for (var p = lo; p + width <= hi; p += 16)
+                {
+                    if (linked is not null && p < middle + 64 + 32 && p + width > middle - 64 - 32) continue;
+                    spots.Add(p);
+                }
+
+                if (spots.Count == 0) continue;
+                var from = rng.Pick(spots);
+                Box Span(int x0, int x1) => alongX ? new Box(Math.Min(x0, x1), from, Math.Max(x0, x1), from + width) : new Box(from, Math.Min(x0, x1), from + width, Math.Max(x0, x1));
+
+                // One nook to a pane in the far wall, or across a wider gap a nook off each wall with the pane between them.
+                var split = gap - pane > MaxNook;
+                var paneAt = split ? aWall + forward * ((gap - pane) / 2 / 8 * 8) : bWall - forward * pane;
+                var nook = Span(aWall, paneAt);
+                var paneBox = Span(paneAt, paneAt + forward * pane);
+                Box? farNook = split ? Span(paneAt + forward * pane, bWall) : null;
+
+                // The nooks' mouths stay dry; the heights leave a pane no one steps through.
+                bool Wet(PlannedRoom r, int wall, int inward) => r.Pools.Any(p => alongX ? p.Contains(wall + inward * 24.0, from + width / 2.0) : p.Contains(from + width / 2.0, wall + inward * 24.0));
+                if (Wet(a, aWall, -forward) || (split && Wet(b, bWall, forward))) continue;
+                var nookCeiling = Math.Min(a.Ceiling, a.Floor + rng.Pick([128, 144, 160]));
+                var farCeiling = split ? Math.Min(b.Ceiling, b.Floor + rng.Pick([128, 144, 160])) : b.Ceiling;
+                var sill = Math.Max(a.Floor, b.Floor) + rng.Pick([32, 40, 48]);
+                var top = Math.Min(nookCeiling, farCeiling) - 16;
+                if (top - sill < 40) continue;
+                candidates.Add(new PlannedWindow(a.Index, b.Index, aSide, bSide, nook, paneBox, nookCeiling, sill, top, farNook, farCeiling));
+            }
+        }
+
+        rng.Shuffle(candidates);
+        var used = new HashSet<(int, string)>();
+        foreach (var w in candidates)
+        {
+            if (used.Contains((w.From, w.FromSide)) || used.Contains((w.To, w.ToSide))) continue;
+            if (plan.Windows.Count >= WindowsFor(plan.Settings.Size) && !rng.Chance(0.5)) continue;
+            plan.Windows.Add(w);
+            used.Add((w.From, w.FromSide));
+            used.Add((w.To, w.ToSide));
+        }
     }
 
     // ── Heights and the kinds of link ────────────────────────────────────────────────────────────────────

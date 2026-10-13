@@ -100,6 +100,14 @@ internal sealed class PlanPreview : Control
 
         foreach (var t in plan.Teleports) context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromRgb(0x40, 0xD0, 0xE0)), 2), R(t.Pad));
 
+        // Windows: the nook in its room's colour, the pane pale blue.
+        foreach (var w in plan.Windows)
+        {
+            context.FillRectangle(new SolidColorBrush(Color.FromRgb(0x5A, 0x5A, 0x60)), R(w.Nook));
+            if (w.FarNook is { } far) context.FillRectangle(new SolidColorBrush(Color.FromRgb(0x5A, 0x5A, 0x60)), R(far));
+            context.FillRectangle(new SolidColorBrush(Color.FromRgb(0xA0, 0xD8, 0xF0)), R(w.Pane));
+        }
+
         // The way from the start to the exit.
         var way = new Pen(new SolidColorBrush(Color.FromArgb(0xB0, 0xFF, 0x90, 0x30)), 2, dashStyle: new DashStyle([3, 2], 0));
         for (var i = 1; i < plan.Path.Count; i++)

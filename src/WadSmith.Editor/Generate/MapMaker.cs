@@ -163,6 +163,24 @@ public static class MapMaker
             }
         }
 
+        Line($"# Windows: a nook off one room, a pane at its end into the next (or into a nook off it)");
+        foreach (var w in plan.Windows)
+        {
+            var (a, b) = (plan.Rooms[w.From], plan.Rooms[w.To]);
+            UseLook(LookFor(a));
+            Line($"room {w.Nook.X0} {w.Nook.Y0} {w.Nook.X1} {w.Nook.Y1}");
+            Heights(w.Nook, a.Floor, w.NookCeiling, a.Light);
+            UseLook(LookFor(b));
+            if (w.FarNook is { } far)
+            {
+                Line($"room {far.X0} {far.Y0} {far.X1} {far.Y1}");
+                Heights(far, b.Floor, w.FarCeiling, b.Light);
+            }
+
+            Line($"room {w.Pane.X0} {w.Pane.Y0} {w.Pane.X1} {w.Pane.Y1}");
+            Heights(w.Pane, w.Sill, w.Top, Math.Max(a.Light, b.Light));
+        }
+
         Line($"# Doors and locks");
         foreach (var link in plan.Links.Where(l => l.Kind is LinkKind.Door or LinkKind.Locked))
         {
