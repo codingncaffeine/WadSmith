@@ -147,6 +147,12 @@ public sealed class PlannedRoom
     /// <summary>A dim room with a light in it.</summary>
     public bool Dark { get; set; }
 
+    /// <summary>The room's light effect (a GZDoom room effect: 65 flickers …), 0 for none (D59).</summary>
+    public int Effect { get; set; }
+
+    /// <summary>Brighter patches of floor round its light fixtures: the patch, its brightness and its effect (D59).</summary>
+    public List<(Box Box, int Light, int Effect)> LightPools { get; } = [];
+
     /// <summary>The name the map shows for it: "Entry hall", "Red key room", "Arena".</summary>
     public string Name { get; set; } = "";
 }

@@ -1,5 +1,5 @@
 {
-  "comment": "What the map generator (D50) places, per game family: monsters by tier (1 weak .. 4 tough; boss = only in the boss arena), with the engine's own editor numbers, health and radius (a test holds them to the engine's catalogue); weapons in the order a map hands them out, the ammunition each uses and the damage a unit of it does on average (Doom's as the Balance meter counts them); health, armour, keys (colour, object, the lock a door takes) and the decorations dressed into rooms. 'doom2' marks what only the Doom II family has. 'start' is the damage the ammunition a player starts with can do.",
+  "comment": "What the map generator (D50) places, per game family: monsters by tier (1 weak .. 4 tough; boss = only in the boss arena), with the engine's own editor numbers, health and radius (a test holds them to the engine's catalogue); weapons in the order a map hands them out, the ammunition each uses and the damage a unit of it does on average (Doom's as the Balance meter counts them); health, armour, keys (colour, object, the lock a door takes) and the decorations dressed into rooms. 'doom2' marks what only the Doom II family has. 'start' is the damage the ammunition a player starts with can do. 'lights' and 'torches' are the decorations that give light (lamps for tech rooms; torches for castles and caves), placed where a room's light comes from.",
   "doom": {
     "start": 500,
     "monsters": [
@@ -43,7 +43,9 @@
       { "colour": "yellow", "number": 6, "lock": 131 }
     ],
     "decorations": [ 2028, 2035, 30, 32, 48 ],
-    "outdoorDecorations": [ 43, 47, 54 ]
+    "outdoorDecorations": [ 43, 47, 54 ],
+    "lights": [ 85, 86, 2028 ],
+    "torches": [ 44, 45, 46, 55, 56, 57, 35, 70 ]
   },
   "heretic": {
     "start": 500,
@@ -83,7 +85,9 @@
       { "colour": "yellow", "number": 80, "lock": 131 }
     ],
     "decorations": [ 27, 28, 29, 76, 87, 47 ],
-    "outdoorDecorations": [ 37, 38, 39 ]
+    "outdoorDecorations": [ 37, 38, 39 ],
+    "lights": [ 28, 76 ],
+    "torches": [ 27, 76 ]
   },
   "hexen": {
     "start": 500,
@@ -115,7 +119,9 @@
       { "colour": "axe", "number": 8032, "lock": 3 }
     ],
     "decorations": [ 8063, 8064, 8065, 8066, 5, 77 ],
-    "outdoorDecorations": [ 24, 25, 26 ]
+    "outdoorDecorations": [ 24, 25, 26 ],
+    "lights": [ 17, 8061 ],
+    "torches": [ 116, 8042, 8061 ]
   },
   "strife": {
     "start": 300,
@@ -149,6 +155,8 @@
     "armor": { "light": 2018, "heavy": 2019 },
     "keys": [],
     "decorations": [ 70, 82, 105, 106, 48 ],
-    "outdoorDecorations": [ 51, 60, 62 ]
+    "outdoorDecorations": [ 51, 60, 62 ],
+    "lights": [ 196, 197, 43 ],
+    "torches": [ 47, 50, 111, 106, 70 ]
   }
 }

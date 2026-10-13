@@ -45,6 +45,7 @@ public static class EditScript
         thing TYPE X Y [ANGLE] [easy|normal|hard] [ambush]
                                     an object by editor number: on every difficulty, or from the one named up; ambush = waits
         brightness X Y LEVEL        the room's brightness, 0 to 255
+        effect X Y NUMBER           the room's effect (65 flickers, 81 flickers like fire, 72 glows, 67 blinks slowly …), its flags kept
         flat X Y NAME               the floor picture of the room at the point
         damage X Y AMOUNT           the room's floor hurts the player AMOUNT every second or so (5 nukage, 10 slime, 20 lava)
         sign X Y TEXT...            a sign for the room: a WadSmith tour shows it in the game when the player walks in
@@ -208,6 +209,12 @@ public static class EditScript
                 var opened = Room(3);
                 Record("Make a trigger", e => why = WalkOvers.Make(e, g, crossed, opened));
                 made = "a line that opens the door when walked over";
+                break;
+            case "effect":
+                var lit = Room(1);
+                var effect = (int)N(3);
+                Record("Change the room's effect", e => e.Set(lit, s => s.Special, (s, v) => s.Special = v, App.RoomEffects.With(lit.Special, effect)));
+                made = App.RoomEffects.NameOf(effect).ToLowerInvariant();
                 break;
             case "brightness":
                 var dim = Room(1);

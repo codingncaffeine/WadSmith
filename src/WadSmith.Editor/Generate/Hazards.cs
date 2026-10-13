@@ -19,9 +19,9 @@ public enum PoolKind
 
 /// <summary>
 /// A pool sunk in a room's floor: what it is, its outline (corner by corner), a point inside it clear of pillars and islands
-/// (where its heights are set), its floor picture, the damage it does every 32 tics, and how far it is sunk.
+/// (where its heights are set), its floor picture, the damage it does every 32 tics, how far it is sunk, and its light effect.
 /// </summary>
-public sealed record PlannedPool(PoolKind Kind, IReadOnlyList<(int X, int Y)> Outline, (double X, double Y) Inside, string Flat, int Damage, int Depth)
+public sealed record PlannedPool(PoolKind Kind, IReadOnlyList<(int X, int Y)> Outline, (double X, double Y) Inside, string Flat, int Damage, int Depth, int Effect = 0)
 {
     /// <summary>The rectangle round the outline.</summary>
     public Box Box => new(Outline.Min(p => p.X), Outline.Min(p => p.Y), Outline.Max(p => p.X), Outline.Max(p => p.Y));

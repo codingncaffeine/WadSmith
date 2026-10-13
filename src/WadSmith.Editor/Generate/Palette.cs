@@ -17,7 +17,8 @@ public sealed record KeyKind(string Colour, int Number, int Lock);
 
 /// <summary>
 /// What the generator places in a game family (data/generate/palette.json): monsters by tier, weapons in the order a map
-/// hands them out, ammunition, health, armour, keys and decorations, with the engine's own editor numbers.
+/// hands them out, ammunition, health, armour, keys and decorations — the light fixtures among them (lamps for tech rooms,
+/// torches for castles and caves, D59) — with the engine's own editor numbers.
 /// </summary>
 public sealed record FamilyPalette(
     string Family,
@@ -29,7 +30,9 @@ public sealed record FamilyPalette(
     (int Light, int Heavy) Armor,
     IReadOnlyList<KeyKind> Keys,
     IReadOnlyList<int> Decorations,
-    IReadOnlyList<int> OutdoorDecorations)
+    IReadOnlyList<int> OutdoorDecorations,
+    IReadOnlyList<int> Lights,
+    IReadOnlyList<int> Torches)
 {
     /// <summary>The game families the generator makes maps for.</summary>
     public static IReadOnlyList<string> Families => [.. Table.Value.Keys];
@@ -57,7 +60,9 @@ public sealed record FamilyPalette(
                 (raw.Armor.Light, raw.Armor.Heavy),
                 [.. raw.Keys.Select(k => new KeyKind(k.Colour, k.Number, k.Lock))],
                 raw.Decorations,
-                raw.OutdoorDecorations);
+                raw.OutdoorDecorations,
+                raw.Lights,
+                raw.Torches);
         }
 
         return result;
@@ -84,6 +89,10 @@ public sealed record FamilyPalette(
         public List<int> Decorations { get; set; } = [];
 
         public List<int> OutdoorDecorations { get; set; } = [];
+
+        public List<int> Lights { get; set; } = [];
+
+        public List<int> Torches { get; set; } = [];
     }
 
     private sealed class RawMonster

@@ -326,6 +326,59 @@ public sealed class GeneratorFloorTests
         Assert.True(released >= monsters / 10, $"{released} of {monsters} monsters released by an event");
         Assert.True(waiting >= monsters * 3 / 10, $"{waiting} of {monsters} monsters in ambush");
     }
+
+    /// <summary>
+    /// Light with a source (the study: 20 light fixtures and 21 areas with a light effect a map; ours 4 and none): nearly
+    /// every map has fixtures and light effects; each patch of light holds one of the game's lamps or torches, is brighter
+    /// than its room, lies inside it against a wall and keeps off its pools, columns, dais and balcony.
+    /// </summary>
+    [Fact]
+    public void LightComesFromSomewhere()
+    {
+        var (maps, lit, flickering) = (0, 0, 0);
+        foreach (var plan in Sweep())
+        {
+            maps++;
+            var palette = FamilyPalette.For(plan.Settings.Family)!;
+            if (plan.Rooms.Any(r => r.LightPools.Count > 0)) lit++;
+            if (plan.Rooms.Any(r => r.Effect != 0 || r.LightPools.Any(p => p.Effect != 0) || r.Pools.Any(p => p.Effect != 0))) flickering++;
+            foreach (var room in plan.Rooms)
+            {
+                var b = room.Box;
+                foreach (var (patch, light, _) in room.LightPools)
+                {
+                    Assert.True(light > room.Light, $"{plan.Settings.Seed} {room.Name}: a patch no brighter than its room");
+                    Assert.True(patch.X0 >= b.X0 && patch.X1 <= b.X1 && patch.Y0 >= b.Y0 && patch.Y1 <= b.Y1 && (patch.X0 == b.X0 || patch.X1 == b.X1 || patch.Y0 == b.Y0 || patch.Y1 == b.Y1), $"{plan.Settings.Seed} {room.Name}: a patch off its room's walls");
+                    Assert.Contains(plan.Things, t => t.Room == room.Index && t.Role == ThingRole.Decoration && palette.Lights.Concat(palette.Torches).Contains(t.Number) && patch.Contains(t.X, t.Y));
+                    var others = room.Pools.Select(p => p.Box).Concat(room.Pillars).Concat(new[] { room.Dais, room.Ledge, room.LedgeStairs }.OfType<Box>());
+                    Assert.DoesNotContain(others, o => patch.X0 < o.X1 && o.X0 < patch.X1 && patch.Y0 < o.Y1 && o.Y0 < patch.Y1);
+                }
+            }
+        }
+
+        Assert.True(lit >= maps * 95 / 100 && flickering >= maps * 95 / 100, $"of {maps} maps {lit} have light fixtures and {flickering} a light effect");
+    }
+
+    /// <summary>In the built map a patch of light is an area at its brightness, with its effect.</summary>
+    [Fact]
+    public void APatchOfLightIsBuiltBrighterWithItsEffect()
+    {
+        var seen = 0;
+        foreach (var plan in Sweep().Where((_, i) => i % 7 == 0))
+        {
+            var made = MapMaker.Make(plan.Settings);
+            Assert.Empty(made.Failed);
+            var g = Editor.Geometry.MapGeometry.Build(made.Map.Frame);
+            foreach (var (patch, light, effect) in made.Plan.Rooms.SelectMany(r => r.LightPools))
+            {
+                var area = g.SectorAt(new(patch.CentreX, patch.CentreY))!;
+                Assert.Equal((light, effect), (area.Light, area.Special & 0xFF));
+                seen++;
+            }
+        }
+
+        Assert.True(seen > 0);
+    }
     /// <summary>Whether the link's two rooms are joined by the other links.</summary>
     private static bool Joined(MapPlan plan, PlannedLink without)
     {

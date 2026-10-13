@@ -54,13 +54,14 @@ public static class MapMaker
             Line($"floor {hx} {hy} {room.Floor}");
             Line($"ceiling {hx} {hy} {room.Ceiling}");
             Line($"brightness {hx} {hy} {room.Light}");
+            if (room.Effect != 0) Line($"effect {hx} {hy} {room.Effect}");
         }
 
         Line($"# Pillars: columns closed floor to ceiling");
         foreach (var room in plan.Rooms)
         {
             // Its columns, dais, pools and balcony show the room's own walls on their faces.
-            if (room.Pillars.Count > 0 || room.Dais is not null || room.Pools.Count > 0 || room.Ledge is not null) UseLook(LookFor(room));
+            if (room.Pillars.Count > 0 || room.Dais is not null || room.Pools.Count > 0 || room.Ledge is not null || room.LightPools.Count > 0) UseLook(LookFor(room));
 
             foreach (var p in room.Pillars)
             {
@@ -89,6 +90,7 @@ public static class MapMaker
                 {
                     Line($"damage {ix} {iy} {pool.Damage}");
                     Line($"brightness {ix} {iy} {Math.Min(255, room.Light + 24)}");
+                    if (pool.Effect != 0) Line($"effect {ix} {iy} {pool.Effect}");
                 }
             }
 
@@ -115,6 +117,14 @@ public static class MapMaker
                     _ => ((st.X1, st.Y0), (st.X0, st.Y1), "x"),
                 };
                 Line($"stairs {from.Item1} {from.Item2} {to.Item1} {to.Item2} {axis}");
+            }
+
+            // Patches of light round its fixtures (D59): brighter, some flickering.
+            foreach (var (patch, light, effect) in room.LightPools)
+            {
+                Line($"room {patch.X0} {patch.Y0} {patch.X1} {patch.Y1}");
+                Line($"brightness {patch.CentreX} {patch.CentreY} {light}");
+                if (effect != 0) Line($"effect {patch.CentreX} {patch.CentreY} {effect}");
             }
         }
 

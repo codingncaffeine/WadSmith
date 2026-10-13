@@ -766,8 +766,8 @@ public static class Planner
             room.Look = sky ? rng.Pick(outdoor) : rng.Chance(0.15) ? rng.Pick(suits) : zoneLook;
             room.Outdoors = sky;
             if (sky) room.Ceiling = Math.Max(room.Ceiling, room.Floor + rng.Between(8, 10) * 32);
-            room.Dark = s.DarkPlaces && !sky && room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Key && rng.Chance(room.Style == MapStyle.Caves ? 0.4 : 0.22);
-            room.Light = sky ? 224 : room.Dark ? rng.Pick([96, 112, 128]) : room.Role == RoomRole.Secret ? 160 : room.Style == MapStyle.Caves ? rng.Pick([128, 144, 160]) : rng.Pick([160, 176, 192, 208]);
+            room.Dark = s.DarkPlaces && !sky && room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Key && rng.Chance(room.Style == MapStyle.Caves ? 0.3 : 0.18);
+            room.Light = sky ? 224 : room.Dark ? rng.Pick([96, 112, 128]) : room.Role == RoomRole.Secret ? 160 : room.Style == MapStyle.Caves ? rng.Pick([144, 160, 176]) : rng.Pick([160, 176, 192, 208]);
             counts[room.Role] = counts.GetValueOrDefault(room.Role) + 1;
             room.Name = room.Role switch
             {
@@ -997,6 +997,7 @@ public static class Planner
         }
 
         Supplies(plan, palette, spots, weapons, weaponAt, rng);
+        Lighting(plan, palette, spots, rng.Fork("lighting"));
 
         // Each island's reward, in sight from the dry way and worth the wade: armour or a medikit.
         foreach (var room in plan.Rooms)
@@ -1085,6 +1086,110 @@ public static class Planner
             var best = ownBest >= 0 ? AmmoFor(weapons[ownBest]) : null;
             var gift = rng.Next(3) switch { 0 => palette.Health.Super, 1 => palette.Armor.Heavy, _ => best?.Big ?? palette.Health.Super };
             if (spots[secret.Index].Find(16, rng, (secret.Box.CentreX, secret.Box.CentreY)) is { } at) plan.Things.Add(new PlannedThing(gift == palette.Armor.Heavy ? ThingRole.Armor : gift == palette.Health.Super ? ThingRole.Health : ThingRole.Ammo, gift, at.X, at.Y, 90, Room: secret.Index));
+        }
+    }
+
+    /// <summary>
+    /// Light with a source (D59: the community's maps have 20 light fixtures and 21 rooms with a light effect at the median,
+    /// ours 4 and none): with decorations on, in most indoor rooms one or two of the game's lamps (tech rooms) or torches
+    /// (castles, caves) in free corners, each in a brighter patch of floor against both walls, the room a shade dimmer round
+    /// them; a torch's patch
+    /// often flickers like fire and now and then a lamp's flickers or blinks; hurting pools mostly glow; a dim room with no
+    /// fixture often flickers. Patches keep off the floor in front of corridors, closets, windows and the balcony, off
+    /// pools, columns and the dais, 80 from the room's middle lines, and out of a cave's cut corners.
+    /// </summary>
+    private static void Lighting(MapPlan plan, FamilyPalette palette, List<Spots> spots, Seeded rng)
+    {
+        foreach (var room in plan.Rooms.Where(r => r.Role is not (RoomRole.Secret or RoomRole.Closet)))
+        {
+            for (var i = 0; i < room.Pools.Count; i++)
+            {
+                if (room.Pools[i].Damage > 0 && rng.Chance(0.85)) room.Pools[i] = room.Pools[i] with { Effect = 72 };
+            }
+
+            var torch = room.Style is MapStyle.Castle or MapStyle.Caves;
+            var kinds = room.Outdoors ? [] : torch ? palette.Torches : palette.Lights;
+            if (!plan.Settings.Decorations || kinds.Count == 0 || !rng.Chance(0.8))
+            {
+                if (room.Dark && rng.Chance(0.75)) room.Effect = 65;
+                continue;
+            }
+
+            var b = room.Box;
+            var (cx, cy) = Middle(plan, room);
+            var blocked = new List<Box>();
+            foreach (var l in plan.Links.Where(l => l.A == room.Index || l.B == room.Index))
+            {
+                var (mx, my) = Mouth(l, room);
+                blocked.Add(new Box((int)mx - 96, (int)my - 96, (int)mx + 96, (int)my + 96));
+            }
+
+            foreach (var closet in plan.Rooms.Where(c => c.ClosetOf == room.Index))
+            {
+                blocked.Add(new Box((int)closet.ClosetDoor.X - 112, (int)closet.ClosetDoor.Y - 112, (int)closet.ClosetDoor.X + 112, (int)closet.ClosetDoor.Y + 112));
+            }
+
+            foreach (var w in plan.Windows.Where(w => w.From == room.Index || w.To == room.Index))
+            {
+                foreach (var part in new[] { w.Nook, w.Pane }.Concat(w.FarNook is { } far ? [far] : []))
+                {
+                    blocked.Add(new Box(part.X0 - 80, part.Y0 - 80, part.X1 + 80, part.Y1 + 80));
+                }
+            }
+
+            blocked.AddRange(new[] { room.Ledge, room.LedgeStairs, room.Dais }.OfType<Box>());
+            blocked.AddRange(room.Pillars);
+            blocked.AddRange(room.Pools.Select(p => p.Box));
+            var corners = new List<(int SX, int SY)> { (1, 1), (1, -1), (-1, -1), (-1, 1) };
+            rng.Shuffle(corners);
+            var size = rng.Pick([128, 160]);
+            var kind = rng.Pick(kinds);
+            var wanted = Math.Min(b.Width, b.Height) >= 640 || rng.Chance(0.7) ? 2 : 1;
+            // Where a fixture may stand: the corners first (not a cut one), then against a wall's straight run a quarter of the
+            // way along from either end of it (a cave has no corners left to light).
+            var places = new List<(Box Patch, (double X, double Y) At)>();
+            foreach (var (sx, sy) in corners)
+            {
+                var cut = (sx, sy) switch { (> 0, > 0) => room.Cuts.NE, (> 0, _) => room.Cuts.SE, (_, > 0) => room.Cuts.NW, _ => room.Cuts.SW };
+                if (cut > 0) continue;
+                var (x0, y0) = (sx > 0 ? b.X1 - size : b.X0, sy > 0 ? b.Y1 - size : b.Y0);
+                places.Add((new Box(x0, y0, x0 + size, y0 + size), (sx > 0 ? b.X1 - 40.0 : b.X0 + 40.0, sy > 0 ? b.Y1 - 40.0 : b.Y0 + 40.0)));
+            }
+
+            var walls = new List<(Box Patch, (double X, double Y) At)>();
+            var c = room.Cuts;
+            foreach (var (side, from, to) in new[] { ("north", b.X0 + c.NW, b.X1 - c.NE), ("south", b.X0 + c.SW, b.X1 - c.SE), ("east", b.Y0 + c.SE, b.Y1 - c.NE), ("west", b.Y0 + c.SW, b.Y1 - c.NW) })
+            {
+                foreach (var along in new[] { from + (to - from) / 4, to - (to - from) / 4 })
+                {
+                    var (a0, a1) = (along - size / 2, along + size / 2);
+                    if (a0 < from || a1 > to) continue;
+                    walls.Add(side switch
+                    {
+                        "north" => (new Box(a0, b.Y1 - size, a1, b.Y1), (along, b.Y1 - 40.0)),
+                        "south" => (new Box(a0, b.Y0, a1, b.Y0 + size), (along, b.Y0 + 40.0)),
+                        "east" => (new Box(b.X1 - size, a0, b.X1, a1), (b.X1 - 40.0, along)),
+                        _ => (new Box(b.X0, a0, b.X0 + size, a1), (b.X0 + 40.0, along)),
+                    });
+                }
+            }
+
+            rng.Shuffle(walls);
+            places.AddRange(walls);
+            foreach (var (patch, at) in places)
+            {
+                if ((patch.X1 > cx - 80 && patch.X0 < cx + 80) || (patch.Y1 > cy - 80 && patch.Y0 < cy + 80)) continue;
+                if (blocked.Any(o => !Apart(patch, o, 0)) || room.LightPools.Any(p => !Apart(patch, p.Box, 32))) continue;
+                if (spots[room.Index].Taken.Any(t => Math.Abs(t.X - at.X) < t.R + 24 && Math.Abs(t.Y - at.Y) < t.R + 24)) continue;
+                spots[room.Index].Taken.Add((at.X, at.Y, 24));
+                plan.Things.Add(new PlannedThing(ThingRole.Decoration, kind, at.X, at.Y, 90, Room: room.Index));
+                var effect = torch ? (rng.Chance(0.75) ? 81 : 0) : (rng.Chance(0.3) ? rng.Pick([65, 67]) : 0);
+                room.LightPools.Add((patch, Math.Min(240, room.Light + 40), effect));
+                if (--wanted == 0) break;
+            }
+
+            if (room.LightPools.Count > 0) room.Light = Math.Max(96, room.Light - 16);
+            else if (room.Dark && rng.Chance(0.75)) room.Effect = 65;
         }
     }
 
