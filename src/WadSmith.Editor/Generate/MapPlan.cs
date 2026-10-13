@@ -78,6 +78,9 @@ public sealed class PlannedRoom
     /// <summary>Pools sunk in the floor: their rectangle, their floor picture and how much they hurt (0 for water).</summary>
     public List<(Box Box, string Flat, int Damage)> Pools { get; } = [];
 
+    /// <summary>A dais a step high round the room's middle (a key room's pedestal), when it has one.</summary>
+    public Box? Dais { get; set; }
+
     /// <summary>For a closet: the room it opens into, where on their shared wall its door is, and the line in the room's entrance that opens it.</summary>
     public int ClosetOf { get; set; } = -1;
 

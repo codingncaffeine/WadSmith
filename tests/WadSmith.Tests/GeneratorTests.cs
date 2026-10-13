@@ -269,6 +269,29 @@ public sealed class GeneratorTests
         Assert.Empty(Hazards.Of(family).Where(h => game.Textures.FindFlat(h.Flat) is null).Select(h => h.Flat));
     }
 
+    /// <summary>A dais is a step up from its room, and a key room's key stands on its dais.</summary>
+    [Fact]
+    public void KeysStandOnADaisAStepUp()
+    {
+        var onDais = 0;
+        for (var i = 0; i < 8; i++)
+        {
+            var made = MapMaker.Make(For("doom", $"dais-{i}", MapSize.Large, keys: 3, style: (MapStyle)(i % 4)));
+            var g = Editor.Geometry.MapGeometry.Build(made.Map.Frame);
+            foreach (var room in made.Plan.Rooms.Where(r => r.Dais is not null))
+            {
+                var d = room.Dais!.Value;
+                Assert.Equal(room.Floor + 24, g.SectorAt(new(d.CentreX, d.CentreY))!.FloorHeight);
+                if (room.Role != RoomRole.Key) continue;
+                var key = made.Plan.Things.Single(t => t.Role == ThingRole.Key && t.Room == room.Index);
+                Assert.True(d.Contains(key.X, key.Y), $"seed dais-{i}: the key at ({key.X}, {key.Y}) is off the dais {d}");
+                onDais++;
+            }
+        }
+
+        Assert.True(onDais >= 8, $"only {onDais} keys on a dais");
+    }
+
     [Fact]
     public void EveryDifficultyHasMonstersAndTheHardOnesMore()
     {

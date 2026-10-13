@@ -65,6 +65,14 @@ public static class MapMaker
                 Line($"ceiling {p.CentreX} {p.CentreY} {room.Floor}");
             }
 
+            // The dais: a step up, a little brighter.
+            if (room.Dais is { } d)
+            {
+                Line($"room {d.X0} {d.Y0} {d.X1} {d.Y1}");
+                Line($"floor {d.CentreX} {d.CentreY} {room.Floor + 24}");
+                Line($"brightness {d.CentreX} {d.CentreY} {Math.Min(255, room.Light + 16)}");
+            }
+
             // Pools: sunk 16 into the floor, the hazard's picture, its damage.
             foreach (var (p, flat, damage) in room.Pools)
             {

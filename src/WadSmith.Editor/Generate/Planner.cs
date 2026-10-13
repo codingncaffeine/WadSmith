@@ -239,6 +239,14 @@ public static class Planner
                 }
             }
 
+            // A dais a step high round the room's middle: always under a key, sometimes in a hall or the arena. It keeps inside
+            // the band the pools and pillars leave clear round the middle lines.
+            var dais = room.Role == RoomRole.Key ? 64 : room.Role is RoomRole.Path or RoomRole.Arena && rng.Chance(0.25) ? 96 : 0;
+            if (dais > 0 && Math.Min(Math.Min(west, east), Math.Min(south, north)) >= dais + 64)
+            {
+                room.Dais = new Box((int)cx - dais, (int)cy - dais, (int)cx + dais, (int)cy + dais);
+            }
+
             // A pool in a quarter of a big room, clear of the room's middle lines (where the ways across run), its walls,
             // its cut corners and its pillars: water, or the game's hurting floor.
             if (plan.Settings.Hazards && room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Arena && rng.Chance(0.4))
@@ -571,7 +579,9 @@ public static class Planner
         // Keys in their rooms' middles.
         foreach (var keyRoom in plan.Rooms.Where(r => r.Key is not null))
         {
-            var at = spots[keyRoom.Index].Find(20, rng, Middle(plan, keyRoom)) ?? Middle(plan, keyRoom);
+            // On its dais's middle when it has one, else near the room's middle.
+            var at = keyRoom.Dais is not null ? Middle(plan, keyRoom) : spots[keyRoom.Index].Find(20, rng, Middle(plan, keyRoom)) ?? Middle(plan, keyRoom);
+            if (keyRoom.Dais is not null) spots[keyRoom.Index].Taken.Add((at.X, at.Y, 40));
             plan.Things.Add(new PlannedThing(ThingRole.Key, keyRoom.Key!.Number, at.X, at.Y, 90, Room: keyRoom.Index));
         }
 
