@@ -97,6 +97,29 @@ public sealed class CarriedActorTests
     }
 
     [Fact]
+    public void AWeaponComesWithItsAmmunitionAndItsSlot()
+    {
+        // The slots, from the engine's own player classes.
+        Assert.Equal(4, Family("heretic").SlotOf("Blaster"));
+        Assert.Equal(2, Family("hexen").SlotOf("FWeapAxe"));
+        Assert.Equal(3, Family("strife").SlotOf("AssaultGun"));
+
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var doom = Load("doom2", "DOOM2.WAD", project.Folder);
+        var heretic = Load("heretic", "HERETIC.WAD");
+        var blaster = heretic.Things.FindClass("Blaster")!;
+        var needs = heretic.Things.Needs("Blaster");
+        Assert.Contains("BlasterAmmo", needs.Classes);
+        Assert.Contains("BlasterPowered", needs.Classes);
+
+        ActorBorrowing.Carry(project, doom, heretic, blaster);
+        Assert.True(File.Exists(Path.Combine(project.Folder, "sprites", "BLSRA0.png")));
+        Assert.Contains("addslotdefault 4 Blaster", File.ReadAllText(Path.Combine(project.Folder, ActorBorrowing.SlotFile)));
+    }
+
+    [Fact]
     public void AnObjectWhosePicturesShareANameWithThisGamesWaitsForALaterUpdate()
     {
         // Hexen's Fighter boss draws as the player (PLAY), which Doom II has too.

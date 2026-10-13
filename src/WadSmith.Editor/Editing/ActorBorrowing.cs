@@ -27,6 +27,11 @@ public static class ActorBorrowing
 
     private const string SoundMark = "// Written by WadSmith: the sounds of objects carried in from other games. Edits here are replaced.";
 
+    /// <summary>The project's KEYCONF WadSmith writes: the weapon slots of weapons carried in, marked so a file of the user's own is left alone.</summary>
+    public const string SlotFile = "keyconf.txt";
+
+    private const string SlotMark = "// Written by WadSmith: weapons carried in from other games, in the slots they have in their own game. Edits here are replaced.";
+
     /// <summary>Why <paramref name="thing"/> of <paramref name="from"/> cannot be carried into <paramref name="into"/> yet; null when it can.</summary>
     public static string? WhyNot(GameResources into, GameResources from, ThingType thing)
     {
@@ -98,9 +103,31 @@ public static class ActorBorrowing
         while (taken.Contains(number)) number++;
         project.Record(new CopiedAsset { Kind = "actor", Game = from.Game.Id, Original = thing.ClassName, Name = number.ToString(CultureInfo.InvariantCulture), File = "" });
 
+        // A weapon goes into the player's slots where its own game has it, so the number keys select it.
+        if (thing.Category == ThingCategory.Weapon && from.Things.SlotOf(thing.ClassName) is { } slot)
+        {
+            project.Record(new CopiedAsset { Kind = "slot", Game = from.Game.Id, Original = thing.ClassName, Name = slot.ToString(CultureInfo.InvariantCulture), File = SlotFile });
+            WriteSlots(project);
+        }
+
         var carried = thing with { Number = number };
         into.Carry([carried], project.Folder);
         return new CarriedActor(number, carried, sprites, sounds, true);
+    }
+
+    /// <summary>Writes the project's KEYCONF from the weapons carried in (<c>addslotdefault</c>); a KEYCONF of the user's own is left alone.</summary>
+    public static void WriteSlots(Project project)
+    {
+        var slots = project.Info.Copied.Where(c => c.Kind == "slot").Select(c => $"addslotdefault {c.Name} {c.Original}").Distinct(StringComparer.Ordinal).ToList();
+        var path = Path.Combine(project.Folder, SlotFile);
+        if (File.Exists(path))
+        {
+            using var reader = new StreamReader(path);
+            if (reader.ReadLine() != SlotMark) return;
+        }
+
+        if (slots.Count == 0) return;
+        project.WriteFile(SlotFile, Encoding.UTF8.GetBytes(SlotMark + "\n\n" + string.Join("\n", slots) + "\n"));
     }
 
     /// <summary>Writes the project's sound table from the lines carried in; a table of the user's own is left alone.</summary>

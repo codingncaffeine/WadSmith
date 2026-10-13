@@ -105,6 +105,26 @@ public sealed partial class ThingCatalog
         return new ActorNeeds(className, classes, [.. SpritesOf(own).Distinct(StringComparer.Ordinal)], [.. SpritesOf(classes).Distinct(StringComparer.Ordinal)], [.. sounds.Distinct(StringComparer.OrdinalIgnoreCase)]);
     }
 
+    /// <summary>
+    /// The weapon slot <paramref name="weaponClass"/> has in its own game: the number of the first player class's
+    /// <c>Player.WeaponSlot</c> that names it (Heretic's Blaster is 4, Hexen's Fighter's Axe 2); null when none does.
+    /// </summary>
+    public int? SlotOf(string weaponClass)
+    {
+        foreach (var c in _classes.Values)
+        {
+            foreach (Match m in WeaponSlot().Matches(c.Body))
+            {
+                if (QuotedWord().Matches(m.Groups[2].Value).Any(q => string.Equals(q.Groups[1].Value, weaponClass, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+                }
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>The engine's base classes, the same in every game: an object's needs stop at them.</summary>
     private static readonly HashSet<string> EngineBases = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -729,6 +749,9 @@ public sealed partial class ThingCatalog
 
     [GeneratedRegex(@"""([A-Za-z0-9_/.\-]{2,64})""")]
     private static partial Regex QuotedWord();
+
+    [GeneratedRegex(@"(?i)Player\.WeaponSlot\s+(\d)\s*,([^;\n]*)")]
+    private static partial Regex WeaponSlot();
 
     [GeneratedRegex(@"^""?([A-Z0-9_#-]{4})""?\s+""?[A-Z\[\]\\^#""]+")]
     private static partial Regex StateLine();

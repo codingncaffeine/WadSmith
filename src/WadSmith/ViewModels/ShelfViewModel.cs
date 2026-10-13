@@ -248,19 +248,20 @@ internal sealed partial class ShelfViewModel : ObservableObject
         },
         () =>
         {
-            // The user's other games (D55): their monsters, decorations and pickups, brought into the project when placed with
-            // everything they fire, drop or spawn; those whose pictures share a name with this game's, and weapons, come in later updates.
+            // The user's other games (D55): their monsters, weapons, decorations and pickups, brought into the project when placed
+            // with everything they fire, drop or spawn; those whose pictures share a name with this game's come in a later update.
             var tiles = new List<ShelfTile>();
             if (game is null) return tiles;
             foreach (var other in others?.Invoke() ?? [])
             {
-                foreach (var (category, group) in Kinds.Where(k => k.Category is ThingCategory.Monster or ThingCategory.Decoration or ThingCategory.Health or ThingCategory.Armor or ThingCategory.Ammo or ThingCategory.Powerup))
+                foreach (var (category, group) in Kinds.Where(k => k.Category is ThingCategory.Monster or ThingCategory.Weapon or ThingCategory.Decoration or ThingCategory.Health or ThingCategory.Armor or ThingCategory.Ammo or ThingCategory.Powerup))
                 {
                     foreach (var t in other.Things.All.Where(t => t.Category == category && other.CanShow(t.Number)).OrderBy(t => t.Name, StringComparer.CurrentCulture))
                     {
                         if (WadSmith.Editor.Editing.ActorBorrowing.WhyNot(game, other, t) is not null) continue;
                         var picture = other.SpriteFor(t.Number) is { } image ? Imaging.ToBitmap(Shrink(image)) : null;
-                        tiles.Add(new ShelfTile(t.Name, $"{other.Game.Title}'s {t.Name} ({t.ClassName}). Drag it onto the map: its pictures and sounds are copied into this project, and the map plays in GZDoom.", group, $"{t.Name} {t.ClassName} {group} {other.Game.Title}".ToLowerInvariant(), picture, new ShelfDrop(null, t.Number, $"{t.Name} from {other.Game.Title}", From: other), other.Game.Title));
+                        var weapon = t.Category == ThingCategory.Weapon ? $" It goes in weapon slot {other.Things.SlotOf(t.ClassName)?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"}, as in {other.Game.Title}; its ammunition shows on GZDoom's other HUDs, not on this game's status bar." : "";
+                        tiles.Add(new ShelfTile(t.Name, $"{other.Game.Title}'s {t.Name} ({t.ClassName}). Drag it onto the map: its pictures and sounds are copied into this project, and the map plays in GZDoom.{weapon}", group, $"{t.Name} {t.ClassName} {group} {other.Game.Title}".ToLowerInvariant(), picture, new ShelfDrop(null, t.Number, $"{t.Name} from {other.Game.Title}", From: other), other.Game.Title));
                     }
                 }
             }
