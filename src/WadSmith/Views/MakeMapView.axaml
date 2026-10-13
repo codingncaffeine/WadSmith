@@ -65,7 +65,7 @@
                                         </StackPanel>
                                         <CheckBox Grid.Column="1" HorizontalAlignment="Center" IsChecked="{Binding Textures}" IsVisible="{Binding CanTextures}"
                                                   ToolTip.Tip="Rooms may look like this game's: its walls, floors and ceilings. With none checked, the base game's own are used." />
-                                        <CheckBox Grid.Column="2" HorizontalAlignment="Center" IsChecked="{Binding Monsters}"
+                                        <CheckBox Grid.Column="2" HorizontalAlignment="Center" IsChecked="{Binding Monsters}" IsVisible="{Binding CanMonsters}"
                                                   ToolTip.Tip="This game's monsters may be in the map. With none checked, the base game's own are used." />
                                         <CheckBox Grid.Column="3" HorizontalAlignment="Center" IsChecked="{Binding Weapons}" IsVisible="{Binding CanWeapons}"
                                                   ToolTip.Tip="This game's weapons join the base game's along the way, each in its own slot, with its ammunition counted for the challenge. The base game's weapons are always there." />

@@ -21,7 +21,8 @@ public static class Borrowing
     {
         var kind = flat ? "flat" : "wall";
         if (project.FindCopy(from.Game.Id, name, kind) is { } done && into.Textures.Has(done.Name)) return done.Name;
-        var image = (flat ? from.Textures.GetFlat(name) : from.Textures.GetWall(name)) ?? throw new CorruptDataException($"{from.Game.Title} has no {(flat ? "floor" : "wall texture")} called {name}.");
+        // A game whose pictures are all one kind (Duke Nukem 3D's tiles) lends a wall picture for a floor too.
+        var image = (flat ? from.Textures.GetFlat(name) ?? from.Textures.GetWall(name) : from.Textures.GetWall(name)) ?? throw new CorruptDataException($"{from.Game.Title} has no {(flat ? "floor" : "wall texture")} called {name}.");
         var chosen = FreeName(into.Textures, name, from.Game);
         var file = $"{(flat ? "flats" : "textures")}/{chosen}.png";
         project.WriteFile(file, ImageCodec.EncodePng(image));

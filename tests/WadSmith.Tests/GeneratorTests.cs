@@ -292,6 +292,25 @@ public sealed class GeneratorTests
         Assert.True(onDais >= 8, $"only {onDais} keys on a dais");
     }
 
+    /// <summary>Every look a made map's rooms can have is drawn with pictures its own game has (Duke Nukem 3D's tiles stand for its floors too).</summary>
+    [Theory]
+    [InlineData("doom", "doom2", "DOOM2.WAD")]
+    [InlineData("heretic", "heretic", "HERETIC.WAD")]
+    [InlineData("hexen", "hexen", "HEXEN.WAD")]
+    [InlineData("strife", "strife", "STRIFE1.WAD")]
+    [InlineData("build", "duke3d", "DUKE3D.GRP")]
+    public void EveryLookIsDrawnWithItsGamesOwnPictures(string family, string id, string file)
+    {
+        var path = GameFiles.Require(file);
+        var game = GameResources.Load(id, null, [new FoundGame(GameCatalog.Get(id)!, path, new FileInfo(path).Length)], GameFiles.Require("gzdoom.pk3"))!;
+        var looks = GeneratorSettings.OwnLooks(family);
+        Assert.NotEmpty(looks);
+        var missing = looks.SelectMany(l => new[] { (l.Name, l.Look.Wall, false), (l.Name, l.Look.Floor, true), (l.Name, l.Look.Ceiling, true) })
+            .Where(p => !GeneratorSettings.IsSky(p.Item2) && (p.Item3 ? game.Textures.GetFlat(p.Item2) ?? game.Textures.GetWall(p.Item2) : game.Textures.GetWall(p.Item2)) is null)
+            .Select(p => $"{p.Name}: {p.Item2}").ToList();
+        Assert.Empty(missing);
+    }
+
     [Fact]
     public void EveryDifficultyHasMonstersAndTheHardOnesMore()
     {

@@ -83,7 +83,7 @@ internal sealed partial class SourceRow(MakeMapViewModel owner, FoundGame game, 
     public bool CanTextures => !Doom2Only;
 
     /// <summary>Whether the row offers its music (the row of Doom II's monsters for a Doom map does not).</summary>
-    public bool CanMusic => !Doom2Only;
+    public bool CanMusic => !Doom2Only && !Build;
 
     [ObservableProperty]
     private bool _textures = isBase;
@@ -116,7 +116,13 @@ internal sealed partial class SourceRow(MakeMapViewModel owner, FoundGame game, 
     private bool _weapons;
 
     /// <summary>Whether the row offers its weapons: another game of another family (the base game's are always there).</summary>
-    public bool CanWeapons => !IsBase && !Doom2Only;
+    public bool CanWeapons => !IsBase && !Doom2Only && !Build;
+
+    /// <summary>Whether the row offers monsters (Duke Nukem 3D's enemies are not offered yet).</summary>
+    public bool CanMonsters => !Build;
+
+    /// <summary>Whether the game is Duke Nukem 3D, which lends only its pictures for now.</summary>
+    public bool Build => Family == "build";
 
     partial void OnWeaponsChanged(bool value) => owner.Remake();
 
@@ -328,6 +334,12 @@ internal sealed partial class MakeMapViewModel : ObservableObject
             if (best is not null) Sources.Add(new SourceRow(this, best, best.Game.Title, false, false));
         }
 
+        // Duke Nukem 3D lends its pictures; its enemies come once GZDoom has been seen running the code WadSmith writes for them.
+        if ((_services.Games ?? []).FirstOrDefault(g => g.Game.Engine == "build") is { } duke)
+        {
+            Sources.Add(new SourceRow(this, duke, duke.Game.Title, false, false));
+        }
+
         foreach (var row in Sources) row.Note = Offer(row);
     }
 
@@ -368,7 +380,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
     {
         var usable = row.MonsterKinds(Settings()).Count;
         var looks = row.LookKinds().Count;
-        var parts = new List<string> { $"{usable} monster{(usable == 1 ? "" : "s")}" };
+        var parts = new List<string> { row.CanMonsters ? $"{usable} monster{(usable == 1 ? "" : "s")}" : "its pictures (its enemies come later)" };
         if (row.Refused.Count > 0) parts[0] += $" (not yet: {string.Join(", ", row.Refused.Order(StringComparer.Ordinal).Select(Spaced))}, whose pictures share a name with {Sources[0].Title}'s)";
         if (row.CanTextures) parts.Add($"{looks} look{(looks == 1 ? "" : "s")}");
         if (row.CanWeapons && FamilyPalette.For(row.Family) is { } weapons) parts.Add($"{weapons.Weapons.Count} weapons");
@@ -560,7 +572,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         Hazards = r.Next(2) > 0;
         foreach (var row in Sources.Where(x => !x.IsBase))
         {
-            row.Monsters = r.Next(2) > 0;
+            row.Monsters = row.CanMonsters && r.Next(2) > 0;
             row.Textures = row.CanTextures && r.Next(2) > 0;
             row.Music = row.CanMusic && r.Next(3) == 0;
             row.Weapons = row.CanWeapons && r.Next(3) == 0;

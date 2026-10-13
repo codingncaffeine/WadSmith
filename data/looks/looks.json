@@ -29,5 +29,12 @@
     { "name": "Tech", "wall": "WALTEK01", "floor": "F_TECH01", "ceiling": "F_TEKPLT" },
     { "name": "Brown brick", "wall": "BRKBRN01", "floor": "F_BRKTOP", "ceiling": "F_CONCRP" },
     { "name": "Wood", "wall": "WOOD01", "floor": "F_WOOD01", "ceiling": "F_PLYWOD" }
+  ],
+  "build": [
+    { "name": "Duke tech", "wall": "DK0461", "floor": "DK0241", "ceiling": "DK0191" },
+    { "name": "Duke industrial", "wall": "DK0186", "floor": "DK0398", "ceiling": "DK0343" },
+    { "name": "Duke rock", "wall": "DK0805", "floor": "DK0893", "ceiling": "DK0894" },
+    { "name": "Duke brick", "wall": "DK0750", "floor": "DK0802", "ceiling": "DK0790" },
+    { "name": "Duke alien hive", "wall": "DK1100", "floor": "DK1104", "ceiling": "DK1137" }
   ]
 }
