@@ -57,6 +57,22 @@ public sealed class ModelPropTests
     }
 
     [Fact]
+    public void AMaterialOfAColourAloneIsAPictureOfThatColourAndWindowsPathsAreFound()
+    {
+        // As Blender writes them on Windows: a picture under textures\ for the body, black eyes with a colour and no picture.
+        using var temp = new TempFolder();
+        Directory.CreateDirectory(Path.Combine(temp.Path, "textures"));
+        File.WriteAllBytes(Path.Combine(temp.Path, "textures", "Body.jpg"), ImageCodec.EncodePng(Solid(0, 255, 0)));
+        File.WriteAllText(Path.Combine(temp.Path, "s.mtl"), "newmtl Body\nKd 0.8 0.8 0.8\nmap_Kd textures\\Body.jpg\nmap_Bump  textures\\\\nothing.jpg\n\nnewmtl Eye\nKd 0.000000 0.000000 0.000000\n");
+        var path = Path.Combine(temp.Path, "s.obj");
+        File.WriteAllText(path, "mtllib s.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl Eye\nf 1 2 3\nusemtl Body\nf 1 2 3\n");
+        var mesh = ObjModel.Read(path);
+        Assert.Equal((0, 0, 0, 255), mesh.Surfaces[0].Image!.Get(0, 0));
+        Assert.Null(mesh.Surfaces[0].Picture);
+        Assert.Equal((0, 255, 0, 255), mesh.Surfaces[1].Image!.Get(0, 0));
+    }
+
+    [Fact]
     public void ABrokenObjSaysWhereAndAMissingPictureIsANote()
     {
         using var temp = new TempFolder();
@@ -167,6 +183,64 @@ public sealed class ModelPropTests
         Assert.Equal("ModelCrateBox2", again.Things.Find(ActorBorrowing.FirstNumber + 1)?.ClassName);
         Assert.True(again.CanShow(ActorBorrowing.FirstNumber + 1));
         Assert.Equal("ModelCrateBox", ModelProps.Of(Project.Open(project.Folder), ActorBorrowing.FirstNumber));
+    }
+
+    [Fact]
+    public void TheThreeDViewStandsTheModelWhereGZDoomDrawsItAndPicksItAsTheObject()
+    {
+        using var temp = new TempFolder();
+        var mesh = ObjModel.Read(WriteBox(temp.Path));
+        var map = StarterRoom.Create("MAP01", "doom");
+        var (cx, cy) = (map.Vertices.Average(v => v.X), map.Vertices.Average(v => v.Y));
+        // Facing north (90°): the model's forward (+X) turns onto the map's +Y.
+        map.Things.Add(new WadSmith.Core.Maps.MapThing { X = cx, Y = cy, Angle = 90, Type = 20000 });
+        var geometry = WadSmith.Editor.Geometry.MapGeometry.Build(WadSmith.Editor.Model.EditorMap.FromModel(map).Frame);
+        var floor = map.Sectors[0].FloorHeight;
+        var prop = new WadSmith.Editor.Scene.PropShape(mesh, 38.4, (0, 0, 0), "Box", [null, null]);
+        var scene = WadSmith.Editor.Scene.MapScene.Build(geometry, _ => (64, 64), _ => new WadSmith.Editor.Scene.SpriteShape(16, 16, 8, 16, 1, 1), model: t => t == 20000 ? prop : null);
+
+        Assert.DoesNotContain(scene.Sprites, s => s.Type == 20000);
+        var batches = scene.Batches.Where(b => b.Kind == WadSmith.Editor.Scene.SurfaceKind.Model).ToList();
+        Assert.Equal(2, batches.Count);
+        var v = batches.SelectMany(b => Enumerable.Range(0, b.VertexCount).Select(i => (X: b.Vertices[i * 8], Y: b.Vertices[i * 8 + 1], Z: b.Vertices[i * 8 + 2]))).ToList();
+        // 4 m wide across its forward (now east–west), 2 m deep (now north–south), 3 m = 96 units tall on the floor.
+        Assert.Equal(cx - 76.8, v.Min(p => p.X), 2);
+        Assert.Equal(cx + 76.8, v.Max(p => p.X), 2);
+        Assert.Equal(cy - 38.4, v.Min(p => p.Y), 2);
+        Assert.Equal(cy + 38.4, v.Max(p => p.Y), 2);
+        Assert.Equal(floor, v.Min(p => p.Z), 2);
+        Assert.Equal(floor + 96, v.Max(p => p.Z), 2);
+        // The front face (red, the first surface) is the north one.
+        Assert.True(batches[0].Vertices.Where((_, i) => i % 8 == 1).All(y => Math.Abs(y - (cy + 38.4)) < 0.01));
+
+        // A ray from the south at mid height meets the object, from outside or (both sides drawn) from inside.
+        var hit = scene.Hit((cx, cy - 300, floor + 48), (0, 1, 0), 90);
+        Assert.Equal(WadSmith.Editor.Scene.HitKind.Thing, hit?.Kind);
+        Assert.Same(scene.Things.Single(t => t.Type == 20000).Element, hit!.Value.Element);
+        Assert.NotEmpty(scene.Surface(hit.Value).Surfaces);
+    }
+
+    [Fact]
+    public void ThePropsShapeIsReadBackFromTheProjectAsItsModelDefSaysIt()
+    {
+        using var temp = new TempFolder();
+        var path = WriteBox(Path.Combine(temp.Path, "source"));
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        var wad = GameFiles.Require("freedoom2.wad");
+        var game = GameResources.Load("freedoom2", project.Folder, [new FoundGame(GameCatalog.Get("freedoom2")!, wad, new FileInfo(wad).Length)], null)!;
+        var made = ModelProps.Import(project, game, path);
+        var shape = ModelProps.Shape(project.Folder, project.CopiedNow(), made.Actor.Number)!;
+        Assert.Equal(38.4, shape.Scale, 6);
+        Assert.Equal((0f, 0f, 0f), shape.Origin);
+        Assert.Equal((255, 0, 0, 255), shape.Pictures[0]!.Get(0, 0));
+        Assert.Null(ModelProps.Shape(project.Folder, project.CopiedNow(), 1));
+
+        // An entry edited by hand: the view follows its scale and offset, as GZDoom would.
+        var definition = Path.Combine(project.Folder, "models", made.Actor.Thing.ClassName, "modeldef.txt");
+        File.WriteAllText(definition, File.ReadAllText(definition).Replace("Scale 38.4 38.4 38.4", "Scale 10 10 10", StringComparison.Ordinal).Replace("Offset 0 0 0", "Offset 5 0 -10", StringComparison.Ordinal));
+        var edited = ModelProps.Shape(project.Folder, project.CopiedNow(), made.Actor.Number)!;
+        Assert.Equal(10, edited.Scale);
+        Assert.Equal((-0.5f, 0f, 1f), edited.Origin);
     }
 
     [Fact]

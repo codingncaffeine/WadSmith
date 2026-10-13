@@ -359,6 +359,12 @@ public sealed class Project
         lock (_gate) return Info.Copied.LastOrDefault(c => c.Game == game && c.Kind == kind && string.Equals(c.Original, original, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>What the project's record says was copied in, as it stands now (any thread: a copy taken under the record's lock).</summary>
+    public IReadOnlyList<CopiedAsset> CopiedNow()
+    {
+        lock (_gate) return [.. Info.Copied];
+    }
+
     /// <summary>Notes a copy in the project's record and writes the record (any thread).</summary>
     public void Record(CopiedAsset copy)
     {

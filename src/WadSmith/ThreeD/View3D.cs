@@ -384,7 +384,7 @@ internal sealed class View3D : Control
         var geometry = session.Geometry;
         var resources = session.Resources;
         var hidden = new HashSet<string>(session.Hidden);
-        _scenes.Request(() => (session, MapScene.Build(geometry, name => resources?.Textures.GetWall(name) is { } w ? (w.Width, w.Height) : null, SpriteShapes.For(resources), hidden)));
+        _scenes.Request(() => (session, MapScene.Build(geometry, name => resources?.Textures.GetWall(name) is { } w ? (w.Width, w.Height) : null, SpriteShapes.For(resources), hidden, ModelShapes.For(session))));
     }
 
     private (GameResources? Resources, SpriteShape? Shape) _player;

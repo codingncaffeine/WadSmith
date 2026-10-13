@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using WadSmith.Core;
 using WadSmith.Core.Games;
 using WadSmith.Core.Graphics;
@@ -142,6 +143,43 @@ public static class ModelProps
         var thing = ThingOf(number, className, sprite, radius, height, title);
         into.Carry([thing], project.Folder);
         return new ImportedModel(new CarriedActor(number, thing, 8, 0, true), scale, sizeNote, notes);
+    }
+
+    /// <summary>
+    /// The model a prop of a project (<paramref name="copied"/>, its record) draws in the 3D view, read from the project's own copy in
+    /// <paramref name="folder"/>: its shape, each surface's picture (<c>skinN.png</c>), and the scale and offset its MODELDEF
+    /// entry gives it (so an entry edited by hand shows as GZDoom will draw it). Null when it is not a prop or cannot be read.
+    /// Reads files: call it on a worker.
+    /// </summary>
+    public static Scene.PropShape? Shape(string folder, IReadOnlyList<CopiedAsset> copied, int number)
+    {
+        var className = copied.FirstOrDefault(c => c.Kind == "actor" && c.Game == "model" && c.Name == number.ToString(CultureInfo.InvariantCulture))?.Original;
+        if (className is null || copied.FirstOrDefault(c => c.Kind == "modelprop" && c.Original == className) is not { } prop) return null;
+        var dir = Path.Combine(folder, prop.File);
+        try
+        {
+            var definition = File.ReadAllText(Path.Combine(dir, "modeldef.txt"));
+            var file = Regex.Match(definition, "(?im)^\\s*Model\\s+0\\s+\"([^\"]+)\"") is { Success: true } m ? m.Groups[1].Value : "model.obj";
+            var path = Path.Combine(dir, file);
+            var kind = Path.GetExtension(path).ToLowerInvariant();
+            var mesh = kind switch { ".md3" => Md3Model.Read(path), ".iqm" => IqmModel.Read(path), _ => ObjModel.Read(path) };
+            var scale = Regex.Match(definition, @"(?im)^\s*Scale\s+([-0-9.eE]+)") is { Success: true } s ? double.Parse(s.Groups[1].Value, CultureInfo.InvariantCulture) : 1;
+            var offset = Regex.Match(definition, @"(?im)^\s*Offset\s+([-0-9.eE]+)\s+([-0-9.eE]+)\s+([-0-9.eE]+)");
+            float Back(int group) => offset.Success && scale != 0 ? (float)(-double.Parse(offset.Groups[group].Value, CultureInfo.InvariantCulture) / scale) : 0;
+            var pictures = new RgbaImage?[mesh.Surfaces.Count];
+            for (var i = 0; i < pictures.Length; i++)
+            {
+                var skin = Path.Combine(dir, $"skin{i}.png");
+                pictures[i] = File.Exists(skin) ? ImageCodec.Decode(File.ReadAllBytes(skin), skin) : mesh.Surfaces[i].Image;
+            }
+
+            return new Scene.PropShape(mesh, scale, (Back(1), Back(2), Back(3)), className, pictures, Stretch);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException or FormatException)
+        {
+            App.Log.Warn($"The model of {className} could not be read for the 3D view: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>The catalogue entry of a prop: a solid decoration showing its baked sprites.</summary>

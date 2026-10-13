@@ -252,6 +252,9 @@ internal sealed unsafe class SceneRenderer : IDisposable
     private int _height;
     private GameResources? _resources;
 
+    /// <summary>The pictures of the scene's 3D models' surfaces, by batch name (null: the surface has none).</summary>
+    private readonly Dictionary<string, RgbaImage?> _modelPictures = [];
+
     public SceneRenderer(Gl gl)
     {
         _gl = gl;
@@ -378,6 +381,7 @@ internal sealed unsafe class SceneRenderer : IDisposable
         }
 
         _lights = [.. scene.Lights];
+        foreach (var batch in scene.Batches.Where(b => b.Kind == SurfaceKind.Model)) _modelPictures[batch.Texture] = batch.Picture;
         _batches.Clear();
         foreach (var batch in scene.Batches)
         {
@@ -493,13 +497,31 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _gl.Uniform1f(_uOpacity, 1f);
         foreach (var (vao, _, count, kind, texture, opacity) in _batches)
         {
-            if (opacity < 1) continue;
+            if (opacity < 1 || kind == SurfaceKind.Model) continue;
             var (id, w, h) = TextureFor(texture, kind);
             _gl.BindTexture(Gl.Texture2D, id);
             _gl.Uniform2f(_uTextureSize, w, h);
             _gl.Uniform1i(_uSky, kind == SurfaceKind.Sky ? 1 : 0);
             _gl.BindVertexArray(vao);
             _gl.DrawArrays(Gl.Triangles, 0, count);
+        }
+
+        // 3D models: both sides, as models often leave faces open where they meet the eye.
+        if (_batches.Exists(b => b.Kind == SurfaceKind.Model))
+        {
+            _gl.Disable(Gl.CullFaceMode);
+            _gl.Uniform1i(_uSky, 0);
+            foreach (var (vao, _, count, kind, texture, _) in _batches)
+            {
+                if (kind != SurfaceKind.Model) continue;
+                var (id, w, h) = TextureFor(texture, kind);
+                _gl.BindTexture(Gl.Texture2D, id);
+                _gl.Uniform2f(_uTextureSize, w, h);
+                _gl.BindVertexArray(vao);
+                _gl.DrawArrays(Gl.Triangles, 0, count);
+            }
+
+            _gl.Enable(Gl.CullFaceMode);
         }
 
         // Sprites: both sides drawn (they turn to face the camera), see-through pixels dropped by the shader.
@@ -633,10 +655,15 @@ internal sealed unsafe class SceneRenderer : IDisposable
 
     private (int Id, int Width, int Height) TextureFor(string name, SurfaceKind kind)
     {
-        var key = (name, kind == SurfaceKind.Wall ? SurfaceKind.Wall : kind == SurfaceKind.Sky ? SurfaceKind.Sky : SurfaceKind.Floor);
+        var key = (name, kind is SurfaceKind.Wall or SurfaceKind.Sky or SurfaceKind.Model ? kind : SurfaceKind.Floor);
         if (_textures.TryGetValue(key, out var t)) return t;
         RgbaImage? image = null;
-        if (_resources is { } r)
+        if (kind == SurfaceKind.Model)
+        {
+            // A model surface with no picture is plain grey, as its baked sprites show it.
+            image = _modelPictures.GetValueOrDefault(name) ?? Plain();
+        }
+        else if (_resources is { } r)
         {
             image = key.Item2 switch
             {
@@ -679,6 +706,13 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _gl.TexParameteri(Gl.Texture2D, Gl.TextureWrapS, Gl.ClampToEdge);
         _gl.TexParameteri(Gl.Texture2D, Gl.TextureWrapT, Gl.ClampToEdge);
         return _spriteTextures[type] = (id, image.Width, image.Height);
+    }
+
+    private static RgbaImage Plain()
+    {
+        var image = new RgbaImage(8, 8);
+        for (var i = 0; i < 64; i++) image.Set(i % 8, i / 8, 170, 170, 170);
+        return image;
     }
 
     /// <summary>The picture for a texture the game does not have: a loud checkerboard, as other editors show.</summary>

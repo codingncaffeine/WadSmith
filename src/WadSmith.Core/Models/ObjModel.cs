@@ -20,6 +20,7 @@ public static class ObjModel
         var corners = new List<(float U, float V)>();
         var groups = new List<(string Material, List<MeshVertex> Triangles)>();
         var pictures = new Dictionary<string, string>(StringComparer.Ordinal);
+        var colours = new Dictionary<string, (byte R, byte G, byte B)>(StringComparer.Ordinal);
         List<MeshVertex>? current = null;
         var line = 0;
         foreach (var raw in File.ReadLines(path))
@@ -44,7 +45,7 @@ public static class ObjModel
                     else current = groups[at].Triangles;
                     break;
                 case "mtllib" when parts.Length > 1:
-                    ReadLibrary(Path.Combine(folder, text[6..].Trim()), pictures);
+                    ReadLibrary(Path.Combine(folder, text[6..].Trim()), pictures, colours);
                     break;
                 case "f" when parts.Length >= 4:
                     if (current is null) groups.Add(("", current = []));
@@ -64,7 +65,7 @@ public static class ObjModel
         var surfaces = new List<MeshSurface>();
         foreach (var (material, triangles) in groups.Where(g => g.Triangles.Count > 0))
         {
-            var file = pictures.GetValueOrDefault(material) ?? Guess(folder, material);
+            var file = pictures.GetValueOrDefault(material) ?? (colours.ContainsKey(material) ? null : Guess(folder, material));
             // A model with no materials at all (common in downloads) takes the picture named like it, or the only one beside it.
             if (file is null && groups.Count == 1 && material.Length == 0 && pictures.Count == 0 && Beside(folder, Path.GetFileNameWithoutExtension(path)) is { } beside)
             {
@@ -72,7 +73,9 @@ public static class ObjModel
                 notes?.Add($"No material names a picture, so {Path.GetFileName(beside)} beside it was used.");
             }
 
-            surfaces.Add(new MeshSurface(material, triangles, file, file is null ? null : LoadPicture(file, notes)));
+            // A material of a colour alone (eyes, teeth) is a picture of that colour, so the model looks as its maker saw it.
+            var image = file is not null ? LoadPicture(file, notes) : colours.TryGetValue(material, out var colour) ? Solid(colour) : null;
+            surfaces.Add(new MeshSurface(material, triangles, file, image));
         }
 
         if (surfaces.Count == 0) throw new CorruptDataException($"{name} has no faces to show.");
@@ -99,8 +102,8 @@ public static class ObjModel
         }
     }
 
-    /// <summary>Each material's diffuse picture in a <c>.mtl</c> library; options before the file name (<c>-s 1 1 1</c>) are skipped.</summary>
-    private static void ReadLibrary(string path, Dictionary<string, string> pictures)
+    /// <summary>Each material's diffuse picture in a <c>.mtl</c> library (options before the file name, <c>-s 1 1 1</c>, are skipped), and its diffuse colour.</summary>
+    private static void ReadLibrary(string path, Dictionary<string, string> pictures, Dictionary<string, (byte R, byte G, byte B)> colours)
     {
         if (!File.Exists(path)) return;
         var folder = Path.GetDirectoryName(path) ?? ".";
@@ -109,6 +112,11 @@ public static class ObjModel
         {
             var text = raw.Trim();
             if (text.StartsWith("newmtl", StringComparison.Ordinal)) material = text[6..].Trim();
+            else if (material is not null && text.StartsWith("Kd ", StringComparison.Ordinal) && text[3..].Split(' ', StringSplitOptions.RemoveEmptyEntries) is { Length: >= 3 } kd)
+            {
+                static byte Channel(string s) => float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? (byte)Math.Clamp((int)MathF.Round(v * 255), 0, 255) : (byte)255;
+                colours[material] = (Channel(kd[0]), Channel(kd[1]), Channel(kd[2]));
+            }
             else if (material is not null && text.StartsWith("map_Kd", StringComparison.OrdinalIgnoreCase))
             {
                 var rest = text[6..].Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
@@ -133,6 +141,14 @@ public static class ObjModel
         }
 
         return null;
+    }
+
+    /// <summary>A small picture of one colour, for a material that has a colour and no picture.</summary>
+    private static RgbaImage Solid((byte R, byte G, byte B) colour)
+    {
+        var image = new RgbaImage(4, 4);
+        for (var i = 0; i < 16; i++) image.Set(i % 4, i / 4, colour.R, colour.G, colour.B);
+        return image;
     }
 
     private static readonly string[] PictureExtensions = [".png", ".tga", ".jpg", ".jpeg", ".bmp", ".webp"];

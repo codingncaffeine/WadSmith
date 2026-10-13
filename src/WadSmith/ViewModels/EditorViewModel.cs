@@ -315,7 +315,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>The numbers of the props this project brought in from 3D models (read on the shelf's worker).</summary>
     private IReadOnlyCollection<int> ModelNumbers() =>
-        [.. Session.Project.Info.Copied.Where(c => c.Kind == "actor" && c.Game == "model").Select(c => int.Parse(c.Name, System.Globalization.CultureInfo.InvariantCulture))];
+        [.. Session.Project.CopiedNow().Where(c => c.Kind == "actor" && c.Game == "model").Select(c => int.Parse(c.Name, System.Globalization.CultureInfo.InvariantCulture))];
 
     /// <summary>"Add a 3D model…": the file picker, then the model brought in as a prop on a worker.</summary>
     private async Task AddModelAsync()

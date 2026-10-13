@@ -18,6 +18,9 @@ public enum SurfaceKind
 
     /// <summary>Open sky: drawn with the sky, whatever its flat says.</summary>
     Sky,
+
+    /// <summary>A 3D model's surface (Phase 11): drawn with its own picture (<see cref="SceneBatch.Picture"/>), both sides, owned by its object.</summary>
+    Model,
 }
 
 /// <summary>The part of a wall's face a texture sits on: the upper, where the ceiling beyond is lower; the middle; the lower, where the floor beyond is higher.</summary>
@@ -79,6 +82,9 @@ public sealed class SceneBatch(string texture, SurfaceKind kind, float opacity =
     public string Texture { get; } = texture;
 
     public SurfaceKind Kind { get; } = kind;
+
+    /// <summary>A model surface's picture (its texture pixels are this picture's); null for every other kind and for a model surface without one.</summary>
+    public WadSmith.Core.Graphics.RgbaImage? Picture { get; init; }
 
     public List<float> Vertices { get; } = [];
 
@@ -153,6 +159,13 @@ public readonly record struct SceneThing(Thing Element, float X, float Y, float 
 /// GZDoom draws it (twice its size argument), and whether it is soft (lights each surface by the way it faces).
 /// </summary>
 public readonly record struct SceneLight(float X, float Y, float Z, float R, float G, float B, float Reach, bool Soft);
+
+/// <summary>
+/// A 3D model an object type shows (Phase 11): its shape in model units, map units per model unit, the point of the model that
+/// stands on the object's spot (the middle of its base), a name unique to the model, and each surface's picture. Heights are
+/// divided by the game's pixel stretch, as GZDoom draws a model.
+/// </summary>
+public sealed record PropShape(WadSmith.Core.Models.Mesh Mesh, double Scale, (float X, float Y, float Z) Origin, string Key, IReadOnlyList<WadSmith.Core.Graphics.RgbaImage?> Pictures, double Stretch = 1.2);
 
 /// <summary>A sprite's picture as the 3D view needs it: size in pixels, the foot point (Doom's offsets) and its scale.</summary>
 public readonly record struct SpriteShape(int Width, int Height, int OffsetX, int OffsetY, double ScaleX, double ScaleY);
@@ -254,10 +267,18 @@ public sealed class MapScene
             for (var i = 0; i < v.Count; i += SceneBatch.Stride * 3)
             {
                 const int s = SceneBatch.Stride;
-                var t = Distance(origin, direction, (v[i], v[i + 1], v[i + 2]), (v[i + s], v[i + s + 1], v[i + s + 2]), (v[i + 2 * s], v[i + 2 * s + 1], v[i + 2 * s + 2]), facing: true);
+                var model = b.Kind == SurfaceKind.Model;
+                var t = Distance(origin, direction, (v[i], v[i + 1], v[i + 2]), (v[i + s], v[i + s + 1], v[i + s + 2]), (v[i + 2 * s], v[i + 2 * s + 1], v[i + 2 * s + 2]), facing: !model);
                 if (t <= 0 || t >= bestT) continue;
                 bestT = t;
                 var tri = i / (s * 3);
+                if (model)
+                {
+                    // A model's triangles are its object, met from either side as they are drawn.
+                    best = new SceneHit(b.Owners[tri], HitKind.Thing, WallPart.Middle, false, t, origin.X + direction.X * t, origin.Y + direction.Y * t, origin.Z + direction.Z * t);
+                    continue;
+                }
+
                 var part = b.Parts[tri];
                 var wall = b.Kind == SurfaceKind.Wall;
                 var kind = wall ? HitKind.Wall : part is 1 or 3 ? HitKind.Ceiling : HitKind.Floor;
@@ -298,7 +319,16 @@ public sealed class MapScene
                 }
             }
 
-            return ([], sprites);
+            // A model's object: all its triangles.
+            foreach (var b in Batches.Where(b => b.Kind == SurfaceKind.Model))
+            {
+                for (var tri = 0; tri < b.Owners.Count; tri++)
+                {
+                    if (ReferenceEquals(b.Owners[tri], hit.Element)) surfaces.AddRange(b.Vertices.GetRange(tri * SceneBatch.Stride * 3, SceneBatch.Stride * 3));
+                }
+            }
+
+            return ([.. surfaces], sprites);
         }
 
         var part = hit.Kind == HitKind.Wall ? (byte)hit.Part : (byte)((hit.Kind == HitKind.Ceiling ? 1 : 0) + (hit.Platform ? 2 : 0));
@@ -375,7 +405,8 @@ public sealed class MapScene
     /// <param name="wallSize">A wall texture's size in pixels, or null when the game has no such texture.</param>
     /// <param name="sprite">An object type's sprite shape, or null when it shows none.</param>
     /// <param name="hidden">Groups hidden for clarity: their rooms, the faces seen from them and their objects are left out.</param>
-    public static MapScene Build(MapGeometry geometry, Func<string, (int Width, int Height)?> wallSize, Func<int, SpriteShape?>? sprite = null, IReadOnlySet<string>? hidden = null)
+    /// <param name="model">An object type's 3D model, or null when it shows a sprite.</param>
+    public static MapScene Build(MapGeometry geometry, Func<string, (int Width, int Height)?> wallSize, Func<int, SpriteShape?>? sprite = null, IReadOnlySet<string>? hidden = null, Func<int, PropShape?>? model = null)
     {
         var f = geometry.Frame;
 
@@ -580,6 +611,14 @@ public sealed class MapScene
                 lights.Add(new SceneLight((float)t.X, (float)t.Y, (float)z, sign * t.Args[0] / 255f, sign * t.Args[1] / 255f, sign * t.Args[2] / 255f, 2f * t.Args[3], t.Type is >= 9830 and <= 9834));
             }
 
+            // A 3D model: its triangles stand in the map as GZDoom draws them (base on the spot, turned by the object's angle,
+            // heights divided by the pixel stretch), in place of the baked sprite.
+            if (model?.Invoke(t.Type) is { } prop)
+            {
+                AddModel(prop, t.Element, t.X, t.Y, z, t.Angle, light, tint);
+                continue;
+            }
+
             if (sprite?.Invoke(t.Type) is not { } shape) continue;
             if (!sprites.TryGetValue(t.Type, out var batch)) sprites[t.Type] = batch = new SpriteBatch(t.Type);
             batch.Owners.Add(t.Element);
@@ -593,6 +632,32 @@ public sealed class MapScene
         return new MapScene(f.Version, [.. batches.Values.Where(b => b.VertexCount > 0).OrderBy(b => b.Opacity < 1 ? 1 : 0)], [.. sprites.Values], things, lights, (x0, y0, minZ, x1, y1, maxZ));
 
         double Height(string texture) => texture is "-" or "" ? 128 : wallSize(texture)?.Height ?? 128;
+
+        void AddModel(PropShape prop, Thing owner, double x, double y, double z, int angle, int light, Tint tint)
+        {
+            var a = angle * Math.PI / 180;
+            var (cos, sin) = (Math.Cos(a), Math.Sin(a));
+            for (var s = 0; s < prop.Mesh.Surfaces.Count; s++)
+            {
+                var surface = prop.Mesh.Surfaces[s];
+                if (surface.Triangles.Count == 0) continue;
+                var picture = s < prop.Pictures.Count ? prop.Pictures[s] : null;
+                var key = $"MODEL:{prop.Key}:{s}";
+                if (!batches.TryGetValue((key, SurfaceKind.Model, 1f), out var batch)) batches[(key, SurfaceKind.Model, 1f)] = batch = new SceneBatch(key, SurfaceKind.Model) { Picture = picture };
+                var (w, h) = picture is null ? (64, 64) : (picture.Width, picture.Height);
+                foreach (var v in surface.Triangles)
+                {
+                    var (lx, ly) = ((v.X - prop.Origin.X) * prop.Scale, (v.Y - prop.Origin.Y) * prop.Scale);
+                    batch.Add(x + lx * cos - ly * sin, y + lx * sin + ly * cos, z + (v.Z - prop.Origin.Z) * prop.Scale / prop.Stretch, v.U * w, v.V * h, light, tint);
+                }
+
+                for (var i = 0; i < surface.Triangles.Count; i += 3)
+                {
+                    batch.Owners.Add(owner);
+                    batch.Parts.Add(0);
+                }
+            }
+        }
 
         // An area's floor or ceiling height at a wall's two ends (its plane's when sloped).
         static (double From, double To) Ends(SectorFrame area, MapPoint from, MapPoint to, bool ceiling) => ceiling
