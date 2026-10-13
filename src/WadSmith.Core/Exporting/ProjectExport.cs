@@ -73,7 +73,7 @@ public static class ProjectExport
             foreach (var file in Directory.EnumerateFiles(project.Folder, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
             {
                 var relative = Path.GetRelativePath(project.Folder, file).Replace('\\', '/');
-                var top = relative.Split('/')[0];
+                var top = Path.GetRelativePath(project.Folder, file).Split(Path.DirectorySeparatorChar)[0];
                 if (top.StartsWith('.') || top == Project.DeletedFolderName || Bookkeeping.Contains(relative, StringComparer.OrdinalIgnoreCase)) continue;
                 var entry = zip.CreateEntry(relative, CompressionLevel.Optimal);
                 using var to = entry.Open();
@@ -189,7 +189,7 @@ public static class ProjectExport
         foreach (var file in Directory.EnumerateFiles(project.Folder, "*", SearchOption.AllDirectories))
         {
             var relative = Path.GetRelativePath(project.Folder, file).Replace('\\', '/');
-            var parts = relative.Split('/');
+            var parts = Path.GetRelativePath(project.Folder, file).Split(Path.DirectorySeparatorChar);
             if (parts[0].StartsWith('.') || parts[0] == Project.DeletedFolderName || parts[0] is "maps" or "music" || Bookkeeping.Contains(relative, StringComparer.OrdinalIgnoreCase)) continue;
             if (relative.Equals(ProjectMapInfo.FileName, StringComparison.OrdinalIgnoreCase)) continue;
             var kind = parts[0].ToLowerInvariant() switch
