@@ -85,7 +85,7 @@ public static class ObjModel
 
         MeshVertex Corner(string spec)
         {
-            var ids = spec.Split('/');
+            var ids = spec.Split('/'); // not a path
             var p = Index(ids[0], positions.Count) ?? throw new CorruptDataException($"{name}, line {line}: a face corner names no vertex.");
             var t = ids.Length > 1 ? Index(ids[1], corners.Count) : null;
             var (x, y, z) = positions[p];
