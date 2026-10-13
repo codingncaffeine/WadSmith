@@ -224,6 +224,14 @@ public static partial class GameLocator
                     continue;
                 }
 
+                // A Build group file (Duke Nukem 3D, D48): its art and sounds can be borrowed; GZDoom does not play it.
+                if (real.EndsWith(".grp", StringComparison.OrdinalIgnoreCase))
+                {
+                    archives++;
+                    if (Build.GrpArchive.IsGrp(real) && GameCatalog.Get("duke3d") is { } duke) here.Add(new FoundGame(duke, real, new FileInfo(real).Length, Iwad: false));
+                    continue;
+                }
+
                 wads++;
                 var names = WadDirectory.ReadNames(real);
                 if (names is null) continue;
@@ -399,7 +407,7 @@ public static partial class GameLocator
             IEnumerable<string> files, dirs;
             try
             {
-                files = Directory.EnumerateFiles(dir, "*", options).Where(f => f.EndsWith(".wad", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".iwad", StringComparison.OrdinalIgnoreCase) || (archives && IsArchive(f))).ToList();
+                files = Directory.EnumerateFiles(dir, "*", options).Where(f => f.EndsWith(".wad", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".iwad", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".grp", StringComparison.OrdinalIgnoreCase) || (archives && IsArchive(f))).ToList();
                 dirs = d < depth ? Directory.EnumerateDirectories(dir, "*", options).ToList() : [];
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

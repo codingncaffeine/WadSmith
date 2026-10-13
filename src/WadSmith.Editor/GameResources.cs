@@ -158,6 +158,13 @@ public sealed class GameResources
             return null;
         }
 
+        // Duke Nukem 3D (D48): its art as pictures to borrow; GZDoom does not play it, so it has no objects of its own here yet.
+        if (found.Game.Engine == "build")
+        {
+            var build = new ResourceStack([Core.Build.BuildArtContainer.Open(found.Path)]);
+            return new GameResources(found.Game, [found.Path], build, new TextureLibrary(build), new SpriteIndex(build), ThingCatalog.Empty, []);
+        }
+
         var files = new List<string>();
         if (found.Game.AddOnFor is { } baseId && games.FirstOrDefault(g => g.Game.Id == baseId) is { } baseGame) files.Add(baseGame.Path);
         files.Add(found.Path);

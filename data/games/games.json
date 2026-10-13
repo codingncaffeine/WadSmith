@@ -1,6 +1,7 @@
 {
   "comment": "Base games WadSmith recognises, most specific first: the first entry whose lumps are all present wins. A base game must also hold its engine family's core resources (see GameCatalog.CoreLumps); an entry with 'addOnFor' is an official add-on that loads over that base game and needs no core. 'engine' is the game family the engine runs; 'mapNamespace' is what a classic-format map's fields mean in that game.",
   "games": [
+    { "id": "duke3d", "title": "Duke Nukem 3D", "engine": "build", "mapNamespace": "doom", "supported": false, "wiki": "Duke Nukem 3D", "mustContain": ["TILES000.ART", "PALETTE.DAT"] },
     { "id": "doom64", "title": "Doom 64", "engine": "doom64", "mapNamespace": "doom", "supported": false, "mustContain": ["MAP01", "SYMBOLS", "MOUNTA"] },
 
     { "id": "freedm", "wiki": "Freedoom", "title": "FreeDM", "engine": "doom", "mapNamespace": "doom", "free": true, "mapNames": "MAPxx", "mustContain": ["MAP01", "FREEDM"] },
