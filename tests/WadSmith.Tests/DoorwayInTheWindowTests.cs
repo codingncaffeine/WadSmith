@@ -32,12 +32,18 @@ public sealed class DoorwayInTheWindowTests
                 var door = session.Selection.Items.OfType<Sector>().Single();
                 var frames = session.Map.Sectors.Where(s => s.OnMap && !ReferenceEquals(s, room) && !ReferenceEquals(s, door) && s.CeilingHeight > s.FloorHeight && s.CeilingHeight - s.FloorHeight < room.CeilingHeight - room.FloorHeight).ToList();
                 var found = Doors.Recognise(session.Geometry, door);
-                return new List<string>
+                var said = new List<string>
                 {
                     $"{session.Look.Door} is {picture.Height} tall in a room {room.CeilingHeight - room.FloorHeight} tall",
                     $"frames: {string.Join(", ", frames.Select(f => f.CeilingHeight - f.FloorHeight))}",
                     $"door opens to {found?.OpensTo}, {editor.Inspector.Heading}",
                 };
+
+                // A click on the plan lands on the door's face: the Inspector shows the door all the same, the face's details below.
+                session.Selection.Set(found!.Own.First());
+                Ui.Pump(0.3);
+                said.Add($"its face selected: {editor.Inspector.Heading}; {string.Join(", ", editor.Inspector.Rows.Where(r => r.Label is "Locked with" or "Looks like" or "THIS FACE").Select(r => r.Label))}");
+                return said;
             }
             finally
             {
@@ -45,7 +51,7 @@ public sealed class DoorwayInTheWindowTests
             }
         });
         var height = seen[0].Split(' ')[2];
-        Assert.Equal([seen[0], $"frames: {height}, {height}", $"door opens to {int.Parse(height, System.Globalization.CultureInfo.InvariantCulture) - 4}, Door"], seen);
+        Assert.Equal([seen[0], $"frames: {height}, {height}", $"door opens to {int.Parse(height, System.Globalization.CultureInfo.InvariantCulture) - 4}, Door", "its face selected: Door; Looks like, Locked with, THIS FACE"], seen);
         Assert.True(int.Parse(height, System.Globalization.CultureInfo.InvariantCulture) < 128, seen[0]);
     }
 
@@ -87,7 +93,25 @@ public sealed class DoorwayInTheWindowTests
                 Ui.Pump(0.5);
                 found = Doors.Recognise(session.Geometry, door)!;
                 var picture = session.Resources!.Textures.FindWall("DOOR1")!;
-                said.Add($"after DOOR1 by right-click: faces {string.Join("/", found.Own.Select(l => l.Front.Top).Distinct())}, opens to {found.OpensTo} under a {picture.Height} picture, {menu.Count} choices, nothing for a plain wall: {editor.ContextMenuFor(session.Map.Lines.First(l => l.OnMap && l.Back is null && ReferenceEquals(l.Front.Sector, room))).Count}");
+                said.Add($"after DOOR1 by right-click: faces {string.Join("/", found.Own.Select(l => l.Front.Top).Distinct())}, opens to {found.OpensTo} under a {picture.Height} picture, {menu.Count - strip.Choices.Count} choices before the looks, nothing for a plain wall: {editor.ContextMenuFor(session.Map.Lines.First(l => l.OnMap && l.Back is null && ReferenceEquals(l.Front.Sector, room))).Count}");
+
+                // Locking: by the right-click menu, and by letting a key go on the door; a key let go in a room lies there.
+                var told = new List<string>();
+                session.Notice += s => told.Add(s);
+                menu.Single(c => c.Header == "Lock with the red key").Act();
+                Ui.Pump(0.5);
+                var lockedMenu = editor.ContextMenuFor(door);
+                said.Add($"locked by right-click: lock {Doors.Recognise(session.Geometry, door)!.Settings.Lock}, menu marks '{lockedMenu.Single(c => c.Header.Contains("red", StringComparison.Ordinal)).Header}' and offers {(lockedMenu.Any(c => c.Header == "Unlock") ? "Unlock" : "no unlock")}; told: {told.LastOrDefault()?.Split('.')[0]}");
+                lockedMenu.Single(c => c.Header == "Unlock").Act();
+                Ui.Pump(0.5);
+                var b = session.Geometry.WallBoundsAt(door.Slot)!.Value;
+                var middle = new WadSmith.Editor.Geometry.MapPoint((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2);
+                var thingsBefore = session.Map.Things.Count(t => t.OnMap);
+                session.DropThing(5, middle, middle, 14);
+                Ui.Pump(0.5);
+                session.DropThing(5, new(-64, -64), new(-64, -64), 14);
+                Ui.Pump(0.5);
+                said.Add($"after unlock then a blue key dropped on the door and one in the room: lock {Doors.Recognise(session.Geometry, door)!.Settings.Lock}, {session.Map.Things.Count(t => t.OnMap) - thingsBefore} key placed");
                 return said;
             }
             finally
@@ -96,6 +120,13 @@ public sealed class DoorwayInTheWindowTests
             }
         });
         var count = seen[0].Split(' ')[0];
-        Assert.Equal([$"{count} looks, DOOR3 in use, among them BIGDOOR2 DOOR1 DOOR3", "after BIGDOOR2: faces BIGDOOR2, 2 frames as tall as the room, opens to 124", $"after DOOR1 by right-click: faces DOOR1, opens to 68 under a 72 picture, {count} choices, nothing for a plain wall: 0"], seen);
+        Assert.Equal(
+        [
+            $"{count} looks, DOOR3 in use, among them BIGDOOR2 DOOR1 DOOR3",
+            "after BIGDOOR2: faces BIGDOOR2, 2 frames as tall as the room, opens to 124",
+            "after DOOR1 by right-click: faces DOOR1, opens to 68 under a 72 picture, 4 choices before the looks, nothing for a plain wall: 0",
+            "locked by right-click: lock 129, menu marks '✓ Lock with the red key' and offers Unlock; told: Locked with the red key",
+            "after unlock then a blue key dropped on the door and one in the room: lock 130, 1 key placed",
+        ], seen);
     }
 }

@@ -383,12 +383,24 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>Raised when the user asks for new rooms to look like a room.</summary>
     public event Action<Sector>? LookLike;
 
+    /// <summary>The door a wall is a face of (one of the door's own walls, used to open it), or null: a click on the plan lands on a door's face, and the door is what the user means.</summary>
+    private Sector? DoorOf(Line l)
+    {
+        foreach (var side in new[] { l.Back, l.Front })
+        {
+            if (side is null) continue;
+            if (Doors.Recognise(_session.Geometry, side.Sector) is { } door && door.Own.Contains(l)) return side.Sector;
+        }
+
+        return null;
+    }
+
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
         [Sector s] when Platforms.ControlOf(_session.Geometry, s) is not null => "platform control",
         [Sector s] => (Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room") + $" {Platforms.Of(_session.Geometry, s).Count}" + ClimbKind(s),
-        [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : l.Special == 0 ? "wall" : "wall with an action",
+        [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : DoorOf(l) is { } doorArea ? $"door {Doors.Recognise(_session.Geometry, doorArea)?.Settings.Lock} face" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : "thing",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
         [var one] => one.GetType().Name,
@@ -614,6 +626,20 @@ internal sealed partial class InspectorViewModel : ObservableObject
                     if (Teleports.SendersTo(_session.Geometry, t) is { Count: > 0 } senders) _session.Selection.Set([.. senders]);
                 }));
                 AddThing(t);
+                break;
+            case Line l when DoorOf(l) is { } doorArea:
+                // A face of a door: the door is what was meant, with the face's own details below it.
+                Heading = "Door";
+                _summaryOf = () => Doors.Recognise(_session.Geometry, doorArea) is { } d ? Explaining.Describe(d) : "No longer a door.";
+                Summary = _summaryOf();
+                AddDoor(doorArea);
+                AddDoorKey(doorArea);
+                Rows.Add(new ActionRow("Add a switch that opens it", "Click a solid wall next: a piece of it becomes a switch the player uses to open this door from there (the door gets a tag; its own walls still open it).", () => SwitchFor?.Invoke(doorArea)));
+                Rows.Add(new ActionRow("Select the door's area", "Selects the door itself, with its area's settings.", () => _session.Selection.Set(doorArea)));
+                Rows.Add(new HeadingRow("THIS FACE"));
+                AddLine(l);
+                AddSide("Front", l.Front);
+                if (l.Back is { } doorBack) AddSide("Back", doorBack);
                 break;
             case Line l when Exits.IsExit(l):
                 Heading = l.Flag("playeruse") ? "Exit switch" : l.Flag("playercross") ? "Exit line" : "Exit";
@@ -1280,7 +1306,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         if (_session.Look == Look.For("doom"))
         {
             AddDoorLooks(area);
-            Rows.Add(new ChoiceRow("Locked with", "The key the player needs to open it; the card or the skull of that colour both work, as in Doom (lock).", [.. Doors.DoomLocks.Select(k => k.Name)],
+            Rows.Add(new ChoiceRow("Locked with", "The key the player needs to open it; the card or the skull of that colour both work, as in Doom (lock). Dragging a key from Objects onto the door, or right-clicking the door, locks it too.", [.. Doors.DoomLocks.Select(k => k.Name)],
                 () => Now() is { } d ? Math.Max(0, Doors.DoomLocks.ToList().FindIndex(k => k.Lock == d.Settings.Lock)) : 0,
                 v => Change(d => (d.Settings with { Lock = Doors.DoomLocks[v].Lock }, d.Monsters, d.StartsOpen), "Change the door's lock")));
         }
