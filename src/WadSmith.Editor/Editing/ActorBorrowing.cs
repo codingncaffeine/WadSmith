@@ -37,7 +37,9 @@ public static class ActorBorrowing
     {
         if (thing.Category is ThingCategory.Start or ThingCategory.Marker) return "Player starts and markers belong to each game.";
         var needs = from.Things.Needs(thing.ClassName);
-        var clash = needs.OwnSprites.FirstOrDefault(s => into.Sprites.Frames(s).Count > 0 && from.Sprites.Frames(s).Count > 0);
+        // A sprite clashes when the game's own files draw it; one copied into the project from this game before (the same
+        // pictures, for a monster that shares them, as Heretic's golem and its ghost do) does not.
+        var clash = needs.OwnSprites.FirstOrDefault(s => into.Sprites.Frames(s).Any(f => !into.IsProjectFile(f.Entry)) && from.Sprites.Frames(s).Count > 0);
         return clash is null ? null : $"{thing.Name} draws the sprite {clash}, which {into.Game.Title} has too; objects whose pictures share a name with this game's come in a later update.";
     }
 
@@ -55,18 +57,22 @@ public static class ActorBorrowing
         if (WhyNot(into, from, thing) is { } why) throw new CorruptDataException(why);
         var needs = from.Things.Needs(thing.ClassName);
 
-        // The sprites this game lacks, in the other game's colours, offsets kept.
+        // The sprites this game lacks, in the other game's colours, offsets kept. The files are written together and recorded
+        // once at the end: a record per picture rewrote the project's record, synced to the disk, hundreds of times.
+        var files = new List<(string, byte[])>();
+        var copies = new List<CopiedAsset>();
+        bool Pending(string kind, string original) => copies.Any(c => c.Kind == kind && string.Equals(c.Original, original, StringComparison.OrdinalIgnoreCase));
         var sprites = 0;
         foreach (var sprite in needs.Sprites.Where(s => into.Sprites.Frames(s).Count == 0))
         {
             foreach (var (_, entry) in from.Sprites.Frames(sprite))
             {
                 var file = $"sprites/{entry.Name}.png";
-                if (project.FindCopy(from.Game.Id, entry.Name, "sprite") is null)
+                if (project.FindCopy(from.Game.Id, entry.Name, "sprite") is null && !Pending("sprite", entry.Name))
                 {
                     var image = PictureLoader.Load(entry.Read(), ResourceNamespace.Sprites, from.Textures.Palette, entry.Name).Image;
-                    project.WriteFile(file, ImageCodec.EncodePng(image));
-                    project.Record(new CopiedAsset { Kind = "sprite", Game = from.Game.Id, Original = entry.Name, Name = entry.Name, File = file });
+                    files.Add((file, ImageCodec.EncodePng(image)));
+                    copies.Add(new CopiedAsset { Kind = "sprite", Game = from.Game.Id, Original = entry.Name, Name = entry.Name, File = file });
                 }
 
                 sprites++;
@@ -80,19 +86,22 @@ public static class ActorBorrowing
             var (lines, lumps) = from.Things.Sounds.Needs(name);
             foreach (var lump in lumps)
             {
-                if (project.FindCopy(from.Game.Id, lump, "sound") is not null || from.Find(lump, ResourceNamespace.Sounds) is not { } entry && from.Find(lump, ResourceNamespace.Global) is not { } _) continue;
+                if (project.FindCopy(from.Game.Id, lump, "sound") is not null || Pending("sound", lump) || from.Find(lump, ResourceNamespace.Sounds) is not { } entry && from.Find(lump, ResourceNamespace.Global) is not { } _) continue;
                 var source = from.Find(lump, ResourceNamespace.Sounds) ?? from.Find(lump, ResourceNamespace.Global)!;
                 var file = $"sounds/{lump.ToUpperInvariant()}.lmp";
-                project.WriteFile(file, source.Read());
-                project.Record(new CopiedAsset { Kind = "sound", Game = from.Game.Id, Original = lump, Name = lump.ToUpperInvariant(), File = file });
+                files.Add((file, source.Read()));
+                copies.Add(new CopiedAsset { Kind = "sound", Game = from.Game.Id, Original = lump, Name = lump.ToUpperInvariant(), File = file });
                 sounds++;
             }
 
             foreach (var line in lines)
             {
-                if (project.FindCopy(from.Game.Id, line, "sndinfo") is null) project.Record(new CopiedAsset { Kind = "sndinfo", Game = from.Game.Id, Original = line, Name = line, File = SoundFile });
+                if (project.FindCopy(from.Game.Id, line, "sndinfo") is null && !Pending("sndinfo", line)) copies.Add(new CopiedAsset { Kind = "sndinfo", Game = from.Game.Id, Original = line, Name = line, File = SoundFile });
             }
         }
+
+        project.WriteFiles(files);
+        project.Record(copies);
 
         WriteSoundTable(project);
 

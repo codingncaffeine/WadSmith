@@ -369,6 +369,53 @@ public sealed class Project
         }
     }
 
+    /// <summary>Notes many copies in the project's record and writes the record once (any thread).</summary>
+    public void Record(IReadOnlyCollection<CopiedAsset> copies)
+    {
+        if (copies.Count == 0) return;
+        lock (_gate)
+        {
+            Info.Copied.AddRange(copies);
+            WriteAtomically(Path.Combine(Folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(Info, Json));
+        }
+    }
+
+    /// <summary>
+    /// Writes many files into the project, each in one step, then makes them all durable at once: one sync of the file system
+    /// on Linux (a disk sync per picture took a minute for a few hundred on a spinning disk), each file's own elsewhere.
+    /// Record the copies after this returns, so a record never names a file that is not on the disk.
+    /// </summary>
+    public void WriteFiles(IReadOnlyList<(string RelativePath, byte[] Data)> files)
+    {
+        if (files.Count == 0) return;
+        var linux = OperatingSystem.IsLinux();
+        foreach (var (relativePath, data) in files)
+        {
+            var path = Path.Combine(Folder, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var temp = path + ".saving";
+            using (var f = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                f.Write(data);
+                if (!linux) f.Flush(flushToDisk: true);
+            }
+
+            File.Move(temp, path, overwrite: true);
+        }
+
+        if (linux) SyncFileSystem(Folder);
+    }
+
+    [System.Runtime.InteropServices.DllImport("libc", SetLastError = true)]
+    private static extern int syncfs(int fd);
+
+    /// <summary>Flushes the file system holding <paramref name="folder"/> to the disk (Linux's syncfs).</summary>
+    private static void SyncFileSystem(string folder)
+    {
+        using var handle = File.OpenHandle(Path.Combine(folder, SidecarName), FileMode.Open, FileAccess.Read);
+        if (syncfs((int)handle.DangerousGetHandle()) != 0) throw new IOException($"The folder {folder} could not be written to the disk (error {System.Runtime.InteropServices.Marshal.GetLastPInvokeError()}).");
+    }
+
     /// <summary>Writes a file into the project in one step (a crash leaves the old file or the new, never half).</summary>
     public void WriteFile(string relativePath, byte[] data)
     {

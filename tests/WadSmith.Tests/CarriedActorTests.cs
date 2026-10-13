@@ -96,6 +96,31 @@ public sealed class CarriedActorTests
         Assert.True(doom.CanShow(carried.Number));
     }
 
+    /// <summary>
+    /// Two monsters that share pictures (Heretic's golem and its ghost both draw MUMM): the second is carried after the first,
+    /// in the same project and when the project is opened again; the pictures the first brought are not a clash with Doom II.
+    /// </summary>
+    [Fact]
+    public void AMonsterSharingPicturesWithOneCarriedBeforeComesToo()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var doom = Load("doom2", "DOOM2.WAD", project.Folder);
+        var heretic = Load("heretic", "HERETIC.WAD");
+        var golem = ActorBorrowing.Carry(project, doom, heretic, heretic.Things.FindClass("Mummy")!);
+        Assert.True(golem.New);
+        var ghost = heretic.Things.FindClass("MummyGhost")!;
+        Assert.Null(ActorBorrowing.WhyNot(doom, heretic, ghost));
+        Assert.True(ActorBorrowing.Carry(project, doom, heretic, ghost).New);
+        var again = Load("doom2", "DOOM2.WAD", project.Folder);
+        Assert.Null(ActorBorrowing.WhyNot(again, heretic, heretic.Things.FindClass("MummyLeaderGhost")!));
+
+        // A sprite the game itself has still clashes: Hexen's Fighter boss draws PLAY, as Doom II's player does.
+        var hexen = Load("hexen", "HEXEN.WAD");
+        Assert.Contains("PLAY", ActorBorrowing.WhyNot(again, hexen, hexen.Things.FindClass("FighterBoss")!));
+    }
+
     [Fact]
     public void AWeaponComesWithItsAmmunitionAndItsSlot()
     {

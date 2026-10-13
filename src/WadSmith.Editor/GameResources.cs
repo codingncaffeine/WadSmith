@@ -82,6 +82,23 @@ public sealed class GameResources
     /// <summary>Duke Nukem 3D's art and enemies when this is a Build-engine game (D48), else null.</summary>
     public Core.Build.BuildArtContainer? Build { get; private init; }
 
+    private readonly HashSet<ResourceContainer> _projectFiles = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>The project's own folder among the files, when the game was opened for a project: what was copied in lives there.</summary>
+    private ResourceContainer? ProjectFiles
+    {
+        init
+        {
+            if (value is not null) _projectFiles.Add(value);
+        }
+    }
+
+    /// <summary>Whether an entry is the project's own (a picture or sound copied in), not the game's.</summary>
+    public bool IsProjectFile(ResourceEntry entry)
+    {
+        lock (_carried) return _projectFiles.Contains(entry.Container);
+    }
+
     /// <summary>A lump of the game's files by name and namespace, the last file that has it winning; null when none has.</summary>
     public ResourceEntry? Find(string name, ResourceNamespace ns) => _stack.Find(name, ns);
 
@@ -95,7 +112,9 @@ public sealed class GameResources
     {
         lock (_carried)
         {
-            _stack.Add(ResourceContainer.Open(projectFolder));
+            var files = ResourceContainer.Open(projectFolder);
+            _projectFiles.Add(files);
+            _stack.Add(files);
             Sprites = new SpriteIndex(_stack);
             Things = Things.With(things);
             _sprites.Clear();
@@ -179,7 +198,8 @@ public sealed class GameResources
         }
 
         var stack = new ResourceStack(files.Select(ResourceContainer.Open));
-        if (projectFolder is not null && Directory.Exists(projectFolder)) stack.Add(ResourceContainer.Open(projectFolder));
+        ResourceContainer? projectFiles = null;
+        if (projectFolder is not null && Directory.Exists(projectFolder)) stack.Add(projectFiles = ResourceContainer.Open(projectFolder));
 
         var things = engineData is null
             ? ThingCatalog.Empty
@@ -217,7 +237,7 @@ public sealed class GameResources
             }
         }
 
-        return new GameResources(found.Game, files, stack, new TextureLibrary(stack), new SpriteIndex(stack), things, FindMusic(stack));
+        return new GameResources(found.Game, files, stack, new TextureLibrary(stack), new SpriteIndex(stack), things, FindMusic(stack)) { ProjectFiles = projectFiles };
     }
 
     private static RgbaImage Mirror(RgbaImage image)
