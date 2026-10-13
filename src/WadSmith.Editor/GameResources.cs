@@ -79,6 +79,13 @@ public sealed class GameResources
     public RgbaImage? Flat(string name) => Textures.GetFlat(name);
 
     /// <summary>The front-facing first frame of an object's sprite (mirrored where the game stores it mirrored); null when it has none.</summary>
+    /// <summary>
+    /// Whether the game's own data can show a thing: it is in the catalogue and, when its class has a picture, the picture is
+    /// here. Doom II's super shotgun is in the catalogue for every Doom game but not in Doom's own data: the game shows an
+    /// error for it, so the shelf does not offer it and Problems says so.
+    /// </summary>
+    public bool CanShow(int type) => Things.Find(type) is { } t && (t.Sprite is null || Sprites.Front(t.Sprite, t.Frame) is not null);
+
     public RgbaImage? SpriteFor(int type) => _sprites.GetOrAdd(type, t =>
     {
         if (Things.Find(t) is not { Sprite: { } sprite } info || Sprites.Front(sprite, info.Frame) is not { } front) return null;

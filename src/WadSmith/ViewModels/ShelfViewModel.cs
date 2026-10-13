@@ -213,7 +213,8 @@ internal sealed partial class ShelfViewModel : ObservableObject
             if (game is null) return tiles;
             foreach (var (category, group) in Kinds)
             {
-                foreach (var t in game.Things.All.Where(t => t.Category == category).OrderBy(t => t.Name, StringComparer.CurrentCulture))
+                // Only what this game's own data can show: another game's objects (Doom II's super shotgun in Doom) would show an error in the game.
+                foreach (var t in game.Things.All.Where(t => t.Category == category && game.CanShow(t.Number)).OrderBy(t => t.Name, StringComparer.CurrentCulture))
                 {
                     var picture = game.SpriteFor(t.Number) is { } image ? Imaging.ToBitmap(Shrink(image)) : null;
                     var search = $"{t.Name} {t.ClassName} {t.Number} {group}".ToLowerInvariant();
@@ -225,7 +226,7 @@ internal sealed partial class ShelfViewModel : ObservableObject
         });
 
     /// <summary>A picture shrunk to fit the tile, keeping its shape (nearest pixel, as the game's own pictures look).</summary>
-    private static RgbaImage Shrink(RgbaImage image)
+    internal static RgbaImage Shrink(RgbaImage image)
     {
         var scale = Math.Min(1.0, Math.Min((double)Thumb / image.Width, (double)Thumb / image.Height));
         if (scale >= 1) return image;

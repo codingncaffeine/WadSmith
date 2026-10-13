@@ -54,6 +54,7 @@ public static class Problems
         Unclosed(f, found);
         MissingTextures(f, look, found);
         if (resources is not null) UnknownTextures(f, resources, found);
+        if (resources is not null) CannotShow(f, resources, found);
         TwoSidedFlag(f, found);
         ThingsOutside(geometry, resources, found);
         StuckInWalls(geometry, resources, found);
@@ -126,6 +127,28 @@ public static class Problems
     {
         if (f.Lines.Any(l => l.Element is not null && l.Special is Exits.Normal or Exits.Secret or 74 or 75)) return;
         found.Add(new Problem("no-exit", Severity.Warning, "There's no way to finish the map yet. Select a wall and choose Make it the exit switch.", []));
+    }
+
+    /// <summary>
+    /// Objects the game's own data cannot show: another game's (Doom II's super shotgun in Doom), or none the game knows.
+    /// The game shows an error for each; the fix takes them out.
+    /// </summary>
+    private static void CannotShow(MapFrame f, GameResources resources, List<Problem> found)
+    {
+        foreach (var group in f.Things.Where(t => t.Element is not null && !resources.CanShow(t.Type)).GroupBy(t => t.Type).OrderBy(g => g.Key))
+        {
+            var things = group.Select(t => t.Element!).ToList();
+            var known = resources.Things.Find(group.Key);
+            var name = known?.Name ?? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"object {group.Key}");
+            var what = things.Count == 1 ? name : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{things.Count} × {name}");
+            var why = known is null ? $"is not an object {resources.Game.Title} knows" : $"is not in {resources.Game.Title}: the game has no picture for it";
+            var them = things.Count == 1 ? "it" : "them";
+            found.Add(new Problem("cannot-show", Severity.Warning, $"{what} {why}, so the game shows an error there. Take {them} out, or make the map for the game {(things.Count == 1 ? "it belongs" : "they belong")} to.", things,
+                things.Count == 1 ? "Take it out" : "Take them out", e =>
+                {
+                    foreach (var t in things) e.Remove(t);
+                }));
+        }
     }
 
     private static void Unclosed(MapFrame f, List<Problem> found)

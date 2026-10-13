@@ -346,8 +346,27 @@ public sealed partial class ThingCatalog
         return !text.StartsWith('$') && text.Length > 0 ? text : null;
     }
 
+    /// <summary>ZDoom's scripted marines by what they carry: their class names ("MarineRocket") read like weapons on a shelf.</summary>
+    private static readonly Dictionary<string, string> MarineNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["ScriptedMarine"] = "Marine (scripted)",
+        ["MarineFist"] = "Marine with fists",
+        ["MarineBerserk"] = "Marine, berserk",
+        ["MarineChainsaw"] = "Marine with a chainsaw",
+        ["MarinePistol"] = "Marine with a pistol",
+        ["MarineShotgun"] = "Marine with a shotgun",
+        ["MarineSSG"] = "Marine with a super shotgun",
+        ["MarineChaingun"] = "Marine with a chaingun",
+        ["MarineRocket"] = "Marine with a rocket launcher",
+        ["MarinePlasma"] = "Marine with a plasma rifle",
+        ["MarineRailgun"] = "Marine with a railgun",
+        ["MarineBFG"] = "Marine with a BFG",
+    };
+
     private static string NameOf(string? tag, string className, (string Name, string Tag)? named, Dictionary<string, string> strings)
     {
+        if (MarineNames.TryGetValue(className, out var marine)) return marine;
+
         // A variant of a named class (StealthDoomImp of DoomImp's "Imp", DeadZombieMan of "Zombieman") says what it
         // adds: "Stealth imp", "Dead zombieman".
         if (named is { } n && !n.Name.Equals(className, StringComparison.OrdinalIgnoreCase) && className.Contains(n.Name, StringComparison.OrdinalIgnoreCase) && Resolve(n.Tag, strings) is { } parentName)
