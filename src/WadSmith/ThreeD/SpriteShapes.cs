@@ -24,11 +24,11 @@ internal static class ModelShapes
     {
         var folder = session.Project.Folder;
         var copied = session.Project.CopiedNow();
-        // Each prop's MODELDEF entry by its number: read again when the entry is written again (a turn).
+        // Each prop's MODELDEF entry (a voxel prop's: the VOXELDEF) by its number: read again when it is written again (a turn).
         var entries = copied.Where(c => c.Kind == "actor" && c.Game == "model")
             .Select(c => (c.Name, Prop: copied.FirstOrDefault(p => p.Kind == "modelprop" && p.Original == c.Original)))
             .Where(e => e.Prop is not null)
-            .ToDictionary(e => e.Name, e => Path.Combine(folder, e.Prop!.File, "modeldef.txt"), StringComparer.Ordinal);
+            .ToDictionary(e => e.Name, e => e.Prop!.File.EndsWith(".kvx", StringComparison.OrdinalIgnoreCase) ? Path.Combine(folder, WadSmith.Editor.Editing.ModelProps.VoxelFile) : Path.Combine(folder, e.Prop.File, "modeldef.txt"), StringComparer.Ordinal);
         return type => entries.TryGetValue(type.ToString(System.Globalization.CultureInfo.InvariantCulture), out var entry)
             ? Read.GetOrAdd((folder, type, File.GetLastWriteTimeUtc(entry)), key => WadSmith.Editor.Editing.ModelProps.Shape(key.Folder, copied, key.Type))
             : null;

@@ -27,10 +27,10 @@ public static class ModelProps
     private const string DefinitionMark = "// Written by WadSmith: the 3D models brought into this project. Edits here are replaced.";
 
     /// <summary>The model files a prop can be made from.</summary>
-    public static readonly IReadOnlyList<string> Extensions = [".obj", ".md3", ".iqm", ".glb", ".gltf"];
+    public static readonly IReadOnlyList<string> Extensions = [".obj", ".md3", ".iqm", ".glb", ".gltf", ".vox", ".kvx"];
 
-    /// <summary>Whether <paramref name="path"/> names a model file WadSmith brings in as a prop.</summary>
-    public static bool IsModel(string path) => Extensions.Contains(Path.GetExtension(path).ToLowerInvariant());
+    /// <summary>Whether <paramref name="path"/> names a model file WadSmith brings in as a prop, or a picture of a block set (<see cref="BlockSet"/>).</summary>
+    public static bool IsModel(string path) => Extensions.Contains(Path.GetExtension(path).ToLowerInvariant()) || BlockSet.Of(path) is not null;
 
     /// <summary>Map units per metre: a 1.75 m figure stands as tall as Doom's marine (56).</summary>
     public const double UnitsPerMetre = 32;
@@ -115,17 +115,21 @@ public static class ModelProps
         if (!IsModel(path)) throw new CorruptDataException($"{Path.GetFileName(path)} is not a model WadSmith brings in yet (it takes {string.Join(", ", Extensions)}).");
         var notes = new List<string>();
         var kind = Path.GetExtension(path).ToLowerInvariant();
+        if (kind is ".vox" or ".kvx") return ImportVoxels(project, into, path, kind, notes);
         var mesh = kind switch
         {
             ".md3" => Md3Model.Read(path, notes),
             ".iqm" => IqmModel.Read(path, notes),
             ".glb" or ".gltf" => GltfModel.Read(path, notes),
+            _ when BlockSet.Of(path) is not null => BlockSet.Read(path, notes),
             _ => ObjModel.Read(path, notes),
         };
-        // glTF is in metres by its own rule; other formats say nothing, so their height is read.
-        var (scale, sizeNote) = kind is ".glb" or ".gltf" ? Metres(mesh) : SizeOf(mesh);
+        // glTF is in metres by its own rule and a block is a metre cube; other formats say nothing, so their height is read.
+        var block = BlockSet.Of(path) is not null;
+        var (scale, sizeNote) = kind is ".glb" or ".gltf" || block ? Metres(mesh) : SizeOf(mesh);
+        var stem = block ? BlockSet.NameOf(path) : Path.GetFileNameWithoutExtension(path);
 
-        var className = ClassName(project, into, Path.GetFileNameWithoutExtension(path));
+        var className = ClassName(project, into, stem);
         var sprite = SpriteName(project, into);
         var folder = $"models/{className}";
         var files = new List<(string, byte[])>();
@@ -171,7 +175,7 @@ public static class ModelProps
 
         var radius = Math.Max(4, (int)Math.Ceiling(mesh.Reach * scale));
         var height = Math.Max(4, (int)Math.Ceiling((mesh.Max.Z - mesh.Min.Z) * scale / Stretch));
-        var title = Title(Path.GetFileNameWithoutExtension(path));
+        var title = Title(stem);
         var script = $"zscript/wadsmith/{className}.zs";
         files.Add((script, Encoding.UTF8.GetBytes(Declare(className, title, sprite, radius, height))));
         project.WriteFiles(files);
@@ -192,6 +196,69 @@ public static class ModelProps
         return new ImportedModel(new CarriedActor(number, thing, 8, 0, true), scale, sizeNote, notes);
     }
 
+    /// <summary>The project's VOXELDEF WadSmith writes: a line for each voxel prop.</summary>
+    public const string VoxelFile = "voxeldef.txt";
+
+    private const string VoxelMark = "// Written by WadSmith: the voxel models brought into this project. Edits here are replaced.";
+
+    /// <summary>
+    /// A voxel model as a prop (D16): a MagicaVoxel file becomes a KVX (a KVX comes as it is) under <c>voxels/</c>, named like
+    /// the prop's sprite, and VOXELDEF draws it in place of that sprite's frame A wherever voxels are drawn (both of GZDoom's
+    /// renderers); one voxel is one map unit. The sprites, class and number follow as for any model.
+    /// </summary>
+    private static ImportedModel ImportVoxels(Project project, GameResources into, string path, string kind, List<string> notes)
+    {
+        var bytes = kind == ".kvx" ? File.ReadAllBytes(path) : null;
+        var voxels = bytes is null ? MagicaVoxel.Read(path, notes) : Kvx.Read(bytes, Path.GetFileName(path));
+        var mesh = voxels.ToMesh();
+        var className = ClassName(project, into, Path.GetFileNameWithoutExtension(path));
+        var sprite = SpriteName(project, into);
+        var file = $"voxels/{sprite}.kvx";
+        var files = new List<(string, byte[])> { (file, bytes ?? Kvx.Write(voxels)) };
+        for (var rotation = 1; rotation <= 8; rotation++) files.Add(($"sprites/{sprite}A{rotation}.png", ImageCodec.EncodePng(MeshBaker.Bake(mesh, 1, (0, 0, 0), rotation, 1))));
+        var radius = Math.Max(4, (int)Math.Ceiling(mesh.Reach));
+        var height = Math.Max(4, voxels.Up);
+        var title = Title(Path.GetFileNameWithoutExtension(path));
+        var script = $"zscript/wadsmith/{className}.zs";
+        files.Add((script, Encoding.UTF8.GetBytes(Declare(className, title, sprite, radius, height))));
+        project.WriteFiles(files);
+
+        var c = CultureInfo.InvariantCulture;
+        var number = FreeNumber(project, into);
+        project.Record(
+        [
+            new CopiedAsset { Kind = "zscript", Game = "model", Original = className, Name = className, File = script },
+            new CopiedAsset { Kind = "voxeldef", Game = "model", Original = className, Name = VoxelLine(sprite, 0), File = VoxelFile },
+            new CopiedAsset { Kind = "actor", Game = "model", Original = className, Name = number.ToString(c), File = script },
+            new CopiedAsset { Kind = "modelprop", Game = "model", Original = className, Name = string.Join('|', sprite, radius.ToString(c), height.ToString(c), title, Path.GetFileName(path), "0"), File = file },
+        ]);
+        DukeBorrowing.WriteScript(project);
+        WriteVoxelDefinitions(project);
+
+        var thing = ThingOf(number, className, sprite, radius, height, title);
+        into.Carry([thing], project.Folder);
+        return new ImportedModel(new CarriedActor(number, thing, 8, 0, true), 1, $"{voxels.Count} voxels, one map unit each: {height} units tall in the map", notes);
+    }
+
+    /// <summary>A voxel prop's VOXELDEF line: frame A of its sprite drawn as the voxel of the same name, turned by <paramref name="turn"/> degrees.</summary>
+    private static string VoxelLine(string sprite, double turn) =>
+        turn % 360 == 0 ? $"{sprite}A = \"{sprite}\" {{ Scale = 1.0 }}" : string.Create(CultureInfo.InvariantCulture, $"{sprite}A = \"{sprite}\" {{ Scale = 1.0 AngleOffset = {turn % 360} }}");
+
+    /// <summary>Writes the project's VOXELDEF from its voxel props; a VOXELDEF of the user's own is left alone.</summary>
+    public static void WriteVoxelDefinitions(Project project)
+    {
+        var path = Path.Combine(project.Folder, VoxelFile);
+        if (File.Exists(path))
+        {
+            using var reader = new StreamReader(path);
+            if (reader.ReadLine() != VoxelMark) return;
+        }
+
+        var lines = project.CopiedNow().Where(c => c.Kind == "voxeldef").Select(c => c.Name).ToList();
+        if (lines.Count == 0) return;
+        project.WriteFile(VoxelFile, Encoding.UTF8.GetBytes(VoxelMark + "\n\n" + string.Join("\n", lines) + "\n"));
+    }
+
     /// <summary>
     /// The model a prop of a project (<paramref name="copied"/>, its record) draws in the 3D view, read from the project's own copy in
     /// <paramref name="folder"/>: its shape, each surface's picture (<c>skinN.png</c>), and the scale and offset its MODELDEF
@@ -205,6 +272,14 @@ public static class ModelProps
         var dir = Path.Combine(folder, prop.File);
         try
         {
+            // A voxel prop: its KVX, one map unit a voxel, not squashed (GZDoom draws voxels at the game's pixel shape).
+            if (IsVoxels(prop))
+            {
+                var voxels = Kvx.Read(File.ReadAllBytes(dir), prop.File).ToMesh();
+                var turned = TurnOf(copied, className);
+                return new Scene.PropShape(voxels.Turned(turned), 1, (0, 0, 0), $"{className}@{turned.ToString(CultureInfo.InvariantCulture)}", [voxels.Surfaces[0].Image], 1);
+            }
+
             var (mesh, scale, turn, origin) = Definition(dir);
             var pictures = new RgbaImage?[mesh.Surfaces.Count];
             for (var i = 0; i < pictures.Length; i++)
@@ -241,6 +316,27 @@ public static class ModelProps
         return (mesh, scale, turn, (Back(1), Back(2), Back(3)));
     }
 
+    private static bool IsVoxels(CopiedAsset prop) => prop.File.EndsWith(".kvx", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Turns a voxel prop: its VOXELDEF line's AngleOffset (GZDoom turns a voxel about its pivot, the middle of its base, so it
+    /// needs no offset), the sprites baked again, the turn in the record.
+    /// </summary>
+    private static void TurnVoxels(Project project, CopiedAsset prop, double degrees)
+    {
+        var sprite = prop.Name.Split('|')[0];
+        var mesh = Kvx.Read(File.ReadAllBytes(Path.Combine(project.Folder, prop.File)), prop.File).ToMesh().Turned(degrees);
+        var files = new List<(string, byte[])>();
+        for (var rotation = 1; rotation <= 8; rotation++) files.Add(($"sprites/{sprite}A{rotation}.png", ImageCodec.EncodePng(MeshBaker.Bake(mesh, 1, (0, 0, 0), rotation, 1))));
+        project.WriteFiles(files);
+        if (project.CopiedNow().FirstOrDefault(c => c.Kind == "voxeldef" && c.Original == prop.Original) is { } line) project.Replace(line, line with { Name = VoxelLine(sprite, degrees) });
+        WriteVoxelDefinitions(project);
+        var parts = prop.Name.Split('|').ToList();
+        while (parts.Count < 6) parts.Add("");
+        parts[5] = (degrees % 360).ToString(CultureInfo.InvariantCulture);
+        project.Replace(prop, prop with { Name = string.Join('|', parts) });
+    }
+
     /// <summary>How far a prop's model is turned from the way it was made, in degrees anticlockwise, as the project's record keeps it (no file is read: any thread).</summary>
     public static double TurnOf(IReadOnlyList<CopiedAsset> copied, string className) =>
         copied.FirstOrDefault(c => c.Kind == "modelprop" && c.Original == className)?.Name.Split('|') is { Length: >= 6 } parts
@@ -255,6 +351,12 @@ public static class ModelProps
     {
         var prop = project.CopiedNow().FirstOrDefault(c => c.Kind == "modelprop" && c.Original == className) ?? throw new CorruptDataException($"{className} is not a model of this project.");
         var dir = Path.Combine(project.Folder, prop.File);
+        if (IsVoxels(prop))
+        {
+            TurnVoxels(project, prop, degrees);
+            return;
+        }
+
         var (mesh, scale, _, _) = Definition(dir);
         var pictures = Enumerable.Range(0, mesh.Surfaces.Count).Select(i => Path.Combine(dir, $"skin{i}.png")).Select(p => File.Exists(p) ? ImageCodec.Decode(File.ReadAllBytes(p), p) : null).ToList();
         var turned = new Mesh([.. mesh.Turned(degrees).Surfaces.Select((s, i) => new MeshSurface(s.Name, s.Triangles, s.Picture, pictures[i] ?? s.Image))]);
