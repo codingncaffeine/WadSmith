@@ -8,7 +8,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VER=$(grep -oPm1 '(?<=<VersionPrefix>)[^<]+' Directory.Build.props)
-OUT=packaging/out
+# WADSMITH_OUT builds somewhere else (a copy swapped in by rename while the usual one is running).
+OUT=${WADSMITH_OUT:-packaging/out}
 PUB=$OUT/publish
 
 rm -rf "$OUT" && mkdir -p "$PUB"
