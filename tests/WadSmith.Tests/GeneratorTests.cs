@@ -421,6 +421,10 @@ public sealed class GeneratorTests
         (string, string)[] pool = [("doom2", "D_RUNNIN"), ("doom2", "D_STALKS"), ("heretic", "MUS_E1M1"), ("heretic", "MUS_E1M2")];
         Assert.Equal(MadeMusic.Pick("misty-cavern", pool), MadeMusic.Pick("Misty Cavern", [.. pool.Reverse()]));
         Assert.Null(MadeMusic.Pick("misty-cavern", []));
+
+        // Only level music: never a title, story, intermission or ending screen's.
+        Assert.Null(MadeMusic.Pick("misty-cavern", [("doom2", "D_DM2TTL"), ("doom2", "D_READ_M"), ("doom2", "D_DM2INT"), ("doom", "D_INTER"), ("doom", "D_VICTOR"), ("heretic", "MUS_TITL"), ("heretic", "MUS_CPTD"), ("strife", "D_LOGO"), ("hexen", "HEXEN")]));
+        Assert.True(new[] { "D_RUNNIN", "D_ROMERO", "MUS_E1M1", "FANTAR", "D_ACTION" }.All(MadeMusic.IsLevelMusic));
         Assert.True(Enumerable.Range(0, 20).Select(i => MadeMusic.Pick($"seed-{i}", pool)).Distinct().Count() > 1);
 
         var engine = GameFiles.Require("gzdoom.pk3");

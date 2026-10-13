@@ -122,11 +122,22 @@ public static class Sources
 /// <summary>A made map's music (D50): a track picked by the seed from the games whose music the user checked, copied in when it is another game's.</summary>
 public static class MadeMusic
 {
-    /// <summary>The track the seed picks from <paramref name="pool"/> (each game's tracks, in a fixed order), or null for none.</summary>
+    /// <summary>The track the seed picks from <paramref name="pool"/>'s level music (each game's tracks, in a fixed order), or null for none.</summary>
     public static (string Game, string Track)? Pick(string seed, IEnumerable<(string Game, string Track)> pool)
     {
-        var tracks = pool.Distinct().OrderBy(p => p.Game, StringComparer.Ordinal).ThenBy(p => p.Track, StringComparer.OrdinalIgnoreCase).ToList();
+        var tracks = pool.Where(p => IsLevelMusic(p.Track)).Distinct().OrderBy(p => p.Game, StringComparer.Ordinal).ThenBy(p => p.Track, StringComparer.OrdinalIgnoreCase).ToList();
         return tracks.Count == 0 ? null : tracks[new Seeded(SeedWords.Tidy(seed)).Fork("music").Next(tracks.Count)];
+    }
+
+    /// <summary>
+    /// Whether a track plays in the games' levels, not on their title, story, intermission or ending screens (Doom's D_INTER,
+    /// D_DM2TTL, D_READ_M, D_VICTOR, D_BUNNY; Heretic's MUS_TITL, MUS_INTR, MUS_CPTD; Hexen's HEXEN and HUB; Strife's D_LOGO).
+    /// </summary>
+    public static bool IsLevelMusic(string track)
+    {
+        var name = track.ToUpperInvariant();
+        string[] screens = ["TITL", "TTL", "INTER", "INTRO", "INTR", "LOGO", "VICTOR", "BUNNY", "READ", "CPTD", "DM2INT", "_END", "ENDING", "CREDIT"];
+        return !screens.Any(name.Contains) && name is not ("HEXEN" or "HUB");
     }
 
     /// <summary>
