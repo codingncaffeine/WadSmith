@@ -1,6 +1,8 @@
 using System.Globalization;
 using WadSmith.Core.Games;
 using WadSmith.Core.Maps.Udmf;
+using WadSmith.Core.Projects;
+using WadSmith.Core.Translation;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
@@ -30,6 +32,9 @@ public enum Severity
 /// <param name="Fix">Makes the fix through the edit given (on the UI thread, as one undo step).</param>
 public sealed record Problem(string Rule, Severity Severity, string Sentence, IReadOnlyList<Element> Show, string? FixLabel = null, Action<StructureEdit>? Fix = null);
 
+/// <summary>The rules a classic target adds (6b): the game's classic namespace, the engine's table for it, and the target's name.</summary>
+public sealed record ClassicRules(string Namespace, XlatTranslator Xlat, string Target);
+
 /// <summary>
 /// The live checks: every rule reads only a geometry's frame (and the game's texture and object lists),
 /// so they run on a worker after each change. The fixes they offer change the map's own elements and
@@ -44,10 +49,12 @@ public static class Problems
     /// <param name="look">The game's look, for fixes that need a texture.</param>
     /// <param name="engine">The game family ("doom", "hexen"…), for the flags of objects a fix places.</param>
     /// <param name="fit">The gaps and low openings the map started with (a remix's), left out of the passage checks; null when it started empty.</param>
-    public static IReadOnlyList<Problem> Check(MapGeometry geometry, GameResources? resources, Look look, string engine, FitBaseline? fit = null)
+    /// <param name="classic">A classic target's rules (what has no classic type is listed); null for GZDoom.</param>
+    public static IReadOnlyList<Problem> Check(MapGeometry geometry, GameResources? resources, Look look, string engine, FitBaseline? fit = null, ClassicRules? classic = null)
     {
         var f = geometry.Frame;
         var found = new List<Problem>();
+        if (classic is not null) NotClassic(f, classic, found);
         NoStart(geometry, engine, found);
         ManyStarts(f, found);
         NoExit(f, found);
@@ -127,6 +134,27 @@ public static class Problems
     {
         if (f.Lines.Any(l => l.Element is not null && l.Special is Exits.Normal or Exits.Secret or 74 or 75)) return;
         found.Add(new Problem("no-exit", Severity.Warning, "There's no way to finish the map yet. Select a wall and choose Make it the exit switch.", []));
+    }
+
+    /// <summary>
+    /// What a classic target cannot hold (6b): a wall whose action with its settings, or a room whose action, has no type
+    /// in the classic format, read backwards from the engine's own table. Written plain in the file, so the map would
+    /// play in GZDoom only.
+    /// </summary>
+    private static void NotClassic(MapFrame f, ClassicRules rules, List<Problem> found)
+    {
+        var target = Targets.TitleOf(rules.Target);
+        static bool On(KeyValuePair<string, UdmfValue>[] extra, string name) => extra.Any(e => e.Key == name && e.Value.AsBool());
+        var walls = f.Lines.Where(l => l.Element is not null && l.Special != 0 && ClassicTranslation.TypeOf(l.Special, l.Args, name => On(l.Extra, name), l.LineId, rules.Xlat) is null).ToList();
+        foreach (var group in walls.GroupBy(l => l.Special))
+        {
+            var action = ActionCatalog.Get(group.Key)?.Name ?? string.Create(CultureInfo.InvariantCulture, $"action {group.Key}");
+            var elements = group.Select(l => l.Element!).ToList();
+            found.Add(new Problem("not-classic", Severity.Warning, $"{(elements.Count == 1 ? "A wall's" : string.Create(CultureInfo.InvariantCulture, $"{elements.Count} walls'"))} action, {action} with these settings, has no type in {target}: the map would play in GZDoom only. Make the object again, or change what the project plays in under Map settings.", elements));
+        }
+
+        var rooms = f.Sectors.Where(s => s.Element is not null && ClassicTranslation.SectorTypeOf(s.Special, On(s.Extra, "secret"), rules.Xlat) is null).Select(s => s.Element!).ToList();
+        if (rooms.Count > 0) found.Add(new Problem("not-classic", Severity.Warning, $"{(rooms.Count == 1 ? "A room's" : string.Create(CultureInfo.InvariantCulture, $"{rooms.Count} rooms'"))} action has no type in {target} (a secret with another action, or an action the classic engine lacks): the map would play in GZDoom only.", rooms));
     }
 
     /// <summary>

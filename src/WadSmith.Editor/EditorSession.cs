@@ -1,7 +1,10 @@
 using WadSmith.Core;
+using WadSmith.Core.Containers;
 using WadSmith.Core.Maps;
 using WadSmith.Core.Projects;
+using WadSmith.Core.Translation;
 using WadSmith.Editor.App;
+using WadSmith.Editor.Checks;
 using WadSmith.Editor.Editing;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
@@ -1662,7 +1665,16 @@ public sealed class EditorSession : IDisposable
     /// <remarks>Reads and indexes the whole map: call it on a worker, then hand the session to the UI thread.</remarks>
     public static EditorSession Open(Project project, string slot, SessionHooks hooks, string reason = "Opened")
     {
-        var map = EditorMap.FromModel(project.LoadMap(slot));
+        var model = project.LoadMap(slot);
+        if (model.Namespace != "zdoom")
+        {
+            // A classic target's map: the engine's own table says what each classic type means.
+            var notes = new List<string>();
+            model = MapTranslation.ToZDoom(model, XlatFor(hooks.EngineData, model.Namespace), notes);
+            foreach (var n in notes) Log.Info($"Classic map {slot}: {n}");
+        }
+
+        var map = EditorMap.FromModel(model);
         var session = new EditorSession(project, slot, map, MapGeometry.Build(map.Frame), hooks);
         session.OpeningVersion = session.SaveVersion(reason);
         return session;
@@ -1721,12 +1733,52 @@ public sealed class EditorSession : IDisposable
     {
         var model = MapVersions.Load(version);
         model.Name = slot;
-        project.SaveMap(model);
+        project.SaveMap(ForProject(project, model, hooks.EngineData));
         return Open(project, slot, hooks, $"Back to the version from {Describe(version.When)}");
     }
 
     /// <summary>A moment as a kept version's reason names it, readable on any later day: "11 Oct, 20:50".</summary>
     public static string Describe(DateTimeOffset when) => when.LocalDateTime.ToString("d MMM, HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, XlatTranslator> Xlats = new(StringComparer.Ordinal);
+
+    /// <summary>The engine's translation table for a classic namespace, read once per table; needs the engine's data.</summary>
+    public static XlatTranslator XlatFor(string? engineData, string mapNamespace)
+    {
+        if (engineData is null || !File.Exists(engineData)) throw new CorruptDataException("A map kept in the classic format needs GZDoom installed: WadSmith reads the engine's own table of what each classic line type does.");
+        var path = XlatTranslator.PathFor(mapNamespace);
+        return Xlats.GetOrAdd(engineData + "|" + path, _ => XlatTranslator.Load(new ResourceStack([ResourceContainer.Open(engineData)]), path));
+    }
+
+    /// <summary>The map as the project's file takes it: as it is for a GZDoom target, back through the engine's table for a classic one (what has no classic type is logged).</summary>
+    public static MapModel ForProject(Project project, MapModel model, string? engineData)
+    {
+        if (!project.ClassicFormat) return model;
+        var report = new List<NotClassic>();
+        var classic = ClassicTranslation.ToClassicNamespace(model, XlatFor(engineData, project.ClassicNamespace), project.ClassicNamespace, report);
+        foreach (var r in report) Log.Info($"{project.Info.Name} ({Targets.TitleOf(project.Info.Target)}): {r.What} {r.Index}: {r.Why}; written plain.");
+        return classic;
+    }
+
+    /// <summary>What the project plays in, as the user chooses it.</summary>
+    public string Target => Project.Info.Target;
+
+    /// <summary>The rules a classic target adds to the checks (what has no classic type), or null for GZDoom.</summary>
+    public ClassicRules? ClassicRules => Project.ClassicFormat ? new ClassicRules(Project.ClassicNamespace, XlatFor(Hooks.EngineData, Project.ClassicNamespace), Project.Info.Target) : null;
+
+    /// <summary>Raised when what the project plays in changes.</summary>
+    public event Action? TargetChanged;
+
+    /// <summary>Changes what the project plays in: the record is saved, the map is written again in the target's format, and the checks run again.</summary>
+    public void SetTarget(string target)
+    {
+        if (target == Project.Info.Target) return;
+        if (Targets.IsClassic(target)) XlatFor(Hooks.EngineData, Project.ClassicNamespace);
+        Project.SetTarget(target);
+        _savedVersion = -1;
+        CaptureAndSave();
+        TargetChanged?.Invoke();
+    }
 
     private void CaptureAndSave()
     {
@@ -1740,7 +1792,7 @@ public sealed class EditorSession : IDisposable
             await _writer.WaitAsync().ConfigureAwait(false);
             try
             {
-                Project.SaveMap(frame.ToModel());
+                Project.SaveMap(ForProject(Project, frame.ToModel(), Hooks.EngineData));
                 _onUiThread(() =>
                 {
                     _savedVersion = Math.Max(_savedVersion, version);

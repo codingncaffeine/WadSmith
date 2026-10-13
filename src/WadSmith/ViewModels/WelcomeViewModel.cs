@@ -10,6 +10,7 @@ using WadSmith.Core.Games;
 using WadSmith.Core.Graphics;
 using WadSmith.Core.Maps;
 using WadSmith.Core.Projects;
+using WadSmith.Core.Translation;
 using WadSmith.Editor.App;
 
 namespace WadSmith.App.ViewModels;
@@ -91,6 +92,15 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
     /// <summary>"Your maps · 3", the button that opens the list.</summary>
     [ObservableProperty]
     private string _projectsLabel = "Your maps";
+
+    /// <summary>What a map started from this card plays in (D51): the titles, and the one chosen.</summary>
+    public IReadOnlyList<string> TargetTitles { get; } = [.. Targets.All.Select(t => t.Title)];
+
+    [ObservableProperty]
+    private int _targetIndex;
+
+    /// <summary>The chosen target's id.</summary>
+    public string Target => Targets.All[Math.Clamp(TargetIndex, 0, Targets.All.Count - 1)].Id;
 
     /// <summary>Starts a remix of one of this game's maps (set by the welcome screen).</summary>
     public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<MapChoice>? Remix { get; set; }
@@ -668,17 +678,17 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private Task RemixAsync(MapChoice m) => RemixMapAsync(m.Tile.Found, m.Tile.Title, m.Slot, m.Title);
+    private Task RemixAsync(MapChoice m) => RemixMapAsync(m.Tile.Found, m.Tile.Title, m.Slot, m.Title, m.Tile.Target);
 
     /// <summary>Starts a project from <paramref name="slot"/> of a base game and opens it: the tile's Remix, and Remix on a map opened to learn from.</summary>
-    internal async Task RemixMapAsync(FoundGame found, string gameTitle, string slot, string mapTitle)
+    internal async Task RemixMapAsync(FoundGame found, string gameTitle, string slot, string mapTitle, string target = Targets.GZDoom)
     {
         await StartAsync(() =>
         {
             var folder = UniqueFolder($"{gameTitle} {slot} remix");
             var notes = new List<string>();
             var engine = _services.EngineData ?? throw new CorruptDataException("Remixing a classic map needs GZDoom installed: WadSmith reads the engine's own rules for what each line does.");
-            var project = Remix.Create(folder, found.Path, slot, engine, notes, mapTitle.Length > 0 ? $"{mapTitle} remix" : null);
+            var project = Remix.Create(folder, found.Path, slot, engine, notes, mapTitle.Length > 0 ? $"{mapTitle} remix" : null, target);
             foreach (var n in notes) Log.Info($"Remix note: {n}");
             return (project, slot);
         }).ConfigureAwait(true);
@@ -694,7 +704,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
             var pack = MapPacks.Materialise(choice.Pack, Path.Combine(_services.Paths.Cache, "packs"));
             var folder = UniqueFolder($"{Path.GetFileNameWithoutExtension(pack)} {choice.Slot}");
             var notes = new List<string>();
-            var project = Remix.CreateFromPack(folder, pack, choice.Slot, choice.Tile.Found.Game, engine, notes);
+            var project = Remix.CreateFromPack(folder, pack, choice.Slot, choice.Tile.Found.Game, engine, notes, target: choice.Tile.Target);
             foreach (var n in notes) Log.Info($"Pack map note: {n}");
             return (project, choice.Slot);
         }).ConfigureAwait(true);
@@ -711,9 +721,9 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         await StartAsync(() =>
         {
             var folder = UniqueFolder("My map");
-            var project = Project.Create(folder, Path.GetFileName(folder), tile.Found.Game.Id);
+            var project = Project.Create(folder, Path.GetFileName(folder), tile.Found.Game.Id, tile.Target);
             var slot = tile.Found.Game.MapNames == "ExMy" ? "E1M1" : "MAP01";
-            project.SaveMap(StarterRoom.Create(slot, tile.Found.Game.Engine), origin: new MapOrigin { Kind = "new" });
+            project.SaveMap(ClassicTranslation.ForProject(project, StarterRoom.Create(slot, tile.Found.Game.Engine), _services.EngineData), origin: new MapOrigin { Kind = "new" });
             return (project, slot);
         }, guide).ConfigureAwait(true);
     }

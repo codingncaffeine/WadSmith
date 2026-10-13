@@ -116,6 +116,12 @@
                                     <Button Classes="metal" Content="New map" Command="{Binding NewMap}" CommandParameter="{Binding}"
                                             ToolTip.Tip="Start with one lit room and a player start, ready to play." />
                                 </StackPanel>
+                                <!-- What a map started here plays in (D51): GZDoom, or a classic port's format and limits. -->
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="Plays in" VerticalAlignment="Center" Classes="secondary" />
+                                    <ComboBox ItemsSource="{Binding TargetTitles}" SelectedIndex="{Binding TargetIndex}" MinWidth="220"
+                                              ToolTip.Tip="What a map started from this card plays in. GZDoom: everything WadSmith can make. Vanilla Doom: the 1993 engine's format and limits (Chocolate Doom, the DOS game). Limit-removing: that format without the limits (Crispy Doom). It can be changed later under Map settings." />
+                                </StackPanel>
                                 <Button Classes="metal" Content="Guided first map · 10 minutes" Command="{Binding GuidedMap}" CommandParameter="{Binding}" HorizontalAlignment="Stretch"
                                         IsVisible="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).GuidePrompts}"
                                         ToolTip.Tip="A new map, and seven short steps beside it: a room, a door, a texture, a monster and a weapon, a way out, then Play. You can skip or stop at any time." />

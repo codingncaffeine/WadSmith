@@ -1450,7 +1450,8 @@ internal sealed partial class EditorViewModel : ObservableObject
         if (!force)
         {
             var (geometry, resources, look, family, fit) = (Session.Geometry, Session.Resources, Session.Look, Session.Engine, Session.FitBaseline);
-            var blocking = await Task.Run(() => WadSmith.Editor.Checks.Problems.Check(geometry, resources, look, family, fit).Where(p => p.Severity == WadSmith.Editor.Checks.Severity.Error).ToList()).ConfigureAwait(true);
+            var classic = Session.ClassicRules;
+            var blocking = await Task.Run(() => WadSmith.Editor.Checks.Problems.Check(geometry, resources, look, family, fit, classic).Where(p => p.Severity == WadSmith.Editor.Checks.Severity.Error).ToList()).ConfigureAwait(true);
             if (blocking.Count > 0)
             {
                 _blocking = blocking;

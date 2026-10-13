@@ -18,11 +18,12 @@ public static class Remix
     /// <param name="engineDataPath">The engine's gzdoom.pk3, whose rules translate the map.</param>
     /// <param name="notes">Gets anything the translation could not carry over.</param>
     /// <param name="projectName">The name the project is shown by; "SLOT remix" when null.</param>
-    public static Project Create(string projectFolder, string baseGamePath, string mapName, string engineDataPath, List<string> notes, string? projectName = null)
+    /// <param name="target">What the project plays in (see <see cref="Targets"/>); a classic target keeps the map in the classic format.</param>
+    public static Project Create(string projectFolder, string baseGamePath, string mapName, string engineDataPath, List<string> notes, string? projectName = null, string target = Targets.GZDoom)
     {
         var (zdoom, game, name, checksum) = Original(baseGamePath, mapName, engineDataPath, notes);
-        var project = Project.Create(projectFolder, projectName ?? $"{name} remix", game.Id);
-        project.SaveMap(zdoom, origin: new MapOrigin { Kind = "remix", Game = game.Id, Map = name, Checksum = checksum });
+        var project = Project.Create(projectFolder, projectName ?? $"{name} remix", game.Id, target);
+        project.SaveMap(ClassicTranslation.ForProject(project, zdoom, engineDataPath), origin: new MapOrigin { Kind = "remix", Game = game.Id, Map = name, Checksum = checksum });
 
         // The behaviour switches GZDoom gives the original (shorttex, light …) are asked for in the project's MAPINFO (D40).
         try
@@ -49,7 +50,8 @@ public static class Remix
     /// <param name="engineDataPath">The engine's gzdoom.pk3, whose rules translate the map.</param>
     /// <param name="notes">Gets anything the translation could not carry over.</param>
     /// <param name="projectName">The name the project is shown by; "PACK SLOT" when null.</param>
-    public static Project CreateFromPack(string projectFolder, string packPath, string mapName, GameDefinition game, string engineDataPath, List<string> notes, string? projectName = null)
+    /// <param name="target">What the project plays in (see <see cref="Targets"/>); a classic target keeps the map in the classic format.</param>
+    public static Project CreateFromPack(string projectFolder, string packPath, string mapName, GameDefinition game, string engineDataPath, List<string> notes, string? projectName = null, string target = Targets.GZDoom)
     {
         var pack = ResourceContainer.Open(packPath);
         var lumps = MapLocator.Find(pack).FirstOrDefault(m => LumpName.Comparer.Equals(m.Name, mapName))
@@ -61,9 +63,9 @@ public static class Remix
         var checksum = MapChecksum.Compute(lumps);
         if (CompatibilityRepairs.Load(engine)?.Apply(zdoom, checksum, notes) == true) notes.Add($"GZDoom's own repairs for {lumps.Name} were applied, as the engine applies them to the original.");
 
-        var project = Project.Create(projectFolder, projectName ?? $"{Path.GetFileNameWithoutExtension(packPath)} {lumps.Name}", game.Id);
+        var project = Project.Create(projectFolder, projectName ?? $"{Path.GetFileNameWithoutExtension(packPath)} {lumps.Name}", game.Id, target);
         project.AddAddOn(Path.GetFullPath(packPath));
-        project.SaveMap(zdoom, origin: new MapOrigin { Kind = "import", Game = game.Id, Map = lumps.Name, Checksum = checksum, File = Path.GetFullPath(packPath) });
+        project.SaveMap(ClassicTranslation.ForProject(project, zdoom, engineDataPath), origin: new MapOrigin { Kind = "import", Game = game.Id, Map = lumps.Name, Checksum = checksum, File = Path.GetFullPath(packPath) });
         return project;
     }
 

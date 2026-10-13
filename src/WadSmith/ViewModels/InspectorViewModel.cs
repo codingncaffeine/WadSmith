@@ -944,7 +944,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
     private string _mapSettingsKey = "";
 
     /// <summary>What the Map settings rows' choices are built from: the game's defaults and the values set, which can add a choice.</summary>
-    private string MapSettingsKey() => $"{_session.Defaults?.Title}|{_session.Defaults?.Music}|{_session.Defaults?.Sky}|{_session.Defaults?.Next}|{_session.Defaults?.Slots.Count}|{_session.Defaults?.Switches.Count}|{_session.Defaults?.Foreign}|{_session.MapEntry.Music}|{_session.MapEntry.Sky}|{_session.MapEntry.Next}";
+    private string MapSettingsKey() => $"{_session.Target}|{_session.Defaults?.Title}|{_session.Defaults?.Music}|{_session.Defaults?.Sky}|{_session.Defaults?.Next}|{_session.Defaults?.Slots.Count}|{_session.Defaults?.Switches.Count}|{_session.Defaults?.Foreign}|{_session.MapEntry.Music}|{_session.MapEntry.Sky}|{_session.MapEntry.Next}";
 
     /// <summary>
     /// The map's own settings, with nothing selected: its name, music, sky and what follows its exit, each the game's own
@@ -955,6 +955,10 @@ internal sealed partial class InspectorViewModel : ObservableObject
         _mapSettingsKey = MapSettingsKey();
         var defaults = _session.Defaults;
         Rows.Add(new HeadingRow("MAP SETTINGS"));
+        var targets = Targets.All;
+        Rows.Add(new ChoiceRow("Plays in", "What this project plays in. GZDoom: everything WadSmith can make. Vanilla Doom: the 1993 engine's format and limits, as Chocolate Doom and the DOS game play it. Limit-removing: that format without the limits, as Crispy Doom plays it. With a classic target the map is kept in the classic format, and Problems lists anything that has no classic type.", [.. targets.Select(t => t.Title)],
+            () => Math.Max(0, targets.ToList().FindIndex(t => t.Id == _session.Target)),
+            i => _session.SetTarget(targets[i].Id)));
         if (defaults?.Foreign == true)
         {
             Rows.Add(new InfoRow("Settings file", "The project holds a zmapinfo.txt WadSmith did not write; WadSmith leaves it alone, so the map's name, music, sky and next map are set in that file.", () => "This project's own zmapinfo.txt sets the map's name, music, sky and next map."));

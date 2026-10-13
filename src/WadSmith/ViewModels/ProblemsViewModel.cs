@@ -80,7 +80,8 @@ internal sealed partial class ProblemsViewModel : ObservableObject
         var look = session.Look;
         var engine = session.Engine;
         var fit = session.FitBaseline;
-        _checks.Request(() => (session, geometry.Version, Problems.Check(geometry, resources, look, engine, fit)));
+        var classic = session.ClassicRules;
+        _checks.Request(() => (session, geometry.Version, Problems.Check(geometry, resources, look, engine, fit, classic)));
     }
 
     private void ShowProblem(Problem p)

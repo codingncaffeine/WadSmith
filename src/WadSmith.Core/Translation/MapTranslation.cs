@@ -203,6 +203,14 @@ public static class MapTranslation
         foreach (var f in ActivationFields(activation)) line.Extra[f] = true;
     }
 
+    /// <summary>The activation fields a classic type's entry gives a line (the way back reads the table with this, see <see cref="ClassicTranslation"/>).</summary>
+    internal static IEnumerable<string> ActivationFieldsOf(int entryFlags)
+    {
+        var activation = 1 << ((entryFlags >> 1) & 7);
+        if (activation == SpacAnyCross || activation == SpacImpact) activation = SpacImpact | SpacPCross;
+        return ActivationFields(activation);
+    }
+
     private static IEnumerable<string> ActivationFields(int activation)
     {
         if ((activation & SpacCross) != 0) yield return "playercross";
@@ -289,7 +297,7 @@ public static class MapTranslation
     }
 
     /// <summary>A deep copy with a new namespace; classic source bits are dropped, since UDMF has no use for them.</summary>
-    private static MapModel Copy(MapModel s, string ns)
+    internal static MapModel Copy(MapModel s, string ns)
     {
         var m = new MapModel { Name = s.Name, Namespace = ns };
         foreach (var (k, v) in s.Globals) m.Globals[k] = v;

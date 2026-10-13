@@ -23,3 +23,5 @@ publish/
 
 # Release artifacts (packaging/build-release.sh)
 /packaging/out/
+packaging/out-next/
+packaging/out-old/

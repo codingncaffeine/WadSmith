@@ -63,6 +63,33 @@ public sealed record CopiedAsset
     public required string File { get; init; }
 }
 
+/// <summary>
+/// What a project plays in (D51): GZDoom's own format and actions, or a classic port's — the 1993 engine's format with
+/// its limits (vanilla: Chocolate Doom, the DOS engine), or that format without the limits (limit-removing: Crispy Doom).
+/// A classic target keeps the project's maps in the classic format, written back from the editor's own.
+/// </summary>
+public static class Targets
+{
+    public const string GZDoom = "gzdoom";
+    public const string Vanilla = "vanilla";
+    public const string LimitRemoving = "limit-removing";
+
+    /// <summary>The targets as the user chooses them, in order.</summary>
+    public static readonly IReadOnlyList<(string Id, string Title)> All =
+    [
+        (GZDoom, "GZDoom"),
+        (Vanilla, "Vanilla Doom (Chocolate Doom)"),
+        (LimitRemoving, "Limit-removing (Crispy Doom)"),
+    ];
+
+    /// <summary>Whether a target keeps the map in the classic format.</summary>
+    public static bool IsClassic(string target) => target is Vanilla or LimitRemoving;
+
+    public static string TitleOf(string target) => All.FirstOrDefault(t => t.Id == target).Title ?? target;
+
+    public static bool IsKnown(string target) => All.Any(t => t.Id == target);
+}
+
 /// <summary>The project's own record, <c>wadsmith.json</c>: what GZDoom does not need to know but WadSmith does.</summary>
 public sealed record ProjectInfo
 {
@@ -74,6 +101,9 @@ public sealed record ProjectInfo
 
     /// <summary>The base game the project is for (an id from data/games/games.json).</summary>
     public required string Game { get; init; }
+
+    /// <summary>What the project plays in (see <see cref="Targets"/>); GZDoom when not said.</summary>
+    public string Target { get; init; } = Targets.GZDoom;
 
     public DateTimeOffset Created { get; init; } = DateTimeOffset.UtcNow;
 
@@ -107,12 +137,13 @@ public sealed class Project
 
     public ProjectInfo Info { get; private set; }
 
-    public static Project Create(string folder, string name, string game)
+    public static Project Create(string folder, string name, string game, string target = Targets.GZDoom)
     {
         folder = Path.GetFullPath(folder);
         if (File.Exists(Path.Combine(folder, SidecarName))) throw new IOException($"{folder} already holds a WadSmith project.");
+        if (!Targets.IsKnown(target)) throw new ArgumentException($"{target} is not a target WadSmith knows.", nameof(target));
         Directory.CreateDirectory(Path.Combine(folder, "maps"));
-        var p = new Project(folder, new ProjectInfo { Name = name, Game = game });
+        var p = new Project(folder, new ProjectInfo { Name = name, Game = game, Target = target });
         p.SaveInfo();
         return p;
     }
@@ -137,21 +168,45 @@ public sealed class Project
     }
 
     /// <summary>Reads a map of the project.</summary>
+    /// <summary>The classic map namespace the project's game uses (doom, heretic, hexen or strife).</summary>
+    public string ClassicNamespace => Games.GameCatalog.Get(Info.Game)?.MapNamespace ?? "doom";
+
+    /// <summary>Whether the project's maps are kept in the classic format (a classic target).</summary>
+    public bool ClassicFormat => Targets.IsClassic(Info.Target);
+
+    /// <summary>Changes what the project plays in and saves the record; the next save of each map writes the target's format.</summary>
+    public void SetTarget(string target)
+    {
+        if (!Targets.IsKnown(target)) throw new ArgumentException($"{target} is not a target WadSmith knows.", nameof(target));
+        lock (_gate)
+        {
+            Info = Info with { Target = target };
+            WriteAtomically(Path.Combine(Folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(Info, Json));
+        }
+    }
+
+    /// <summary>The map as the file holds it: in GZDoom's namespace, or, for a classic target, in the game's classic one.</summary>
     public MapModel LoadMap(string slot)
     {
         var entry = Info.Maps.FirstOrDefault(m => LumpName.Comparer.Equals(m.Slot, slot)) ?? throw new KeyNotFoundException($"The project has no map {slot}.");
         var wad = WadContainer.Open(Path.Combine(Folder, entry.File));
         var lumps = MapLocator.Find(wad).FirstOrDefault() ?? throw new CorruptDataException($"{entry.File} holds no map.");
-        return MapConversion.Read(lumps);
+        return MapConversion.Read(lumps, ClassicNamespace);
     }
 
-    /// <summary>Writes a map as <c>maps/SLOT.wad</c> in UDMF, adding it to the project's list if it is new.</summary>
+    /// <summary>
+    /// Writes a map as <c>maps/SLOT.wad</c>, adding it to the project's list if it is new: in UDMF for a GZDoom target,
+    /// in the classic format for a classic one (the map comes in the game's classic namespace then, see
+    /// <see cref="Translation.ClassicTranslation"/>).
+    /// </summary>
     public void SaveMap(MapModel map, string title = "", MapOrigin? origin = null)
     {
-        if (map.Namespace != "zdoom") throw new ArgumentException($"Projects hold maps in GZDoom's namespace; translate this {map.Namespace} map first.", nameof(map));
+        if (!ClassicFormat && map.Namespace != "zdoom") throw new ArgumentException($"Projects hold maps in GZDoom's namespace; translate this {map.Namespace} map first.", nameof(map));
+        if (ClassicFormat && map.Namespace == "zdoom") throw new ArgumentException("A project with a classic target keeps its maps in the classic format; translate this map back first.", nameof(map));
         var relative = $"maps/{map.Name.ToUpperInvariant()}.wad";
         var lumps = new List<(string, ReadOnlyMemory<byte>)> { (map.Name.ToUpperInvariant(), Array.Empty<byte>()) };
-        lumps.AddRange(MapConversion.ToUdmfLumps(map).Select(l => (l.Name, (ReadOnlyMemory<byte>)l.Data)));
+        if (ClassicFormat) lumps.AddRange(MapConversion.ToClassic(map, map.Namespace == "hexen" ? MapFormat.Hexen : MapFormat.Doom).WriteLumps().Select(l => (l.Name, (ReadOnlyMemory<byte>)l.Data)));
+        else lumps.AddRange(MapConversion.ToUdmfLumps(map).Select(l => (l.Name, (ReadOnlyMemory<byte>)l.Data)));
         WriteAtomically(Path.Combine(Folder, relative), WadWriter.Write(WadKind.Pwad, lumps));
 
         lock (_gate)

@@ -170,7 +170,7 @@ public static partial class Doors
         }
 
         var opensTo = lowest == double.MaxValue ? area.FloorHeight : lowest - 4;
-        return new Door(area, openers, settings, openers[0].Flag("monsteruse"), opensTo);
+        return new Door(area, openers, settings, openers[0].Flag("monsteruse") || openers[0].Flag("monsteractivate"), opensTo);
     }
 
     /// <summary>How a door action with its arguments behaves; null for an action that is not a door this model edits.</summary>

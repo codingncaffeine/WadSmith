@@ -1,5 +1,7 @@
 ## What's New
 
+- **Maps for vanilla Doom and the classic ports (first part)** — Each game card has "Plays in": GZDoom (everything WadSmith can make), Vanilla Doom (the 1993 engine's format, as Chocolate Doom and the DOS game play it) or Limit-removing (that format without the limits, as Crispy Doom plays it); Map settings changes it later. With a classic target the project keeps its map in the classic format, written back from the editor through GZDoom's own table of what each classic line type means, and Problems lists anything that has no classic type. The node builder the classic ports need, their limits as checks, and playing in the port itself come next.
+
 - **Your WADs are all you need** — WadSmith now looks where GZDoom's own settings look, inside ZIP files (taking a base game out when one is in there), and around any folder you point it at: the folder, the one above it and the ones beside it. A large collection is read once and remembered.
 - **Pick a game file** — Point WadSmith straight at DOOM2.WAD, HERETIC.WAD or a ZIP holding one, on the start screen or in Preferences.
 - **Cover pictures** — Each game's tile shows the game's cover, fetched once from its Wikipedia article and kept; the game's own title screen shows until it arrives, and when there is none. Preferences → "Show each game's cover picture" turns it off, and then nothing is fetched.
