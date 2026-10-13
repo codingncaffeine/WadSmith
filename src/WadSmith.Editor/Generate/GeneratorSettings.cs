@@ -150,7 +150,7 @@ public sealed record GeneratorSettings
     private static Look? OutdoorLook(string family) => family switch
     {
         "hexen" => Look.For("hexen") with { Wall = "WASTE01", Floor = "F_001", Ceiling = "F_SKY", CeilingHeight = 256, Light = 208 },
-        "strife" => Look.For("strife") with { Wall = "BRKGRY01", Floor = "F_DIRT1", Ceiling = "F_SKY001", CeilingHeight = 256, Light = 208 },
+        "strife" => Look.For("strife") with { Wall = "BRKGRY01", Floor = "F_DIRT01", Ceiling = "F_SKY001", CeilingHeight = 256, Light = 208 },
         _ => null,
     };
 }
