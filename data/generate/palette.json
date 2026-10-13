@@ -1,5 +1,5 @@
 {
-  "comment": "What the map generator (D50) places, per game family: monsters by tier (1 weak .. 4 tough; boss = only in the boss arena), with the engine's own editor numbers, health and radius (a test holds them to the engine's catalogue); weapons in the order a map hands them out, the ammunition each uses and the damage a unit of it does on average (Doom's as the Balance meter counts them); health, armour, keys (colour, object, the lock a door takes) and the decorations dressed into rooms. 'doom2' marks what only the Doom II family has. 'start' is the damage the ammunition a player starts with can do. 'lights' and 'torches' are the decorations that give light (lamps for tech rooms; torches for castles and caves), placed where a room's light comes from.",
+  "comment": "What the map generator (D50) places, per game family: monsters by tier (1 weak .. 4 tough; boss = only in the boss arena), with the engine's own editor numbers, health and radius (a test holds them to the engine's catalogue); weapons in the order a map hands them out, the ammunition each uses and the damage a unit of it does on average (Doom's as the Balance meter counts them); health, armour, keys (colour, object, the lock a door takes) and the decorations dressed into rooms. 'doom2' marks what only the Doom II family has. 'start' is the damage the ammunition a player starts with can do. 'lights' and 'torches' are the decorations that give light (lamps for tech rooms; torches for castles and caves), placed where a room's light comes from. 'powerups' are the game's own by what they are for: strength (berserk), pack (backpack), boost (megasphere), suit (against hurting floors), map, hide, shield (invulnerability), sight; 'doom2Powerups' are those only the Doom II family has.",
   "doom": {
     "start": 500,
     "monsters": [
@@ -45,7 +45,9 @@
     "decorations": [ 2028, 2035, 30, 32, 48 ],
     "outdoorDecorations": [ 43, 47, 54 ],
     "lights": [ 85, 86, 2028 ],
-    "torches": [ 44, 45, 46, 55, 56, 57, 35, 70 ]
+    "torches": [ 44, 45, 46, 55, 56, 57, 35, 70 ],
+    "powerups": { "strength": 2023, "pack": 8, "boost": 83, "suit": 2025, "map": 2026, "hide": 2024, "shield": 2022, "sight": 2045 },
+    "doom2Powerups": [ 83 ]
   },
   "heretic": {
     "start": 500,
@@ -87,7 +89,8 @@
     "decorations": [ 27, 28, 29, 76, 87, 47 ],
     "outdoorDecorations": [ 37, 38, 39 ],
     "lights": [ 28, 76 ],
-    "torches": [ 27, 76 ]
+    "torches": [ 27, 76 ],
+    "powerups": { "strength": 86, "pack": 8, "map": 35, "hide": 75, "shield": 84, "sight": 33 }
   },
   "hexen": {
     "start": 500,
@@ -121,7 +124,8 @@
     "decorations": [ 8063, 8064, 8065, 8066, 5, 77 ],
     "outdoorDecorations": [ 24, 25, 26 ],
     "lights": [ 17, 8061 ],
-    "torches": [ 116, 8042, 8061 ]
+    "torches": [ 116, 8042, 8061 ],
+    "powerups": { "pack": 8003, "boost": 8041, "shield": 84, "sight": 33 }
   },
   "strife": {
     "start": 300,
@@ -157,6 +161,7 @@
     "decorations": [ 70, 82, 105, 106, 48 ],
     "outdoorDecorations": [ 51, 60, 62 ],
     "lights": [ 196, 197, 43 ],
-    "torches": [ 47, 50, 111, 106, 70 ]
+    "torches": [ 47, 50, 111, 106, 70 ],
+    "powerups": { "pack": 183, "suit": 2025, "map": 2026, "hide": 2024, "sight": 2027 }
   }
 }

@@ -200,6 +200,9 @@ public enum ThingRole
     Key,
     Decoration,
     Light,
+
+    /// <summary>A power-up: berserk, backpack, megasphere, radiation suit … (D59).</summary>
+    Powerup,
 }
 
 /// <summary>

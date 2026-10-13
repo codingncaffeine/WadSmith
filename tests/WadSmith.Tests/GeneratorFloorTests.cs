@@ -379,6 +379,57 @@ public sealed class GeneratorFloorTests
 
         Assert.True(seen > 0);
     }
+
+    /// <summary>
+    /// Supplies and power-ups (the study: ammunition 1.1× and health a fiftieth of the monsters' health on the community's
+    /// hard sets, ours 1.6× and a twelfth; their berserk in 72% of maps, backpack 67%, megasphere 47%, a radiation suit by
+    /// the nukage; ours only a soulsphere now and then): at the middle challenge the hard difficulty's ammunition is 1.1 to
+    /// 1.6 times what its monsters can take and health 0.02 to 0.07 of their health, at the median of each size; a berserk
+    /// and a backpack come in most maps and a megasphere in many of those with a secret; nearly every map with a hurting
+    /// pool has a radiation suit; invulnerability waits only where bosses do; no power-up stands in a pool.
+    /// </summary>
+    [Fact]
+    public void SuppliesAreTightAndPowerupsComeWhereTheyAreWanted()
+    {
+        var p = FamilyPalette.For("doom")!;
+        var ammoOf = p.Ammo.SelectMany(a => new[] { (a.Small, a.SmallAmount * a.Damage), (a.Big, a.BigAmount * a.Damage) }).ToDictionary(x => x.Item1, x => x.Item2);
+        var healthOf = new Dictionary<int, double> { [p.Health.Small] = p.Health.SmallAmount, [p.Health.Big] = p.Health.BigAmount, [p.Health.Super] = 100 };
+        var (ammo, health) = (new List<double>(), new List<double>());
+        var (maps, strength, pack, withSecret, boost, withHurting, suit) = (0, 0, 0, 0, 0, 0, 0);
+        foreach (var plan in Sweep())
+        {
+            maps++;
+            var hp = plan.Things.Where(t => t.Monster is not null).Sum(t => (double)t.Monster!.Health);
+            var damage = p.StartDamage + plan.Things.Where(t => t.Role == ThingRole.Ammo).Sum(t => ammoOf.GetValueOrDefault(t.Number))
+                + plan.Things.Where(t => t.Role == ThingRole.Weapon).Sum(t => p.Weapons.FirstOrDefault(w => w.Number == t.Number) is { } w ? w.Gives * (p.AmmoOf(w.Ammo)?.Damage ?? 0) : 0);
+            ammo.Add(damage / hp);
+            health.Add(plan.Things.Where(t => t.Role == ThingRole.Health).Sum(t => healthOf.GetValueOrDefault(t.Number)) / hp);
+            var powers = plan.Things.Where(t => t.Role == ThingRole.Powerup).ToList();
+            Assert.All(powers, t => Assert.Contains(t.Number, p.Powerups.Values));
+            Assert.All(powers, t => Assert.False(plan.Rooms[t.Room].Pools.Any(pool => pool.Contains(t.X, t.Y)), $"{plan.Settings.Seed}: a power-up in a pool"));
+            if (plan.Settings.Bosses == 0) Assert.DoesNotContain(powers, t => t.Number == p.Powerups["shield"]);
+            if (powers.Any(t => t.Number == p.Powerups["strength"])) strength++;
+            if (powers.Any(t => t.Number == p.Powerups["pack"])) pack++;
+            if (plan.Rooms.Any(r => r.Role == RoomRole.Secret))
+            {
+                withSecret++;
+                if (powers.Any(t => t.Number == p.Powerups["boost"])) boost++;
+            }
+
+            if (plan.Rooms.Any(r => r.Pools.Any(x => x.Damage > 0)))
+            {
+                withHurting++;
+                if (powers.Any(t => t.Number == p.Powerups["suit"])) suit++;
+            }
+        }
+
+        double Median(List<double> xs) => xs.Order().ElementAt(xs.Count / 2);
+        Assert.InRange(Median(ammo), 1.1, 1.6);
+        Assert.InRange(Median(health), 0.02, 0.07);
+        Assert.True(strength >= maps * 6 / 10 && pack >= maps * 55 / 100, $"of {maps} maps {strength} have a berserk and {pack} a backpack");
+        Assert.True(boost >= withSecret * 4 / 10, $"{boost} megaspheres in {withSecret} maps with a secret");
+        Assert.True(suit >= withHurting * 7 / 10, $"{suit} radiation suits in {withHurting} maps with a hurting pool");
+    }
     /// <summary>Whether the link's two rooms are joined by the other links.</summary>
     private static bool Joined(MapPlan plan, PlannedLink without)
     {

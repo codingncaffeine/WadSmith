@@ -997,6 +997,7 @@ public static class Planner
         }
 
         Supplies(plan, palette, spots, weapons, weaponAt, rng);
+        Powerups(plan, palette, spots, rng.Fork("powerups"));
         Lighting(plan, palette, spots, rng.Fork("lighting"));
 
         // Each island's reward, in sight from the dry way and worth the wade: armour or a medikit.
@@ -1027,7 +1028,7 @@ public static class Planner
         // A closet's monsters count with the room it opens into, where its supplies go.
         double HealthIn(int room) => plan.Things.Where(t => t.Room >= 0 && (t.Room == room || plan.Rooms[t.Room].ClosetOf == room) && t.Monster is not null).Sum(t => (double)t.Monster!.Health);
         var total = plan.Rooms.Sum(r => HealthIn(r.Index));
-        var target = total * (1.6 - 0.45 * c);
+        var target = total * (1.35 - 0.4 * c);
         var have = palette.StartDamage + weaponAt.Keys.Sum(w => weapons[w].Gives * (AmmoFor(weapons[w])?.Damage ?? 0));
         var deficit = Math.Max(0, target - have);
 
@@ -1060,8 +1061,9 @@ public static class Planner
                 share -= (big ? ammo.BigAmount : ammo.SmallAmount) * ammo.Damage;
             }
 
-            // Health: about a tenth of the monsters' health, more at the gentle end.
-            var heal = HealthIn(room.Index) * (0.14 - 0.08 * c);
+            // Health: about a twentieth of the monsters' health, more at the gentle end (the community's hard sets give a
+            // fiftieth; D59).
+            var heal = HealthIn(room.Index) * (0.065 - 0.045 * c);
             for (var guard = 0; heal > 4 && guard < 12; guard++)
             {
                 var big = heal >= palette.Health.BigAmount * 0.8;
@@ -1087,6 +1089,50 @@ public static class Planner
             var gift = rng.Next(3) switch { 0 => palette.Health.Super, 1 => palette.Armor.Heavy, _ => best?.Big ?? palette.Health.Super };
             if (spots[secret.Index].Find(16, rng, (secret.Box.CentreX, secret.Box.CentreY)) is { } at) plan.Things.Add(new PlannedThing(gift == palette.Armor.Heavy ? ThingRole.Armor : gift == palette.Health.Super ? ThingRole.Health : ThingRole.Ammo, gift, at.X, at.Y, 90, Room: secret.Index));
         }
+    }
+
+    /// <summary>
+    /// Power-ups as the community's maps place them (D59: a berserk in 72% of their maps, a backpack in 67%, a megasphere in
+    /// 47%, a radiation suit beside the nukage, invulnerability or invisibility before the big fights; ours had only a
+    /// soulsphere now and then): the game's own, by what each is for — strength early on the way, a pack in the side room
+    /// nearest halfway, the boost (and now and then the map) in a secret, the suit at the way into the room with the most
+    /// hurting liquid, a shield (with bosses) or a hide in the room before the arena, sight in a dark room.
+    /// </summary>
+    private static void Powerups(MapPlan plan, FamilyPalette palette, List<Spots> spots, Seeded rng)
+    {
+        var s = plan.Settings;
+        int? Of(string role) => palette.Powerup(role, s.Doom2Things);
+        void Put(PlannedRoom room, int number, (double X, double Y)? near = null)
+        {
+            if (spots[room.Index].Find(16, rng, near) is { } at) plan.Things.Add(new PlannedThing(ThingRole.Powerup, number, at.X, at.Y, 90, Room: room.Index));
+        }
+
+        var way = plan.Path.Select(i => plan.Rooms[i]).ToList();
+        if (Of("strength") is { } strength && way.Count > 2 && rng.Chance(0.75)) Put(way[Math.Min(2, way.Count - 2)], strength);
+        var halfway = plan.Rooms.Where(r => r.Role == RoomRole.Side).OrderBy(r => Math.Abs(r.Progress - 0.5)).FirstOrDefault() ?? way[way.Count / 2];
+        if (Of("pack") is { } pack && rng.Chance(0.7)) Put(halfway, pack);
+        var secrets = plan.Rooms.Where(r => r.Role == RoomRole.Secret).ToList();
+        if (Of("boost") is { } boost && secrets.Count > 0 && rng.Chance(0.6)) Put(rng.Pick(secrets), boost);
+        if (Of("map") is { } map && secrets.Count > 1 && rng.Chance(0.2)) Put(secrets[^1], map);
+
+        // The suit where it is wanted: by the way into the room with the most hurting liquid.
+        var hurting = plan.Rooms.Where(r => r.Pools.Any(p => p.Damage > 0)).OrderByDescending(r => r.Pools.Where(p => p.Damage > 0).Sum(p => p.Box.Width * (double)p.Box.Height)).FirstOrDefault();
+        if (Of("suit") is { } suit && hurting is not null && rng.Chance(0.85))
+        {
+            var entry = plan.Links.FirstOrDefault(l => !l.Loop && Math.Max(l.A, l.B) == hurting.Index);
+            Put(hurting, suit, entry is null ? null : Mouth(entry, hurting));
+        }
+
+        // Before the arena: invulnerability when bosses wait there, else a blur sphere now and then.
+        var arena = way.FindIndex(r => r.Role == RoomRole.Arena);
+        if (arena > 0)
+        {
+            if (s.Bosses > 0 && Of("shield") is { } shield && rng.Chance(0.4)) Put(way[arena - 1], shield);
+            else if (Of("hide") is { } hide && rng.Chance(0.25)) Put(way[arena - 1], hide);
+        }
+
+        var dark = plan.Rooms.Where(r => r.Dark && r.Role != RoomRole.Closet).ToList();
+        if (Of("sight") is { } sight && dark.Count > 0 && rng.Chance(0.25)) Put(rng.Pick(dark), sight);
     }
 
     /// <summary>

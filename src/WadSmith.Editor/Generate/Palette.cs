@@ -32,13 +32,18 @@ public sealed record FamilyPalette(
     IReadOnlyList<int> Decorations,
     IReadOnlyList<int> OutdoorDecorations,
     IReadOnlyList<int> Lights,
-    IReadOnlyList<int> Torches)
+    IReadOnlyList<int> Torches,
+    IReadOnlyDictionary<string, int> Powerups,
+    IReadOnlyList<int> Doom2Powerups)
 {
     /// <summary>The game families the generator makes maps for.</summary>
     public static IReadOnlyList<string> Families => [.. Table.Value.Keys];
 
     /// <summary>The palette of <paramref name="family"/> ("doom", "heretic", "hexen", "strife"), or null when the generator does not know it.</summary>
     public static FamilyPalette? For(string family) => Table.Value.GetValueOrDefault(family);
+
+    /// <summary>The game's power-up for <paramref name="role"/> (strength, pack, boost, suit, map, hide, shield, sight), or null when it has none or only the Doom II family has it and <paramref name="doom2"/> is false.</summary>
+    public int? Powerup(string role, bool doom2 = true) => Powerups.TryGetValue(role, out var n) && (doom2 || !Doom2Powerups.Contains(n)) ? n : null;
 
     /// <summary>The ammunition of a type.</summary>
     public AmmoKind? AmmoOf(string type) => Ammo.FirstOrDefault(a => a.Type == type);
@@ -62,7 +67,9 @@ public sealed record FamilyPalette(
                 raw.Decorations,
                 raw.OutdoorDecorations,
                 raw.Lights,
-                raw.Torches);
+                raw.Torches,
+                raw.Powerups,
+                raw.Doom2Powerups);
         }
 
         return result;
@@ -93,6 +100,10 @@ public sealed record FamilyPalette(
         public List<int> Lights { get; set; } = [];
 
         public List<int> Torches { get; set; } = [];
+
+        public Dictionary<string, int> Powerups { get; set; } = [];
+
+        public List<int> Doom2Powerups { get; set; } = [];
     }
 
     private sealed class RawMonster

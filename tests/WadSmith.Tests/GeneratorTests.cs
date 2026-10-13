@@ -421,6 +421,7 @@ public sealed class GeneratorTests
             foreach (var number in new[] { p.Armor.Light, p.Armor.Heavy }) Expect(number, ThingCategory.Armor);
             foreach (var k in p.Keys) Expect(k.Number, ThingCategory.Key);
             foreach (var number in p.Decorations.Concat(p.OutdoorDecorations).Concat(p.Lights).Concat(p.Torches)) Expect(number, ThingCategory.Decoration);
+            foreach (var number in p.Powerups.Values) Expect(number, ThingCategory.Powerup);
         }
 
         Assert.True(faults.Count == 0, string.Join("\n", faults));
