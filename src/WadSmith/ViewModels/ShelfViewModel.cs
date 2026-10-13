@@ -243,7 +243,7 @@ internal sealed partial class ShelfViewModel : ObservableObject
                         var moves = animations.TryGetValue(info.Name, out var animation)
                             ? $" It moves: {animation.Frames.Length} frames, played by GZDoom (and the 3D view) at the picture's own pace."
                             : "";
-                        tiles.Add(new ShelfTile(title, $"{mine.Original}, your picture ({info.Name}, {info.Width} × {info.Height}).{moves} Drag it onto a wall, a door or a floor; the Inspector's Fit makes one copy fill it.", PictureGroup, $"{title} {info.Name} {mine.Original} picture yours".ToLowerInvariant(), picture, new ShelfDrop(info.Name, 0, title)));
+                        tiles.Add(new ShelfTile(title, $"{mine.Original}, your picture ({info.Name}, {info.Width} × {info.Height}).{moves} Drag it onto a wall, a door or a floor: it goes on once, whole, in its own shape (a section of a wall as tall as the wall; a door or a floor filled). Shift puts it on a section as wide as the picture, repeating as textures do.", PictureGroup, $"{title} {info.Name} {mine.Original} picture yours".ToLowerInvariant(), picture, new ShelfDrop(info.Name, 0, title)));
                         continue;
                     }
 

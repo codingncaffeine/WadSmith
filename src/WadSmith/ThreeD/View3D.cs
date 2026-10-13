@@ -278,7 +278,7 @@ internal sealed class View3D : Control
             // Shift on a wall: a section as wide as the picture where it was let go, not the whole wall.
             WadSmith.Editor.Geometry.MapPoint? section = shift && h.Kind == HitKind.Wall ? new(h.X, h.Y) : null;
             if (drop.From is { } from) session.PaintBorrowedSurface(from, texture, drop.Flat, h.Target, section);
-            else if (session.PaintSurface(h.Target, texture, section) is { } why) session.Tell(why);
+            else if (session.PaintSurface(h.Target, texture, section, new WadSmith.Editor.Geometry.MapPoint(h.X, h.Y)) is { } why) session.Tell(why);
             return;
         }
 

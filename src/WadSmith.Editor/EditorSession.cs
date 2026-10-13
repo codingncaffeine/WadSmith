@@ -765,18 +765,24 @@ public sealed class EditorSession : IDisposable
     /// Puts a texture on one surface seen in the 3D view: a face's upper, middle or lower part, or an area's floor or
     /// ceiling (a sky ceiling becomes that texture), one undo step, and selects the face or area. Null when done, else why not.
     /// </summary>
-    public string? PaintSurface(SurfaceTarget target, string texture, MapPoint? section = null)
+    public string? PaintSurface(SurfaceTarget target, string texture, MapPoint? section = null, MapPoint? dropped = null)
     {
         if (Grouping.Holds(_geometry, target.Element)) return "That is locked: unlock it with nothing selected, under Groups, to change it.";
         switch (target.Element)
         {
             case Side { OnMap: true } face:
-                // The whole straight wall, that part of it; with a point (Shift), a section as wide as the picture there.
-                var faces = section is null ? StraightWall(face) : [];
+                // The whole straight wall, that part of it; with a point (Shift), a section as wide as the picture there; a
+                // picture of the user's own, a poster where it was let go.
+                var poster = section is null && IsOwnPicture(texture);
+                var faces = section is null && !poster ? StraightWall(face) : [];
                 Side painted = face;
-                History.Record(section is null ? "Put a texture on a wall" : "Put a texture on a section of a wall", e =>
+                History.Record(section is not null ? "Put a texture on a section of a wall" : poster ? "Put a picture on a wall" : "Put a texture on a wall", e =>
                 {
-                    if (section is { } at)
+                    if (poster)
+                    {
+                        painted = Poster(e, face, texture, dropped ?? Middle(face), target.Part);
+                    }
+                    else if (section is { } at)
                     {
                         painted = Section(e, face, texture, at);
                         PaintFace(e, painted, texture, target.Part);
@@ -787,10 +793,10 @@ public sealed class EditorSession : IDisposable
                     }
                 });
                 Selection.Set(painted);
+                if (poster) Notice?.Invoke(PosterWords);
                 return null;
             case Sector { OnMap: true } area:
-                if (target.Ceiling) History.Record("Put a texture on a ceiling", e => e.Set(area, s => s.CeilingTexture, (s, v) => s.CeilingTexture = v, texture));
-                else History.Record("Put a texture on a floor", e => e.Set(area, s => s.FloorTexture, (s, v) => s.FloorTexture = v, texture));
+                PaintFlat(area, texture, target.Ceiling);
                 Selection.Set(area);
                 return null;
             default:
@@ -931,22 +937,75 @@ public sealed class EditorSession : IDisposable
     private Side Section(StructureEdit e, Side face, string texture, MapPoint at)
     {
         var wall = face.Line!;
-        var width = Resources?.Textures.FindWall(texture) is { Width: >= 8 } t ? t.Width : Switches.Width;
+        var width = WallSize(texture) is { Width: >= 8 } t ? t.Width : Switches.Width;
         var front = ReferenceEquals(face, wall.Front);
         var piece = Switches.Piece(e, wall, at, width);
         return front ? piece.Front : piece.Back ?? piece.Front;
     }
+
+    /// <summary>Whether <paramref name="texture"/> is a picture the user brought in (still or moving; a material set tiles, so it is not one).</summary>
+    public bool IsOwnPicture(string texture) => Project.CopiedNow().Any(c => c.Kind == "wall" && c.Game == "picture" && string.Equals(c.Name, texture, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// A picture of the user's own on a wall, as a poster: once, whole, in its own shape. On a solid wall it takes a section as
+    /// tall as the wall and as wide as the picture's shape needs, round <paramref name="at"/> (the whole wall when it needs
+    /// more), the rest of the wall left as it was; between rooms (a door's face, a window's sides) it fills the part. One copy
+    /// fills the face (<see cref="Fitting.FitWall"/>). Returns the face that carries it.
+    /// </summary>
+    private Side Poster(StructureEdit e, Side face, string texture, MapPoint at, WallPart? part)
+    {
+        var painted = face;
+        if (WallSize(texture) is { Width: > 0, Height: > 0 } size && face.Line is { } wall && wall.Opposite(face) is null)
+        {
+            var tall = face.Sector.CeilingHeight - face.Sector.FloorHeight;
+            var width = Math.Round(tall * size.Width / size.Height);
+            if (tall > 0 && width >= 8 && width < wall.Length - 1)
+            {
+                var piece = Switches.Piece(e, wall, at, width);
+                painted = ReferenceEquals(face, wall.Front) ? piece.Front : piece.Back ?? piece.Front;
+            }
+        }
+
+        PaintFace(e, painted, texture, part);
+        Fitting.FitWall(e, painted, WallSize);
+        return painted;
+    }
+
+    /// <summary>A picture on a floor or ceiling, one undo step; a picture of the user's own fills the room once (<see cref="Fitting.FitFlat"/>).</summary>
+    private void PaintFlat(Sector area, string texture, bool ceiling)
+    {
+        var own = IsOwnPicture(texture);
+        var walls = own ? Map.Lines.Where(l => l.OnMap).ToList() : [];
+        History.Record(ceiling ? "Put a texture on a ceiling" : "Put a texture on a floor", e =>
+        {
+            if (ceiling) e.Set(area, s => s.CeilingTexture, (s, v) => s.CeilingTexture = v, texture);
+            else e.Set(area, s => s.FloorTexture, (s, v) => s.FloorTexture = v, texture);
+            if (own) Fitting.FitFlat(e, area, walls, ceiling, FlatSize);
+        });
+        if (own) Notice?.Invoke($"Your picture covers this room's {(ceiling ? "ceiling" : "floor")} once, its top to the north.");
+    }
+
+    /// <summary>The middle of a face's wall.</summary>
+    private static MapPoint Middle(Side face) => face.Line is { } l ? new MapPoint((l.Start.X + l.End.X) / 2, (l.Start.Y + l.End.Y) / 2) : new MapPoint(0, 0);
+
+    /// <summary>What a poster drop says: how it went on, and how to get the old way.</summary>
+    private const string PosterWords = "Your picture went on once, whole: as tall as the wall and as wide as its shape needs (on a door, filling it); the rest of the wall is as it was. Shift puts it on a section as wide as the picture instead, repeating as textures do.";
 
     public string? Paint(string texture, MapPoint at, double radius, bool ceiling, bool section = false)
     {
         if (_geometry.LineNear(at, radius) is { OnMap: true } wall)
         {
             var face = FaceToward(wall, at);
-            var faces = section ? [] : StraightWall(face);
+            var poster = !section && IsOwnPicture(texture);
+            var faces = section || poster ? [] : StraightWall(face);
             Side painted = face;
-            History.Record(section ? "Put a texture on a section of a wall" : "Put a texture on a wall", e =>
+            History.Record(section ? "Put a texture on a section of a wall" : poster ? "Put a picture on a wall" : "Put a texture on a wall", e =>
             {
-                if (section)
+                if (poster)
+                {
+                    painted = Poster(e, face, texture, at, null);
+                }
+                else if (section)
                 {
                     painted = Section(e, face, texture, at);
                     PaintFace(e, painted, texture);
@@ -958,13 +1017,13 @@ public sealed class EditorSession : IDisposable
             });
 
             Selection.Set(painted);
+            if (poster) Notice?.Invoke(PosterWords);
             return null;
         }
 
         if (_geometry.SectorAt(at) is { OnMap: true } area)
         {
-            if (ceiling) History.Record("Put a texture on a ceiling", e => e.Set(area, s => s.CeilingTexture, (s, v) => s.CeilingTexture = v, texture));
-            else History.Record("Put a texture on a floor", e => e.Set(area, s => s.FloorTexture, (s, v) => s.FloorTexture = v, texture));
+            PaintFlat(area, texture, ceiling);
             Selection.Set(area);
             return null;
         }
@@ -1177,8 +1236,14 @@ public sealed class EditorSession : IDisposable
         });
     }
 
-    /// <summary>A wall texture's size from the game's index (no picture is read); null when the game has none of that name.</summary>
-    private (int Width, int Height)? WallSize(string name) => Resources?.Textures.FindWall(name) is { } w ? (w.Width, w.Height) : Resources?.Textures.FindFlat(name) is { } f ? (f.Width, f.Height) : null;
+    /// <summary>A wall texture's size in pixels (a floor picture standing in as GZDoom lets it); null when the game has none of that name.</summary>
+    /// <remarks>A picture file's size is known only once it is read (the index says 0 × 0 until then), so it is read here when needed.</remarks>
+    private (int Width, int Height)? WallSize(string name)
+    {
+        if (Resources is not { } r) return null;
+        if ((r.Textures.FindWall(name) ?? r.Textures.FindFlat(name)) is { Width: > 0, Height: > 0 } known) return (known.Width, known.Height);
+        return r.Textures.GetWall(name) is { } image ? (image.Width, image.Height) : null;
+    }
 
     /// <summary>Fits the picture on each showing part of <paramref name="side"/>'s face (D15), one undo step; says why not when it cannot.</summary>
     public void FitWall(Side side)
