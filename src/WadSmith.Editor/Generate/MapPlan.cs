@@ -75,8 +75,11 @@ public sealed class PlannedRoom
     /// <summary>Solid columns standing in the room (a castle hall's).</summary>
     public List<Box> Pillars { get; } = [];
 
-    /// <summary>Pools sunk in the floor: their rectangle, their floor picture and how much they hurt (0 for water).</summary>
-    public List<(Box Box, string Flat, int Damage)> Pools { get; } = [];
+    /// <summary>Pools sunk in the floor (D59): channels along walls, the halves of a river, the quarters of a flooded hall.</summary>
+    public List<PlannedPool> Pools { get; } = [];
+
+    /// <summary>Dry squares at the room's floor height standing in its pools, each holding a reward.</summary>
+    public List<Box> Islands { get; } = [];
 
     /// <summary>A dais a step high round the room's middle (a key room's pedestal), when it has one.</summary>
     public Box? Dais { get; set; }
@@ -111,8 +114,8 @@ public sealed class PlannedRoom
         return points;
     }
 
-    /// <summary>Whether a circle of <paramref name="radius"/> at the point stands inside the room, clear of its walls, cut corners, pillars and pools.</summary>
-    public bool Holds(double x, double y, double radius)
+    /// <summary>Whether a circle of <paramref name="radius"/> at the point stands inside the room, clear of its walls, cut corners, pillars and (unless <paramref name="wet"/>, for a monster, which liquid does not hurt) its pools.</summary>
+    public bool Holds(double x, double y, double radius, bool wet = false)
     {
         var b = Box;
         if (x - radius <= b.X0 || x + radius >= b.X1 || y - radius <= b.Y0 || y + radius >= b.Y1) return false;
@@ -120,7 +123,7 @@ public sealed class PlannedRoom
         var c = Cuts;
         if (x - b.X0 + (y - b.Y0) < c.SW + slack || x - b.X0 + (b.Y1 - y) < c.NW + slack || b.X1 - x + (b.Y1 - y) < c.NE + slack || b.X1 - x + (y - b.Y0) < c.SE + slack) return false;
         bool Clear(Box p) => x + radius <= p.X0 || x - radius >= p.X1 || y + radius <= p.Y0 || y - radius >= p.Y1;
-        return Pillars.All(Clear) && Pools.All(p => Clear(p.Box));
+        return Pillars.All(Clear) && (wet || Pools.All(p => Clear(p.Box)));
     }
 
     /// <summary>The key a key room holds.</summary>

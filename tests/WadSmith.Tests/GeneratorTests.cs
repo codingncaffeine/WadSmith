@@ -233,7 +233,7 @@ public sealed class GeneratorTests
         Assert.True(secrets >= 30, $"only {secrets} secrets in 10 huge maps");
     }
 
-    /// <summary>Pools come with the hazards and go without them; each is sunk 16 into its room's floor with its picture, and a hurting one hurts by GZDoom's own fields.</summary>
+    /// <summary>Pools come with the hazards and go without them; each is sunk by its depth into its room's floor with its picture, and a hurting one hurts by GZDoom's own fields.</summary>
     [Fact]
     public void PoolsAreSunkWithTheirPictureAndTheirDamage()
     {
@@ -245,13 +245,13 @@ public sealed class GeneratorTests
             var g = Editor.Geometry.MapGeometry.Build(made.Map.Frame);
             var pools = made.Plan.Rooms.SelectMany(r => r.Pools.Select(p => (Room: r, Pool: p))).ToList();
             Assert.NotEmpty(pools);
-            foreach (var (room, (box, flat, damage)) in pools)
+            foreach (var (room, pool) in pools)
             {
-                var area = g.SectorAt(new(box.CentreX, box.CentreY))!;
-                Assert.Equal((room.Floor - 16, flat), (area.FloorHeight, area.FloorTexture));
+                var area = g.SectorAt(new(pool.Inside.X, pool.Inside.Y))!;
+                Assert.Equal((room.Floor - pool.Depth, pool.Flat), (area.FloorHeight, area.FloorTexture));
                 var amount = area.Extra.TryGet("damageamount", out var v) ? v.AsInt() : 0;
-                Assert.Equal(damage, amount);
-                if (damage > 0) hurting++;
+                Assert.Equal(pool.Damage, amount);
+                if (pool.Damage > 0) hurting++;
             }
         }
 
@@ -363,7 +363,7 @@ public sealed class GeneratorTests
             foreach (var m in monsters)
             {
                 var room = plan.Rooms[m.Room];
-                Assert.True(room.Holds(m.X, m.Y, m.Monster!.Radius), $"{m.Monster.Class} at ({m.X}, {m.Y}) reaches out of its room {room.Box} (cut {room.Cuts}, {room.Pillars.Count} pillars)");
+                Assert.True(room.Holds(m.X, m.Y, m.Monster!.Radius, wet: true), $"{m.Monster.Class} at ({m.X}, {m.Y}) reaches out of its room {room.Box} (cut {room.Cuts}, {room.Pillars.Count} pillars)");
             }
 
             foreach (var (a, b) in monsters.SelectMany((a, i) => monsters.Skip(i + 1).Select(b => (a, b))))

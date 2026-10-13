@@ -88,7 +88,13 @@ internal sealed class PlanPreview : Control
         // Pools: water blue, a hurting floor (nukage, lava) red-orange; pillars dark.
         foreach (var room in plan.Rooms)
         {
-            foreach (var (box, _, damage) in room.Pools) context.FillRectangle(new SolidColorBrush(damage > 0 ? Color.FromRgb(0xC8, 0x50, 0x20) : Color.FromRgb(0x30, 0x60, 0xB0)), R(box));
+            foreach (var pool in room.Pools)
+            {
+                var shape = new PolylineGeometry(pool.Outline.Select(p => P(p.X, p.Y)), true);
+                context.DrawGeometry(new SolidColorBrush(pool.Damage > 0 ? Color.FromRgb(0xC8, 0x50, 0x20) : Color.FromRgb(0x30, 0x60, 0xB0)), null, shape);
+            }
+
+            foreach (var island in room.Islands) context.FillRectangle(new SolidColorBrush(Color.FromRgb(0x6A, 0x6A, 0x5A)), R(island));
             foreach (var pillar in room.Pillars) context.FillRectangle(new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x18)), R(pillar));
         }
 

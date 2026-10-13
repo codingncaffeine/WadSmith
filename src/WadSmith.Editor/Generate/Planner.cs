@@ -249,30 +249,11 @@ public static class Planner
                 room.Dais = new Box((int)cx - dais, (int)cy - dais, (int)cx + dais, (int)cy + dais);
             }
 
-            // A pool in a quarter of a big room, clear of the room's middle lines (where the ways across run), its walls,
-            // its cut corners and its pillars: water, or the game's hurting floor.
+            // A hazard as structure (D59): a channel, a river with its bridge, or a flooded hall with walkways — never a patch.
             if (plan.Settings.Hazards && room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Arena && rng.Chance(0.4))
             {
-                var kinds = Hazards.Of(plan.Settings.Family);
-                var (flat, damage) = rng.Chance(0.4) ? kinds[0] : rng.Pick(kinds);
-                List<(int X, int Y)> quarters = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
-                rng.Shuffle(quarters);
-                foreach (var (sx, sy) in quarters)
-                {
-                    var (x0, x1) = sx > 0 ? (cx + 112, b.X1 - 64.0) : (b.X0 + 64.0, cx - 112);
-                    var (y0, y1) = sy > 0 ? (cy + 112, b.Y1 - 64.0) : (b.Y0 + 64.0, cy - 112);
-                    var width = (int)Math.Min(256, Math.Floor((x1 - x0) / 32) * 32);
-                    var height = (int)Math.Min(256, Math.Floor((y1 - y0) / 32) * 32);
-                    if (width < 96 || height < 96) continue;
-                    var px = (int)(sx > 0 ? x0 : x1 - width);
-                    var py = (int)(sy > 0 ? y0 : y1 - height);
-                    var pool = new Box(px, py, px + width, py + height);
-                    bool Overlaps(Box p) => !(pool.X1 <= p.X0 - 32 || pool.X0 >= p.X1 + 32 || pool.Y1 <= p.Y0 - 32 || pool.Y0 >= p.Y1 + 32);
-                    var inside = new[] { (pool.X0, pool.Y0), (pool.X0, pool.Y1), (pool.X1, pool.Y1), (pool.X1, pool.Y0) }.All(p => room.Holds(p.Item1, p.Item2, 16));
-                    if (!inside || room.Pillars.Any(Overlaps)) continue;
-                    room.Pools.Add((pool, flat, damage));
-                    break;
-                }
+                var ways = plan.Links.Where(l => l.A == room.Index || l.B == room.Index).Select(l => SideOf(l, room)).ToHashSet();
+                Hazards.Lay(plan, room, ways, rng);
             }
         }
     }
@@ -323,6 +304,13 @@ public static class Planner
                     "east" => ((double)b.X1, start + width / 2.0),
                     _ => ((double)b.X0, start + width / 2.0),
                 };
+
+                // A closet never opens into a pool: the floor in front of its door stays dry.
+                var (inX, inY) = side switch { "north" => (0.0, -48.0), "south" => (0.0, 48.0), "east" => (-48.0, 0.0), _ => (48.0, 0.0) };
+                bool Wet(double f) => side is "north" or "south"
+                    ? room.Pools.Any(p => p.Contains(start + width * f, door.Item2 + inY))
+                    : room.Pools.Any(p => p.Contains(door.Item1 + inX, start + width * f));
+                if (Wet(0.1) || Wet(0.5) || Wet(0.9)) continue;
                 var closet = new PlannedRoom
                 {
                     Index = plan.Rooms.Count, Cell = room.Cell, Role = RoomRole.Closet, Zone = room.Zone, Style = room.Style, Progress = room.Progress,
@@ -489,7 +477,7 @@ public static class Planner
 
         public PlannedRoom Room { get; } = room;
 
-        public (double X, double Y)? Find(double radius, Seeded rng, (double X, double Y)? near = null)
+        public (double X, double Y)? Find(double radius, Seeded rng, (double X, double Y)? near = null, bool wet = false)
         {
             var b = Room.Box;
             var inset = radius + 24;
@@ -508,7 +496,7 @@ public static class Planner
                     y = b.Y0 + inset + rng.Next((int)((b.Height - 2 * inset) / 16) + 1) * 16;
                 }
 
-                if (Room.Holds(x, y, radius + 16) && Taken.All(t => Math.Abs(t.X - x) >= t.R + radius + 8 || Math.Abs(t.Y - y) >= t.R + radius + 8))
+                if (Room.Holds(x, y, radius + 16, wet) && Taken.All(t => Math.Abs(t.X - x) >= t.R + radius + 8 || Math.Abs(t.Y - y) >= t.R + radius + 8))
                 {
                     Taken.Add((x, y, radius));
                     return (x, y);
@@ -654,7 +642,7 @@ public static class Planner
                 {
                     foreach (var kind in bosses.Skip(b % bosses.Count).Concat(bosses.Take(b % bosses.Count)).Concat(bosses.OrderBy(m => m.Radius)))
                     {
-                        if (spots[room.Index].Find(kind.Radius, rng, far) is not { } at) continue;
+                        if (spots[room.Index].Find(kind.Radius, rng, far, wet: true) is not { } at) continue;
                         plan.Things.Add(new PlannedThing(ThingRole.Boss, kind.Number, at.X, at.Y, AngleTo(at, entry), 0, false, kind, room.Index));
                         break;
                     }
@@ -670,7 +658,7 @@ public static class Planner
                 if (choices.Count == 0) choices = fits;
                 var kind = rng.Pick(choices);
                 if (placed > 0 && kind.Health > budget * 1.5) continue;
-                if (spots[room.Index].Find(kind.Radius, rng) is not { } at) continue;
+                if (spots[room.Index].Find(kind.Radius, rng, wet: true) is not { } at) continue;
                 var skill = placed == 0 ? 0 : rng.NextDouble() switch { < 0.5 => 0, < 0.75 => 1, _ => 2 };
                 plan.Things.Add(new PlannedThing(ThingRole.Monster, kind.Number, at.X, at.Y, AngleTo(at, entry), skill, ambush, kind, room.Index));
                 budget -= kind.Health;
@@ -679,6 +667,17 @@ public static class Planner
         }
 
         Supplies(plan, palette, spots, weapons, weaponAt, rng);
+
+        // Each island's reward, in sight from the dry way and worth the wade: armour or a medikit.
+        foreach (var room in plan.Rooms)
+        {
+            foreach (var island in room.Islands)
+            {
+                var armour = rng.Chance(0.5);
+                spots[room.Index].Taken.Add((island.CentreX, island.CentreY, 24));
+                plan.Things.Add(new PlannedThing(armour ? ThingRole.Armor : ThingRole.Health, armour ? palette.Armor.Light : palette.Health.Big, island.CentreX, island.CentreY, 90, Room: room.Index));
+            }
+        }
         if (s.Decorations) Decorate(plan, palette, spots, rng);
         foreach (var room in plan.Rooms.Where(r => r.Dark && s.GZDoom))
         {

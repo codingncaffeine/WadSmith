@@ -73,13 +73,30 @@ public static class MapMaker
                 Line($"brightness {d.CentreX} {d.CentreY} {Math.Min(255, room.Light + 16)}");
             }
 
-            // Pools: sunk 16 into the floor, the hazard's picture, its damage.
-            foreach (var (p, flat, damage) in room.Pools)
+            // Pools (D59): channels, rivers, flooded quarters, sunk into the floor with the hazard's picture and damage; a
+            // hurting one glows a little brighter than its room.
+            foreach (var pool in room.Pools)
             {
-                Line($"room {p.X0} {p.Y0} {p.X1} {p.Y1}");
-                Line($"floor {p.CentreX} {p.CentreY} {room.Floor - 16}");
-                Line($"flat {p.CentreX} {p.CentreY} {flat}");
-                if (damage > 0) Line($"damage {p.CentreX} {p.CentreY} {damage}");
+                var (ix, iy) = pool.Inside;
+                if (pool.Outline.Count == 4 && pool.Outline.All(p => (p.X == pool.Box.X0 || p.X == pool.Box.X1) && (p.Y == pool.Box.Y0 || p.Y == pool.Box.Y1))) Line($"room {pool.Box.X0} {pool.Box.Y0} {pool.Box.X1} {pool.Box.Y1}");
+                else Line($"shape {string.Join(' ', pool.Outline.Select(p => FormattableString.Invariant($"{p.X} {p.Y}")))}");
+                Line($"floor {ix} {iy} {room.Floor - pool.Depth}");
+                Line($"flat {ix} {iy} {pool.Flat}");
+                if (pool.Damage > 0)
+                {
+                    Line($"damage {ix} {iy} {pool.Damage}");
+                    Line($"brightness {ix} {iy} {Math.Min(255, room.Light + 24)}");
+                }
+            }
+
+            // Islands: back up to the room's floor, its picture, no damage.
+            foreach (var island in room.Islands)
+            {
+                Line($"room {island.X0} {island.Y0} {island.X1} {island.Y1}");
+                Line($"floor {island.CentreX} {island.CentreY} {room.Floor}");
+                Line($"flat {island.CentreX} {island.CentreY} {LookFor(room).Floor}");
+                Line($"damage {island.CentreX} {island.CentreY} 0");
+                Line($"brightness {island.CentreX} {island.CentreY} {room.Light}");
             }
         }
 
