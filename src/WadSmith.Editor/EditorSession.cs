@@ -1055,6 +1055,56 @@ public sealed class EditorSession : IDisposable
     public event Action? PrefabsChanged;
 
     /// <summary>
+    /// Brings the 3D model at <paramref name="path"/> into the project as a prop (Phase 11) on a worker: copied with its pictures,
+    /// drawn by a MODELDEF, sprites baked from it; then placed at <paramref name="at"/> when given. Raises <see cref="PropsChanged"/>.
+    /// </summary>
+    public void ImportModel(string path, MapPoint? at = null, double? standAt = null)
+    {
+        var file = Path.GetFileName(path);
+        if (Resources is not { } into)
+        {
+            Notice?.Invoke("3D models need this map's own game to be found first.");
+            return;
+        }
+
+        if (Project.ClassicFormat)
+        {
+            Notice?.Invoke($"{file} is a 3D model: models play in GZDoom only. Change what the project plays in under Map settings to use it.");
+            return;
+        }
+
+        var engineData = Hooks.EngineData;
+        Notice?.Invoke($"Bringing in {file}…");
+        Task.Run(() =>
+        {
+            ImportedModel made;
+            try
+            {
+                made = ModelProps.Import(Project, into, path);
+                ProjectMapInfo.Refresh(Project, into.Game, into.Files, engineData);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Bringing in the model {path} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"{file} could not be brought in. {ex.Message}"));
+                return;
+            }
+
+            foreach (var note in made.Notes) Log.Warn($"{file}: {note}");
+            _onUiThread(() =>
+            {
+                if (at is { } spot) PlaceThing(made.Actor.Number, spot, standAt);
+                var notes = made.Notes.Count == 0 ? "" : " " + string.Join(" ", made.Notes);
+                Notice?.Invoke($"{made.Actor.Thing.Name} is in this project as a prop, {made.SizeNote}. It is under Objects, Your models; GZDoom draws the model, and pictures made from it show it on the plan.{notes}");
+                PropsChanged?.Invoke();
+            });
+        });
+    }
+
+    /// <summary>Raised on the UI thread when a 3D model has been brought in.</summary>
+    public event Action? PropsChanged;
+
+    /// <summary>
     /// Puts a copy of a prefab with its middle near <paramref name="at"/> (in whole 64-unit steps from where it was saved),
     /// joined to the map as a paste is, one undo step; the prefab is read on a worker.
     /// </summary>

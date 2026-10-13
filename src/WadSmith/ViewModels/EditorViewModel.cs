@@ -69,8 +69,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         TextureShelf = ShelfViewModel.Textures(session.Resources, () => services.OtherGameOpeners(session.Resources));
         _looks = [.. Look.Available(session.Engine, session.Resources)];
         LookNames = [.. _looks.Select(l => l.Name)];
-        ObjectShelf = ShelfViewModel.Objects(session.Resources, () => WadSmith.Editor.Editing.Prefabs.In(session.Project.Folder), () => services.OtherGameOpeners(session.Resources));
+        ObjectShelf = ShelfViewModel.Objects(session.Resources, () => WadSmith.Editor.Editing.Prefabs.In(session.Project.Folder), () => services.OtherGameOpeners(session.Resources), ModelNumbers);
+        ObjectShelf.AddLabel = "Add a 3D model…";
+        ObjectShelf.AddTip = "Brings in a 3D model of your own (OBJ, with its .mtl and pictures) as a prop for this map: it is copied into the project, GZDoom draws it, and it waits under Your models. You can also drop a model file onto the plan.";
+        ObjectShelf.Add = () => _ = AddModelAsync();
         session.PrefabsChanged += ObjectShelf.Refresh;
+        session.PropsChanged += ObjectShelf.Refresh;
         if (showVersions) Panel = SidePanel.Versions;
         session.History.Moved += OnHistoryMoved;
         session.StateChanged += _ => UpdateSaveText();
@@ -305,6 +309,20 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>Shows the whole map on the plan; set by the view.</summary>
     public Action? FitMap { get; set; }
+
+    /// <summary>Asks the user for a 3D model file (set by the view); null when they chose none.</summary>
+    public Func<Task<string?>>? PickModel { get; set; }
+
+    /// <summary>The numbers of the props this project brought in from 3D models (read on the shelf's worker).</summary>
+    private IReadOnlyCollection<int> ModelNumbers() =>
+        [.. Session.Project.Info.Copied.Where(c => c.Kind == "actor" && c.Game == "model").Select(c => int.Parse(c.Name, System.Globalization.CultureInfo.InvariantCulture))];
+
+    /// <summary>"Add a 3D model…": the file picker, then the model brought in as a prop on a worker.</summary>
+    private async Task AddModelAsync()
+    {
+        if (PickModel is null || await PickModel().ConfigureAwait(true) is not { } path) return;
+        Session.ImportModel(path);
+    }
 
     /// <summary>Opens the command palette, or closes it when it is open (Ctrl+K).</summary>
     [RelayCommand]

@@ -2,6 +2,7 @@
 /local-notes/
 /scratch/
 /snapshots/
+/gitignore/
 
 # Never commit game data
 *.wad

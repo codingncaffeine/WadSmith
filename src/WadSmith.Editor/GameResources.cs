@@ -212,7 +212,7 @@ public sealed class GameResources
             ? ThingCatalog.Empty
             : Catalogues.GetOrAdd((engineData, found.Game.Engine), key => new Lazy<ThingCatalog>(() => ThingCatalog.Load(ResourceContainer.Open(key.Engine), key.Family))).Value;
         // Objects carried in from the user's other games (D55), by the numbers the project gave them.
-        if (projectFolder is not null && engineData is not null && File.Exists(Path.Combine(projectFolder, Core.Projects.Project.SidecarName)))
+        if (projectFolder is not null && File.Exists(Path.Combine(projectFolder, Core.Projects.Project.SidecarName)))
         {
             try
             {
@@ -229,9 +229,13 @@ public sealed class GameResources
                     carried.Add(parent with { Number = int.Parse(number, CultureInfo.InvariantCulture), ClassName = duke.Original, Name = parts[3], Sprite = parts[1], Frame = 'A', ScaleX = scale, ScaleY = scale });
                 }
 
-                foreach (var copy in info.Copied.Where(c => c.Kind == "actor" && c.Game != "duke3d"))
+                // Props brought in as 3D models (Phase 11): classes the project declares, shown by their baked sprites.
+                carried.AddRange(Editing.ModelProps.Recorded(info));
+
+                // Other games' objects take their definitions from the engine's data.
+                foreach (var copy in info.Copied.Where(c => c.Kind == "actor" && c.Game != "duke3d" && c.Game != "model"))
                 {
-                    if (GameCatalog.Get(copy.Game) is not { } source || !int.TryParse(copy.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)) continue;
+                    if (engineData is null || GameCatalog.Get(copy.Game) is not { } source ||!int.TryParse(copy.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)) continue;
                     var family = Catalogues.GetOrAdd((engineData, source.Engine), key => new Lazy<ThingCatalog>(() => ThingCatalog.Load(ResourceContainer.Open(key.Engine), key.Family))).Value;
                     if (family.FindClass(copy.Original) is { } t) carried.Add(t with { Number = number });
                 }

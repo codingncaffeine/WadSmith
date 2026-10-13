@@ -44,6 +44,7 @@ public static class CommandLine
         new Commands.StressGenCommand(),
         new Commands.ScriptCommand(),
         new Commands.GenerateCommand(),
+        new Commands.AddModelCommand(),
         new Commands.RecogniseCommand(),
         new Commands.LandmarksCommand(),
         new Commands.TourCommand(),

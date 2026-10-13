@@ -9,9 +9,9 @@ namespace WadSmith.App.ViewModels;
 
 /// <summary>
 /// What a shelf tile carries when dragged onto the map: a texture's name, an object's number, or a prefab; a picture from
-/// another game says which (<paramref name="From"/>) and whether it is a floor.
+/// another game says which (<paramref name="From"/>) and whether it is a floor; a 3D model file dragged in from the file manager is <paramref name="ModelFile"/>.
 /// </summary>
-internal sealed record ShelfDrop(string? Texture, int Thing, string Label, WadSmith.Editor.Editing.Prefab? Prefab = null, GameResources? From = null, bool Flat = false)
+internal sealed record ShelfDrop(string? Texture, int Thing, string Label, WadSmith.Editor.Editing.Prefab? Prefab = null, GameResources? From = null, bool Flat = false, string? ModelFile = null)
 {
     /// <summary>The drag's format: an object handed over within WadSmith.</summary>
     public static readonly Avalonia.Input.DataFormat<ShelfDrop> Format = Avalonia.Input.DataFormat.CreateInProcessFormat<ShelfDrop>("wadsmith-shelf");
@@ -130,6 +130,17 @@ internal sealed partial class ShelfViewModel : ObservableObject
     /// <summary>What the shelf says above its pictures: loading, how many, or why it is empty.</summary>
     [ObservableProperty]
     private string _note;
+
+    /// <summary>The words of the shelf's button for bringing in a file of the user's own (a 3D model on the Objects shelf); null for no button.</summary>
+    public string? AddLabel { get; set; }
+
+    public string AddTip { get; set; } = "";
+
+    /// <summary>What the button does.</summary>
+    public Action? Add { get; set; }
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void AddFile() => Add?.Invoke();
 
     /// <summary>Makes the pictures again (a prefab was saved), at once if the shelf has been shown, else when it is.</summary>
     public void Refresh()
@@ -257,13 +268,16 @@ internal sealed partial class ShelfViewModel : ObservableObject
 
     private const string PrefabGroup = "Prefabs";
 
+    /// <summary>The group of the props brought in from 3D model files (Phase 11).</summary>
+    public const string ModelGroup = "Your models";
+
     /// <summary>
     /// The game's objects with their sprites, by kind: monsters, weapons, ammunition and so on; and the project's prefabs
     /// (<paramref name="prefabs"/> lists them on the worker), each pictured from above.
     /// </summary>
-    public static ShelfViewModel Objects(GameResources? game, Func<IReadOnlyList<WadSmith.Editor.Editing.Prefab>>? prefabs = null, Func<IReadOnlyList<Func<GameResources?>>>? others = null) => new ShelfViewModel(
+    public static ShelfViewModel Objects(GameResources? game, Func<IReadOnlyList<WadSmith.Editor.Editing.Prefab>>? prefabs = null, Func<IReadOnlyList<Func<GameResources?>>>? others = null, Func<IReadOnlyCollection<int>>? models = null) => new ShelfViewModel(
         game is null ? "Choose a base game to see its monsters and items." : "",
-        ["All", .. Kinds.Select(k => k.Name), PrefabGroup],
+        ["All", .. Kinds.Select(k => k.Name), PrefabGroup, ModelGroup],
         Once(() =>
         {
             var tiles = new List<ShelfTile>();
@@ -286,14 +300,16 @@ internal sealed partial class ShelfViewModel : ObservableObject
             }
 
             if (game is null) return tiles;
+            var props = models?.Invoke() ?? [];
             foreach (var (category, group) in Kinds)
             {
                 // Only what this game's own data can show: another game's objects (Doom II's super shotgun in Doom) would show an error in the game.
                 foreach (var t in game.Things.All.Where(t => t.Category == category && game.CanShow(t.Number)).OrderBy(t => t.Name, StringComparer.CurrentCulture))
                 {
                     var picture = game.SpriteFor(t.Number) is { } image ? Imaging.ToBitmap(Shrink(image)) : null;
-                    var search = $"{t.Name} {t.ClassName} {t.Number} {group}".ToLowerInvariant();
-                    tiles.Add(new ShelfTile(t.Name, $"{t.Name} ({t.ClassName}, editor number {t.Number}). Drag it onto the map to place it.", group, search, picture, new ShelfDrop(null, t.Number, t.Name)));
+                    var prop = props.Contains(t.Number);
+                    var search = $"{t.Name} {t.ClassName} {t.Number} {group}{(prop ? " model prop 3d" : "")}".ToLowerInvariant();
+                    tiles.Add(new ShelfTile(t.Name, prop ? $"{t.Name}, a 3D model brought into this project (editor number {t.Number}). Drag it onto the map to place it; GZDoom draws the model." : $"{t.Name} ({t.ClassName}, editor number {t.Number}). Drag it onto the map to place it.", prop ? ModelGroup : group, search, picture, new ShelfDrop(null, t.Number, t.Name)));
                 }
             }
 

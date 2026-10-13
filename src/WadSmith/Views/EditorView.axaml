@@ -9,17 +9,19 @@
     <UserControl.DataTemplates>
         <!-- A shelf: search, a group, and the pictures to drag onto the map. -->
         <DataTemplate DataType="vm:ShelfViewModel">
-            <Grid RowDefinitions="Auto,Auto,Auto,*">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
                 <TextBox Text="{Binding Search}" PlaceholderText="Search by name…"
                          ToolTip.Tip="Shows only what has these letters in its name, such as “door” or “brown”." />
-                <Grid Grid.Row="1" ColumnDefinitions="*,8,*" Margin="0,8,0,0">
+                <Button Grid.Row="1" Classes="metal" Content="{Binding AddLabel}" Command="{Binding AddFileCommand}" IsVisible="{Binding AddLabel, Converter={x:Static ObjectConverters.IsNotNull}}"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,8,0,0" ToolTip.Tip="{Binding AddTip}" AutomationProperties.Name="{Binding AddLabel}" />
+                <Grid Grid.Row="2" ColumnDefinitions="*,8,*" Margin="0,8,0,0">
                     <ComboBox ItemsSource="{Binding Games}" SelectedIndex="{Binding GameIndex}" HorizontalAlignment="Stretch"
                               ToolTip.Tip="Which game's things the shelf shows: this map's own, or one of your other games. What you drag in from another game is copied into this project, and the map then plays in GZDoom." />
                     <ComboBox Grid.Column="2" ItemsSource="{Binding Groups}" SelectedIndex="{Binding Group}" HorizontalAlignment="Stretch"
                               ToolTip.Tip="Which group the shelf shows. Drag anything shown onto the plan or the 3D view." />
                 </Grid>
-                <TextBlock Grid.Row="2" Text="{Binding Note}" Classes="secondary" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,6" />
-                <ScrollViewer Grid.Row="3">
+                <TextBlock Grid.Row="3" Text="{Binding Note}" Classes="secondary" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,6" />
+                <ScrollViewer Grid.Row="4">
                     <ItemsControl ItemsSource="{Binding Tiles}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>

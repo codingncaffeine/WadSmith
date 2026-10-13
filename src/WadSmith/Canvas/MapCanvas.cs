@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Platform.Storage;
 using Avalonia.Media;
 using SkiaSharp;
 using WadSmith.Editor;
@@ -1715,9 +1716,20 @@ internal sealed class MapCanvas : Control
         InvalidateVisual();
     }
 
+    /// <summary>A 3D model file dragged in from the file manager, its local path; null for anything else.</summary>
+    internal static string? ModelFileIn(DragEventArgs e) =>
+        e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p is not null && ModelProps.IsModel(p));
+
     /// <summary>A shelf picture held over the plan: the wall or room under it lights up, and the status says what a drop does.</summary>
     private void OnDragOver(object? sender, DragEventArgs e)
     {
+        if (Session is not null && ModelFileIn(e) is { } model)
+        {
+            e.DragEffects = DragDropEffects.Copy;
+            DropHint?.Invoke($"Let go to bring in {System.IO.Path.GetFileName(model)} as a prop and place it here.");
+            return;
+        }
+
         if (Session is null || e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) is not { } drop)
         {
             e.DragEffects = DragDropEffects.None;
@@ -1758,6 +1770,16 @@ internal sealed class MapCanvas : Control
     {
         DropHint?.Invoke(null);
         ClearHover();
+        if (Session is { } importing && ModelFileIn(e) is { } model)
+        {
+            var m = ToMap(e.GetPosition(this));
+            var step = GridStep();
+            importing.ImportModel(model, (e.KeyModifiers & KeyModifiers.Shift) != 0 ? m : new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step));
+            Focus();
+            e.Handled = true;
+            return;
+        }
+
         if (Session is not { } session || e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) is not { } drop) return;
         var p = e.GetPosition(this);
         if (drop.Prefab is { } prefab)

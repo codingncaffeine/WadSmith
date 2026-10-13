@@ -20,7 +20,10 @@ public static partial class DukeBorrowing
     /// <summary>The project's ZScript WadSmith writes: it includes the classes of the enemies carried in.</summary>
     public const string ScriptFile = "zscript.txt";
 
-    private const string ScriptMark = "// Written by WadSmith: Duke Nukem 3D's enemies with Doom monsters' behaviour. Edits here are replaced.";
+    private const string ScriptMark = "// Written by WadSmith: the classes of objects carried in or brought in as models. Edits here are replaced.";
+
+    /// <summary>The mark the file carried before props from models shared it; a file with it is WadSmith's too.</summary>
+    private const string OldScriptMark = "// Written by WadSmith: Duke Nukem 3D's enemies with Doom monsters' behaviour. Edits here are replaced.";
 
     /// <summary>The Duke enemy and its behaviour behind a placed object's number in <paramref name="project"/>, and the group file it came from; null for any other object.</summary>
     public static (string Enemy, string Behaviour, string Grp)? Of(Project project, int number)
@@ -176,14 +179,14 @@ public static partial class DukeBorrowing
         return Candidates().First(c => !used.Contains(c) && into.Sprites.Frames(c).Count == 0);
     }
 
-    /// <summary>Writes the project's ZScript: the version, then an include for every enemy class carried in; a ZScript of the user's own is left alone.</summary>
+    /// <summary>Writes the project's ZScript: the version, then an include for every class WadSmith wrote (Duke's enemies, props from models); a ZScript of the user's own is left alone.</summary>
     public static void WriteScript(Project project)
     {
         var path = Path.Combine(project.Folder, ScriptFile);
         if (File.Exists(path))
         {
             using var reader = new StreamReader(path);
-            if (reader.ReadLine() != ScriptMark) return;
+            if (reader.ReadLine() is not (ScriptMark or OldScriptMark)) return;
         }
 
         var includes = project.Info.Copied.Where(c => c.Kind == "zscript").Select(c => $"#include \"{c.File}\"").Distinct(StringComparer.Ordinal).ToList();

@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Platform.Storage;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using WadSmith.App.ViewModels;
@@ -30,6 +31,7 @@ public partial class EditorView : UserControl
                 return (c.X, c.Y, c.Z, c.Yaw, c.Pitch);
             };
             vm.FitMap = Canvas.FitMap;
+            vm.PickModel = PickModelAsync;
             vm.ViewSize = () =>
             {
                 var scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
@@ -193,5 +195,18 @@ public partial class EditorView : UserControl
         if (e.Key != Key.Enter) return;
         ((sender as Control)?.DataContext as TextRow)?.Commit();
         e.Handled = true;
+    }
+
+    /// <summary>The file picker for "Add a 3D model…": model files first, any file as the second choice.</summary>
+    private async Task<string?> PickModelAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage) return null;
+        var picked = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "Add a 3D model",
+            AllowMultiple = false,
+            FileTypeFilter = [new("3D models (OBJ)") { Patterns = ["*.obj", "*.OBJ"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
+        }).ConfigureAwait(true);
+        return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }
 }

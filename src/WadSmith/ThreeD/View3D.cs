@@ -244,8 +244,13 @@ internal sealed class View3D : Control
     /// <summary>A floor or ceiling as the height notices name it: a platform's top and underside by those names.</summary>
     private static string SurfaceName(SceneHit hit) => hit.Platform ? (hit.Kind == HitKind.Floor ? "The platform's top" : "The platform's underside") : hit.Kind == HitKind.Ceiling ? "Ceiling" : "Floor";
 
+    /// <summary>What is dragged over the view: a shelf picture, or a 3D model file from the file manager as a drop of its own.</summary>
+    private static ViewModels.ShelfDrop? DropOf(DragEventArgs e) =>
+        e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) ?? (Canvas.MapCanvas.ModelFileIn(e) is { } model ? new ViewModels.ShelfDrop(null, 0, System.IO.Path.GetFileName(model), ModelFile: model) : null);
+
     private static string DropWords(ViewModels.ShelfDrop drop, SceneHit? hit)
     {
+        if (drop.ModelFile is not null) return hit is { Kind: HitKind.Floor } ? $"Let go to bring in {drop.Label} as a prop and place it here." : "Drop the model on a floor.";
         if (drop.Prefab is not null) return "Prefabs go on the plan: drop it there.";
         if (drop.Texture is null) return hit is { Kind: HitKind.Floor } ? $"Let go to place {drop.Label} here." : "Drop the object on a floor.";
         if (hit is not { Kind: not HitKind.Thing } h) return "Drop it on a wall, a floor or a ceiling.";
@@ -285,13 +290,14 @@ internal sealed class View3D : Control
 
         const double step = 8;
         var at = shift ? new MapPoint(floor.X, floor.Y) : new MapPoint(Math.Round(floor.X / step) * step, Math.Round(floor.Y / step) * step);
-        if (drop.From is { } other) session.PlaceBorrowedThing(other, drop.Thing, at, floor.Platform ? floor.Z : null);
+        if (drop.ModelFile is { } model) session.ImportModel(model, at, floor.Platform ? floor.Z : null);
+        else if (drop.From is { } other) session.PlaceBorrowedThing(other, drop.Thing, at, floor.Platform ? floor.Z : null);
         else session.PlaceThing(drop.Thing, at, floor.Platform ? floor.Z : null);
     }
 
     private void OnDragOver(object? sender, DragEventArgs e)
     {
-        if (Session is null || e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) is not { } drop)
+        if (Session is null || DropOf(e) is not { } drop)
         {
             e.DragEffects = DragDropEffects.None;
             return;
@@ -303,7 +309,7 @@ internal sealed class View3D : Control
 
     private void OnDrop(object? sender, DragEventArgs e)
     {
-        if (Session is null || e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) is not { } drop) return;
+        if (Session is null || DropOf(e) is not { } drop) return;
         RequestHover(e.GetPosition(this), drop, apply: true, shift: (e.KeyModifiers & KeyModifiers.Shift) != 0);
         Focus();
         e.Handled = true;
