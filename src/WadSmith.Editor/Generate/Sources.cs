@@ -96,3 +96,36 @@ public static class Sources
         return (m => numbers.GetValueOrDefault(m), l => looks.GetValueOrDefault(l) ?? l.Look, notes);
     }
 }
+
+/// <summary>A made map's music (D50): a track picked by the seed from the games whose music the user checked, copied in when it is another game's.</summary>
+public static class MadeMusic
+{
+    /// <summary>The track the seed picks from <paramref name="pool"/> (each game's tracks, in a fixed order), or null for none.</summary>
+    public static (string Game, string Track)? Pick(string seed, IEnumerable<(string Game, string Track)> pool)
+    {
+        var tracks = pool.Distinct().OrderBy(p => p.Game, StringComparer.Ordinal).ThenBy(p => p.Track, StringComparer.OrdinalIgnoreCase).ToList();
+        return tracks.Count == 0 ? null : tracks[new Seeded(SeedWords.Tidy(seed)).Fork("music").Next(tracks.Count)];
+    }
+
+    /// <summary>
+    /// Makes <paramref name="track"/> of <paramref name="from"/> the music of the project's map in <paramref name="slot"/>: the
+    /// base game's own is named as it is; another game's is copied into the project's music folder (under a name of its own
+    /// when the base game has one like it). Writes files: call it on a worker.
+    /// </summary>
+    public static string Use(Project project, GameResources into, GameResources from, string track, string slot, string? engineData)
+    {
+        var name = track.ToUpperInvariant();
+        if (from.Game.Id != into.Game.Id)
+        {
+            var entry = from.Find(track, Core.Containers.ResourceNamespace.Music) ?? from.Find(track, Core.Containers.ResourceNamespace.Global) ?? throw new CorruptDataException($"{track} is not in {from.Game.Title}.");
+            for (var n = 2; into.Find(name, Core.Containers.ResourceNamespace.Music) is not null || into.Find(name, Core.Containers.ResourceNamespace.Global) is not null; n++) name = $"{track.ToUpperInvariant()[..Math.Min(6, track.Length)]}M{n}";
+            var file = $"music/{name}.lmp";
+            project.WriteFiles([(file, entry.Read())]);
+            project.Record([new CopiedAsset { Kind = "music", Game = from.Game.Id, Original = track, Name = name, File = file }]);
+        }
+
+        project.UpdateMap(slot, m => m with { Music = name });
+        ProjectMapInfo.Refresh(project, into.Game, into.Files, engineData);
+        return name;
+    }
+}

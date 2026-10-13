@@ -92,6 +92,9 @@ public sealed record GeneratorSettings
     /// <summary>The monsters it may use; empty means the base game's own.</summary>
     public IReadOnlyList<MonsterKind> Monsters { get; init; } = [];
 
+    /// <summary>The games (by id) whose music the map may play, a track picked by the seed; empty means the base game's.</summary>
+    public IReadOnlyList<string> MusicFrom { get; init; } = [];
+
     /// <summary>The looks its rooms may have; empty means the base game's own.</summary>
     public IReadOnlyList<LookChoice> Looks { get; init; } = [];
 

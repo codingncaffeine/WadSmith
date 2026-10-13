@@ -46,16 +46,17 @@
                     <TextBlock Classes="section" Text="USE THINGS FROM" />
                     <TextBlock Classes="secondary" TextWrapping="Wrap" FontSize="12"
                                Text="Your games WadSmith found. Another game's monsters and textures are copied into the map's folder when it uses them; it still plays in your base game. Weapons, ammunition and health come from the base game." />
-                    <Grid ColumnDefinitions="*,90,90" Margin="0,4,0,0">
+                    <Grid ColumnDefinitions="*,80,80,80" Margin="0,4,0,0">
                         <TextBlock Classes="secondary" FontSize="12" Text="Game" />
                         <TextBlock Grid.Column="1" Classes="secondary" FontSize="12" Text="Textures" HorizontalAlignment="Center" />
                         <TextBlock Grid.Column="2" Classes="secondary" FontSize="12" Text="Monsters" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="3" Classes="secondary" FontSize="12" Text="Music" HorizontalAlignment="Center" />
                     </Grid>
                     <ItemsControl ItemsSource="{Binding Sources}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:SourceRow">
                                 <Border BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1" Padding="0,5">
-                                    <Grid ColumnDefinitions="*,90,90">
+                                    <Grid ColumnDefinitions="*,80,80,80">
                                         <StackPanel VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Game.Path}" />
                                             <TextBlock Text="{Binding Note}" Classes="secondary" FontSize="12" />
@@ -64,11 +65,14 @@
                                                   ToolTip.Tip="Rooms may look like this game's: its walls, floors and ceilings. With none checked, the base game's own are used." />
                                         <CheckBox Grid.Column="2" HorizontalAlignment="Center" IsChecked="{Binding Monsters}"
                                                   ToolTip.Tip="This game's monsters may be in the map. With none checked, the base game's own are used." />
+                                        <CheckBox Grid.Column="3" HorizontalAlignment="Center" IsChecked="{Binding Music}" IsVisible="{Binding CanMusic}"
+                                                  ToolTip.Tip="The map may play one of this game's tracks, picked by the seed (another game's is copied in). With none checked, the base game's own for the map's slot plays." />
                                     </Grid>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <TextBlock Text="{Binding MusicLabel}" Classes="secondary" TextWrapping="Wrap" />
 
                     <TextBlock Classes="section" Text="SIZE" Margin="0,12,0,0" />
                     <ContentControl Content="{Binding Size}" ContentTemplate="{StaticResource Segments}" />

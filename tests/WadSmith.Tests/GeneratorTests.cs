@@ -280,6 +280,36 @@ public sealed class GeneratorTests
         Assert.Empty(faults);
     }
 
+    /// <summary>The music: the seed picks the same track from the same games every time; another game's track is copied in and named in the MAPINFO, the base game's own is only named.</summary>
+    [Fact]
+    public void TheSeedPicksATrackAndAnotherGamesIsCopiedIn()
+    {
+        (string, string)[] pool = [("doom2", "D_RUNNIN"), ("doom2", "D_STALKS"), ("heretic", "MUS_E1M1"), ("heretic", "MUS_E1M2")];
+        Assert.Equal(MadeMusic.Pick("misty-cavern", pool), MadeMusic.Pick("Misty Cavern", [.. pool.Reverse()]));
+        Assert.Null(MadeMusic.Pick("misty-cavern", []));
+        Assert.True(Enumerable.Range(0, 20).Select(i => MadeMusic.Pick($"seed-{i}", pool)).Distinct().Count() > 1);
+
+        var engine = GameFiles.Require("gzdoom.pk3");
+        using var temp = new TempFolder();
+        Load(out var doom, out var heretic, temp, engine, out var project);
+        Assert.Equal("MUS_E1M1", MadeMusic.Use(project, doom, heretic, "MUS_E1M1", "MAP01", engine));
+        Assert.True(File.Exists(Path.Combine(project.Folder, "music", "MUS_E1M1.lmp")));
+        Assert.Contains("music = \"MUS_E1M1\"", File.ReadAllText(Path.Combine(project.Folder, WadSmith.Core.Projects.ProjectMapInfo.FileName)));
+        Assert.Equal("D_RUNNIN", MadeMusic.Use(project, doom, doom, "D_RUNNIN", "MAP01", engine));
+        Assert.False(File.Exists(Path.Combine(project.Folder, "music", "D_RUNNIN.lmp")));
+        Assert.Equal("D_RUNNIN", project.Info.Maps.Single().Music);
+    }
+
+    private static void Load(out GameResources doom, out GameResources heretic, TempFolder temp, string engine, out WadSmith.Core.Projects.Project project)
+    {
+        project = WadSmith.Core.Projects.Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var doomWad = GameFiles.Require("DOOM2.WAD");
+        var hereticWad = GameFiles.Require("HERETIC.WAD");
+        doom = GameResources.Load("doom2", project.Folder, [new FoundGame(GameCatalog.Get("doom2")!, doomWad, new FileInfo(doomWad).Length)], engine)!;
+        heretic = GameResources.Load("heretic", null, [new FoundGame(GameCatalog.Get("heretic")!, hereticWad, new FileInfo(hereticWad).Length)], engine)!;
+    }
+
     [Fact]
     public void MakeItWritesAProjectThatKeepsItsSettings()
     {

@@ -82,6 +82,9 @@ internal sealed partial class SourceRow(MakeMapViewModel owner, FoundGame game, 
 
     public bool CanTextures => !Doom2Only;
 
+    /// <summary>Whether the row offers its music (the row of Doom II's monsters for a Doom map does not).</summary>
+    public bool CanMusic => !Doom2Only;
+
     [ObservableProperty]
     private bool _textures = isBase;
 
@@ -101,6 +104,12 @@ internal sealed partial class SourceRow(MakeMapViewModel owner, FoundGame game, 
     partial void OnTexturesChanged(bool value) => owner.Remake();
 
     partial void OnMonstersChanged(bool value) => owner.Remake();
+
+    /// <summary>Whether the map may play one of this game's tracks.</summary>
+    [ObservableProperty]
+    private bool _music = isBase;
+
+    partial void OnMusicChanged(bool value) => owner.Remake();
 
     /// <summary>The monsters the row gives when its Monsters box is checked.</summary>
     public IReadOnlyList<MonsterKind> MonsterKinds(GeneratorSettings s)
@@ -233,6 +242,10 @@ internal sealed partial class MakeMapViewModel : ObservableObject
     [ObservableProperty]
     private string _bossesLabel = "";
 
+    /// <summary>The track the seed picks from the games whose Music box is checked, in words.</summary>
+    [ObservableProperty]
+    private string _musicLabel = "";
+
     [ObservableProperty]
     private bool _busy;
 
@@ -354,8 +367,13 @@ internal sealed partial class MakeMapViewModel : ObservableObject
             var mine = row.MonsterKinds(s);
             row.Monsters = s.Monsters.Count == 0 ? row.IsBase : s.Monsters.Any(m => mine.Contains(m));
             row.Textures = row.CanTextures && (s.Looks.Count == 0 ? row.IsBase : s.Looks.Any(l => l.Family == row.Family));
+            row.Music = row.CanMusic && (s.MusicFrom.Count == 0 ? row.IsBase : s.MusicFrom.Contains(row.Game.Game.Id));
         }
     }
+
+    /// <summary>The track the seed picks from the tracks of the games whose Music box is checked (those read so far).</summary>
+    private (string Game, string Track)? PickMusic(GeneratorSettings s) =>
+        MadeMusic.Pick(s.Seed, Sources.Where(r => r.Music && r.CanMusic && r.Resources is not null).SelectMany(r => r.Resources!.Music.Select(t => (r.Game.Game.Id, t))));
 
     /// <summary>The page's choices as the generator's settings.</summary>
     public GeneratorSettings Settings()
@@ -378,6 +396,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
             Decorations = Decorations,
             Traps = Traps,
             Seed = SeedWords.Tidy(Seed),
+            MusicFrom = [.. Sources.Where(r => r.Music && r.CanMusic).Select(r => r.Game.Game.Id)],
         };
         var monsters = Sources.Where(r => r.Monsters).SelectMany(r => r.MonsterKinds(s)).Distinct().ToList();
         var looks = Sources.Where(r => r.Textures).SelectMany(r => r.LookKinds()).Distinct().ToList();
@@ -395,6 +414,8 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         KeysLabel = s.Keys == 0 ? "Every door opens." : $"{string.Join(", then ", Editor.Smart.Keys.Of(s.Family).Take(s.Keys).Select(k => k.Colour))}, each key before its door.";
         var bosses = (s.Monsters.Count > 0 ? s.Monsters : s.OwnMonsters()).Where(m => m.Boss).Select(m => Spaced(m.Class)).ToList();
         BossesLabel = s.Bosses == 0 ? "The exit room ends the map." : bosses.Count == 0 ? "The toughest monster stands in for a boss." : $"{string.Join(" and ", Enumerable.Range(0, s.Bosses).Select(i => bosses[i % bosses.Count]).GroupBy(b => b).Select(g => g.Count() > 1 ? $"{g.Count()} × {g.Key}" : g.Key))} in an arena before the exit.";
+        var pick = PickMusic(s);
+        MusicLabel = pick is { } p ? $"Music: {p.Track}, from {Sources.First(r => r.Game.Game.Id == p.Game).Game.Game.Title}." : Sources.Any(r => r.Music && r.Resources is null) ? "Music: reading your games…" : $"Music: the game's own for {s.Slot}.";
         var baseThings = Sources.FirstOrDefault()?.Resources?.Things;
         _preview.Request(() => Preview(s, baseThings));
     }
@@ -501,6 +522,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         {
             row.Monsters = r.Next(2) > 0;
             row.Textures = row.CanTextures && r.Next(2) > 0;
+            row.Music = row.CanMusic && r.Next(3) == 0;
         }
 
         Seed = SeedWords.Shuffle(r);
@@ -541,6 +563,8 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         Status = "Making the map…";
         var s = Settings();
         var rows = Sources.ToList();
+        var music = PickMusic(s);
+        GameResources? madeInto = null;
         try
         {
             var engine = _services.EngineData;
@@ -552,12 +576,26 @@ internal sealed partial class MakeMapViewModel : ObservableObject
                 var (project, _) = MadeProjects.Create(folder, plan, Target, project =>
                 {
                     if (_services.ResourcesFor(project) is not { } into) return (null, null);
+                    madeInto = into;
                     GameResources? From(string family, bool doom2) => rows.FirstOrDefault(r => r.Family == family && (r.IsBase || r.Doom2Only == doom2) && !(r.IsBase && doom2))?.Resources
                         ?? rows.FirstOrDefault(r => r.Family == family && !r.IsBase)?.Resources;
                     var carried = Sources_Carry(project, into, plan, s, From, engine);
                     said = carried.Notes;
                     return (carried.Numbers, carried.Looks);
                 });
+                // The music the seed picks, once the map is in the project.
+                if (music is { } pick && madeInto is { } inGame && rows.FirstOrDefault(r => r.Game.Game.Id == pick.Game)?.Resources is { } from)
+                {
+                    try
+                    {
+                        MadeMusic.Use(project, inGame, from, pick.Track, plan.Settings.Slot, engine);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+                    {
+                        said = [.. said, $"The music {pick.Track} could not be copied: {ex.Message}"];
+                    }
+                }
+
                 return (EditorSession.Open(project, plan.Settings.Slot, MainViewModel.HooksFor(_services.ResourcesFor(project), engine)), said);
             }).ConfigureAwait(true);
             _services.Settings.Current.LastMadeMap = SettingsJson.Write(s);
