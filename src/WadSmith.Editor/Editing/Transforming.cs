@@ -32,6 +32,13 @@ public readonly record struct Placement(double A, double B, double C, double D, 
     /// <summary>A resize by <paramref name="sx"/> across and <paramref name="sy"/> up and down, keeping <paramref name="pivot"/> still; a negative size mirrors.</summary>
     public static Placement Size(double sx, double sy, MapPoint pivot) => Around(sx, 0, 0, sy, pivot);
 
+    /// <summary>
+    /// A slant (Eureka's skew) keeping <paramref name="pivot"/> still: <paramref name="across"/> degrees leans what is
+    /// above the pivot to the east and what is below to the west; <paramref name="up"/> degrees lifts what is east of it
+    /// and lowers what is west. Areas keep their size.
+    /// </summary>
+    public static Placement Slant(double across, double up, MapPoint pivot) => Around(1, Math.Tan(across * Math.PI / 180), Math.Tan(up * Math.PI / 180), 1, pivot);
+
     private static Placement Around(double a, double b, double c, double d, MapPoint p) => new(a, b, c, d, p.X - a * p.X - b * p.Y, p.Y - c * p.X - d * p.Y);
 
     /// <summary>Whether the placement mirrors (every wall then has its rooms on the other hand).</summary>
@@ -60,6 +67,7 @@ public readonly record struct Placement(double A, double B, double C, double D, 
     {
         if (Mirrors) return "Mirror";
         if (A == 1 && B == 0 && C == 0 && D == 1) return "Move";
+        if (A == 1 && D == 1 && (B == 0) != (C == 0)) return "Slant";
         return Math.Abs(A * D - B * C - 1) < 1e-9 && Math.Abs(A * A + C * C - 1) < 1e-9 ? "Turn" : "Resize";
     }
 

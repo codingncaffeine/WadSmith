@@ -22,6 +22,9 @@ internal enum MapViewMode
 
     /// <summary>Areas in greys by brightness, black for 0 and white for 255 (Eureka's lighting view).</summary>
     Brightness,
+
+    /// <summary>Areas coloured by sound zone: the rooms a shot is heard in without crossing a wall that blocks sound (Eureka's sound view).</summary>
+    Sound,
 }
 
 /// <summary>

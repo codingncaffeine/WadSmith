@@ -498,6 +498,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Show ceilings on the plan", "View", "", "ceiling textures|flats", () => IsCeilings = true),
             new("Show heights as colours", "View", "", "floor heights|elevation", () => ShowHeights = !ShowHeights),
             new("Show only the walls", "View", "", "lines|automap|wireframe|linedefs", () => IsLines = true),
+            new("Show sound zones", "View", "", "sound propagation|where shots are heard|monsters hear|sound blocking|sound view", () => IsSound = true),
             new("Show brightness as greys", "View", "", "light levels|lighting|sector lights|dark rooms|brightness view", () => IsBrightness = true),
             new("Show the player's size", "View", K("G", ""), "fit|player fit|ghost|clearance", () => ShowFit = !ShowFit),
             new("Show the whole map", "View", "Home", "zoom to fit|fit map|overview|center in screen", () => FitMap?.Invoke()),
@@ -1178,7 +1179,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>How the map is painted (D45); floors by default.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowHeights), nameof(IsFloors), nameof(IsCeilings), nameof(IsLines), nameof(IsBrightness))]
+    [NotifyPropertyChangedFor(nameof(ShowHeights), nameof(IsFloors), nameof(IsCeilings), nameof(IsLines), nameof(IsBrightness), nameof(IsSound))]
     private Canvas.MapViewMode _viewMode;
 
     public bool ShowHeights
@@ -1207,6 +1208,16 @@ internal sealed partial class EditorViewModel : ObservableObject
         set
         {
             if (value) ViewMode = Canvas.MapViewMode.Ceilings;
+            else OnPropertyChanged();
+        }
+    }
+
+    public bool IsSound
+    {
+        get => ViewMode == Canvas.MapViewMode.Sound;
+        set
+        {
+            if (value) ViewMode = Canvas.MapViewMode.Sound;
             else OnPropertyChanged();
         }
     }
@@ -1249,6 +1260,7 @@ internal sealed partial class EditorViewModel : ObservableObject
     partial void OnViewModeChanged(Canvas.MapViewMode value)
     {
         if (value == Canvas.MapViewMode.Heights) Guide?.Happened(GuideEvents.Heights);
+        if (value == Canvas.MapViewMode.Sound) Session.Tell("Sound zones: rooms of one colour hear each other's shots. A shot carries across one wall that blocks sound into the next zone, never across two; a shut door stops it.");
         if (value != Canvas.MapViewMode.Floors) Learned("heights");
     }
 

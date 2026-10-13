@@ -2208,6 +2208,9 @@ public sealed class EditorSession : IDisposable
     /// <summary>Resizes the selection round its middle by <paramref name="factor"/> both ways.</summary>
     public void ResizeSelection(double factor) => TransformSelection(set => Placement.Size(factor, factor, set.Middle));
 
+    /// <summary>Slants the selection round its middle (Eureka's skew): <paramref name="across"/> degrees leans it east going north, <paramref name="up"/> degrees lifts its east side.</summary>
+    public void SlantSelection(double across, double up) => TransformSelection(set => Math.Abs(across) >= 80 || Math.Abs(up) >= 80 ? null : Placement.Slant(across, up, set.Middle));
+
     /// <summary>
     /// Selects what <paramref name="pick"/> finds in the map's shapes, worked out on a worker (it may read the whole map)
     /// once the shapes have caught up with the map; locked rooms and objects stay out. <paramref name="say"/> words the

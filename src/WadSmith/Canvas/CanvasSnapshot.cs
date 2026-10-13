@@ -135,7 +135,25 @@ internal sealed class CanvasSnapshot
 
         var styles = new List<AreaStyle>();
         var groupOf = new int[sectors.Count];
-        if (mode == MapViewMode.Brightness)
+        if (mode == MapViewMode.Sound)
+        {
+            // Rooms joined across open walls that do not block sound share a zone, as a shot travels in the game
+            // (P_RecursiveSound: a wall with no opening stops it; one sound-blocking wall it crosses, two it does not).
+            var zones = SoundZones.Of(f);
+            var index = new Dictionary<int, int>();
+            for (var i = 0; i < sectors.Count; i++)
+            {
+                var zone = zones[sectors[i]];
+                if (!index.TryGetValue(zone, out var g))
+                {
+                    g = index[zone] = styles.Count;
+                    styles.Add(new AreaStyle(null, 255, SoundZones.Colour(g).WithAlpha(HeightRamp.Alpha)));
+                }
+
+                groupOf[i] = g;
+            }
+        }
+        else if (mode == MapViewMode.Brightness)
         {
             // One grey per brightness the map uses, as the game's light levels go: 0 black, 255 white.
             var index = new Dictionary<int, int>();
@@ -231,7 +249,7 @@ internal sealed class CanvasSnapshot
         if (_paints.TryGetValue((group, detail, smooth, level), out var paint)) return paint;
         var style = AreaStyles[group];
         paint = new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = smooth };
-        if (Mode is MapViewMode.Heights or MapViewMode.Brightness)
+        if (Mode is MapViewMode.Heights or MapViewMode.Brightness or MapViewMode.Sound)
         {
             paint.Color = style.Solid;
         }

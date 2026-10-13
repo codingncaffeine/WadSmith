@@ -101,7 +101,7 @@ public static class Problems
 
     private static string Count(int n, string one, string many) => n == 1 ? one : string.Create(CultureInfo.InvariantCulture, $"{n} {many}");
 
-    internal static bool Flag(KeyValuePair<string, UdmfValue>[] extra, string name) => extra.Any(kv => string.Equals(kv.Key, name, StringComparison.OrdinalIgnoreCase) && kv.Value.Kind == UdmfValueKind.Boolean && kv.Value.AsBool());
+    public static bool Flag(KeyValuePair<string, UdmfValue>[] extra, string name) => extra.Any(kv => string.Equals(kv.Key, name, StringComparison.OrdinalIgnoreCase) && kv.Value.Kind == UdmfValueKind.Boolean && kv.Value.AsBool());
 
     private static void NoStart(MapGeometry g, string engine, List<Problem> found)
     {

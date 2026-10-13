@@ -555,7 +555,7 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
     /// </summary>
     private void DrawAreas(SKCanvas canvas, CellPaths areas, (List<int> Cells, int Shapes, bool All) visible, bool dense, bool gpu)
     {
-        var heights = snapshot!.Mode is MapViewMode.Heights or MapViewMode.Brightness;
+        var heights = snapshot!.Mode is MapViewMode.Heights or MapViewMode.Brightness or MapViewMode.Sound;
         var texel = view.Zoom;
         var detail = texel >= 1 ? AreaDetail.Sharp : texel * 64 >= 4 ? AreaDetail.Smooth : AreaDetail.Average;
         var smooth = heights && !dense;
@@ -658,6 +658,47 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
 /// The heights view's colours: a perceptually even ramp (blue, teal, green, yellow, orange, red) that
 /// colour-blind viewers can still order by lightness. The canvas and the legend both read it.
 /// </summary>
+/// <summary>
+/// Sound zones (Eureka's sound view): each room's zone, the rooms reached from it across walls that are open (some
+/// opening between the two rooms' floors and ceilings) and do not block sound; and a colour per zone.
+/// </summary>
+internal static class SoundZones
+{
+    private static readonly SKColor[] Colours =
+    [
+        new(0x3A, 0x7B, 0xD5), new(0xE0, 0x8A, 0x2E), new(0x4C, 0xAF, 0x50), new(0xC2, 0x4A, 0xB8), new(0xD8, 0xC2, 0x3A), new(0x2E, 0xB8, 0xB0),
+        new(0xD6, 0x3A, 0x2E), new(0x8E, 0x6C, 0xD8), new(0x9C, 0xC2, 0x3A), new(0xE0, 0x6C, 0x8E), new(0x5C, 0x8C, 0x6A), new(0xB8, 0x86, 0x5A),
+    ];
+
+    public static SKColor Colour(int zone) => Colours[zone % Colours.Length];
+
+    /// <summary>The zone of every sector slot (a zone is the smallest slot in it).</summary>
+    public static int[] Of(WadSmith.Editor.Model.MapFrame f)
+    {
+        var parent = new int[f.Sectors.Count];
+        for (var i = 0; i < parent.Length; i++) parent[i] = i;
+        int Find(int x)
+        {
+            while (parent[x] != x) x = parent[x] = parent[parent[x]];
+            return x;
+        }
+
+        foreach (var l in f.Lines)
+        {
+            if (l.Element is null || l.Front < 0 || l.Back < 0 || WadSmith.Editor.Checks.Problems.Flag(l.Extra, "blocksound")) continue;
+            var (a, b) = (f.Sides[l.Front].Sector, f.Sides[l.Back].Sector);
+            if (a < 0 || b < 0 || a == b) continue;
+            var (sa, sb) = (f.Sectors[a], f.Sectors[b]);
+            if (Math.Min(sa.CeilingHeight, sb.CeilingHeight) <= Math.Max(sa.FloorHeight, sb.FloorHeight)) continue;
+            var (ra, rb) = (Find(a), Find(b));
+            if (ra != rb) parent[Math.Max(ra, rb)] = Math.Min(ra, rb);
+        }
+
+        for (var i = 0; i < parent.Length; i++) parent[i] = Find(i);
+        return parent;
+    }
+}
+
 internal static class HeightRamp
 {
     public static readonly SKColor[] Stops = [new(0x2B, 0x3A, 0x8C), new(0x1F, 0x86, 0x8C), new(0x4C, 0xAF, 0x50), new(0xD8, 0xC2, 0x3A), new(0xE8, 0x8A, 0x2E), new(0xD6, 0x3A, 0x2E)];

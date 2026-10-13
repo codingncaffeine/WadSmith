@@ -832,6 +832,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new HeadingRow("MOVE AND SHAPE"));
         Rows.Add(new NumberRow("Move east by", "Moves the selection this far east, in map units; a negative distance moves it west.", () => 0, d => _session.MoveSelection((double)d, 0), 8, -32768, 32768));
         Rows.Add(new NumberRow("Move north by", "Moves the selection this far north, in map units; a negative distance moves it south.", () => 0, d => _session.MoveSelection(0, (double)d), 8, -32768, 32768));
+        Rows.Add(new NumberRow("Slant across (°)", "Leans it: what is north of its middle moves east, what is south moves west (a negative angle the other way). Areas keep their size (skew).", () => 0, a => _session.SlantSelection((double)a, 0), 15, -75, 75));
+        Rows.Add(new NumberRow("Slant up (°)", "Leans it the other way: what is east of its middle moves north, what is west moves south (skew).", () => 0, a => _session.SlantSelection(0, (double)a), 15, -75, 75));
         Rows.Add(new ActionRow("Snap to the grid", "Moves its corners and objects onto the nearest points of the grid the plan shows ([ and ] change it). A corner whose point another corner holds stays.", () => _session.SnapSelection(GridStep?.Invoke() ?? 64)));
         Rows.Add(new ActionRow("Line the corners up evenly", "Puts its corners evenly along the straight line between the two furthest apart.", () => _session.ShapeCorners(circle: false)));
         Rows.Add(new ActionRow("Space the corners round a circle", "Puts its corners evenly round a circle through their middle: a room becomes round.", () => _session.ShapeCorners(circle: true)));
@@ -1445,7 +1447,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new FlagRow("Hidden on the map", "Not drawn on the in-game map (dontdraw).", () => l.Flag("dontdraw"), on => Flag(l, "dontdraw", on, "Change map visibility")));
         Rows.Add(new FlagRow("Counts as a secret", "Shown as a solid wall on the in-game map so it does not give a secret away (secret).", () => l.Flag("secret"), on => Flag(l, "secret", on, "Change secret")));
         Rows.Add(new FlagRow("Shown on the map from the start", "Drawn on the in-game map before the player has seen it (mapped).", () => l.Flag("mapped"), on => Flag(l, "mapped", on, "Change map visibility")));
-        Rows.Add(new FlagRow("Blocks sound", "Muffles shots: a monster hears the player through one such wall but not through two (sound block, blocksound).", () => l.Flag("blocksound"), on => Flag(l, "blocksound", on, "Change sound blocking")));
+        Rows.Add(new FlagRow("Blocks sound", "Muffles shots: a monster hears the player through one such wall but not through two (sound block, blocksound). Ctrl+K “Show sound zones” colours the rooms that hear each other.", () => l.Flag("blocksound"), on => Flag(l, "blocksound", on, "Change sound blocking")));
         if (!_session.Project.ClassicFormat) Rows.Add(new FlagRow("Blocks players", "Monsters pass, players do not (blockplayers).", () => l.Flag("blockplayers"), on => Flag(l, "blockplayers", on, "Change player blocking")));
         if (l.Back is null)
         {
