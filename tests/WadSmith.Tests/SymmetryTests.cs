@@ -40,27 +40,27 @@ public sealed class SymmetryTests
         return (EditorSession.Open(project, "MAP01", ui.Enqueue), ui, temp);
     }
 
-    private static void PumpUntil(ConcurrentQueue<Action> ui, Func<bool> done)
+    private static async Task PumpUntil(ConcurrentQueue<Action> ui, Func<bool> done)
     {
         var until = DateTime.UtcNow.AddSeconds(10);
         while (!done() && DateTime.UtcNow < until)
         {
             while (ui.TryDequeue(out var a)) a();
-            Thread.Sleep(5);
+            await Task.Delay(5, TestContext.Current.CancellationToken);
         }
 
         Assert.True(done());
     }
 
     [Fact]
-    public void ARoomDrawnInSymmetryModeComesWithItsMirrorImageAsOneUndoStep()
+    public async Task ARoomDrawnInSymmetryModeComesWithItsMirrorImageAsOneUndoStep()
     {
         var (session, ui, temp) = Open();
         using var _ = temp;
         using var __ = session;
         session.Mirror = new Mirror(MirrorMode.LeftRight, new MapPoint(0, 0));
         session.DrawRoom([new(256, -64), new(256, 64), new(384, 64), new(384, -64)]);
-        PumpUntil(ui, () => session.Map.Sectors.Count(s => s.OnMap) == 3 && session.Geometry.Version == session.Map.Version);
+        await PumpUntil(ui, () => session.Map.Sectors.Count(s => s.OnMap) == 3 && session.Geometry.Version == session.Map.Version);
 
         var g = session.Geometry;
         Assert.NotNull(g.SectorAt(new MapPoint(320, 0)));

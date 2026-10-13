@@ -16,14 +16,14 @@ public sealed class SessionTests
 
         public void Post(Action a) => _queue.Enqueue(a);
 
-        public void PumpUntil(Func<bool> done, TimeSpan timeout)
+        public async Task PumpUntil(Func<bool> done, TimeSpan timeout)
         {
             var until = DateTime.UtcNow + timeout;
             while (!done())
             {
                 while (_queue.TryDequeue(out var a)) a();
                 if (DateTime.UtcNow > until) throw new TimeoutException();
-                Thread.Sleep(10);
+                await Task.Delay(10, TestContext.Current.CancellationToken);
             }
         }
     }
@@ -47,7 +47,7 @@ public sealed class SessionTests
     }
 
     [Fact]
-    public void AChangeIsKeptWithoutAskingAndClosingFlushes()
+    public async Task AChangeIsKeptWithoutAskingAndClosingFlushes()
     {
         using var temp = new TempFolder();
         var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
@@ -58,18 +58,18 @@ public sealed class SessionTests
         Assert.Equal(SaveState.Pending, session.State);
 
         // After the save delay, with nobody asking, the change is on disk.
-        ui.PumpUntil(() => session.State == SaveState.Saved, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.State == SaveState.Saved, TimeSpan.FromSeconds(10));
         Assert.Equal(24, Project.Open(project.Folder).LoadMap("MAP01").Sectors[0].FloorHeight);
 
         // A change still inside the delay reaches the disk when the session is flushed.
         session.History.Run(Floor(session.Map.Sectors[0], 48));
         var flush = session.FlushAsync();
-        ui.PumpUntil(() => flush.IsCompleted, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => flush.IsCompleted, TimeSpan.FromSeconds(10));
         Assert.Equal(48, Project.Open(project.Folder).LoadMap("MAP01").Sectors[0].FloorHeight);
     }
 
     [Fact]
-    public void OpeningAMapKeepsAVersionWithAPicture()
+    public async Task OpeningAMapKeepsAVersionWithAPicture()
     {
         using var temp = new TempFolder();
         var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
@@ -77,13 +77,13 @@ public sealed class SessionTests
         using var session = EditorSession.Open(project, "MAP01", _ => { });
         var folder = Path.Combine(project.Folder, ".wadsmith", "versions", "MAP01");
         var deadline = DateTime.UtcNow.AddSeconds(10);
-        while ((!Directory.Exists(folder) || Directory.GetFiles(folder, "*.png").Length == 0) && DateTime.UtcNow < deadline) Thread.Sleep(20);
+        while ((!Directory.Exists(folder) || Directory.GetFiles(folder, "*.png").Length == 0) && DateTime.UtcNow < deadline) await Task.Delay(20, TestContext.Current.CancellationToken);
         Assert.Single(Directory.GetFiles(folder, "*.wad"));
         Assert.Single(Directory.GetFiles(folder, "*.png"));
     }
 
     [Fact]
-    public void TurningAndMirroringTheSelectionAreOneStepEachAndWaitForAChangeMadeMeanwhile()
+    public async Task TurningAndMirroringTheSelectionAreOneStepEachAndWaitForAChangeMadeMeanwhile()
     {
         using var temp = new TempFolder();
         var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
@@ -92,7 +92,7 @@ public sealed class SessionTests
         using var session = EditorSession.Open(project, "MAP01", ui.Post);
         session.DrawRoom([new(512, 0), new(512, 128), new(768, 128), new(768, 0)]);
         var room = Assert.Single(session.Selection.Items.OfType<Sector>());
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         (double, double, double, double) Bounds()
         {
             var points = session.Map.Lines.Where(l => l.OnMap && (l.Front.Sector == room || l.Back?.Sector == room)).SelectMany(l => new[] { l.Start, l.End }).ToList();
@@ -102,15 +102,15 @@ public sealed class SessionTests
         // A change made while what turns is gathered: the turn is gathered again and lands once, after it.
         session.TurnSelection(90);
         session.History.Run(Floor(room, 24));
-        ui.PumpUntil(() => session.History.UndoLabel == "Turn", TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.History.UndoLabel == "Turn", TimeSpan.FromSeconds(10));
         Assert.Equal((576.0, -64.0, 704.0, 192.0), Bounds());
         Assert.Equal(24, room.FloorHeight);
         DrawingTests.AssertSound(session.Map);
         Assert.Same(room, Assert.Single(session.Selection.Items));
 
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         session.FlipSelection(leftToRight: true);
-        ui.PumpUntil(() => session.History.UndoLabel == "Mirror", TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.History.UndoLabel == "Mirror", TimeSpan.FromSeconds(10));
         Assert.Equal((576.0, -64.0, 704.0, 192.0), Bounds());
         DrawingTests.AssertSound(session.Map);
 
@@ -121,7 +121,7 @@ public sealed class SessionTests
     }
 
     [Fact]
-    public void TheInspectorTurnsARoomButNotAThingOnItsOwn()
+    public async Task TheInspectorTurnsARoomButNotAThingOnItsOwn()
     {
         using var temp = new TempFolder();
         var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
@@ -135,21 +135,21 @@ public sealed class SessionTests
         var start = session.Map.Things[0];
         var angle = start.Angle;
         session.Selection.Set(session.Map.Sectors[0]);
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Turn left 90°").Command.Execute(null);
-        ui.PumpUntil(() => session.History.UndoLabel == "Turn", TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.History.UndoLabel == "Turn", TimeSpan.FromSeconds(10));
         Assert.Equal((angle + 90) % 360, start.Angle);
 
         // A typed angle turns it once; the field is ready for the next turn.
         var typed = inspector.Rows.OfType<WadSmith.App.ViewModels.NumberRow>().Single(r => r.Label == "Turn by (°)");
         typed.Value = 90;
-        ui.PumpUntil(() => start.Angle == (angle + 180) % 360, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => start.Angle == (angle + 180) % 360, TimeSpan.FromSeconds(10));
         Assert.Equal(0, typed.Value);
         DrawingTests.AssertSound(session.Map);
     }
 
     [Fact]
-    public void AWindowMadeInTheSessionIsAWindowInTheInspector()
+    public async Task AWindowMadeInTheSessionIsAWindowInTheInspector()
     {
         using var temp = new TempFolder();
         var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
@@ -158,11 +158,11 @@ public sealed class SessionTests
         using var session = EditorSession.Open(project, "MAP01", ui.Post);
         var inspector = new WadSmith.App.ViewModels.InspectorViewModel(session);
         session.DrawRoom([new(320, -128), new(320, 128), new(576, 128), new(576, -128)]);
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         var east = session.Map.Lines.Single(l => l.OnMap && l.Start.X == 256 && l.End.X == 256);
         session.MakeWindow(east, 224, 288);
         var window = Assert.Single(session.Selection.Items.OfType<Sector>());
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         Assert.Equal("Window", inspector.Heading);
         Assert.Contains("64 tall", inspector.Summary);
         Assert.Equal(40, inspector.Rows.OfType<WadSmith.App.ViewModels.NumberRow>().First(r => r.Label == "Sill height").Value);
@@ -175,13 +175,13 @@ public sealed class SessionTests
         // Open again and lowered to a step, it is a way through: the Inspector says what it is now.
         blocks.Value = false;
         inspector.Rows.OfType<WadSmith.App.ViewModels.NumberRow>().First(r => r.Label == "Sill height").Value = 16;
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         Assert.Equal("Room area", inspector.Heading);
         DrawingTests.AssertSound(session.Map);
     }
 
     [Fact]
-    public void TheInspectorMakesARoomASecretAndBack()
+    public async Task TheInspectorMakesARoomASecretAndBack()
     {
         using var temp = new TempFolder();
         var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
@@ -191,22 +191,22 @@ public sealed class SessionTests
         var inspector = new WadSmith.App.ViewModels.InspectorViewModel(session);
         session.DrawRoom([new(256, -64), new(256, 64), new(384, 64), new(384, -64)]);
         var room = Assert.Single(session.Selection.Items.OfType<Sector>());
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Make it a secret").Command.Execute(null);
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         Assert.Equal("Secret area", inspector.Heading);
         Assert.Contains("solid wall on the in-game map", inspector.Summary);
         Assert.True(inspector.Rows.OfType<WadSmith.App.ViewModels.FlagRow>().Single(r => r.Label == "Hidden on the in-game map").Value);
 
         inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Not a secret").Command.Execute(null);
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         Assert.Equal("Room area", inspector.Heading);
         Assert.Equal(0, room.Special);
         Assert.DoesNotContain(session.Map.Lines, l => l.OnMap && l.Flag("secret"));
     }
 
     [Fact]
-    public void ALockedDoorOffersItsKeyAndTheKeyKnowsItsDoor()
+    public async Task ALockedDoorOffersItsKeyAndTheKeyKnowsItsDoor()
     {
         using var temp = new TempFolder();
         var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
@@ -217,20 +217,20 @@ public sealed class SessionTests
         string? asked = null;
         inspector.KeyFor += colour => asked = colour;
         session.DrawRoom([new(256, -64), new(256, 64), new(384, 64), new(384, -64)]);
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         session.MakeDoor(session.Map.Lines.Single(l => l.OnMap && l.Back is not null));
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version && inspector.Heading == "Door", TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version && inspector.Heading == "Door", TimeSpan.FromSeconds(10));
         Assert.DoesNotContain(inspector.Rows, r => r.Label.StartsWith("Place the", StringComparison.Ordinal));
 
         // Locked with the red key: the Inspector offers to place it, and the key placed opens the door.
         inspector.Rows.OfType<WadSmith.App.ViewModels.ChoiceRow>().Single(r => r.Label == "Locked with").Value = 1;
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Place the red key…").Command.Execute(null);
         Assert.Equal("red", asked);
         session.PlaceKey("red", new Editor.Geometry.MapPoint(-128, 0));
         var key = Assert.Single(session.Selection.Items.OfType<Thing>());
         Assert.Equal(13, key.Type);
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         Assert.Contains("Opens", inspector.Summary);
         inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Select the doors it opens").Command.Execute(null);
         Assert.All(session.Selection.Items, e => Assert.Equal(Editor.Smart.Doors.DoorLockedRaise, Assert.IsType<Line>(e).Special));
@@ -264,7 +264,7 @@ public sealed class SessionTests
     }
 
     [Fact]
-    public void APrefabSavedFromTheSessionIsPlacedAsOneStep()
+    public async Task APrefabSavedFromTheSessionIsPlacedAsOneStep()
     {
         using var temp = new TempFolder();
         var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
@@ -274,14 +274,14 @@ public sealed class SessionTests
         var saved = false;
         session.PrefabsChanged += () => saved = true;
         session.DrawRoom([new(512, 0), new(512, 128), new(768, 128), new(768, 0)]);
-        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
         session.SavePrefab();
-        ui.PumpUntil(() => saved, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => saved, TimeSpan.FromSeconds(10));
         var prefab = Assert.Single(Editor.Editing.Prefabs.In(project.Folder));
 
         var before = session.Map.Sectors.Count(s => s.OnMap);
         session.PlacePrefab(prefab, new Editor.Geometry.MapPoint(640, 1024));
-        ui.PumpUntil(() => session.Map.Sectors.Count(s => s.OnMap) == before + 1, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Map.Sectors.Count(s => s.OnMap) == before + 1, TimeSpan.FromSeconds(10));
         Assert.Equal("Paste", session.History.UndoLabel);
         DrawingTests.AssertSound(session.Map);
         session.History.Undo();
@@ -289,7 +289,7 @@ public sealed class SessionTests
     }
 
     [Fact]
-    public void MapSettingsAreKeptInTheRecordAndWrittenAsMapInfo()
+    public async Task MapSettingsAreKeptInTheRecordAndWrittenAsMapInfo()
     {
         using var temp = new TempFolder();
         var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
@@ -302,7 +302,7 @@ public sealed class SessionTests
         Assert.Equal("Gateway", session.MapEntry.Title);
         Assert.Equal(1, changes);
         var flush = session.FlushAsync();
-        ui.PumpUntil(() => flush.IsCompleted, TimeSpan.FromSeconds(20));
+        await ui.PumpUntil(() => flush.IsCompleted, TimeSpan.FromSeconds(20));
         Assert.True(flush.IsCompletedSuccessfully);
         Assert.Equal("Gateway", Project.Open(project.Folder).Info.Maps.Single().Title);
         var path = Path.Combine(project.Folder, ProjectMapInfo.FileName);
@@ -316,7 +316,7 @@ public sealed class SessionTests
         Assert.Equal(before, changes);
         session.ChangeMapSettings(m => m with { Title = "", Next = null });
         var again = session.FlushAsync();
-        ui.PumpUntil(() => again.IsCompleted, TimeSpan.FromSeconds(20));
+        await ui.PumpUntil(() => again.IsCompleted, TimeSpan.FromSeconds(20));
         Assert.True(again.IsCompletedSuccessfully);
         Assert.False(File.Exists(path));
         Assert.Equal("", Project.Open(project.Folder).Info.Maps.Single().Title);
