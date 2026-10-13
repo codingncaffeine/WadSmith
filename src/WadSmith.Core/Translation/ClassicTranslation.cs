@@ -49,7 +49,9 @@ public static class ClassicTranslation
         if (special == 0) return (0, Math.Max(0, id));
         var activation = new HashSet<string>(ActivationNames.Where(flag), StringComparer.Ordinal);
         var repeats = flag("repeatspecial");
-        var monsters = flag("monsteractivate") || flag("monsteruse") || flag("monstercross");
+        // Crossing by monsters beside players is the type's MONST; crossing by monsters alone is the activation itself
+        // (Doom II's monster-only teleporters, 125 and 126: they had no type, 2026-10-13 sweep of the game's 32 maps).
+        var monsters = flag("monsteractivate") || flag("monsteruse") || (flag("monstercross") && flag("playercross"));
 
         // Crossed by players and monsters is how GZDoom spells a classic walk-over line monsters set off too (the engine
         // reads that type as players crossing with monsteractivate): the monsters are the type's MONST, not its activation.

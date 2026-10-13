@@ -127,7 +127,17 @@ public static class ProjectExport
         }
 
         var lumps = new List<(string Name, byte[] Data)>();
-        for (var i = 0; i < models.Count; i++) lumps.AddRange(MapExport.ForPort(models[i], port, family, xlat, report, pictures, exMy, entries[i].Next));
+        for (var i = 0; i < models.Count; i++)
+        {
+            lumps.AddRange(MapExport.ForPort(models[i], port, family, xlat, report, pictures, exMy, entries[i].Next));
+
+            // A remix carries GZDoom's own repairs to the original (level_compatibility.zs): one may be on the list, and the
+            // classic game never needed it (Doom II MAP04's Transfer_Heights, 2026-10-13 sweep).
+            if (entries[i].Origin is { Kind: "remix" or "import", Checksum: not null } && report.Losses.Any(l => l.Map == entries[i].Slot))
+            {
+                report.Notes.Add($"{entries[i].Slot} was remixed from {entries[i].Origin!.Map ?? "a game's map"}: GZDoom's own repairs to the original were made then, and any of them on the list above is a change the classic game never had.");
+            }
+        }
         if (carried is not null) lumps.AddRange(carried.Lumps);
         MapInfo(project, port, lumps, report, game, engineData);
         ProjectFiles(project, report);

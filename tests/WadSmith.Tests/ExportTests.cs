@@ -175,6 +175,20 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void EveryDoomIITeleporterKeepsItsTypeInVanilla()
+    {
+        // 39 and 97 for players and monsters, 125 and 126 for monsters alone (GZDoom spells those monstercross only).
+        var vanilla = Port("vanilla").For("doom");
+        foreach (var type in new[] { 39, 97, 125, 126 })
+        {
+            var classic = new MapModel { Name = "MAP01", Namespace = "doom" };
+            classic.Lines.Add(new MapLine { Special = type, Id = 8, SourceFlags = 0 });
+            var line = MapTranslation.ToZDoom(classic, Xlat.Value, []).Lines[0];
+            Assert.Equal((type, 8), ClassicTranslation.TypeOf(line, Xlat.Value, vanilla));
+        }
+    }
+
+    [Fact]
     public void PicturesAndDoomIIObjectsTheGameLacksStopVanilla()
     {
         var model = Tools("room 0 0 256 256\nstart 128 128\nthing 66 64 64");
