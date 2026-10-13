@@ -3,11 +3,131 @@
              xmlns:vm="using:WadSmith.App.ViewModels"
              x:Class="WadSmith.App.Views.WelcomeView"
              x:DataType="vm:WelcomeViewModel">
+    <!--
+        The start screen as a game library: the games down the left, the chosen one on the right with its picture, the
+        ways to start a map as four tiles of their own, then the user's maps for it and the map packs found for it.
+    -->
+    <UserControl.Styles>
+        <!-- The list of games: quiet rows, the chosen one raised with an accent bar. -->
+        <Style Selector="ListBox.games">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="8,0" />
+        </Style>
+        <Style Selector="ListBox.games ListBoxItem">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="CornerRadius" Value="{DynamicResource Radius.Medium}" />
+        </Style>
+        <Style Selector="ListBox.games ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
+        </Style>
+        <Style Selector="ListBox.games ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Brush.Surface3}" />
+        </Style>
+        <Style Selector="ListBox.games ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Brush.Raised}" />
+        </Style>
+
+        <!-- The ways to start a map: tiles with an icon, a name and one line on what each does. -->
+        <Style Selector="Button.action">
+            <Setter Property="Background" Value="{DynamicResource Brush.Surface3}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{DynamicResource Radius.Large}" />
+            <Setter Property="Padding" Value="16,14" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Top" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.action:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Brush.Raised}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Strong}" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        </Style>
+        <Style Selector="Button.action:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
+        </Style>
+        <Style Selector="Button.action:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Tertiary}" />
+        </Style>
+        <!-- The one that stands out: hellfire orange. -->
+        <Style Selector="Button.action.featured">
+            <Setter Property="Background" Value="{DynamicResource Brush.Featured}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent.Hover}" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Accent.Ink}" />
+        </Style>
+        <Style Selector="Button.action.featured:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Brush.Accent.Hover}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Ember}" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Accent.Ink}" />
+        </Style>
+        <Style Selector="Button.action.featured:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Brush.Accent.Pressed}" />
+        </Style>
+        <Style Selector="Button.action TextBlock.name">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,12,0,4" />
+        </Style>
+        <Style Selector="Button.action TextBlock.note">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Opacity" Value="0.72" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="LineHeight" Value="17" />
+        </Style>
+        <Style Selector="Button.action.featured TextBlock.note">
+            <Setter Property="Opacity" Value="0.86" />
+        </Style>
+        <Style Selector="Button.action Border.icon">
+            <Setter Property="Width" Value="38" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="CornerRadius" Value="9" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+        </Style>
+        <Style Selector="Button.action PathIcon">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+        </Style>
+
+        <!-- Small buttons on a map's row. -->
+        <Style Selector="Button.row">
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinWidth" Value="0" />
+        </Style>
+        <Style Selector="Button.quiet">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+        </Style>
+        <Style Selector="Button.quiet:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Brush.Raised}" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        </Style>
+
+        <Style Selector="TextBlock.heading">
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </UserControl.Styles>
+
     <UserControl.Resources>
+        <!-- The icons on the start tiles, drawn on a 24-unit square. -->
+        <StreamGeometry x:Key="Icon.Make">M10,1 L12.4,8.6 L20,11 L12.4,13.4 L10,21 L7.6,13.4 L0,11 L7.6,8.6 Z M19.5,1 L20.4,3.6 L23,4.5 L20.4,5.4 L19.5,8 L18.6,5.4 L16,4.5 L18.6,3.6 Z M19.5,15 L20.2,17.3 L22.5,18 L20.2,18.7 L19.5,21 L18.8,18.7 L16.5,18 L18.8,17.3 Z</StreamGeometry>
+        <StreamGeometry x:Key="Icon.New">M10.75,3 H13.25 V10.75 H21 V13.25 H13.25 V21 H10.75 V13.25 H3 V10.75 H10.75 Z</StreamGeometry>
+        <StreamGeometry x:Key="Icon.Remix">F0 M8,2 H22 V16 H8 Z M10,4 V14 H20 V4 Z M2,8 H6 V10 H4 V20 H14 V18 H16 V22 H2 Z</StreamGeometry>
+        <StreamGeometry x:Key="Icon.Guide">M4,2 H6.5 V22 H4 Z M8,3 H20 L16.5,8 L20,13 H8 Z</StreamGeometry>
+        <StreamGeometry x:Key="Icon.Folder">M2,5 C2,4 3,3 4,3 H9 L11,5 H20 C21,5 22,6 22,7 V19 C22,20 21,21 20,21 H4 C3,21 2,20 2,19 Z</StreamGeometry>
+
         <!-- One of the user's maps: its name (editable in place), when it changed, and what can be done with it. -->
         <DataTemplate x:Key="ProjectRow" x:DataType="vm:ProjectChoice">
-            <Border BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1" Padding="0,5">
-                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+            <Border BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1" Padding="14,9">
+                <Grid ColumnDefinitions="*,Auto,Auto">
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" IsVisible="{Binding !IsRenaming}" ToolTip.Tip="{Binding Folder}" TextTrimming="CharacterEllipsis" />
                     <TextBox Text="{Binding NewName}" IsVisible="{Binding IsRenaming}" MinWidth="160" ToolTip.Tip="The map's new name: Enter keeps it, Escape leaves it as it was.">
                         <TextBox.KeyBindings>
@@ -15,167 +135,260 @@
                             <KeyBinding Gesture="Escape" Command="{Binding CancelRenameCommand}" />
                         </TextBox.KeyBindings>
                     </TextBox>
-                    <TextBlock Grid.Column="1" Text="{Binding When}" Classes="secondary" FontSize="12" VerticalAlignment="Center" Margin="10,0,0,0" ToolTip.Tip="When the map last changed." />
-                    <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6" Margin="0,5,0,0">
-                        <Button Classes="primary" Content="Open" Command="{Binding OpenCommand}" Padding="10,3" FontSize="12" ToolTip.Tip="Opens this map in the editor." />
-                        <Button Classes="metal" Content="Rename" Command="{Binding RenameCommand}" Padding="10,3" FontSize="12" ToolTip.Tip="Gives the map a new name; its folder stays where it is." />
-                        <Button Classes="metal" Content="Copy" Command="{Binding CopyCommand}" Padding="10,3" FontSize="12" ToolTip.Tip="A whole copy of the map beside it, named '… copy', ready to open." />
-                        <Button Classes="metal" Content="Delete" Command="{Binding DeleteCommand}" Padding="10,3" FontSize="12" ToolTip.Tip="Moves the map into the Deleted folder inside your maps folder; move it out again to bring it back." />
+                    <TextBlock Grid.Column="1" Text="{Binding When}" Classes="secondary" FontSize="12" VerticalAlignment="Center" Margin="14,0" ToolTip.Tip="When the map last changed." />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                        <Button Classes="primary row" Content="Open" Command="{Binding OpenCommand}" ToolTip.Tip="Opens this map in the editor." />
+                        <Button Classes="quiet row" Content="Rename" Command="{Binding RenameCommand}" ToolTip.Tip="Gives the map a new name; its folder stays where it is." />
+                        <Button Classes="quiet row" Content="Copy" Command="{Binding CopyCommand}" ToolTip.Tip="A whole copy of the map beside it, named '… copy', ready to open." />
+                        <Button Classes="quiet row" Content="Delete" Command="{Binding DeleteCommand}" ToolTip.Tip="Moves the map into the Deleted folder inside your maps folder; move it out again to bring it back." />
                     </StackPanel>
                 </Grid>
             </Border>
         </DataTemplate>
-    </UserControl.Resources>
-    <ScrollViewer>
-        <StackPanel MaxWidth="1180" Margin="40,32,40,40" Spacing="6">
-            <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Orientation="Horizontal" Spacing="18">
-                    <Image Source="/Assets/icon.png" Width="84" Height="84" />
-                    <StackPanel VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Classes="title" Text="WadSmith" />
-                        <TextBlock Classes="secondary" FontSize="15" Text="Build maps for the games you love, then play them in GZDoom." />
-                    </StackPanel>
-                </StackPanel>
-                <Button Grid.Column="1" Classes="metal" Content="Preferences" Command="{Binding OpenPreferencesCommand}" VerticalAlignment="Top"
-                        ToolTip.Tip="Larger text, tips, the title bar and where your games are (Ctrl+,)." />
-            </Grid>
 
-            <!-- The one quiet question (§3.2 step 5, D34), asked once. -->
-            <Border Classes="card" IsVisible="{Binding AskExperience}" Padding="16,14" Margin="0,22,0,0" MaxWidth="820" HorizontalAlignment="Left">
-                <StackPanel Spacing="8">
-                    <TextBlock FontWeight="SemiBold" FontSize="15" Text="Have you made Doom maps before?" />
-                    <TextBlock Classes="secondary" TextWrapping="Wrap" Text="Your answer only sets how much WadSmith teaches as you go: tips in the status bar, the Guide's invitations, how long tooltips are and the classic names. The editor is the same either way, and Preferences → Teaching changes any of it later." />
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <Button Classes="metal" Content="Yes, I have" Command="{Binding AnswerExperienceCommand}" CommandParameter="yes"
-                                ToolTip.Tip="Tips and the Guide's invitations off, short tooltips, classic names (sector, linedef, thing). Everything else stays." />
-                        <Button Classes="metal" Content="No, I'm new" Command="{Binding AnswerExperienceCommand}" CommandParameter="no"
-                                ToolTip.Tip="WadSmith teaches as you go: tips, the Guide and full tooltips, in plain words." />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <TextBlock Classes="section" Text="YOUR GAMES" Margin="0,24,0,4" />
-            <!-- The question a first map starts with, asked over the games found (D53). -->
-            <TextBlock Text="Which base game would you like your map to use?" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,6" IsVisible="{Binding !NoGames}" />
-            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
-                <TextBlock Classes="secondary" Text="{Binding Status}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="820" />
-                <ProgressBar IsIndeterminate="True" Width="80" IsVisible="{Binding Scanning}" VerticalAlignment="Center" />
-            </StackPanel>
-
-            <Border Classes="card" IsVisible="{Binding NoGames}" Padding="14" Margin="0,4,0,14" MaxWidth="820" HorizontalAlignment="Left">
-                <StackPanel Spacing="8">
-                    <TextBlock FontWeight="SemiBold" FontSize="15" Text="{Binding NoGamesHeading}" />
-                    <TextBlock Classes="secondary" TextWrapping="Wrap" Text="{Binding NoGamesText}" />
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <Button Classes="metal" Classes.primary="{Binding FoldersAdded}" Content="Pick a game file…" Command="{Binding AddGameFileCommand}"
-                                ToolTip.Tip="Point WadSmith at DOOM.WAD, DOOM2.WAD, HERETIC.WAD, HEXEN.WAD, STRIFE1.WAD or a ZIP holding one. Its folder is looked in, and the folders beside and above it." />
-                        <Button Classes="metal" Content="Add a folder…" Command="{Binding AddFolderCommand}"
-                                ToolTip.Tip="Tell WadSmith about a folder that holds your games. The folders beside and above it are looked in too, and inside ZIP files." />
-                        <Button Classes="metal" Classes.primary="{Binding !FoldersAdded}" Content="Get Freedoom" Command="{Binding GetFreedoomCommand}" IsEnabled="{Binding !GettingFreedoom}"
-                                ToolTip.Tip="Downloads Freedoom from its own release page, checks it, and puts it in WadSmith's games folder." />
-                        <ProgressBar Width="180" Minimum="0" Maximum="100" Value="{Binding FreedoomProgress}" IsVisible="{Binding GettingFreedoom}" VerticalAlignment="Center" />
-                        <TextBlock Classes="secondary" Text="{Binding FreedoomStatus}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="520" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <ItemsControl ItemsSource="{Binding Games}">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:GameTileViewModel">
-                        <Border Classes="card" Width="400" Margin="0,0,18,18" Padding="12" ToolTip.Tip="{Binding Location}">
-                            <StackPanel Spacing="10">
-                                <Border CornerRadius="6" ClipToBounds="True" Height="168" Background="#000000">
-                                    <Panel>
-                                        <!-- A tall cover sits whole over a blurred copy of itself; a wide title screen fills the box and hides the copy. -->
-                                        <Image Source="{Binding Picture}" Stretch="UniformToFill" Opacity="0.5" Effect="blur(30)" />
-                                        <Image Source="{Binding Picture}" Stretch="{Binding PictureStretch}" />
-                                    </Panel>
-                                </Border>
-                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" />
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Classes="primary" Content="Remix a map"
-                                            ToolTip.Tip="Start from one of this game's own maps. Your game files are never changed; your changes become a project of your own.">
-                                        <Button.Flyout>
-                                            <Flyout Placement="BottomEdgeAlignedLeft">
-                                                <ScrollViewer MaxHeight="440" Width="300">
-                                                    <ItemsControl ItemsSource="{Binding Maps}">
-                                                        <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="vm:MapChoice">
-                                                                <Button Content="{Binding Label}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                                                        Background="Transparent" Command="{Binding Tile.Remix}" CommandParameter="{Binding}" />
-                                                            </DataTemplate>
-                                                        </ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
-                                                </ScrollViewer>
-                                            </Flyout>
-                                        </Button.Flyout>
-                                    </Button>
-                                    <Button Classes="metal" Content="New map" Command="{Binding NewMap}" CommandParameter="{Binding}"
-                                            ToolTip.Tip="Start with one lit room and a player start, ready to play." />
-                                </StackPanel>
-                                <Button Classes="metal" Content="Make me a map…" Command="{Binding MakeMap}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" IsVisible="{Binding CanMakeMap}"
-                                        ToolTip.Tip="WadSmith makes a whole map for this game for you: choose which of your games it uses monsters and textures from, its size, locked doors, bosses and challenge. It opens as ordinary rooms and doors you can change." />
-                                <!-- What a map started here plays in (D51): GZDoom, or a classic port's format and limits. -->
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <TextBlock Text="Plays in" VerticalAlignment="Center" Classes="secondary" />
-                                    <ComboBox ItemsSource="{Binding TargetTitles}" SelectedIndex="{Binding TargetIndex}" MinWidth="220"
-                                              ToolTip.Tip="What a map started from this card plays in. GZDoom: everything WadSmith can make. Vanilla Doom: the 1993 engine's format and limits (Chocolate Doom, the DOS game). Limit-removing: that format without the limits (Crispy Doom). It can be changed later under Map settings." />
-                                </StackPanel>
-                                <Button Classes="metal" Content="Guided first map · 10 minutes" Command="{Binding GuidedMap}" CommandParameter="{Binding}" HorizontalAlignment="Stretch"
-                                        IsVisible="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).GuidePrompts}"
-                                        ToolTip.Tip="A new map, and seven short steps beside it: a room, a door, a texture, a monster and a weapon, a way out, then Play. You can skip or stop at any time." />
-                                <!-- The map packs found near the games that are for this game (D52): one click from editing a map in one. -->
-                                <Button Classes="metal" Content="{Binding PackMapsLabel}" IsVisible="{Binding PackMaps.Count}" HorizontalAlignment="Stretch"
-                                        ToolTip.Tip="Maps found in your folders that are for this game (map packs, loose or inside ZIPs): pick one to edit. The file is never changed; your changes become a project of your own, played with the pack.">
-                                    <Button.Flyout>
-                                        <Flyout Placement="BottomEdgeAlignedLeft">
-                                            <!-- A collection can hold thousands of maps: a search box, and a list that only makes the rows on screen. -->
-                                            <StackPanel Width="380" Spacing="6">
-                                                <TextBox Text="{Binding PackFilter}" PlaceholderText="Find a pack or a map…"
-                                                         ToolTip.Tip="Type part of a pack's name or a map's slot (MAP07, E2M1) to shorten the list." />
-                                                <ListBox ItemsSource="{Binding ShownPackMaps}" SelectedItem="{Binding ChosenPackMap}" MaxHeight="400"
-                                                         ToolTip.Tip="The maps found near your games that are for this game: pick one to edit it, with its pack loaded.">
-                                                    <ListBox.ItemTemplate>
-                                                        <DataTemplate x:DataType="vm:PackMapChoice">
-                                                            <TextBlock Text="{Binding Label}" />
-                                                        </DataTemplate>
-                                                    </ListBox.ItemTemplate>
-                                                </ListBox>
-                                            </StackPanel>
-                                        </Flyout>
-                                    </Button.Flyout>
-                                </Button>
-                                <!-- The user's own maps for this game, on the card: the thing they come back for. -->
-                                <StackPanel IsVisible="{Binding Projects.Count}" Spacing="2" Margin="0,8,0,0">
-                                    <TextBlock Classes="section" Text="{Binding ProjectsLabel}" ToolTip.Tip="The maps you made for this game, newest first: open one, or rename, copy or delete it." />
-                                    <ScrollViewer MaxHeight="200">
-                                        <ItemsControl ItemsSource="{Binding Projects}" ItemTemplate="{StaticResource ProjectRow}" />
-                                    </ScrollViewer>
-                                </StackPanel>
-                            </StackPanel>
+        <!-- The chosen game: its picture and name, the ways to start a map, the user's maps for it and the packs found for it. -->
+        <DataTemplate x:Key="GameDetail" x:DataType="vm:GameTileViewModel">
+            <StackPanel Spacing="28">
+                <Border CornerRadius="{DynamicResource Radius.Large}" ClipToBounds="True" Height="210" Background="#000000" ToolTip.Tip="{Binding Location}">
+                    <Panel>
+                        <!-- A tall cover sits whole over a blurred copy of itself; a wide title screen fills the banner. -->
+                        <Image Source="{Binding Picture}" Stretch="UniformToFill" Opacity="0.55" Effect="blur(34)" />
+                        <Image Source="{Binding Picture}" Stretch="{Binding PictureStretch}" />
+                        <Border>
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0%,35%" EndPoint="0%,100%">
+                                    <GradientStop Offset="0" Color="#000D090D" />
+                                    <GradientStop Offset="1" Color="#E60D090D" />
+                                </LinearGradientBrush>
+                            </Border.Background>
                         </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                        <StackPanel VerticalAlignment="Bottom" Margin="24,0,24,18" Spacing="2">
+                            <TextBlock Text="{Binding Title}" FontSize="30" FontWeight="Bold" Foreground="#FFFFFF" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding Location}" FontSize="12" Foreground="#C8BEBA" TextTrimming="PathSegmentEllipsis" />
+                        </StackPanel>
+                    </Panel>
+                </Border>
 
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <Button Classes="metal" Content="Pick a game file…" Command="{Binding AddGameFileCommand}"
-                        ToolTip.Tip="Point WadSmith at a game file (DOOM2.WAD, a ZIP holding one…) it did not find by itself. Its folder is looked in, and the folders beside and above it." />
-                <Button Classes="metal" Content="Add a folder…" Command="{Binding AddFolderCommand}"
-                        ToolTip.Tip="Tell WadSmith about a folder that holds your games, if it did not find them by itself. The folders beside and above it are looked in too, and inside ZIP files." />
-                <Button Classes="metal" Content="Open a project…" Command="{Binding OpenProjectCommand}"
-                        ToolTip.Tip="Open a WadSmith project folder." />
+                <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="heading" Text="Start a map" VerticalAlignment="Center" />
+                        <!-- What a map started here plays in (D51): GZDoom, or a classic port's format and limits. -->
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Plays in" VerticalAlignment="Center" Classes="secondary" />
+                            <ComboBox ItemsSource="{Binding TargetTitles}" SelectedIndex="{Binding TargetIndex}" MinWidth="200"
+                                      ToolTip.Tip="What a map started from this game plays in. GZDoom: everything WadSmith can make. Vanilla Doom: the 1993 engine's format and limits (Chocolate Doom, the DOS game). Limit-removing: that format without the limits (Crispy Doom). It can be changed later under Map settings." />
+                        </StackPanel>
+                    </Grid>
+                    <UniformGrid Rows="1" ColumnSpacing="12">
+                        <Button Classes="action featured" Command="{Binding MakeMap}" CommandParameter="{Binding}" IsEnabled="{Binding CanMakeMap}" AutomationProperties.Name="Make me a map"
+                                ToolTip.Tip="WadSmith makes a whole map for this game for you: choose which of your games it uses monsters and textures from, its size, locked doors, bosses and challenge. It opens as ordinary rooms and doors you can change.">
+                            <StackPanel>
+                                <Border Classes="icon" Background="#2A000000"><PathIcon Data="{StaticResource Icon.Make}" /></Border>
+                                <TextBlock Classes="name" Text="Make me a map" />
+                                <TextBlock Classes="note" Text="{Binding MakeMapNote}" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="action" Command="{Binding NewMap}" CommandParameter="{Binding}" AutomationProperties.Name="New map"
+                                ToolTip.Tip="Start with one lit room and a player start, ready to play.">
+                            <StackPanel>
+                                <Border Classes="icon" Background="#2EE09859"><PathIcon Data="{StaticResource Icon.New}" Foreground="{DynamicResource Brush.Ember}" /></Border>
+                                <TextBlock Classes="name" Text="New map" />
+                                <TextBlock Classes="note" Text="An empty map with one lit room and a player start." />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="action" AutomationProperties.Name="Remix a map"
+                                ToolTip.Tip="Start from one of this game's own maps. Your game files are never changed; your changes become a project of your own.">
+                            <Button.Flyout>
+                                <Flyout Placement="BottomEdgeAlignedLeft">
+                                    <ScrollViewer MaxHeight="440" Width="300">
+                                        <ItemsControl ItemsSource="{Binding Maps}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:MapChoice">
+                                                    <Button Content="{Binding Label}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                            Background="Transparent" Command="{Binding Tile.Remix}" CommandParameter="{Binding}" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Flyout>
+                            </Button.Flyout>
+                            <StackPanel>
+                                <Border Classes="icon" Background="#264FD2E0"><PathIcon Data="{StaticResource Icon.Remix}" Foreground="{DynamicResource Brush.Focus}" /></Border>
+                                <TextBlock Classes="name" Text="Remix a map" />
+                                <TextBlock Classes="note" Text="Start from one of the game's own maps and change it." />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="action" Command="{Binding GuidedMap}" CommandParameter="{Binding}" AutomationProperties.Name="Guided first map"
+                                IsVisible="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).GuidePrompts}"
+                                ToolTip.Tip="A new map, and seven short steps beside it: a room, a door, a texture, a monster and a weapon, a way out, then Play. You can skip or stop at any time.">
+                            <StackPanel>
+                                <Border Classes="icon" Background="#265FD35F"><PathIcon Data="{StaticResource Icon.Guide}" Foreground="{DynamicResource Brush.Success}" /></Border>
+                                <TextBlock Classes="name" Text="Guided first map" />
+                                <TextBlock Classes="note" Text="Seven short steps, about 10 minutes, from a room to playing it." />
+                            </StackPanel>
+                        </Button>
+                    </UniformGrid>
+                </StackPanel>
+
+                <!-- The user's own maps for this game: the thing they come back for. -->
+                <StackPanel Spacing="12">
+                    <TextBlock Classes="heading" Text="{Binding ProjectsLabel}" ToolTip.Tip="The maps you made for this game, newest first: open one, or rename, copy or delete it." />
+                    <Border Classes="card" CornerRadius="{DynamicResource Radius.Medium}" ClipToBounds="True" IsVisible="{Binding Projects.Count}">
+                        <ItemsControl ItemsSource="{Binding Projects}" ItemTemplate="{StaticResource ProjectRow}" />
+                    </Border>
+                    <Border Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="1" CornerRadius="{DynamicResource Radius.Medium}" Padding="16,14"
+                            IsVisible="{Binding !Projects.Count}">
+                        <TextBlock Classes="secondary" TextWrapping="Wrap" Text="{Binding Title, StringFormat='The maps you start or make for {0} are listed here.'}" />
+                    </Border>
+                    <TextBlock Classes="secondary" Text="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).ProjectsNote}" TextWrapping="Wrap"
+                               IsVisible="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).ProjectsNote.Length, FallbackValue=False}" />
+                </StackPanel>
+
+                <!-- The map packs found near the games that are for this game (D52): one click from editing a map in one. -->
+                <StackPanel Spacing="12" IsVisible="{Binding PackMaps.Count}">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="heading" Text="{Binding PackMapsLabel}" VerticalAlignment="Center"
+                                   ToolTip.Tip="Maps found in your folders that are for this game (map packs, loose or inside ZIPs): pick one to edit. The file is never changed; your changes become a project of your own, played with the pack." />
+                        <!-- A collection can hold thousands of maps: a search box, and a list that only makes the rows on screen. -->
+                        <TextBox Grid.Column="1" Text="{Binding PackFilter}" PlaceholderText="Find a pack or a map…" Width="280"
+                                 ToolTip.Tip="Type part of a pack's name or a map's slot (MAP07, E2M1) to shorten the list." />
+                    </Grid>
+                    <Border Classes="card" CornerRadius="{DynamicResource Radius.Medium}" ClipToBounds="True">
+                        <ListBox ItemsSource="{Binding ShownPackMaps}" SelectedItem="{Binding ChosenPackMap}" MaxHeight="320" Background="Transparent"
+                                 ToolTip.Tip="The maps found near your games that are for this game: pick one to edit it, with its pack loaded.">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PackMapChoice">
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </StackPanel>
             </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
 
-            <TextBlock Classes="secondary" Text="{Binding ProjectsNote}" IsVisible="{Binding ProjectsNote.Length}" Margin="0,10,0,0" TextWrapping="Wrap" MaxWidth="820" />
+    <Grid RowDefinitions="Auto,Auto,*">
+        <!-- The top bar: the name, then what is not about one game. -->
+        <Border Background="{DynamicResource Brush.TopBar}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1" Padding="20,12">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Image Source="/Assets/icon.png" Width="44" Height="44" />
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="WadSmith" FontSize="20" FontWeight="Bold" />
+                        <TextBlock Classes="secondary" FontSize="12.5" Text="Build maps for the games you love, then play them in GZDoom." />
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Button Classes="metal" Content="Add games ▾"
+                            ToolTip.Tip="Tell WadSmith where your games are, if it did not find them by itself: a game file, or a folder. The folders beside and above it are looked in too, and inside ZIP files.">
+                        <Button.Flyout>
+                            <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                <MenuItem Header="Pick a game file…" Command="{Binding AddGameFileCommand}"
+                                          ToolTip.Tip="Point WadSmith at a game file (DOOM2.WAD, a ZIP holding one…) it did not find by itself. Its folder is looked in, and the folders beside and above it." />
+                                <MenuItem Header="Add a folder…" Command="{Binding AddFolderCommand}"
+                                          ToolTip.Tip="Tell WadSmith about a folder that holds your games, if it did not find them by itself. The folders beside and above it are looked in too, and inside ZIP files." />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+                    <Button Classes="metal" Content="Open a project…" Command="{Binding OpenProjectCommand}"
+                            ToolTip.Tip="Open a WadSmith project folder." />
+                    <Button Classes="metal" Content="Preferences" Command="{Binding OpenPreferencesCommand}"
+                            ToolTip.Tip="Larger text, tips, the title bar and where your games are (Ctrl+,)." />
+                </StackPanel>
+            </Grid>
+        </Border>
 
-            <!-- Maps whose game is not on a tile right now (its files not found): still one click away. -->
-            <TextBlock Classes="section" Text="YOUR OTHER MAPS" Margin="0,28,0,4" IsVisible="{Binding OtherProjects.Count}" />
-            <TextBlock Classes="secondary" Text="Maps for games WadSmith did not find right now." IsVisible="{Binding OtherProjects.Count}" Margin="0,0,0,6" />
-            <ItemsControl ItemsSource="{Binding OtherProjects}" ItemTemplate="{StaticResource ProjectRow}" HorizontalAlignment="Left" />
-        </StackPanel>
-    </ScrollViewer>
+        <!-- The one quiet question (§3.2 step 5, D34), asked once, as a strip under the bar. -->
+        <Border Grid.Row="1" IsVisible="{Binding AskExperience}" Background="{DynamicResource Brush.Surface2}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1" Padding="20,10">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Border Width="3" CornerRadius="2" Background="{DynamicResource Brush.Accent}" Margin="0,0,14,0" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <TextBlock FontWeight="SemiBold" Text="Have you made Doom maps before?" />
+                    <TextBlock Classes="secondary" FontSize="12.5" TextWrapping="Wrap" Text="Your answer only sets how much WadSmith teaches as you go: tips in the status bar, the Guide's invitations, how long tooltips are and the classic names. The editor is the same either way, and Preferences → Teaching changes any of it later." />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0" VerticalAlignment="Center">
+                    <Button Classes="metal" Content="Yes, I have" Command="{Binding AnswerExperienceCommand}" CommandParameter="yes"
+                            ToolTip.Tip="Tips and the Guide's invitations off, short tooltips, classic names (sector, linedef, thing). Everything else stays." />
+                    <Button Classes="metal" Content="No, I'm new" Command="{Binding AnswerExperienceCommand}" CommandParameter="no"
+                            ToolTip.Tip="WadSmith teaches as you go: tips, the Guide and full tooltips, in plain words." />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" ColumnDefinitions="290,*">
+            <!-- The games found: pick one to see what can be made with it. -->
+            <Border Classes="panel" BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="16,18,16,10" Spacing="4">
+                        <TextBlock Classes="section" Margin="0" Text="YOUR GAMES" />
+                        <!-- The question a first map starts with, asked over the games found (D53). -->
+                        <TextBlock Text="Which base game would you like your map to use?" FontWeight="SemiBold" TextWrapping="Wrap" IsVisible="{Binding !NoGames}" />
+                        <ProgressBar IsIndeterminate="True" Width="60" HorizontalAlignment="Left" IsVisible="{Binding Scanning}" />
+                        <TextBlock Classes="secondary" FontSize="12" Text="{Binding Status}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button DockPanel.Dock="Bottom" Classes="quiet" Margin="8,4,8,12" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Command="{Binding ShowOtherMapsCommand}" IsVisible="{Binding OtherProjects.Count}"
+                            ToolTip.Tip="Your maps for games WadSmith did not find right now.">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <PathIcon Data="{StaticResource Icon.Folder}" Width="16" Height="16" />
+                            <TextBlock Text="{Binding OtherProjects.Count, StringFormat='Maps for other games · {0}'}" />
+                        </StackPanel>
+                    </Button>
+                    <ListBox Classes="games" ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}"
+                             ToolTip.Tip="The games WadSmith found: pick one to start a map for it, or to see the maps you made for it.">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:GameTileViewModel">
+                                <Grid ColumnDefinitions="Auto,Auto,*" ToolTip.Tip="{Binding Location}">
+                                    <Border Width="3" Margin="0,8" CornerRadius="2" Background="{DynamicResource Brush.Accent}"
+                                            IsVisible="{Binding $parent[ListBoxItem].IsSelected}" />
+                                    <Border Grid.Column="1" Width="64" Height="40" Margin="8,7,12,7" CornerRadius="4" ClipToBounds="True" Background="#000000">
+                                        <Image Source="{Binding Picture}" Stretch="UniformToFill" />
+                                    </Border>
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="1" Margin="0,0,8,0">
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding RailNote}" Classes="secondary" FontSize="12" IsVisible="{Binding RailNote.Length}" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <ScrollViewer Grid.Column="1">
+                <Panel MaxWidth="1440" Margin="32,24,32,40">
+                    <ContentControl Content="{Binding SelectedGame}" ContentTemplate="{StaticResource GameDetail}" IsVisible="{Binding !ShowingOther}" />
+
+                    <!-- Maps whose game is not in the list right now (its files not found): still one click away. -->
+                    <StackPanel Spacing="12" IsVisible="{Binding ShowingOther}">
+                        <TextBlock Classes="heading" FontSize="22" Text="Maps for other games" />
+                        <TextBlock Classes="secondary" Text="Maps for games WadSmith did not find right now." />
+                        <Border Classes="card" CornerRadius="{DynamicResource Radius.Medium}" ClipToBounds="True">
+                            <ItemsControl ItemsSource="{Binding OtherProjects}" ItemTemplate="{StaticResource ProjectRow}" />
+                        </Border>
+                        <TextBlock Classes="secondary" Text="{Binding ProjectsNote}" IsVisible="{Binding ProjectsNote.Length}" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- No game yet: where to look, and Freedoom. -->
+                    <Border Classes="card" IsVisible="{Binding NoGames}" Padding="20,18" MaxWidth="820" HorizontalAlignment="Left" VerticalAlignment="Top">
+                        <StackPanel Spacing="10">
+                            <TextBlock FontWeight="SemiBold" FontSize="17" Text="{Binding NoGamesHeading}" />
+                            <TextBlock Classes="secondary" TextWrapping="Wrap" Text="{Binding NoGamesText}" />
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Classes="metal" Classes.primary="{Binding FoldersAdded}" Content="Pick a game file…" Command="{Binding AddGameFileCommand}"
+                                        ToolTip.Tip="Point WadSmith at DOOM.WAD, DOOM2.WAD, HERETIC.WAD, HEXEN.WAD, STRIFE1.WAD or a ZIP holding one. Its folder is looked in, and the folders beside and above it." />
+                                <Button Classes="metal" Content="Add a folder…" Command="{Binding AddFolderCommand}"
+                                        ToolTip.Tip="Tell WadSmith about a folder that holds your games. The folders beside and above it are looked in too, and inside ZIP files." />
+                                <Button Classes="metal" Classes.primary="{Binding !FoldersAdded}" Content="Get Freedoom" Command="{Binding GetFreedoomCommand}" IsEnabled="{Binding !GettingFreedoom}"
+                                        ToolTip.Tip="Downloads Freedoom from its own release page, checks it, and puts it in WadSmith's games folder." />
+                                <ProgressBar Width="180" Minimum="0" Maximum="100" Value="{Binding FreedoomProgress}" IsVisible="{Binding GettingFreedoom}" VerticalAlignment="Center" />
+                                <TextBlock Classes="secondary" Text="{Binding FreedoomStatus}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="520" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Panel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
 </UserControl>

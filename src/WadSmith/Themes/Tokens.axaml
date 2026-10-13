@@ -88,6 +88,12 @@
         <GradientStop Offset="1.0" Color="#FF130E0F" />
     </LinearGradientBrush>
 
+    <!-- The one start tile that stands out (Make me a map): hellfire orange, a little darker at the foot. -->
+    <LinearGradientBrush x:Key="Brush.Featured" StartPoint="0%,0%" EndPoint="100%,100%">
+        <GradientStop Offset="0.0" Color="#FFEA6A33" />
+        <GradientStop Offset="1.0" Color="#FFC24A21" />
+    </LinearGradientBrush>
+
     <!-- Focus is cyan everywhere, so keyboard users always see where they are (Fluent's focus ring, recoloured). -->
     <SolidColorBrush x:Key="SystemControlFocusVisualPrimaryBrush" Color="{StaticResource Color.Focus}" />
     <SolidColorBrush x:Key="SystemControlFocusVisualSecondaryBrush" Color="#000000" />

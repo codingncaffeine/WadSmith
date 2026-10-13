@@ -268,7 +268,7 @@ void Save(string name)
 // Clicks the button showing <content> with real pointer events at its middle, as the user would; false when none shows.
 bool ClickButton(string content, Avalonia.Visual? within = null)
 {
-    var button = (within ?? window).GetVisualDescendants().OfType<Avalonia.Controls.Button>().FirstOrDefault(b => b.IsEffectivelyVisible && Equals(b.Content, content));
+    var button = (within ?? window).GetVisualDescendants().OfType<Avalonia.Controls.Button>().FirstOrDefault(b => b.IsEffectivelyVisible && (Equals(b.Content, content) || Avalonia.Automation.AutomationProperties.GetName(b) == content));
     if (button is null) return false;
     Avalonia.Controls.ControlExtensions.BringIntoView(button);
     Pump(0.3);
@@ -292,8 +292,10 @@ foreach (var pose in poses)
         {
             // Make me a map (D50), as the user goes: the card's button, the page, Make it, the editor.
             var tile = vm.Welcome.Games.FirstOrDefault(g => g.CanMakeMap && (map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase)));
-            var card = tile is null ? null : window.GetVisualDescendants().OfType<Avalonia.Controls.Presenters.ContentPresenter>().FirstOrDefault(p => ReferenceEquals(p.DataContext, tile));
-            if (card is null || !ClickButton("Make me a map…", card))
+            if (tile is not null) vm.Welcome.SelectedGame = tile;
+            Pump(0.3);
+            var card = tile is null ? null : window.GetVisualDescendants().OfType<Avalonia.Controls.ContentControl>().FirstOrDefault(p => p.IsEffectivelyVisible && ReferenceEquals(p.Content, tile));
+            if (card is null || !ClickButton("Make me a map", card))
             {
                 Console.Error.WriteLine("No game card with Make me a map; pass --games=FOLDER.");
                 return 1;

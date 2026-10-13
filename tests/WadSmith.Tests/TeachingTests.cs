@@ -41,7 +41,8 @@ public sealed class TeachingInTheWindowTests
         Ui.Pump(0.3);
     }
 
-    private static Button Shown(Window window, string content) => window.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.IsEffectivelyVisible && b.Content as string == content)!;
+    // A button by its words, or by its name when it shows more than words (the start tiles).
+    private static Button Shown(Window window, string content) => window.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.IsEffectivelyVisible && (b.Content as string == content || Avalonia.Automation.AutomationProperties.GetName(b) == content))!;
 
     [Fact]
     public async Task TooltipsOpenFullBriefOrNotAtAll()
@@ -96,7 +97,7 @@ public sealed class TeachingInTheWindowTests
             var said = new List<string>();
             try
             {
-                string State() => $"asked {settings.AskedAboutExperience}, guided button {Shown(window, "Guided first map · 10 minutes") is not null}, question {Shown(window, "Yes, I have") is not null}";
+                string State() => $"asked {settings.AskedAboutExperience}, guided button {Shown(window, "Guided first map") is not null}, question {Shown(window, "Yes, I have") is not null}";
                 said.Add(State());
 
                 // The editor's commands and keys with the teaching on.

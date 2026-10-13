@@ -34,6 +34,9 @@ public sealed class AppSettings
     /// <summary>The page's choices the last time a map was made, so the next one starts from them.</summary>
     public string? LastMadeMap { get; set; }
 
+    /// <summary>The game chosen on the start screen last time, so the screen opens on it again.</summary>
+    public string? LastGame { get; set; }
+
     /// <summary>The engine to play with, when the user picked one; null means the first one found.</summary>
     public string? EnginePath { get; set; }
 

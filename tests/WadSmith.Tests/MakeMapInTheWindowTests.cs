@@ -1,6 +1,6 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
-using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -32,6 +32,13 @@ public sealed class MakeMapInTheWindowTests
         Ui.Pump(0.2);
     }
 
+    // The game picked in the list of games, then its Make me a map tile, as the user goes.
+    private static void MakeMapFor(MainWindow window, GameTileViewModel tile)
+    {
+        Click(window, Shown<ListBoxItem>(window, i => ReferenceEquals(i.DataContext, tile)));
+        Click(window, Shown<Button>(window, b => ReferenceEquals(b.DataContext, tile) && AutomationProperties.GetName(b) == "Make me a map"));
+    }
+
     private static T Shown<T>(MainWindow window, Func<T, bool> which)
         where T : Visual => window.GetVisualDescendants().OfType<T>().First(v => v.IsEffectivelyVisible && which(v));
 
@@ -49,8 +56,7 @@ public sealed class MakeMapInTheWindowTests
                 var tile = vm.Welcome.Games.First(t => t.Found.Game.Id == "freedoom2");
                 // The card set to vanilla Doom: the page says a made map plays in GZDoom.
                 tile.TargetIndex = WadSmith.Core.Projects.Targets.All.ToList().FindIndex(t => t.Id == WadSmith.Core.Projects.Targets.Vanilla);
-                var card = Shown<ContentPresenter>(window, p => ReferenceEquals(p.DataContext, tile));
-                Click(window, card.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "Make me a map…")));
+                MakeMapFor(window, tile);
                 var page = (MakeMapViewModel)vm.Page;
                 said.Add($"page for {page.GameTitle}, base row {page.Sources[0].Title}, plays in {page.Target}, note {page.TargetNote.Length > 0}");
 
@@ -85,8 +91,7 @@ public sealed class MakeMapInTheWindowTests
                 // A folder chosen in Preferences takes the next one, and the card lists both.
                 var chosen = Path.Combine(temp.Path, "My made maps");
                 App.App.Services!.Settings.Current.MadeMapsFolder = chosen;
-                card = Shown<ContentPresenter>(window, p => ReferenceEquals(p.DataContext, tile));
-                Click(window, card.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "Make me a map…")));
+                MakeMapFor(window, tile);
                 var second = (MakeMapViewModel)vm.Page;
                 Shown<TextBox>(window, t => t.Text == second.Seed).Text = "grim-keep";
                 for (var i = 0; i < 200 && !second.Facts.StartsWith("Grim Keep", StringComparison.Ordinal); i++) Ui.Pump(0.05);
@@ -130,8 +135,7 @@ public sealed class MakeMapInTheWindowTests
             try
             {
                 var tile = vm.Welcome.Games.First(t => t.Found.Game.Id == "freedoom2");
-                var card = Shown<ContentPresenter>(window, p => ReferenceEquals(p.DataContext, tile));
-                Click(window, card.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "Make me a map…")));
+                MakeMapFor(window, tile);
                 var page = (MakeMapViewModel)vm.Page;
                 Click(window, Shown<ToggleButton>(window, b => ReferenceEquals(b.DataContext, page.Maps.Items[1])));
                 Shown<TextBox>(window, t => t.Text == page.Seed).Text = "eerie-works";

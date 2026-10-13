@@ -1,3 +1,5 @@
+using Avalonia;
+using Avalonia.Headless;
 using Avalonia.Controls;
 using Avalonia.VisualTree;
 using WadSmith.Core.Containers;
@@ -11,6 +13,18 @@ namespace WadSmith.Tests;
 [Collection(TimingCollection.Name)]
 public sealed class PackMapsInTheWindowTests
 {
+    private static void Click(Window window, Control target)
+    {
+        // As the user would: scrolled into view first, then pressed where it shows.
+        target.BringIntoView();
+        Ui.Pump(0.2);
+        var middle = target.TranslatePoint(new Point(target.Bounds.Width / 2, target.Bounds.Height / 2), window) ?? throw new InvalidOperationException("Not in the window.");
+        window.MouseMove(middle, Avalonia.Input.RawInputModifiers.None);
+        window.MouseDown(middle, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+        window.MouseUp(middle, Avalonia.Input.MouseButton.Left, Avalonia.Input.RawInputModifiers.None);
+        Ui.Pump(0.2);
+    }
+
     [Fact]
     public async Task APackBesideTheGameIsOnItsTileAndOpensWithThePack()
     {
@@ -32,15 +46,20 @@ public sealed class PackMapsInTheWindowTests
                 var said = new List<string>();
                 var tile = vm.Welcome.Games.Single(g => g.Found.Game.Id == "freedoom2");
                 var choice = tile.PackMaps.Single(p => p.Pack.Name == "shreds.wad");
-                var button = window.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible && b.Content is string c && c.StartsWith("Maps found near your games", StringComparison.Ordinal) && ReferenceEquals(b.DataContext, tile));
-                said.Add($"{button.Content}: {choice.Label}");
+                Click(window, window.GetVisualDescendants().OfType<ListBoxItem>().Single(i => i.IsEffectivelyVisible && ReferenceEquals(i.DataContext, tile)));
+                var heading = window.GetVisualDescendants().OfType<TextBlock>().Single(b => b.IsEffectivelyVisible && b.Text is { } c && c.StartsWith("Maps found near your games", StringComparison.Ordinal) && ReferenceEquals(b.DataContext, tile));
+                said.Add($"{heading.Text}: {choice.Label}");
 
                 // The search box shortens the list; picking a map in it starts editing it.
-                tile.PackFilter = "nothing like this";
+                var search = window.GetVisualDescendants().OfType<TextBox>().Single(t => t.IsEffectivelyVisible && t.PlaceholderText == "Find a pack or a map…");
+                search.Text = "nothing like this";
+                Ui.Pump(0.2);
                 var none = tile.ShownPackMaps.Count;
-                tile.PackFilter = "shre";
+                search.Text = "shre";
+                Ui.Pump(0.2);
                 said.Add($"filtered: {none} then {tile.ShownPackMaps.Count}, {tile.ShownPackMaps.FirstOrDefault()?.Label}");
-                tile.ChosenPackMap = choice;
+                // Picked as the user picks it: a click on its row in the list.
+                Click(window, window.GetVisualDescendants().OfType<ListBoxItem>().Single(i => i.IsEffectivelyVisible && ReferenceEquals(i.DataContext, choice)));
                 for (var i = 0; i < 100 && vm.Page is not App.ViewModels.EditorViewModel; i++) Ui.Pump(0.05);
                 Ui.Pump(1.0);
                 var editor = (App.ViewModels.EditorViewModel)vm.Page!;
@@ -53,6 +72,6 @@ public sealed class PackMapsInTheWindowTests
                 window.Close();
             }
         });
-        Assert.Equal(["Maps found near your games · 1 ▾: shreds.wad › MAP03", "filtered: 0 then 1, shreds.wad › MAP03", "opened shreds MAP03 (MAP03): 1 room, add-on shreds.wad, game freedoom2, files freedoom2.wad + shreds.wad"], seen);
+        Assert.Equal(["Maps found near your games · 1: shreds.wad › MAP03", "filtered: 0 then 1, shreds.wad › MAP03", "opened shreds MAP03 (MAP03): 1 room, add-on shreds.wad, game freedoom2, files freedoom2.wad + shreds.wad"], seen);
     }
 }

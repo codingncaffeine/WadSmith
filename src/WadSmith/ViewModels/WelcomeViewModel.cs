@@ -114,6 +114,13 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
     /// <summary>Whether WadSmith can make maps for this game (the Doom, Heretic, Hexen and Strife families).</summary>
     public bool CanMakeMap => WadSmith.Editor.Generate.GeneratorSettings.CanMake(Found.Game);
 
+    /// <summary>What the Make me a map tile says: what it does, or that it is not for this game yet.</summary>
+    public string MakeMapNote => CanMakeMap ? "Pick its size, keys, bosses and monsters; WadSmith builds the whole map." : $"Not for {Title} yet.";
+
+    /// <summary>The line under the game's name in the list of games: how many of the user's maps are for it.</summary>
+    [ObservableProperty]
+    private string _railNote = "";
+
     /// <summary>Starts a new map for this game with the guided first map running (set by the welcome screen).</summary>
     public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<GameTileViewModel>? GuidedMap { get; set; }
 }
@@ -193,6 +200,34 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     }
 
     public ObservableCollection<GameTileViewModel> Games { get; } = [];
+
+    /// <summary>The game whose picture, actions and maps the start screen shows; remembered for the next start.</summary>
+    [ObservableProperty]
+    private GameTileViewModel? _selectedGame;
+
+    /// <summary>Whether the start screen shows the maps for games not found instead of a game.</summary>
+    [ObservableProperty]
+    private bool _showingOther;
+
+    partial void OnSelectedGameChanged(GameTileViewModel? value)
+    {
+        if (value is null) return;
+        ShowingOther = false;
+        if (_choosing || _services.Settings.Current.LastGame == value.Found.Game.Id) return;
+        _services.Settings.Current.LastGame = value.Found.Game.Id;
+        _services.Settings.Save();
+    }
+
+    // Set while the scan fills the list, so the game chosen for the user is not saved as their choice.
+    private bool _choosing;
+
+    /// <summary>Shows the maps for games not found right now.</summary>
+    [RelayCommand]
+    private void ShowOtherMaps()
+    {
+        SelectedGame = null;
+        ShowingOther = true;
+    }
 
     /// <summary>Whether the Guide's invitations show on the tiles ("Guided first map", D34); the chapter stays in the Guide menu and Ctrl+K.</summary>
     public bool GuidePrompts => _services.Settings.Current.GuidePrompts;
@@ -373,6 +408,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
             }
 
             tile.ProjectsLabel = tile.Projects.Count == 0 ? "Your maps" : $"Your maps · {tile.Projects.Count}";
+            tile.RailNote = tile.Projects.Count switch { 0 => "", 1 => "1 of your maps", var n => $"{n} of your maps" };
         }
 
         OtherProjects.Clear();
@@ -522,11 +558,15 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         {
             var tile = new GameTileViewModel(g) { Remix = RemixCommand, NewMap = NewMapCommand, GuidedMap = GuidedMapCommand, EditPackMap = EditPackMapCommand, MakeMap = MakeMapCommand };
             tile.PackMaps = [.. packs.Where(f => f.Games.Any(x => x.Game.Id == g.Game.Id)).OrderBy(f => f.File.Name, StringComparer.OrdinalIgnoreCase).SelectMany(f => f.File.Maps.Order(StringComparer.OrdinalIgnoreCase).Select(m => new PackMapChoice(f.File, m, tile)))];
-            tile.PackMapsLabel = $"Maps found near your games · {tile.PackMaps.Count} ▾";
+            tile.PackMapsLabel = $"Maps found near your games · {tile.PackMaps.Count}";
             Games.Add(tile);
             _ = LoadTileAsync(tile);
         }
 
+        // The game chosen last time, else the first that every way of starting a map is open for.
+        _choosing = true;
+        SelectedGame = Games.FirstOrDefault(t => t.Found.Game.Id == (SelectedGame?.Found.Game.Id ?? _services.Settings.Current.LastGame)) ?? Games.FirstOrDefault(t => t.CanMakeMap) ?? Games.FirstOrDefault();
+        _choosing = false;
         Scanning = false;
         NoGames = Games.Count == 0;
         FoldersAdded = added.Count > 0;
