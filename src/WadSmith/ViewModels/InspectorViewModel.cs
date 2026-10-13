@@ -395,12 +395,35 @@ internal sealed partial class InspectorViewModel : ObservableObject
         return null;
     }
 
+    /// <summary>The lift a wall is a trigger of (one of the lift's own walls, used to send it down), or null: as with a door, a click on the plan lands on the wall.</summary>
+    private Sector? LiftOf(Line l)
+    {
+        foreach (var side in new[] { l.Back, l.Front })
+        {
+            if (side is null) continue;
+            if (Lifts.Recognise(_session.Geometry, side.Sector) is { } lift && lift.Triggers.Contains(l)) return side.Sector;
+        }
+
+        return null;
+    }
+
+    /// <summary>The window a wall belongs to (one side of it is the window's area), or null.</summary>
+    private Sector? WindowOf(Line l)
+    {
+        foreach (var side in new[] { l.Back, l.Front })
+        {
+            if (side is not null && WallWindows.Recognise(_session.Geometry, side.Sector) is not null) return side.Sector;
+        }
+
+        return null;
+    }
+
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
         [Sector s] when Platforms.ControlOf(_session.Geometry, s) is not null => "platform control",
         [Sector s] => (Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room") + $" {Platforms.Of(_session.Geometry, s).Count}" + ClimbKind(s),
-        [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : DoorOf(l) is { } doorArea ? $"door {Doors.Recognise(_session.Geometry, doorArea)?.Settings.Lock} face" : l.Special == 0 ? "wall" : "wall with an action",
+        [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : LiftOf(l) is not null ? "lift face" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : DoorOf(l) is { } doorArea ? $"door {Doors.Recognise(_session.Geometry, doorArea)?.Settings.Lock} face" : WindowOf(l) is not null ? "window face" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : "thing",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
         [var one] => one.GetType().Name,
@@ -592,6 +615,31 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 }
                 Rows.Add(new ActionRow("Make it a lift", "Its floor goes down to the lowest floor beside it when the player uses a wall from below or walks onto it, waits 3 seconds and comes back up (Plat_DownWaitUpStayLip).", () => _session.MakeLift(s)));
                 Rows.Add(new ActionRow("Make it a teleport pad", "Stepping onto this room sends the player to a spot you click next (Teleport, with an arrival spot).", () => TeleportFrom?.Invoke(s)));
+                break;
+            case Line l when LiftOf(l) is { } liftArea:
+                // A wall of a lift: the lift is what was meant, with the wall's own details below it.
+                Heading = "Lift";
+                _summaryOf = () => Lifts.Recognise(_session.Geometry, liftArea) is { } lift ? Explaining.Describe(lift) : "No longer a lift.";
+                Summary = _summaryOf();
+                AddLift(liftArea);
+                Rows.Add(new ActionRow("Add a switch that lowers it", "Click a solid wall next: a piece of it becomes a switch the player uses to send this lift down from there.", () => SwitchFor?.Invoke(liftArea)));
+                Rows.Add(new ActionRow("Select the lift's area", "Selects the lift itself, with its area's settings.", () => _session.Selection.Set(liftArea)));
+                Rows.Add(new HeadingRow("THIS WALL"));
+                AddLine(l);
+                AddSide("Front", l.Front);
+                if (l.Back is { } liftBack) AddSide("Back", liftBack);
+                break;
+            case Line l when WindowOf(l) is { } windowArea:
+                // A wall of a window: the window is what was meant, with the wall's own details below it.
+                Heading = "Window";
+                _summaryOf = () => WallWindows.Recognise(_session.Geometry, windowArea) is { } w ? Explaining.Describe(w) : "No longer a window.";
+                Summary = _summaryOf();
+                AddWindow(windowArea);
+                Rows.Add(new ActionRow("Select the window's area", "Selects the window itself, with its area's settings.", () => _session.Selection.Set(windowArea)));
+                Rows.Add(new HeadingRow("THIS WALL"));
+                AddLine(l);
+                AddSide("Front", l.Front);
+                if (l.Back is { } windowBack) AddSide("Back", windowBack);
                 break;
             case Line l when Switches.Recognise(_session.Geometry, l) is not null:
                 Heading = "Switch";
