@@ -102,6 +102,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.GeometryChanged += CameraMoved;
         _reports = new(session.OnUiThread, ReportArrived, "the map's explanation");
         Inspector.ExplainMap += () => ExplainMapCommand.Execute(null);
+        Inspector.ExportMap += () => OpenExportCommand.Execute(null);
         _shelfSounds = new LatestOnWorker<byte[]?>(session.OnUiThread, wav =>
         {
             if (wav is not null) _services.Sound.Play(wav);
@@ -384,6 +385,9 @@ internal sealed partial class EditorViewModel : ObservableObject
     /// <summary>Asks the user for a 3D model file (set by the view); null when they chose none.</summary>
     public Func<Task<string?>>? PickModel { get; set; }
 
+    /// <summary>Set by the view: where to save an export, given a suggested file name; null when the user cancels.</summary>
+    public Func<string, Task<string?>>? PickExportFile { get; set; }
+
     /// <summary>Asks the user for a picture of a material set (set by the view); null when they chose none.</summary>
     public Func<Task<string?>>? PickMaterial { get; set; }
 
@@ -525,6 +529,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Next map", "Map", "", "flip map|next level|following map|episode", () => _ = OtherMapAsync(1), () => Session.Project.Info.Maps.Count > 1),
             new("Previous map", "Map", "", "flip map|previous level|last map|episode", () => _ = OtherMapAsync(-1), () => Session.Project.Info.Maps.Count > 1),
             new("Make another like it", "Map", "", "make me a map|generate|random map|procedural|new map like this|reroll", () => _ = MakeAnotherAsync(), () => Session.Origin?.Kind == "generated"),
+            new("Export…", "Map", "Ctrl+E", "save as wad|pk3|share|vanilla|boom|mbf21|chocolate|crispy|dsda|woof|classic port|compile|build wad", () => OpenExportCommand.Execute(null)),
 
             new("Play", "Play", "F9", "test|test map|run|launch|gzdoom", () => PlayCommand.Execute(null), () => !Playing),
             new("Play from here", "Play", K("Shift+F9", "Ctrl+F9"), "test from current position|start here", () => PlayFromHereCommand.Execute(null), () => !Playing),
@@ -632,6 +637,25 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     [RelayCommand]
     private void CloseReport() => Report = null;
+
+    /// <summary>The Export card (Phase 12) while it is open; null when closed.</summary>
+    [ObservableProperty]
+    private ExportViewModel? _export;
+
+    /// <summary>Raised to show elements on the plan (an Export line's Show).</summary>
+    public event Action<IReadOnlyList<Element>>? ShowElementsRequested;
+
+    /// <summary>Opens the Export card, which exports for the project's own target first.</summary>
+    [RelayCommand]
+    private void OpenExport()
+    {
+        if (Export is not null) return;
+        Export = new ExportViewModel(Session, Path.Combine(_services.Paths.Cache, "export"), elements =>
+        {
+            Session.Selection.Set([.. elements]);
+            ShowElementsRequested?.Invoke(elements);
+        }, () => Export = null) { PickFile = PickExportFile };
+    }
 
     private void ReportArrived((EditorSession Session, MapReport Report) r)
     {

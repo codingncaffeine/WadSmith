@@ -240,14 +240,15 @@ public static class MapExport
         var why = port.VanillaLimits ? "the game stops with \"Unknown type\" as the map loads" : "the game leaves them out";
         foreach (var kind in unknown.GroupBy(x => KindOf(x.t.Type)))
         {
-            var numbers = string.Join(", ", kind.GroupBy(x => x.t.Type).OrderBy(g => g.Key).Select(g => string.Create(CultureInfo.InvariantCulture, $"{g.Key} ×{g.Count()}")));
+            var types = kind.GroupBy(x => x.t.Type).OrderBy(g => g.Key).ToList();
+            var numbers = (types.Count == 1 ? "number " : "numbers ") + string.Join(", ", types.Select(g => g.Count() == 1 ? g.Key.ToString(CultureInfo.InvariantCulture) : string.Create(CultureInfo.InvariantCulture, $"{g.Key} ×{g.Count()}")));
             var title = kind.Key switch
             {
                 "lights" => "GZDoom's dynamic lights",
                 "brought" => "Objects brought in from other games or made from 3D models",
                 _ => $"Objects {port.Title} does not know",
             };
-            report.Add(new ExportLoss(map, "object:unknown-" + kind.Key, title, "object", [.. kind.Select(x => x.i)], port.VanillaLimits, $"numbers {numbers}: {why}"));
+            report.Add(new ExportLoss(map, "object:unknown-" + kind.Key, title, "object", [.. kind.Select(x => x.i)], port.VanillaLimits, $"{numbers}: {why}"));
         }
         if (exMyNames && rules.ExMyLacks is { } lacks)
         {

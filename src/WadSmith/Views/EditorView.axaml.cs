@@ -36,6 +36,7 @@ public partial class EditorView : UserControl
             vm.GridNow = () => Canvas.GridStepNow;
             vm.PickModel = PickModelAsync;
             vm.PickMaterial = PickMaterialAsync;
+            vm.PickExportFile = PickExportFileAsync;
             vm.Inspector.PickPanorama = PickPanoramaAsync;
             vm.Inspector.PickGrid = PickGridAsync;
             vm.ViewSize = () =>
@@ -44,6 +45,7 @@ public partial class EditorView : UserControl
                 return ((int)Math.Round(View3D.Bounds.Width * scale), (int)Math.Round(View3D.Bounds.Height * scale));
             };
             vm.Problems.ShowRequested += elements => Canvas.FitTo(elements);
+            vm.ShowElementsRequested += elements => Canvas.FitTo(elements);
             vm.PlaceRequested += (at, span) =>
             {
                 Canvas.FitAround(at, span);
@@ -214,6 +216,23 @@ public partial class EditorView : UserControl
             FileTypeFilter = [new("3D models and voxels (OBJ, glTF, MD3, IQM, MD2, MDL, VOX, KVX)") { Patterns = ["*.obj", "*.OBJ", "*.glb", "*.GLB", "*.gltf", "*.GLTF", "*.md3", "*.MD3", "*.iqm", "*.IQM", "*.md2", "*.MD2", "*.mdl", "*.MDL", "*.vox", "*.VOX", "*.kvx", "*.KVX"] }, new("Block sets (any picture of one: NAME_side.png, NAME_top.png…)") { Patterns = ["*_side.*", "*_top.*", "*_bottom.*", "*_front.*", "*_back.*", "*_left.*", "*_right.*"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
         }).ConfigureAwait(true);
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
+    }
+
+    /// <summary>The save picker for Export: the file's kind follows the name suggested (.pk3 or .wad).</summary>
+    private async Task<string?> PickExportFileAsync(string suggested)
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanSave: true } storage) return null;
+        var extension = Path.GetExtension(suggested);
+        var kind = extension == ".pk3" ? "GZDoom package (.pk3)" : "Doom WAD (.wad)";
+        var picked = await storage.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
+        {
+            Title = "Save the export",
+            SuggestedFileName = suggested,
+            DefaultExtension = extension.TrimStart('.'),
+            ShowOverwritePrompt = true,
+            FileTypeChoices = [new(kind) { Patterns = ["*" + extension] }],
+        }).ConfigureAwait(true);
+        return picked?.TryGetLocalPath();
     }
 
     /// <summary>The file picker for "Add a picture or material…".</summary>

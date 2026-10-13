@@ -377,6 +377,9 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>Raised by "Explain this map" (D32), shown with nothing selected.</summary>
     public event Action? ExplainMap;
 
+    /// <summary>Raised by "Export…" (Phase 12), shown with nothing selected.</summary>
+    public event Action? ExportMap;
+
     /// <summary>Raised when the user asks to place the key for a locked door (its colour): the editor then waits for the spot.</summary>
     public event Action<string>? KeyFor;
 
@@ -559,6 +562,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             Heading = "Nothing selected";
             Summary = "Click a room, a wall, a corner or a thing to see what it is and change it.";
             Rows.Add(new ActionRow("Explain this map", "What the map is made of, which keys open which doors, and what the player meets on each difficulty, each with a button that shows where.", () => ExplainMap?.Invoke()));
+            Rows.Add(new ActionRow("Export…", "One file to share or play anywhere: a .pk3 for GZDoom, or a .wad for vanilla Doom, Crispy, Boom or MBF21 ports, with what each would lose (Ctrl+E).", () => ExportMap?.Invoke()));
             AddMapSettings();
             AddGroups();
             return;
