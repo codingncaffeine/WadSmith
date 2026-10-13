@@ -62,7 +62,8 @@ public static partial class Doors
 
     /// <summary>
     /// The frames of a doorway (see <see cref="Make"/>): for each of the door's own faces, the area in front of it when it
-    /// is a frame, <see cref="FrameDepth"/> deep, with the room beyond it.
+    /// is a frame — every wall of it within <see cref="FrameDepth"/> of the face, so a room in front of a door without
+    /// frames is never taken for one — with the room beyond it.
     /// </summary>
     public static IReadOnlyList<(Sector Frame, Sector Room)> FramesOf(MapGeometry geometry, Door door)
     {
@@ -71,6 +72,11 @@ public static partial class Doors
         {
             var frame = opener.Front.Sector;
             if (ReferenceEquals(frame, door.Area) || geometry.WallBoundsAt(frame.Slot) is not { } b) continue;
+
+            // A frame is shallow and as wide as the door: every corner of every wall around it lies within the frame's depth of
+            // the door's face, and along the face between its ends.
+            var around = geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY).Where(l => l.OnMap && (ReferenceEquals(l.Front.Sector, frame) || ReferenceEquals(l.Back?.Sector, frame))).ToList();
+            if (around.Count == 0 || around.SelectMany(l => new[] { l.Start, l.End }).Any(v => DistanceTo(opener, v) > FrameDepth + 0.5 || !Beside(opener, v))) continue;
             foreach (var l in geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY))
             {
                 if (!l.OnMap || ReferenceEquals(l, opener) || !Parallel(l, opener) || !(ReferenceEquals(l.Front.Sector, frame) || ReferenceEquals(l.Back?.Sector, frame))) continue;
@@ -104,6 +110,24 @@ public static partial class Doors
             var ceiling = Math.Min(room.CeilingHeight, frame.FloorHeight + s.Height);
             edit.Set(frame, x => x.CeilingHeight, (x, v) => x.CeilingHeight = v, ceiling);
         }
+    }
+
+    /// <summary>Whether a corner lies along a wall between its two ends (half a unit either way), seen square to it.</summary>
+    private static bool Beside(Line wall, Vertex v)
+    {
+        var (dx, dy) = (wall.End.X - wall.Start.X, wall.End.Y - wall.Start.Y);
+        var length = Math.Sqrt(dx * dx + dy * dy);
+        if (length <= 0) return false;
+        var along = ((v.X - wall.Start.X) * dx + (v.Y - wall.Start.Y) * dy) / length;
+        return along >= -0.5 && along <= length + 0.5;
+    }
+
+    /// <summary>How far a corner lies from the line a wall runs along.</summary>
+    private static double DistanceTo(Line wall, Vertex v)
+    {
+        var (dx, dy) = (wall.End.X - wall.Start.X, wall.End.Y - wall.Start.Y);
+        var length = Math.Sqrt(dx * dx + dy * dy);
+        return length <= 0 ? 0 : Math.Abs((v.X - wall.Start.X) * dy - (v.Y - wall.Start.Y) * dx) / length;
     }
 
     /// <summary>The distance between two parallel walls.</summary>
@@ -469,7 +493,8 @@ public static partial class Doors
     {
         var (ax, ay) = (l.End.X - l.Start.X, l.End.Y - l.Start.Y);
         var (bx, by) = (wall.End.X - wall.Start.X, wall.End.Y - wall.Start.Y);
-        return Math.Abs(ax * by - ay * bx) <= 1e-6 * Math.Sqrt((ax * ax + ay * ay) * (bx * bx + by * by));
+        // Within about a tenth of a degree: corners projected onto slanted walls leave hair-width bends that are still one wall.
+        return Math.Abs(ax * by - ay * bx) <= 0.002 * Math.Sqrt((ax * ax + ay * ay) * (bx * bx + by * by));
     }
 
     /// <summary>

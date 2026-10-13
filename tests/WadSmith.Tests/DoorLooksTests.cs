@@ -29,6 +29,23 @@ public sealed class DoorLooksTests
     }
 
     [Fact]
+    public void AFramelessDoorsLookLeavesTheRoomsBesideItAlone()
+    {
+        // A door made with no frames (no picture sizes known), straight between two rooms 128 tall: the rooms are not frames,
+        // and a short picture must not bring their ceilings down to its height (the user's north door, 2026-10-12).
+        var (map, history, rooms) = MovingTests.Drawn((0, 0, 256, 256), (256, 0, 512, 256));
+        var opening = Assert.Single(map.Lines, l => l.OnMap && l.Back is not null);
+        (Sector? Door, string? Why) made = (null, null);
+        history.Record("Make a door", e => made = Doors.Make(e, MapGeometry.Build(map.Frame), opening, Look.For("doom"), Doors.Centred(opening, Doors.StandardWidth), fill: true));
+        var door = Doors.Recognise(MapGeometry.Build(map.Frame), made.Door!)!;
+        Assert.Empty(Doors.FramesOf(MapGeometry.Build(map.Frame), door));
+
+        history.Record("Change the door's look", e => Doors.Dress(e, MapGeometry.Build(map.Frame), door, "DOOR1", (64, 72)));
+        Assert.All(door.Own, l => Assert.Equal("DOOR1", l.Front.Top));
+        Assert.All(rooms, r => Assert.Equal(128, r.CeilingHeight - r.FloorHeight));
+    }
+
+    [Fact]
     public void DressingADoorChangesItsPictureAndItsDoorwayFollowsThePicturesHeight()
     {
         var (map, history, rooms) = MovingTests.Drawn((0, 0, 256, 256), (256, 96, 384, 160));
