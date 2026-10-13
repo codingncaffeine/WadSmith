@@ -283,8 +283,9 @@ public static class Problems
     private static void NotClassic(MapFrame f, ClassicRules rules, List<Problem> found)
     {
         var target = Targets.TitleOf(rules.Target);
+        var port = Core.Exporting.ClassicPorts.Get(rules.Target)?.For(rules.Namespace);
         static bool On(KeyValuePair<string, UdmfValue>[] extra, string name) => extra.Any(e => e.Key == name && e.Value.AsBool());
-        var walls = f.Lines.Where(l => l.Element is not null && l.Special != 0 && ClassicTranslation.TypeOf(l.Special, l.Args, name => On(l.Extra, name), l.LineId, rules.Xlat) is null).ToList();
+        var walls = f.Lines.Where(l => l.Element is not null && l.Special != 0 && ClassicTranslation.TypeOf(l.Special, l.Args, name => On(l.Extra, name), l.LineId, rules.Xlat, port) is null).ToList();
         foreach (var group in walls.GroupBy(l => l.Special))
         {
             var action = ActionCatalog.Get(group.Key)?.Name ?? string.Create(CultureInfo.InvariantCulture, $"action {group.Key}");
@@ -292,7 +293,7 @@ public static class Problems
             found.Add(new Problem("not-classic", Severity.Warning, $"{(elements.Count == 1 ? "A wall's" : string.Create(CultureInfo.InvariantCulture, $"{elements.Count} walls'"))} action, {action} with these settings, has no type in {target}: the map would play in GZDoom only. Make the object again, or change what the project plays in under Map settings.", elements));
         }
 
-        var rooms = f.Sectors.Where(s => s.Element is not null && ClassicTranslation.SectorTypeOf(s.Special, On(s.Extra, "secret"), rules.Xlat) is null).Select(s => s.Element!).ToList();
+        var rooms = f.Sectors.Where(s => s.Element is not null && ClassicTranslation.SectorTypeOf(s.Special, On(s.Extra, "secret"), rules.Xlat, port) is null).Select(s => s.Element!).ToList();
         if (rooms.Count > 0) found.Add(new Problem("not-classic", Severity.Warning, $"{(rooms.Count == 1 ? "A room's" : string.Create(CultureInfo.InvariantCulture, $"{rooms.Count} rooms'"))} action has no type in {target} (a secret with another action, or an action the classic engine lacks): the map would play in GZDoom only.", rooms));
     }
 

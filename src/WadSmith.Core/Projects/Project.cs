@@ -201,6 +201,9 @@ public sealed class Project
     /// <summary>Whether the project's maps are kept in the classic format (a classic target).</summary>
     public bool ClassicFormat => Targets.IsClassic(Info.Target);
 
+    /// <summary>What the classic port the project plays in understands of its game family, or null for GZDoom.</summary>
+    public Exporting.PortRules? PortRules => ClassicFormat ? Exporting.ClassicPorts.Get(Info.Target)?.For(ClassicNamespace) : null;
+
     /// <summary>Changes what the project plays in and saves the record; the next save of each map writes the target's format.</summary>
     public void SetTarget(string target)
     {

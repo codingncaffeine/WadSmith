@@ -77,7 +77,7 @@ public static class MapTranslation
         return m;
     }
 
-    private static void TranslateDoomLine(MapLine line, MapLine original, FlagBit[] layout, XlatTranslator xlat, List<string> notes, int index)
+    internal static void TranslateDoomLine(MapLine line, MapLine original, FlagBit[] layout, XlatTranslator xlat, List<string> notes, int index)
     {
         // Back to the classic flag word, then through the translator's line flag table.
         var classic = original.SourceFlags ?? FlagLayouts.Collect(original.Extra, layout);

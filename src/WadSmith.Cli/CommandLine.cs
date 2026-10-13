@@ -51,6 +51,7 @@ public static class CommandLine
         new Commands.LandmarksCommand(),
         new Commands.TourCommand(),
         new Commands.PlayCliCommand(),
+        new Commands.ExportCommand(),
         new Commands.MapSettingsCommand(),
     ];
 
