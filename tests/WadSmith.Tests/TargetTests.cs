@@ -51,6 +51,27 @@ public sealed class TargetTests
     }
 
     [Fact]
+    public void AVanillaProjectKeepsTheToolsTeleporterAndLiftThroughASaveAndAnOpen()
+    {
+        var engine = GameFiles.Require("gzdoom.pk3");
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom", Targets.Vanilla);
+
+        // The tools' teleporter sends to its arrival spot by id; the tools' lift lets monsters press its switch: GZDoom's
+        // spellings, which the vanilla file says the classic way.
+        var map = EditorMap.FromModel(new MapModel { Name = "MAP01", Namespace = "zdoom" });
+        Assert.All(EditScript.Run(map, "room 0 0 256 256\nroom 256 0 512 256\nroom 0 256 128 384\nstart 128 128\nfloor 384 128 64\nlift 384 128\nteleport 64 320 192 192", Look.For("doom"), "doom"), s => Assert.True(s.Done, s.Said));
+        project.SaveMap(EditorSession.ForProject(project, map.ToModel(), engine));
+
+        using var session = EditorSession.Open(project, "MAP01", new SessionHooks(a => a(), EngineData: engine));
+        Assert.Contains(session.Map.Lines, l => l.OnMap && Teleports.IsTeleport(l));
+        Assert.Single(session.Map.Sectors, s => s.OnMap && Lifts.Recognise(session.Geometry, s) is not null);
+        var classic = MapConversion.Read(MapLocator.Find(WadContainer.Open(Path.Combine(project.Folder, "maps", "MAP01.wad"))).Single(), "doom");
+        Assert.Contains(classic.Lines, l => l.Special == 97);
+        Assert.DoesNotContain(Problems.Check(session.Geometry, null, Look.For("doom"), "doom", null, session.ClassicRules), p => p.Rule == "not-classic");
+    }
+
+    [Fact]
     public void WhatHasNoClassicTypeIsListedForAClassicTargetOnly()
     {
         var engine = GameFiles.Require("gzdoom.pk3");

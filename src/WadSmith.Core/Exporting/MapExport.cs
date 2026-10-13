@@ -66,6 +66,37 @@ public static class MapExport
         return lumps;
     }
 
+    /// <summary>
+    /// The map as a project kept for a classic target saves it: GZDoom's spellings rewritten to the classic ones that play the
+    /// same (as an export does), then back through the engine's table with the port's types. Without this a vanilla project
+    /// saved the tools' teleporter as a plain wall (2026-10-13). What is still not classic goes into <paramref name="report"/>.
+    /// </summary>
+    public static MapModel ForClassicSave(MapModel zdoom, XlatTranslator? xlat, string family, ClassicPort? port, string? next, List<NotClassic> report)
+    {
+        var rules = port?.For(family);
+        var model = MapTranslation.Copy(zdoom, "zdoom");
+        if (port is not null && rules is not null)
+        {
+            var said = new ExportReport();
+            Respell(model, model.Name, family, xlat, rules, port, said, next);
+            foreach (var loss in said.Losses) foreach (var i in loss.Indexes) report.Add(new NotClassic(loss.On, i, loss.Title));
+        }
+
+        return ClassicTranslation.ToClassicNamespace(model, xlat, family, report, rules);
+    }
+
+    /// <summary>
+    /// Whether a line the port has no type for as it stands will still get one when saved or exported: a teleporter sent
+    /// to an arrival spot's id (by tag then), or a line monsters may use whose type is the players' alone.
+    /// </summary>
+    public static bool RespelledToClassic(int special, IReadOnlyList<int> args, Func<string, bool> flag, int id, XlatTranslator xlat, PortRules? rules)
+    {
+        var tagArg = special switch { 70 => 1, 71 => 2, _ => -1 };
+        if (tagArg >= 0 && args.Count > tagArg && args[0] > 0 && args[tagArg] == 0) return true;
+        var monsters = flag("monsteruse") || flag("monsteractivate") || (flag("playercross") && flag("monstercross"));
+        return monsters && ClassicTranslation.TypeOf(special, args, f => f is not ("monsteruse" or "monsteractivate" or "monstercross") && flag(f), id, xlat, rules) is not null;
+    }
+
     private static string ActionOf(int special) => ActionCatalog.Get(special)?.Name ?? special.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>GZDoom's secret bit in a room's action.</summary>

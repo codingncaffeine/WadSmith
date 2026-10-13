@@ -2607,7 +2607,7 @@ public sealed class EditorSession : IDisposable
     {
         if (!project.ClassicFormat) return model;
         var report = new List<NotClassic>();
-        var classic = ClassicTranslation.ToClassicNamespace(model, XlatFor(engineData, project.ClassicNamespace), project.ClassicNamespace, report, project.PortRules);
+        var classic = Core.Exporting.MapExport.ForClassicSave(model, XlatFor(engineData, project.ClassicNamespace), project.ClassicNamespace, Core.Exporting.ClassicPorts.Get(project.Info.Target), project.Map(model.Name)?.Next, report);
         foreach (var r in report) Log.Info($"{project.Info.Name} ({Targets.TitleOf(project.Info.Target)}): {r.What} {r.Index}: {r.Why}; written plain.");
         return classic;
     }

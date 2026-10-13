@@ -285,7 +285,9 @@ public static class Problems
         var target = Targets.TitleOf(rules.Target);
         var port = Core.Exporting.ClassicPorts.Get(rules.Target)?.For(rules.Namespace);
         static bool On(KeyValuePair<string, UdmfValue>[] extra, string name) => extra.Any(e => e.Key == name && e.Value.AsBool());
-        var walls = f.Lines.Where(l => l.Element is not null && l.Special != 0 && ClassicTranslation.TypeOf(l.Special, l.Args, name => On(l.Extra, name), l.LineId, rules.Xlat, port) is null).ToList();
+        // A line the save rewrites to its classic spelling (a teleporter by id, a switch monsters may press too) is classic.
+        var walls = f.Lines.Where(l => l.Element is not null && l.Special != 0 && ClassicTranslation.TypeOf(l.Special, l.Args, name => On(l.Extra, name), l.LineId, rules.Xlat, port) is null
+            && !Core.Exporting.MapExport.RespelledToClassic(l.Special, l.Args, name => On(l.Extra, name), l.LineId, rules.Xlat, port)).ToList();
         foreach (var group in walls.GroupBy(l => l.Special))
         {
             var action = ActionCatalog.Get(group.Key)?.Name ?? string.Create(CultureInfo.InvariantCulture, $"action {group.Key}");

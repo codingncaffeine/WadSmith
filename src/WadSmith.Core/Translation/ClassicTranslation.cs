@@ -180,7 +180,7 @@ public static class ClassicTranslation
         if (engineData is null || !File.Exists(engineData)) throw new CorruptDataException("A map kept in the classic format needs GZDoom installed: WadSmith reads the engine's own table of what each classic line type does.");
         var ns = project.ClassicNamespace;
         var xlat = XlatTranslator.Load(new Containers.ResourceStack([Containers.ResourceContainer.Open(engineData)]), XlatTranslator.PathFor(ns));
-        return ToClassicNamespace(model, xlat, ns, report ?? [], project.PortRules);
+        return MapExport.ForClassicSave(model, xlat, ns, ClassicPorts.Get(project.Info.Target), project.Map(model.Name)?.Next, report ?? []);
     }
 
     /// <summary>
