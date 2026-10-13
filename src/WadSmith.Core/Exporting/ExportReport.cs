@@ -25,7 +25,13 @@ public sealed class ExportReport
     /// <summary>Whether something in the export stops the port with an error.</summary>
     public bool Breaks => _losses.Any(l => l.Breaks);
 
-    public void Add(ExportLoss loss) => _losses.Add(loss);
+    /// <summary>Adds a loss; one with the same map and key as an earlier one joins it (its elements added).</summary>
+    public void Add(ExportLoss loss)
+    {
+        var at = _losses.FindIndex(l => l.Map == loss.Map && l.Key == loss.Key);
+        if (at < 0) _losses.Add(loss);
+        else _losses[at] = _losses[at] with { Indexes = [.. _losses[at].Indexes.Concat(loss.Indexes).Distinct()], Breaks = _losses[at].Breaks || loss.Breaks };
+    }
 
     /// <summary>Adds one loss per key from (key, index) pairs, keeping the first index order, with the words <paramref name="words"/> gives each key.</summary>
     internal void AddGrouped(string? map, string on, IEnumerable<(string Key, int Index)> found, Func<string, (string Title, bool Breaks, string Detail)> words)
@@ -33,7 +39,7 @@ public sealed class ExportReport
         foreach (var g in found.GroupBy(f => f.Key, StringComparer.Ordinal))
         {
             var (title, breaks, detail) = words(g.Key);
-            _losses.Add(new ExportLoss(map, $"{on}:{g.Key}", title, on, [.. g.Select(f => f.Index).Distinct()], breaks, detail));
+            Add(new ExportLoss(map, $"{on}:{g.Key}", title, on, [.. g.Select(f => f.Index).Distinct()], breaks, detail));
         }
     }
 

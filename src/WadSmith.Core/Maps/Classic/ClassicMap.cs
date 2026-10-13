@@ -106,14 +106,18 @@ public sealed class ClassicMap
     /// </summary>
     public void SetLumps(IReadOnlyDictionary<string, byte[]> lumps)
     {
+        // Each lump in the order keeps its own data, found by name: a map made in memory lists the node lumps in its
+        // order before it has them, and pairing by place gave SEGS a Hexen map's BEHAVIOR and BEHAVIOR nothing (2026-10-13).
         var records = new HashSet<string>(["THINGS", "LINEDEFS", "SIDEDEFS", "VERTEXES", "SECTORS"], StringComparer.OrdinalIgnoreCase);
-        var others = new Queue<(string Name, byte[] Data)>(OtherLumps);
+        var pool = new List<(string Name, byte[] Data)>(OtherLumps);
         var rebuilt = new List<(string Name, byte[] Data)>();
         var placed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in LumpOrder)
         {
             if (records.Contains(LumpName.Normalize(name))) continue;
-            var existing = others.Count > 0 ? others.Dequeue() : (name, []);
+            var own = pool.FindIndex(l => LumpName.Comparer.Equals(l.Name, name));
+            var existing = own >= 0 ? pool[own] : (name, []);
+            if (own >= 0) pool.RemoveAt(own);
             if (lumps.TryGetValue(LumpName.Normalize(name), out var data))
             {
                 rebuilt.Add((name, data));
@@ -125,7 +129,12 @@ public sealed class ClassicMap
             }
         }
 
-        rebuilt.AddRange(others);
+        // Lumps the order did not name are kept, at the end of it.
+        foreach (var left in pool)
+        {
+            LumpOrder.Add(left.Name);
+            rebuilt.Add(left);
+        }
         foreach (var (name, data) in lumps)
         {
             if (placed.Contains(name)) continue;

@@ -28,7 +28,8 @@ public static class MapExport
     };
 
     /// <summary>The map's lumps for <paramref name="port"/>, the map marker first; what is lost goes into <paramref name="report"/>.</summary>
-    public static IReadOnlyList<(string Name, byte[] Data)> ForPort(MapModel zdoom, ClassicPort port, string family, XlatTranslator? xlat, ExportReport report, PictureNames? pictures = null, bool exMyNames = false)
+    /// <remarks><paramref name="next"/> is the map the exit leads to (MAPxx), or <see cref="Projects.ProjectMapInfo.EndToTitle"/>; Hexen and Strife name it in the exit itself.</remarks>
+    public static IReadOnlyList<(string Name, byte[] Data)> ForPort(MapModel zdoom, ClassicPort port, string family, XlatTranslator? xlat, ExportReport report, PictureNames? pictures = null, bool exMyNames = false, string? next = null)
     {
         if (zdoom.Namespace != "zdoom") throw new ArgumentException("Export takes a map in GZDoom's namespace.", nameof(zdoom));
         var rules = port.For(family) ?? throw new ArgumentException($"{port.Title} does not play {family} maps.", nameof(family));
@@ -39,7 +40,7 @@ public static class MapExport
         // Names the format cannot hold become "-" before anything else, so every later check sees what is written.
         var model = MapTranslation.Copy(zdoom, "zdoom");
         LongNames(model, name, report);
-        Respell(model, name, family, xlat, rules, port, report);
+        Respell(model, name, family, xlat, rules, port, report, next);
         var dropped = KnownToPort(model, name, port, rules, report, pictures, exMyNames);
         MapWide(model, name, hexen, report);
 
@@ -70,6 +71,59 @@ public static class MapExport
     /// <summary>GZDoom's secret bit in a room's action.</summary>
     private const int SecretBit = 1024;
 
+    private static string MonstersTitle(ClassicPort port) => $"Doors, switches and lines monsters could use that only players use in {port.Title}";
+
+    private const int ExitNormal = 243;
+    private const int ExitSecret = 244;
+    private const int TeleportNewMap = 74;
+    private const int TeleportEndGame = 75;
+    private const int AcsExecuteWithResult = 84;
+    private const int AcsExecuteAlways = 226;
+
+    /// <summary>
+    /// Exits in Hexen and Strife, which have no plain exit: the map they lead to goes into the exit itself — Hexen's
+    /// Teleport_NewMap with the map's number; Strife's switch exit (11) with the number as its tag and its walk-over exit
+    /// (52) with the number times 100, as Strife reads them; an exit to the title is the game's end.
+    /// </summary>
+    private static void Exits(MapModel m, string map, string family, ExportReport report, string? next)
+    {
+        if (family is not ("hexen" or "strife")) return;
+        var toTitle = next == Projects.ProjectMapInfo.EndToTitle;
+        var number = toTitle ? 0 : SlotNumber(next) ?? SlotNumber(map) + 1;
+        if (number is null) return;
+        var rewired = 0;
+        foreach (var l in m.Lines.Where(l => l.Special is ExitNormal or ExitSecret))
+        {
+            var walks = l.Flag("playercross");
+            Array.Clear(l.Args);
+            if (toTitle)
+            {
+                l.Special = TeleportEndGame;
+            }
+            else if (family == "hexen")
+            {
+                l.Special = TeleportNewMap;
+                l.Args[0] = number.Value;
+            }
+            else
+            {
+                // Strife's exits go through GZDoom's own helper script, which the engine's table names.
+                l.Special = walks ? AcsExecuteAlways : AcsExecuteWithResult;
+                if (walks) (l.Args[2], l.Args[3]) = (52, number.Value * 100);
+                else (l.Args[1], l.Args[2]) = (11, number.Value);
+                l.SetFlag("repeatspecial", true);
+            }
+
+            rewired++;
+        }
+
+        if (rewired > 0) report.Notes.Add(string.Create(CultureInfo.InvariantCulture, $"{map}: {rewired} exits lead to {(toTitle ? "the end of the game" : $"map {number}")} the way {(family == "hexen" ? "Hexen" : "Strife")} names it."));
+    }
+
+    /// <summary>The number of a MAPxx slot, or null.</summary>
+    private static int? SlotNumber(string? slot) =>
+        slot is { Length: 5 } s && s.StartsWith("MAP", StringComparison.OrdinalIgnoreCase) && int.TryParse(s.AsSpan(3), NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : null;
+
     /// <summary>A teleport destination, the only arrival spot the classic teleporters know.</summary>
     private const int TeleportDestination = 14;
 
@@ -80,8 +134,9 @@ public static class MapExport
     /// tics) becomes Doom's own hurting floor of that strength; a switch monsters may use as well, which no classic type
     /// has, becomes the players' switch and is reported. A Hexen-format map keeps GZDoom's actions, which are Hexen's.
     /// </summary>
-    private static void Respell(MapModel m, string map, string family, XlatTranslator? xlat, PortRules rules, ClassicPort port, ExportReport report)
+    private static void Respell(MapModel m, string map, string family, XlatTranslator? xlat, PortRules rules, ClassicPort port, ExportReport report, string? next)
     {
+        Exits(m, map, family, report, next);
         if (family == "hexen" || xlat is null) return;
 
         // Teleporters by id.
@@ -133,20 +188,20 @@ public static class MapExport
 
         if (hurting > 0) report.Notes.Add(string.Create(CultureInfo.InvariantCulture, $"{map}: {hurting} hurting floors written as Doom's own (5, 10 or 20 health every 32 tics)."));
 
-        // Switches monsters may use too: the players' switch.
+        // Lines monsters may set off too, where the port's type is the players' alone (switches; Heretic's lifts).
         var playersOnly = new List<(string, int)>();
         for (var i = 0; i < m.Lines.Count; i++)
         {
             var l = m.Lines[i];
-            if (l.Special == 0 || !l.Flag("playeruse") || !(l.Flag("monsteruse") || l.Flag("monsteractivate"))) continue;
+            var monsters = l.Flag("monsteruse") || l.Flag("monsteractivate") || (l.Flag("playercross") && l.Flag("monstercross"));
+            if (l.Special == 0 || !monsters || !(l.Flag("playeruse") || l.Flag("playercross"))) continue;
             if (ClassicTranslation.TypeOf(l, xlat, rules) is not null) continue;
-            if (ClassicTranslation.TypeOf(l.Special, l.Args, f => f is not ("monsteruse" or "monsteractivate") && l.Flag(f), l.Id, xlat, rules) is null) continue;
-            l.Extra.Remove("monsteruse");
-            l.Extra.Remove("monsteractivate");
+            if (ClassicTranslation.TypeOf(l.Special, l.Args, f => f is not ("monsteruse" or "monsteractivate" or "monstercross") && l.Flag(f), l.Id, xlat, rules) is null) continue;
+            foreach (var f in new[] { "monsteruse", "monsteractivate", "monstercross" }) l.Extra.Remove(f);
             playersOnly.Add(("monsters", i));
         }
 
-        report.AddGrouped(map, "wall", playersOnly, _ => ($"Switches monsters could use that only players use in {port.Title}", false, ""));
+        report.AddGrouped(map, "wall", playersOnly, _ => (MonstersTitle(port), false, ""));
     }
 
     /// <summary>
@@ -309,10 +364,19 @@ public static class MapExport
         m.OtherLumps.RemoveAll(l => !keep.Contains(l.Name, LumpName.Comparer));
         foreach (var key in m.Globals.Select(g => g.Key).ToList()) m.Globals.Remove(key);
         m.OtherBlocks.Clear();
-        if (hexen && !m.OtherLumps.Any(l => LumpName.Comparer.Equals(l.Name, "BEHAVIOR")))
+        if (hexen)
         {
-            // A Hexen-format map is known by its BEHAVIOR lump; an empty script file ("ACS\0", directory at 8, no scripts, no strings).
-            m.OtherLumps.Add(("BEHAVIOR", [(byte)'A', (byte)'C', (byte)'S', 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
+            // A Hexen-format map is known by its BEHAVIOR lump, which vanilla Hexen reads as Hexen's own script format
+            // ("ACS\0"): an empty lump (a crash: Crispy Hexen stopped on one, 2026-10-13) becomes an empty script file, and
+            // scripts compiled for GZDoom (ACSE, ACSe) cannot run there.
+            var behavior = m.OtherLumps.FindIndex(l => LumpName.Comparer.Equals(l.Name, "BEHAVIOR"));
+            var data = behavior >= 0 ? m.OtherLumps[behavior].Data : [];
+            if (data.Length < 16 || !data.AsSpan(0, 4).SequenceEqual("ACS\0"u8))
+            {
+                if (data.Length > 0) report.Add(new ExportLoss(map, "map:scripts", "The map's scripts, compiled for GZDoom", "map", [], false, "vanilla Hexen runs only its own script format"));
+                if (behavior >= 0) m.OtherLumps.RemoveAt(behavior);
+                m.OtherLumps.Add(("BEHAVIOR", [(byte)'A', (byte)'C', (byte)'S', 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
+            }
         }
     }
 
@@ -464,7 +528,7 @@ public static class MapExport
         var title = (on, key) switch
         {
             ("wall", "action") => "Wall actions that changed on the way",
-            ("wall", "monsters") => $"Walls monsters could use that only players use in {port.Title} (a secret door, or a switch)",
+            ("wall", "monsters") => MonstersTitle(port),
             ("wall", "id") => "Wall ids the classic format cannot keep",
             ("wall", "passuse") => "Walls whose use passes through to the wall behind",
             ("wall", "midtex3d") => "Middle pictures you can walk on",

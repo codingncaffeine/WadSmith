@@ -93,7 +93,8 @@ public static class ProjectExport
         }
 
         var exMy = GameCatalog.Get(project.Info.Game)?.MapNames == "ExMy";
-        var models = project.Maps().Select(entry =>
+        var entries = project.Maps().ToList();
+        var models = entries.Select(entry =>
         {
             var model = project.LoadMap(entry.Slot);
             return model.Namespace == "zdoom" ? model : MapTranslation.ToZDoom(model, xlat, []);
@@ -114,7 +115,7 @@ public static class ProjectExport
         }
 
         var lumps = new List<(string Name, byte[] Data)>();
-        foreach (var model in models) lumps.AddRange(MapExport.ForPort(model, port, family, xlat, report, pictures, exMy));
+        for (var i = 0; i < models.Count; i++) lumps.AddRange(MapExport.ForPort(models[i], port, family, xlat, report, pictures, exMy, entries[i].Next));
         if (carried is not null) lumps.AddRange(carried.Lumps);
         MapInfo(project, port, lumps, report);
         ProjectFiles(project, report);

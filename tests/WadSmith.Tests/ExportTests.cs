@@ -136,7 +136,9 @@ public sealed class ExportTests
         wall.SetFlag("monsteruse", true);
         wall.SetFlag("repeatspecial", true);
         var (report, back) = Export(model, "vanilla");
-        Assert.Equal(["wall:monsters", "wall:monsters"], Keys(report));
+        // The secret door and the lift switch: one line of the report, both walls on it.
+        Assert.Equal(2, Assert.Single(report.Losses, l => l.Key == "wall:monsters").Indexes.Count);
+        Assert.Equal(["wall:monsters"], Keys(report));
         Assert.Contains(back.Lines, l => l.Special == 62 && l.Id == 3);
     }
 
@@ -214,6 +216,28 @@ public sealed class ExportTests
         Assert.Contains("maps/MAP01.wad", names);
         Assert.Contains("textures/MINE.png", names);
         Assert.DoesNotContain(names, n => n.Contains("wadsmith.json", StringComparison.Ordinal) || n.StartsWith(".wadsmith", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AHexenMapsScriptsKeepTheirPlaceAndTheirBytesThroughTheNodeBuild()
+    {
+        // A map made in memory, with real scripts: vanilla Hexen reads BEHAVIOR as the eleventh lump after the marker.
+        var model = Tools("room 0 0 256 256\nroom 256 96 384 160\nstart 128 128\ndoor 256 128");
+        byte[] scripts = [(byte)'A', (byte)'C', (byte)'S', 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 7];
+        model.OtherLumps.Add(("BEHAVIOR", scripts));
+        var report = new ExportReport();
+        var lumps = MapExport.ForPort(model, Port("vanilla"), "hexen", null, report);
+        Assert.Equal(["MAP01", "THINGS", "LINEDEFS", "SIDEDEFS", "VERTEXES", "SEGS", "SSECTORS", "NODES", "SECTORS", "REJECT", "BLOCKMAP", "BEHAVIOR"], lumps.Select(l => l.Name));
+        Assert.Equal(scripts, lumps[11].Data);
+        Assert.NotEmpty(lumps[5].Data);
+
+        // Scripts compiled for GZDoom (ACSE) cannot run in vanilla Hexen: reported, and an empty script file takes their place.
+        model.OtherLumps.Clear();
+        model.OtherLumps.Add(("BEHAVIOR", [(byte)'A', (byte)'C', (byte)'S', (byte)'E', 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
+        report = new ExportReport();
+        lumps = MapExport.ForPort(model, Port("vanilla"), "hexen", null, report);
+        Assert.Contains(report.Losses, l => l.Key == "map:scripts");
+        Assert.Equal("ACS\0"u8.ToArray(), lumps[11].Data[..4]);
     }
 
     [Fact]
