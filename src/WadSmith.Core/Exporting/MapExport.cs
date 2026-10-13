@@ -87,14 +87,16 @@ public static class MapExport
 
     /// <summary>
     /// Whether a line the port has no type for as it stands will still get one when saved or exported: a teleporter sent
-    /// to an arrival spot's id (by tag then), or a line monsters may use whose type is the players' alone.
+    /// to an arrival spot's id (by tag then), a line monsters may use whose type is the players' alone, or a line that works
+    /// again and again whose type works once.
     /// </summary>
     public static bool RespelledToClassic(int special, IReadOnlyList<int> args, Func<string, bool> flag, int id, XlatTranslator xlat, PortRules? rules)
     {
         var tagArg = special switch { 70 => 1, 71 => 2, _ => -1 };
         if (tagArg >= 0 && args.Count > tagArg && args[0] > 0 && args[tagArg] == 0) return true;
         var monsters = flag("monsteruse") || flag("monsteractivate") || (flag("playercross") && flag("monstercross"));
-        return monsters && ClassicTranslation.TypeOf(special, args, f => f is not ("monsteruse" or "monsteractivate" or "monstercross") && flag(f), id, xlat, rules) is not null;
+        if (monsters && ClassicTranslation.TypeOf(special, args, f => f is not ("monsteruse" or "monsteractivate" or "monstercross") && flag(f), id, xlat, rules) is not null) return true;
+        return flag("repeatspecial") && ClassicTranslation.TypeOf(special, args, f => f != "repeatspecial" && flag(f), id, xlat, rules) is not null;
     }
 
     private static string ActionOf(int special) => ActionCatalog.Get(special)?.Name ?? special.ToString(CultureInfo.InvariantCulture);
@@ -233,6 +235,20 @@ public static class MapExport
         }
 
         report.AddGrouped(map, "wall", playersOnly, _ => (MonstersTitle(port), false, ""));
+
+        // Lines that work again and again where the port's type works once (a door GZDoom's repairs made repeatable, Doom's
+        // E3M9): the door is kept, working once, rather than written as a plain wall.
+        var once = new List<(string, int)>();
+        for (var i = 0; i < m.Lines.Count; i++)
+        {
+            var l = m.Lines[i];
+            if (l.Special == 0 || !l.Flag("repeatspecial") || ClassicTranslation.TypeOf(l, xlat, rules) is not null) continue;
+            if (ClassicTranslation.TypeOf(l.Special, l.Args, f => f != "repeatspecial" && l.Flag(f), l.Id, xlat, rules) is null) continue;
+            l.Extra.Remove("repeatspecial");
+            once.Add(("once", i));
+        }
+
+        report.AddGrouped(map, "wall", once, _ => ($"Doors, switches and lines that work again and again, which work once in {port.Title}", false, ""));
     }
 
     /// <summary>
@@ -458,7 +474,8 @@ public static class MapExport
         {
             var (b, a) = (before.Lines[i], after.Lines[i]);
             if (!toldWalls.Contains(i) && b.Special != 0 && !SameAction(b, a)) lost.Add(("wall", SameAction(b, a, monsters: false) ? "monsters" : "action", i));
-            if (b.Id > 0 && a.Id != b.Id) lost.Add(("wall", "id", i));
+            // Only Boom and MBF21 read a wall's id (for actions that find walls); vanilla has no such thing to lose.
+            if (b.Id > 0 && a.Id != b.Id && port.Id is ClassicPorts.Boom or ClassicPorts.Mbf21) lost.Add(("wall", "id", i));
             foreach (var f in Differ(b.Extra, a.Extra, ActionFields)) lost.Add(("wall", f, i));
         }
 

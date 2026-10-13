@@ -154,6 +154,22 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void ALockedDoorThatRepeatsWhereVanillasOpensOnceIsKeptWorkingOnce()
+    {
+        // GZDoom's repair to Doom's E3M9 makes a blue-skull door (type 32, once) open again and again: vanilla has no such type.
+        var model = Tools("room 0 0 256 256\nroom 256 96 384 160\nstart 128 128\ndoor 256 128");
+        var door = model.Lines.First(l => l.Special != 0 && l.Flag("playeruse"));
+        door.Special = Action("Door_LockedRaise");
+        Array.Clear(door.Args);
+        (door.Args[1], door.Args[3]) = (16, 130);
+        door.SetFlag("monsteractivate", true);
+        door.SetFlag("repeatspecial", true);
+        var (report, back) = Export(model, "vanilla");
+        Assert.Equal(["wall:once"], Keys(report));
+        Assert.Contains(back.Lines, l => l.Special == 32);
+    }
+
+    [Fact]
     public void GeneralizedTypesAndBoomSectorBitsAreBoomsAndVanillaRefusesThem()
     {
         // A Boom map's walk-over door that waits 30 seconds (generalized 0x3F01) and a secret that hurts (0x80 | 7).
