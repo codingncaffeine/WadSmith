@@ -59,6 +59,7 @@ public readonly record struct Placement(double A, double B, double C, double D, 
     public string Describe()
     {
         if (Mirrors) return "Mirror";
+        if (A == 1 && B == 0 && C == 0 && D == 1) return "Move";
         return Math.Abs(A * D - B * C - 1) < 1e-9 && Math.Abs(A * A + C * C - 1) < 1e-9 ? "Turn" : "Resize";
     }
 

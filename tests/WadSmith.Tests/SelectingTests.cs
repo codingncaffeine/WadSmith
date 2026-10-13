@@ -193,6 +193,111 @@ public sealed class SelectingTests
         DrawingTests.AssertSound(map);
     }
 
+    private static (TempFolder Temp, EditorSession Session, Queue Ui, Sector Room) Opened(params MapPoint[] room)
+    {
+        var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var ui = new Queue();
+        var session = EditorSession.Open(project, "MAP01", ui.Post);
+        session.DrawRoom(room);
+        var drawn = Assert.Single(session.Selection.Items.OfType<Sector>());
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version);
+        return (temp, session, ui, drawn);
+    }
+
+    private static List<(double X, double Y)> Corners(EditorSession session, Sector room) =>
+        [.. session.Map.Lines.Where(l => l.OnMap && (l.Front.Sector == room || l.Back?.Sector == room)).SelectMany(l => new[] { l.Start, l.End }).Distinct().Select(v => (v.X, v.Y)).Order()];
+
+    [Fact]
+    public void SnapMovesCornersOntoTheGridAndLeavesOneWhosePointIsTaken()
+    {
+        var (temp, session, ui, room) = Opened(new(515, 3), new(515, 131), new(645, 131), new(645, 3));
+        using var _ = temp;
+        using var __ = session;
+        session.SnapSelection(16);
+        ui.PumpUntil(() => session.History.UndoLabel is "Snap to the grid" or "Join");
+        Assert.Equal([(512.0, 0.0), (512.0, 128.0), (640.0, 0.0), (640.0, 128.0)], Corners(session, room));
+        DrawingTests.AssertSound(session.Map);
+
+        // A room 3 wide whose west and east corners share their nearest grid point: one side moves onto it, the other
+        // stays, so the room keeps its width and faces (never turned inside out), and it says so.
+        var (t2, thin, ui2, sliver) = Opened(new(1010, 0), new(1010, 128), new(1013, 128), new(1013, 0));
+        using var ___ = t2;
+        using var ____ = thin;
+        var told = new List<string>();
+        thin.Notice += told.Add;
+        thin.SnapSelection(16);
+        ui2.PumpUntil(() => told.Count > 0);
+        Assert.Contains("stayed", told[^1]);
+        Assert.Equal(4, Corners(thin, sliver).Distinct().Count());
+        DrawingTests.AssertSound(thin.Map);
+    }
+
+    [Fact]
+    public void SnappingNeverTurnsAWallRound()
+    {
+        // The east corners first: they take the grid point (1008) the west ones want, which would put the east side west
+        // of the west side and turn the room inside out. The walls that would turn keep an end where it was.
+        var (map, _, _) = MovingTests.Drawn((1010, 0, 1013, 128));
+        var g = Shapes(map);
+        var corners = map.Vertices.Where(v => v.OnMap).OrderByDescending(v => v.X).ToList();
+        var (moves, _, refused) = Shaping.Snap(g, corners, [], 16);
+        MapPoint At(Vertex v) => moves.TryGetValue(v, out var p) ? p : new MapPoint(v.X, v.Y);
+        foreach (var l in map.Lines.Where(l => l.OnMap))
+        {
+            var (a, b) = (At(l.Start), At(l.End));
+            Assert.True((b.X - a.X) * (l.End.X - l.Start.X) + (b.Y - a.Y) * (l.End.Y - l.Start.Y) > 0, $"{l.Start.X},{l.Start.Y} → {l.End.X},{l.End.Y} turned round");
+        }
+
+        Assert.True(refused >= 2);
+    }
+
+    [Fact]
+    public void ARoomsCornersGoRoundACircleOrIntoALineAndTheMapStaysWhole()
+    {
+        var (temp, session, ui, room) = Opened(new(512, 0), new(512, 128), new(576, 160), new(640, 128), new(640, 0));
+        using var _ = temp;
+        using var __ = session;
+        session.ShapeCorners(circle: true);
+        ui.PumpUntil(() => session.History.UndoLabel is "Space the corners round a circle" or "Join");
+        var corners = Corners(session, room);
+        var (cx, cy) = (corners.Average(c => c.X), corners.Average(c => c.Y));
+        var radii = corners.Select(c => Math.Sqrt((c.X - cx) * (c.X - cx) + (c.Y - cy) * (c.Y - cy))).ToList();
+        Assert.True(radii.Max() - radii.Min() < 0.1, string.Join(", ", radii));
+        DrawingTests.AssertSound(session.Map);
+
+        // Three corners of a wall run: the middle one goes halfway between the ends.
+        session.History.Undo();
+        ui.PumpUntil(() => session.Geometry.Version == session.Map.Version);
+        var a = session.Map.Vertices.Single(v => v.OnMap && v.X == 512 && v.Y == 128);
+        var top = session.Map.Vertices.Single(v => v.OnMap && v.X == 576 && v.Y == 160);
+        var b = session.Map.Vertices.Single(v => v.OnMap && v.X == 640 && v.Y == 128);
+        session.Selection.Set(a, top, b);
+        session.ShapeCorners(circle: false);
+        ui.PumpUntil(() => top.Y == 128);
+        Assert.Equal((576.0, 128.0), (top.X, top.Y));
+
+        // Two corners alone: nothing to shape, and it says so.
+        session.Selection.Set(a, b);
+        var told = new List<string>();
+        session.Notice += told.Add;
+        session.ShapeCorners(circle: true);
+        ui.PumpUntil(() => told.Count > 0);
+        Assert.Contains("three corners", Assert.Single(told));
+    }
+
+    [Fact]
+    public void TheSelectionMovesByAnExactDistance()
+    {
+        var (temp, session, ui, room) = Opened(new(512, 0), new(512, 128), new(640, 128), new(640, 0));
+        using var _ = temp;
+        using var __ = session;
+        session.MoveSelection(32, -16);
+        ui.PumpUntil(() => session.History.UndoLabel == "Move");
+        Assert.Equal([(544.0, -16.0), (544.0, 112.0), (672.0, -16.0), (672.0, 112.0)], Corners(session, room));
+    }
+
     [Fact]
     public void TheSessionSelectsFromTheWholeMapSwapsFlatsAndSplitsWalls()
     {

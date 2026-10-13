@@ -25,6 +25,7 @@ public partial class EditorView : UserControl
             if (DataContext is not EditorViewModel vm) return;
             ApplyLayout(vm.Layout, focus: false);
             vm.PlaySpot = () => View3D.PlaySpot();
+            vm.PutCamera = View3D.StandAt;
             vm.ViewCamera = () =>
             {
                 var c = View3D.CurrentCamera;

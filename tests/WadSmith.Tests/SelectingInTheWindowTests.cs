@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.VisualTree;
@@ -157,5 +158,65 @@ public sealed class SelectingInTheWindowTests
             }
         });
         Assert.Equal(["effect: special 1095, shown as Hurts a little (5% a second, nukage)", "Brightness: Brightness", "Next map: the second", "Previous map: the first"], seen);
+    }
+
+    [Fact]
+    public async Task ThreeDPicksUpAndPutsDownAPictureAndTheQuoteKeyPlacesTheCamera()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var seen = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(temp.Path, Path.GetDirectoryName(wad)!);
+            try
+            {
+                var editor = Ui.NewMap(vm);
+                var session = editor.Session;
+                var room = session.Map.Sectors.Single(s => s.OnMap);
+                var floor = room.FloorTexture;
+                var plan = window.GetVisualDescendants().OfType<App.Canvas.MapCanvas>().First();
+                var view3d = window.GetVisualDescendants().OfType<App.ThreeD.View3D>().First();
+                void Over(Avalonia.Visual v, double fx, double fy)
+                {
+                    var p = v.TranslatePoint(new Avalonia.Point(v.Bounds.Width * fx, v.Bounds.Height * fy), window)!.Value;
+                    window.MouseMove(p, RawInputModifiers.None);
+                    for (var i = 0; i < 50; i++) Ui.Pump(0.02);
+                }
+
+                var said = new List<string>();
+                Ui.Pump(1.0);
+
+                // The floor under the pointer in 3D: Ctrl+C picks its picture up; the floor changed, Ctrl+V puts it back.
+                Over(view3d, 0.5, 0.6);
+                view3d.Focus();
+                Ui.Pump(0.05);
+                window.KeyPress(Key.C, RawInputModifiers.Control, PhysicalKey.None, null);
+                Ui.Pump(0.1);
+                said.Add($"Ctrl+C in 3D holds {(session.HeldPicture == floor ? "the floor's picture" : session.HeldPicture ?? "nothing")}");
+                session.History.Record("Dress", e => e.Set(room, s => s.FloorTexture, (s, v) => s.FloorTexture = v, "NUKAGE1"));
+                Over(view3d, 0.5, 0.6);
+                window.KeyPress(Key.V, RawInputModifiers.Control, PhysicalKey.None, null);
+                Ui.Pump(0.1);
+                said.Add($"Ctrl+V in 3D: the floor is {(room.FloorTexture == floor ? "its picture again" : room.FloorTexture)}, undo says {session.History.UndoLabel}");
+
+                // ' on the plan, over a spot in the room: the 3D view turns round that spot.
+                var spot = new Editor.Geometry.MapPoint(-128, 128);
+                var at = plan.TranslatePoint(plan.ToScreen(spot), window)!.Value;
+                window.MouseMove(at, RawInputModifiers.None);
+                Ui.Pump(0.1);
+                plan.Focus();
+                Ui.Pump(0.05);
+                window.KeyPress(Key.OemQuotes, RawInputModifiers.None, PhysicalKey.None, null);
+                Ui.Pump(0.2);
+                var (x, y, _) = view3d.PlaySpot();
+                said.Add($"' on the plan: the 3D view is at {Math.Round(x)}, {Math.Round(y)}");
+                return said;
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+        Assert.Equal(["Ctrl+C in 3D holds the floor's picture", "Ctrl+V in 3D: the floor is its picture again, undo says Put a texture on a floor", "' on the plan: the 3D view is at -128, 128"], seen);
     }
 }

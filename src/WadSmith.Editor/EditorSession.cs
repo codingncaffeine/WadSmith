@@ -771,6 +771,17 @@ public sealed class EditorSession : IDisposable
         });
     }
 
+    /// <summary>The picture picked up in the 3D view with Ctrl+C, for Ctrl+V on another surface; null before the first.</summary>
+    public string? HeldPicture { get; set; }
+
+    /// <summary>The picture on a surface seen in the 3D view: a face's part, an area's floor or ceiling; null for none.</summary>
+    public static string? PictureOn(SurfaceTarget target) => (target.Element switch
+    {
+        Side s => target.Part switch { WallPart.Top => s.Top, WallPart.Bottom => s.Bottom, _ => s.Middle },
+        Sector a => target.Ceiling ? a.CeilingTexture : a.FloorTexture,
+        _ => null,
+    }) is { } name && name != "-" && name.Length > 0 ? name : null;
+
     /// <summary>
     /// Puts a texture on one surface seen in the 3D view: a face's upper, middle or lower part, or an area's floor or
     /// ceiling (a sky ceiling becomes that texture), one undo step, and selects the face or area. Null when done, else why not.
@@ -2270,6 +2281,79 @@ public sealed class EditorSession : IDisposable
                 }
             }
         });
+    }
+
+    /// <summary>
+    /// Moves corners and objects to new spots as one undo step, joined to the map as a drag's are (a corner landing on a
+    /// wall splits it; walls left crossing are told). Waits for the map's shapes, which it reads for the walls at each corner.
+    /// </summary>
+    private void MoveCorners(string label, Func<MapGeometry, (IReadOnlyDictionary<Vertex, MapPoint> Corners, IReadOnlyDictionary<Thing, MapPoint> Things, string? Say)> plan)
+    {
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => MoveCorners(label, plan);
+            return;
+        }
+
+        var geometry = _geometry;
+        var (corners, things, say) = plan(geometry);
+        if (corners.Count > 0 || things.Count > 0)
+        {
+            var lines = corners.Keys.SelectMany(v => geometry.LinesIn(v.X - 0.5, v.Y - 0.5, v.X + 0.5, v.Y + 0.5).Where(l => l.OnMap && (l.Start == v || l.End == v))).Distinct().ToList();
+            var gesture = History.NewGesture();
+            History.Record(label, e =>
+            {
+                foreach (var (v, p) in corners)
+                {
+                    e.Set(v, x => x.X, (x, value) => x.X = value, p.X);
+                    e.Set(v, x => x.Y, (x, value) => x.Y = value, p.Y);
+                }
+
+                foreach (var (t, p) in things)
+                {
+                    e.Set(t, x => x.X, (x, value) => x.X = value, p.X);
+                    e.Set(t, x => x.Y, (x, value) => x.Y = value, p.Y);
+                }
+            }, gesture);
+            if (corners.Count > 0) FinishMove(MoveSet.Of(geometry, [.. corners.Keys], lines), gesture);
+        }
+
+        if (say is not null) Notice?.Invoke(say);
+    }
+
+    /// <summary>Moves the selected corners (a wall's ends, a room's corners) and objects onto the grid <paramref name="step"/> apart (Eureka's quantize).</summary>
+    public void SnapSelection(double step) => MoveCorners("Snap to the grid", g =>
+    {
+        var (corners, things, refused) = Shaping.Snap(g, Shaping.CornersOf(g, Selection.Items), Selection.OfType<Thing>(), step);
+        var grid = step.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        var moved = corners.Count + things.Count;
+        var say = moved == 0 && refused == 0 ? $"Everything selected is on the {grid} grid already."
+            : refused == 0 ? $"Moved {moved} onto the {grid} grid."
+            : $"Moved {moved} onto the {grid} grid; {refused} corner{(refused == 1 ? "" : "s")} stayed, {(refused == 1 ? "its" : "their")} grid point taken by another corner.";
+        return (corners, things, say);
+    });
+
+    /// <summary>Spaces the selected corners (a room's, a wall's ends, corners) evenly along a straight line or round a circle (Eureka's shape line and shape circle).</summary>
+    public void ShapeCorners(bool circle) => MoveCorners(circle ? "Space the corners round a circle" : "Line the corners up", g =>
+    {
+        var corners = Shaping.CornersOf(g, Selection.Items);
+        var moves = circle ? Shaping.Circle(corners, Project.ClassicFormat) : Shaping.Line(corners, Project.ClassicFormat);
+        IReadOnlyDictionary<Thing, MapPoint> none = new Dictionary<Thing, MapPoint>();
+        if (moves is null) return (new Dictionary<Vertex, MapPoint>(), none, corners.Count < 3 ? "Select three corners or more (or a room) to shape." : $"That is more than {Shaping.MostCorners} corners; shape fewer at a time.");
+
+        // Two corners on one spot would fold a wall away: refuse the shape instead.
+        var moving = new HashSet<Vertex>(moves.Keys, ReferenceEqualityComparer.Instance);
+        var spots = corners.Select(v => moves.TryGetValue(v, out var p) ? p : new MapPoint(v.X, v.Y)).ToList();
+        var landsOnAnother = moves.Values.Any(p => g.VerticesIn(p.X - 0.5, p.Y - 0.5, p.X + 0.5, p.Y + 0.5).Any(o => o.OnMap && !moving.Contains(o) && o.X == p.X && o.Y == p.Y));
+        if (spots.Distinct().Count() < spots.Count || landsOnAnother) return (new Dictionary<Vertex, MapPoint>(), none, "Shaped so, two corners would meet on one spot. Spread them out a little first.");
+        return (moves, none, null);
+    });
+
+    /// <summary>Moves the selection by an exact distance, east and north (negative: west and south).</summary>
+    public void MoveSelection(double east, double north)
+    {
+        if (east == 0 && north == 0) return;
+        TransformSelection(_ => new Placement(1, 0, 0, 1, east, north));
     }
 
     private static UdmfValue? Had(Element e, string name) => e.Extra.TryGet(name, out var v) ? v : (UdmfValue?)null;

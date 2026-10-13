@@ -121,6 +121,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         session.SwitchTargetChanged += UpdateStatus;
         session.KeyToPlaceChanged += UpdateStatus;
         Inspector.LookLike += LookLike;
+        Inspector.GridStep = () => GridSize > 0 ? GridSize : GridNow?.Invoke() ?? 64;
         Inspector.KeyFor += colour =>
         {
             Tool = Canvas.EditorTool.Key;
@@ -472,6 +473,9 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Bring back the last selection", "Edit", "Ctrl+L", "previous selection|last selection|reselect|lost selection", () => Session.Selection.BringBack(), () => Session.Selection.Previous.Count > 0),
             new("Copy properties", "Edit", "Ctrl+Shift+C", "copy properties|copy settings|match|eyedropper", Session.CopyProperties, () => Session.Selection.Items.Any(e => e is not Vertex)),
             new("Paste properties", "Edit", "Ctrl+Shift+V", "paste properties|apply settings|match", Session.PasteProperties, () => Properties.Held is not null && Selected()),
+            new("Snap the selection to the grid", "Edit", "", "quantize|snap to grid|align to grid|tidy", () => Session.SnapSelection(GridSize > 0 ? GridSize : GridNow?.Invoke() ?? 64), Selected),
+            new("Line the corners up evenly", "Edit", "", "shape line|straighten|evenly|distribute", () => Session.ShapeCorners(circle: false), Selected),
+            new("Space the corners round a circle", "Edit", "", "shape circle|round|arc|make round|circular", () => Session.ShapeCorners(circle: true), Selected),
             new("Swap floor and ceiling pictures", "Edit", "", "swap flats|flip floor and ceiling|swap textures", Session.SwapFlats, () => Session.Selection.OfType<Sector>().Any()),
             new("Split the wall in half", "Edit", "", "split linedef|split line|halve|add a corner|insert vertex", Session.SplitWalls, () => Session.Selection.Items.Any(e => e is Line or Side)),
 
@@ -485,6 +489,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Show brightness as greys", "View", "", "light levels|lighting|sector lights|dark rooms|brightness view", () => IsBrightness = true),
             new("Show the player's size", "View", K("G", ""), "fit|player fit|ghost|clearance", () => ShowFit = !ShowFit),
             new("Show the whole map", "View", "Home", "zoom to fit|fit map|overview|center in screen", () => FitMap?.Invoke()),
+            new("Put the 3D camera here", "View", "'", "place camera|camera here|stand here|look from here|visual mode here", PutCameraAtPointer),
             new("Show the selection", "View", "Shift+Home", "zoom to selection|frame selected|go to selection|center on selection", () => FitSelection?.Invoke(), Selected),
             new("Finer grid", "View", "[", "grid smaller|smaller grid|decrease grid|grid size", () => StepGrid(-1)),
             new("Coarser grid", "View", "]", "grid larger|larger grid|increase grid|grid size", () => StepGrid(1)),
@@ -1535,6 +1540,22 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>Where Play From Here starts: the 3D view's spot (set by the view).</summary>
     public Func<(double X, double Y, double Angle)>? PlaySpot { get; set; }
+
+    /// <summary>Puts the 3D camera at a spot, above a floor at a height; set by the view.</summary>
+    public Action<MapPoint, double>? PutCamera { get; set; }
+
+    /// <summary>Puts the 3D camera where the pointer is on the plan (Eureka's ' key), showing the 3D view beside the plan if it was hidden.</summary>
+    private void PutCameraAtPointer()
+    {
+        if (_pointer is not { } at || Session.Geometry.AreaAt(at) is not { } area)
+        {
+            Session.Tell("Point at a room on the plan, then press ' to stand there in the 3D view.");
+            return;
+        }
+
+        if (Layout == MapLayout.Plan) Layout = MapLayout.Split;
+        PutCamera?.Invoke(at, area.FloorHeight);
+    }
 
     /// <summary>The spot a Play waiting on the pre-flight starts from (Play From Here), so its "Fix them and play" keeps it.</summary>
     private (double X, double Y, double Angle)? _waitingFrom;

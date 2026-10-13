@@ -458,6 +458,22 @@ internal sealed class View3D : Control
         SendCamera();
     }
 
+    /// <summary>
+    /// Puts the camera at a spot on the plan (Eureka's place camera): standing there at the player's eye height above
+    /// <paramref name="floor"/> in Walk and Fly, facing the way it faced; turning round the spot in Orbit.
+    /// </summary>
+    internal void StandAt(MapPoint at, double floor)
+    {
+        if (Mode == CameraMode.Orbit)
+        {
+            LookAt(at, floor, 512);
+            return;
+        }
+
+        (_x, _y, _z) = (at.X, at.Y, floor + Walker.EyeHeight);
+        SendCamera();
+    }
+
     /// <summary>Looks at <paramref name="at"/> from far enough to see <paramref name="span"/> round it, now or when the first scene arrives.</summary>
     internal void LookAround(MapPoint at, double span)
     {
@@ -796,6 +812,26 @@ internal sealed class View3D : Control
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        // Ctrl+C on a wall, floor or ceiling picks its picture up; Ctrl+V puts it on the one under the pointer (Eureka's and
+        // Doom Builder's copy and paste texture). With nothing under the pointer the keys go on to the selection's copy and paste.
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key is Key.C or Key.V && Session is { } painting && _hover is { Kind: HitKind.Wall or HitKind.Floor or HitKind.Ceiling, Sky: false } under)
+        {
+            if (e.Key == Key.C && EditorSession.PictureOn(under.Target) is { } picked)
+            {
+                painting.HeldPicture = picked;
+                painting.Tell($"Picked up {picked}: Ctrl+V puts it on the wall, floor or ceiling under the pointer.");
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == Key.V && painting.HeldPicture is { } held)
+            {
+                if (painting.PaintSurface(under.Target, held) is { } why) painting.Tell(why);
+                e.Handled = true;
+                return;
+            }
+        }
+
         if ((e.KeyModifiers & KeyModifiers.Control) != 0 && Session is { } session && _hover is { Kind: HitKind.Wall, Element: Editor.Model.Side face } wall)
         {
             // On the wall face under the pointer: Ctrl+arrows nudge its texture the way the arrow points (Shift: by 1); Ctrl+A lines the textures along the wall up with it.

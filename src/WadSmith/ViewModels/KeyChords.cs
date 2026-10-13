@@ -27,6 +27,7 @@ internal static class KeyChords
             "[" => Key.OemOpenBrackets,
             "]" => Key.OemCloseBrackets,
             "," => Key.OemComma,
+            "'" => Key.OemQuotes,
             "Esc" => Key.Escape,
             var k => Enum.Parse<Key>(k),
         };

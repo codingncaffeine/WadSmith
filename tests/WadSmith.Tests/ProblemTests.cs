@@ -21,6 +21,13 @@ public sealed class ProblemTests(ITestOutputHelper output)
         return GameResources.Load("freedoom2", null, games, GameFiles.Require("gzdoom.pk3")) ?? throw new InvalidOperationException("freedoom2 was not recognised");
     });
 
+    /// <summary>An object as WadSmith places one: on every difficulty and in every game mode.</summary>
+    private static Thing Placed(Thing t)
+    {
+        foreach (var flag in Editor.Smart.Things.Everywhere("doom")) t.SetFlag(flag, true);
+        return t;
+    }
+
     private static IReadOnlyList<Problem> Check(EditorMap map) => Problems.Check(MapGeometry.Build(map.Frame), Freedoom.Value, Look.For("doom"), "doom");
 
     /// <summary>The starter room with an exit switch near the north end of its west wall (a 64 piece of it): nothing to report.</summary>
@@ -174,7 +181,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
     public void TwoPlayerStartsAreSaidWithoutAFix()
     {
         var (map, history) = Clean();
-        history.Record("Add", e => e.Add(new Thing { X = 100, Y = 100, Type = 1 }));
+        history.Record("Add", e => e.Add(Placed(new Thing { X = 100, Y = 100, Type = 1 })));
         var p = Only(map, "many-starts");
         Assert.Null(p.Fix);
         Assert.Equal(2, p.Show.Count);
@@ -225,7 +232,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
         var shared = map.Lines.Single(l => l.OnMap && l.Back is not null);
         history.Record("Start", e =>
         {
-            e.Add(new Thing { X = 64, Y = 64, Type = 1 });
+            e.Add(Placed(new Thing { X = 64, Y = 64, Type = 1 }));
             e.Flag(shared, "twosided", false);
             Exits.Make(e, MapGeometry.Build(map.Frame), map.Lines.First(l => l.OnMap && l.Back is null), false, Look.For("doom"));
         });
@@ -236,7 +243,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
     public void AThingOutsideEveryRoomIsSaid()
     {
         var (map, history) = Clean();
-        history.Record("Add", e => e.Add(new Thing { X = 5000, Y = 5000, Type = 3001 }));
+        history.Record("Add", e => e.Add(Placed(new Thing { X = 5000, Y = 5000, Type = 3001 })));
         Only(map, "outside");
     }
 
@@ -246,7 +253,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
         var (map, history) = Clean();
 
         // An imp (radius 20) 10 units from the south wall at y = -256.
-        var imp = new Thing { X = 128, Y = -246, Type = 3001 };
+        var imp = Placed(new Thing { X = 128, Y = -246, Type = 3001 });
         history.Record("Add", e => e.Add(imp));
         var p = Only(map, "stuck");
         Assert.Same(imp, Assert.Single(p.Show));
@@ -296,7 +303,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
         history.Record("Lock it", e => Doors.Change(e, made, made.Settings with { Lock = 129 }, false, false));
         history.Record("Start and exit", e =>
         {
-            e.Add(new Thing { X = 128, Y = 128, Type = 1 });
+            e.Add(Placed(new Thing { X = 128, Y = 128, Type = 1 }));
             Exits.Make(e, MapGeometry.Build(map.Frame), map.Lines.First(l => l.OnMap && l.Back is null && l.Front.Sector == rooms[0]), false, Look.For("doom"));
         });
         return (map, history, rooms);
@@ -306,7 +313,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
     public void AKeyBehindTheDoorItOpensIsSaid()
     {
         var (map, history, _) = LockedCloset();
-        var key = new Thing { X = 600, Y = 128, Type = 13 };
+        var key = Placed(new Thing { X = 600, Y = 128, Type = 13 });
         history.Record("Key", e => e.Add(key));
         var problem = Only(map, "key-out-of-reach-red");
         Assert.Contains(key, problem.Show);
@@ -325,7 +332,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
         var (map, history, rooms) = LockedCloset();
         history.Record("Key and low ceiling", e =>
         {
-            e.Add(new Thing { X = 64, Y = 64, Type = 13 });
+            e.Add(Placed(new Thing { X = 64, Y = 64, Type = 13 }));
             e.Set(rooms[1], s => s.CeilingHeight, (s, v) => s.CeilingHeight = v, 56.0);
         });
         var problem = Only(map, "door-too-low");
@@ -355,8 +362,8 @@ public sealed class ProblemTests(ITestOutputHelper output)
         history.Record("Side room", e => ShapeDrawing.Draw(e, geometry, [new(0, 256), new(0, 512), new(256, 512), new(256, 256)], Look.For("doom")));
         history.Record("Keys", e =>
         {
-            e.Add(new Thing { X = 600, Y = 128, Type = 5 });
-            e.Add(new Thing { X = 128, Y = 480, Type = 13 });
+            e.Add(Placed(new Thing { X = 600, Y = 128, Type = 5 }));
+            e.Add(Placed(new Thing { X = 128, Y = 480, Type = 13 }));
         });
         Assert.Empty(Check(map));
     }
@@ -367,8 +374,8 @@ public sealed class ProblemTests(ITestOutputHelper output)
         var (map, history, _) = LockedCloset();
         history.Record("Keys", e =>
         {
-            e.Add(new Thing { X = 600, Y = 128, Type = 5 });
-            e.Add(new Thing { X = 64, Y = 64, Type = 13 });
+            e.Add(Placed(new Thing { X = 600, Y = 128, Type = 5 }));
+            e.Add(Placed(new Thing { X = 64, Y = 64, Type = 13 }));
         });
         Assert.Empty(Check(map));
 
@@ -376,8 +383,8 @@ public sealed class ProblemTests(ITestOutputHelper output)
         history.Undo();
         history.Record("Keys", e =>
         {
-            e.Add(new Thing { X = 64, Y = 64, Type = 5 });
-            e.Add(new Thing { X = 600, Y = 128, Type = 13 });
+            e.Add(Placed(new Thing { X = 64, Y = 64, Type = 5 }));
+            e.Add(Placed(new Thing { X = 600, Y = 128, Type = 13 }));
         });
         Only(map, "key-out-of-reach-red");
     }
@@ -391,7 +398,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
         history.Record("Make a door", e => Doors.Make(e, geometry, wall, Look.For("doom")));
         history.Record("Start and exit", e =>
         {
-            e.Add(new Thing { X = 128, Y = 128, Type = 1 });
+            e.Add(Placed(new Thing { X = 128, Y = 128, Type = 1 }));
             Exits.Make(e, MapGeometry.Build(map.Frame), map.Lines.First(l => l.OnMap && l.Back is null && l.Front.Sector == rooms[0]), false, Look.For("doom"));
         });
         Assert.Empty(Check(map));
@@ -410,7 +417,7 @@ public sealed class ProblemTests(ITestOutputHelper output)
             e.Set(map.Lines[2], l => l.Args[3], (l, v) => l.Args[3] = v, 129);
         });
         Assert.Contains("red key", Only(map, "missing-key-red").Sentence);
-        history.Record("Add", e => e.Add(new Thing { X = 0, Y = 64, Type = 38 }));
+        history.Record("Add", e => e.Add(Placed(new Thing { X = 0, Y = 64, Type = 38 })));
         Assert.Empty(Check(map));
     }
 }

@@ -501,6 +501,9 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>Asks the user for a 360° picture (set by the view); null when they chose none.</summary>
     public Func<Task<string?>>? PickPanorama { get; set; }
 
+    /// <summary>The grid the plan snaps to now, for "Snap to the grid"; set by the editor.</summary>
+    public Func<double>? GridStep { get; set; }
+
     /// <summary>Asks the user for a Wolfenstein 3D MAPHEAD file (set by the view); null when they chose none.</summary>
     public Func<Task<string?>>? PickGrid { get; set; }
 
@@ -826,6 +829,12 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new ActionRow("Turn right 90°", "A quarter turn clockwise round its middle (Ctrl+]).", () => _session.TurnSelection(-90)));
         Rows.Add(new ActionRow("Mirror left to right", "Flips it in place, east to west (Shift+H). Walls keep facing their rooms, and things turn to face what they faced.", () => _session.FlipSelection(leftToRight: true)));
         Rows.Add(new ActionRow("Mirror top to bottom", "Flips it in place, north to south (Shift+V). Walls keep facing their rooms, and things turn to face what they faced.", () => _session.FlipSelection(leftToRight: false)));
+        Rows.Add(new HeadingRow("MOVE AND SHAPE"));
+        Rows.Add(new NumberRow("Move east by", "Moves the selection this far east, in map units; a negative distance moves it west.", () => 0, d => _session.MoveSelection((double)d, 0), 8, -32768, 32768));
+        Rows.Add(new NumberRow("Move north by", "Moves the selection this far north, in map units; a negative distance moves it south.", () => 0, d => _session.MoveSelection(0, (double)d), 8, -32768, 32768));
+        Rows.Add(new ActionRow("Snap to the grid", "Moves its corners and objects onto the nearest points of the grid the plan shows ([ and ] change it). A corner whose point another corner holds stays.", () => _session.SnapSelection(GridStep?.Invoke() ?? 64)));
+        Rows.Add(new ActionRow("Line the corners up evenly", "Puts its corners evenly along the straight line between the two furthest apart.", () => _session.ShapeCorners(circle: false)));
+        Rows.Add(new ActionRow("Space the corners round a circle", "Puts its corners evenly round a circle through their middle: a room becomes round.", () => _session.ShapeCorners(circle: true)));
     }
 
     private static string Name(Element e) => e switch
