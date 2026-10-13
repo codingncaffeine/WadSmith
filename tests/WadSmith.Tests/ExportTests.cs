@@ -219,6 +219,27 @@ public sealed class ExportTests
     }
 
     [Fact]
+    public void APk3WritesTheMapsAgainSoAnOlderFilesFractionalOffsetIsCleanForGZDoom()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(Tools("room 0 0 256 256\nstart 128 128"));
+        // The map file as WadSmith wrote it before offsets were split: a fraction in offsetx, which GZDoom reads as an error.
+        var file = Path.Combine(project.Folder, "maps", "MAP01.wad");
+        var lumps = MapLocator.Find(WadContainer.Open(file)).Single();
+        var text = new System.Text.RegularExpressions.Regex("(sidedef[^\n]*\n\\{\n)").Replace(System.Text.Encoding.UTF8.GetString(lumps.Get("TEXTMAP")!), "$1offsetx = 479.99999999999994;\n", 1);
+        File.WriteAllBytes(file, WadWriter.Write(WadKind.Pwad, [("MAP01", ReadOnlyMemory<byte>.Empty), ("TEXTMAP", System.Text.Encoding.UTF8.GetBytes(text)), ("ENDMAP", ReadOnlyMemory<byte>.Empty)]));
+        Assert.Contains("offsetx = 479.99999999999994;", text, StringComparison.Ordinal);
+
+        var pk3 = Path.Combine(temp.Path, "p.pk3");
+        ProjectExport.Write(project, "gzdoom", pk3, null);
+        var packed = ZipContainer.FromBytes(File.ReadAllBytes(pk3)).Entries.Single(e => e.FullPath == "maps/MAP01.wad").Read();
+        var written = System.Text.Encoding.UTF8.GetString(MapLocator.Find(WadContainer.FromBytes(packed)).Single().Get("TEXTMAP")!);
+        Assert.Contains("offsetx = 479;", written, StringComparison.Ordinal);
+        Assert.DoesNotMatch("offsetx = [0-9]+\\.", written);
+    }
+
+    [Fact]
     public void AHexenMapsScriptsKeepTheirPlaceAndTheirBytesThroughTheNodeBuild()
     {
         // A map made in memory, with real scripts: vanilla Hexen reads BEHAVIOR as the eleventh lump after the marker.

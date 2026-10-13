@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text;
 using WadSmith.Core.Containers;
 using WadSmith.Core.Games;
+using WadSmith.Core.Maps;
 using WadSmith.Core.Projects;
 using WadSmith.Core.Translation;
 
@@ -58,6 +59,9 @@ public static class ProjectExport
     /// <summary>The project folder as a .pk3: everything GZDoom reads, without WadSmith's own records and versions.</summary>
     private static byte[] Pk3(Project project, ExportReport report)
     {
+        // A map kept in GZDoom's format is written again by today's writer, so a file an older WadSmith saved (a fractional
+        // offsetx GZDoom complains about, 2026-10-13) is clean in the package; a classic map is copied as it is.
+        var maps = project.ClassicFormat ? [] : project.Maps().ToDictionary(m => m.File.Replace('\\', '/'), m => m.Slot, StringComparer.OrdinalIgnoreCase);
         using var bytes = new MemoryStream();
         using (var zip = new ZipArchive(bytes, ZipArchiveMode.Create, leaveOpen: true))
         {
@@ -68,7 +72,15 @@ public static class ProjectExport
                 if (top.StartsWith('.') || top == Project.DeletedFolderName || Bookkeeping.Contains(relative, StringComparer.OrdinalIgnoreCase)) continue;
                 var entry = zip.CreateEntry(relative, CompressionLevel.Optimal);
                 using var to = entry.Open();
-                to.Write(SharedFiles.ReadAllBytes(file));
+                if (maps.TryGetValue(relative, out var slot))
+                {
+                    var lumps = MapConversion.ToUdmfLumps(project.LoadMap(slot)).Select(l => (l.Name, (ReadOnlyMemory<byte>)l.Data));
+                    to.Write(WadWriter.Write(WadKind.Pwad, [(slot, ReadOnlyMemory<byte>.Empty), .. lumps]));
+                }
+                else
+                {
+                    to.Write(SharedFiles.ReadAllBytes(file));
+                }
             }
         }
 
