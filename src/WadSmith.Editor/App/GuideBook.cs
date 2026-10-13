@@ -69,7 +69,7 @@ public static class GuideBook
             new("room", "Draw a room", "Pick {label:Room} at the top left{or:Room tool} and drag a rectangle against the room you have (or click corner by corner and double-click the last corner to finish). Where the two rooms touch they open into each other: in Doom there is no wall on that line (it is dashed on the plan), and it is where your door will go.", GuideTarget.RoomTool),
             new("look", "See it in 3D", "Press {key:Show the 3D view alone} to fill the window with the 3D view, and drag to turn round your rooms: where they meet there is no wall yet, they open into each other. {key:Show the 3D view alone} again brings the plan back.", GuideTarget.ThreeD),
             new("door", "Put a door between them", "Pick Door{or:Door tool} and click the dashed line where your two rooms meet. A door is built into that opening, with wall either side of it and above it (a doorway as tall as the door): it opens when the player uses it and closes again behind them. Right-click the door to choose how it looks.", GuideTarget.DoorTool),
-            new("texture", "Give a wall a new look", "Open Textures on the right and drag a picture onto one of your walls, on the plan or in the 3D view.", GuideTarget.Textures),
+            new("texture", "Give a wall a new look", "Open Textures on the right and drag a picture onto one of your walls, on the plan or in the 3D view: it covers the whole wall. Hold Shift as you let go and it covers just a section as wide as the picture, right where you dropped it.", GuideTarget.Textures),
             new("things", "Add a monster and a weapon", "Open {label:Objects} on the right and drag {monster} and {weapon} onto the floor of a room.", GuideTarget.Objects),
             new("exit", "Add a way out", "Click a wall on the plan where you want the way out, then press “Make it the exit switch” in the Inspector. The switch picture is set into the wall where you clicked, as wide and as tall as the picture, with the wall above it; the rest stays wall. Using the switch in the game ends the map.", GuideTarget.Inspector),
             new("play", "Play it", "Press {label:Play} at the top ({key:Play}). WadSmith checks the map first and offers to fix anything that would spoil it.", GuideTarget.Play),
@@ -105,7 +105,8 @@ public static class GuideBook
 
         new("textures", "Textures and alignment", "Change how walls, floors and ceilings look, and line their textures up.",
         [
-            new("texture", "Retexture a wall", "Open Textures and drag a picture onto a wall, on the plan or in the 3D view.", GuideTarget.Textures),
+            new("texture", "Retexture a wall", "Open Textures and drag a picture onto a wall, on the plan or in the 3D view: the whole straight wall takes it.", GuideTarget.Textures),
+            new("section", "Put a picture on part of a wall", "Drag another picture onto a wall and hold Shift as you let go: only a section as wide as the picture changes, right where you dropped it, and the rest of the wall stays as it was. Good for a sign, a panel or a light set into a long wall.", GuideTarget.Textures),
             new("flat", "Retexture a floor", "Drag a floor picture from Textures onto a room on the plan, or onto a floor or ceiling in the 3D view.", GuideTarget.Textures),
             new("align", "Line a texture up", "In the 3D view, hold Ctrl and drag a wall's texture to slide it, or hold Ctrl and press an arrow to nudge it. Ctrl+A lines up the walls along it.", GuideTarget.ThreeD),
         ],
@@ -190,6 +191,7 @@ public static class GuideBook
             "look" => happened.Contains(GuideEvents.ThreeD),
             "door" => Up(f => Lines(f, l => IsDoor(l.Special) && l.Args[0] == 0)) > 0,
             "texture" => Changed(atStart.Sides, now.Sides, s => s.Element, s => (s.Top, s.Middle, s.Bottom)),
+            "section" => Up(f => f.Lines.Count(l => l.Element is not null)) > 0 && Changed(atStart.Sides, now.Sides, s => s.Element, s => (s.Top, s.Middle, s.Bottom)),
             "things" => Up(f => Things(f, (c, _) => c == ThingCategory.Monster)) > 0 && Up(f => Things(f, (c, _) => c == ThingCategory.Weapon)) > 0,
             "exit" => Up(f => Lines(f, l => l.Special is Smart.Exits.Normal or Smart.Exits.Secret)) > 0,
             "play" => happened.Contains(GuideEvents.Played),

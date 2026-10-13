@@ -91,6 +91,20 @@ public sealed class GuideBookTests
     }
 
     [Fact]
+    public void APictureOnASectionFinishesTheSectionStepAndOnTheWholeWallDoesNot()
+    {
+        using var temp = new TempFolder();
+        var project = Core.Projects.Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        using var session = EditorSession.Open(project, "MAP01", _ => { });
+        var start = session.Map.Frame;
+        session.Paint("BROWN1", new(-256, 0), 4, ceiling: false);
+        Assert.False(Done("textures", "section", session.Map.Frame, start));
+        session.Paint("COMPTALL", new(0, 256), 4, ceiling: false, section: true);
+        Assert.True(Done("textures", "section", session.Map.Frame, start));
+    }
+
+    [Fact]
     public void ChoosingADoorsLookFinishesTheLookStep()
     {
         var map = EditorMap.FromModel(new MapModel { Name = "MAP01", Namespace = "zdoom" });
@@ -254,7 +268,7 @@ public sealed class GuideBookTests
         string[] tested =
         [
             "room", "look", "door", "texture", "things", "exit", "play", "floor", "ceiling", "heights", "doorlook", "lock", "key", "switch", "lift", "stairs", "walk",
-            "flat", "align", "monster", "pickup", "skill", "difficulty", "brightness", "light", "colour", "secret", "hide", "name", "music", "names", "keys", "palette",
+            "section", "flat", "align", "monster", "pickup", "skill", "difficulty", "brightness", "light", "colour", "secret", "hide", "name", "music", "names", "keys", "palette",
         ];
         Assert.Empty(GuideBook.Chapters.SelectMany(c => c.Steps).Select(s => s.Id).Except(tested));
 

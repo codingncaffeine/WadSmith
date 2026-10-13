@@ -107,6 +107,7 @@ internal sealed class MapCanvas : Control
     /// <summary>A press with the Select tool: where, on what, and whether a click without a drag selects only that.</summary>
     private Point? _pressAt;
     private Element? _pressed;
+    private bool _hoverSection;
     private bool _narrowOnClick;
 
     /// <summary>A drag moving the selection: its history gesture, what moves (once gathered), the grab point, the offset so far.</summary>
@@ -1712,10 +1713,16 @@ internal sealed class MapCanvas : Control
         var p = e.GetPosition(this);
         var key = drop.Texture is null && drop.Prefab is null && WadSmith.Editor.Smart.Keys.ColourOf(drop.Thing) is not null;
         Element? target = key ? Session.DoorAt(ToMap(p), 14 / _zoom) : drop.Texture is null ? null : WallAt(p) is { } w ? w : Session.Geometry.SectorAt(ToMap(p));
-        if (!ReferenceEquals(target, _hover))
+        // A texture over a wall: the whole straight wall is outlined, or only that wall with Shift (a section of it).
+        var section = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+        if (!ReferenceEquals(target, _hover) || section != _hoverSection)
         {
             _hover = target;
-            _hoverOutline = target is null ? null : SelectionOverlay.Take([target], Session.Geometry, _look);
+            _hoverSection = section;
+            Element[] outlined = target is Line hovered && drop.Texture is not null && !drop.Flat && !section
+                ? [.. Session.StraightWall(EditorSession.FaceToward(hovered, ToMap(p))).Select(f => (Element)f.Line!)]
+                : target is null ? [] : [target];
+            _hoverOutline = outlined.Length == 0 ? null : SelectionOverlay.Take(outlined, Session.Geometry, _look);
             InvalidateVisual();
         }
 
@@ -1725,8 +1732,8 @@ internal sealed class MapCanvas : Control
             ? (key && target is Sector ? $"Let go to lock this door with {drop.Label}; the key itself then goes somewhere the player reaches first." : $"Let go to place {drop.Label} here.")
             : target switch
             {
-                Line { Back: null } => $"Let go to put {drop.Label} on this wall.",
-                Line => $"Let go to put {drop.Label} on the upper and lower parts of this wall, on this side.",
+                Line { Back: null } => section ? $"Let go to put {drop.Label} on a section of this wall as wide as the picture." : $"Let go to put {drop.Label} on this whole wall. Hold Shift for just a section as wide as the picture.",
+                Line => section ? $"Let go to put {drop.Label} on a section of this wall as wide as the picture, on this side." : $"Let go to put {drop.Label} on the upper and lower parts of this whole wall, on this side. Hold Shift for just a section.",
                 Sector => $"Let go to put {drop.Label} on this room's {(Mode == MapViewMode.Ceilings ? "ceiling" : "floor")}.",
                 _ => "Drop it on a wall or in a room.",
             } + (drop.From is { } source && target is not null ? $" It is copied into this project from {source.Game.Title} first." : ""));
@@ -1744,11 +1751,11 @@ internal sealed class MapCanvas : Control
         }
         else if (drop.Texture is { } borrowed && drop.From is { } from)
         {
-            session.PaintBorrowed(from, borrowed, drop.Flat, ToMap(p), 7 / _zoom, Mode == MapViewMode.Ceilings);
+            session.PaintBorrowed(from, borrowed, drop.Flat, ToMap(p), 7 / _zoom, Mode == MapViewMode.Ceilings, (e.KeyModifiers & KeyModifiers.Shift) != 0);
         }
         else if (drop.Texture is { } texture)
         {
-            session.Paint(texture, ToMap(p), 7 / _zoom, Mode == MapViewMode.Ceilings);
+            session.Paint(texture, ToMap(p), 7 / _zoom, Mode == MapViewMode.Ceilings, (e.KeyModifiers & KeyModifiers.Shift) != 0);
         }
         else
         {

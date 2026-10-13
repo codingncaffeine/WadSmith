@@ -586,10 +586,10 @@ public sealed class EditorSession : IDisposable
     /// Paints with a picture from another game the user owns (<paramref name="from"/>): copied into the project on a worker the
     /// first time (D43), then put where it was dropped as <see cref="Paint"/> does, saying what was copied.
     /// </summary>
-    public void PaintBorrowed(GameResources from, string name, bool flat, MapPoint at, double radius, bool ceiling) => Borrow(from, name, flat, chosen => Paint(chosen, at, radius, ceiling));
+    public void PaintBorrowed(GameResources from, string name, bool flat, MapPoint at, double radius, bool ceiling, bool section = false) => Borrow(from, name, flat, chosen => Paint(chosen, at, radius, ceiling, section));
 
     /// <summary>A picture from another game the user owns onto one surface of the 3D view (D43): copied into the project first, then put on.</summary>
-    public void PaintBorrowedSurface(GameResources from, string name, bool flat, SurfaceTarget target) => Borrow(from, name, flat, chosen => PaintSurface(target, chosen));
+    public void PaintBorrowedSurface(GameResources from, string name, bool flat, SurfaceTarget target, MapPoint? section = null) => Borrow(from, name, flat, chosen => PaintSurface(target, chosen, section));
 
     /// <summary>Copies a picture from another game into the project on a worker, then <paramref name="paint"/>s it (its name here) on the UI thread, saying what happened.</summary>
     private void Borrow(GameResources from, string name, bool flat, Func<string, string?> paint)
@@ -633,28 +633,28 @@ public sealed class EditorSession : IDisposable
     /// Puts a texture on one surface seen in the 3D view: a face's upper, middle or lower part, or an area's floor or
     /// ceiling (a sky ceiling becomes that texture), one undo step, and selects the face or area. Null when done, else why not.
     /// </summary>
-    public string? PaintSurface(SurfaceTarget target, string texture)
+    public string? PaintSurface(SurfaceTarget target, string texture, MapPoint? section = null)
     {
         if (Grouping.Holds(_geometry, target.Element)) return "That is locked: unlock it with nothing selected, under Groups, to change it.";
         switch (target.Element)
         {
             case Side { OnMap: true } face:
-                History.Record("Put a texture on a wall", e =>
+                // The whole straight wall, that part of it; with a point (Shift), a section as wide as the picture there.
+                var faces = section is null ? StraightWall(face) : [];
+                Side painted = face;
+                History.Record(section is null ? "Put a texture on a wall" : "Put a texture on a section of a wall", e =>
                 {
-                    switch (target.Part)
+                    if (section is { } at)
                     {
-                        case WallPart.Top:
-                            e.Set(face, s => s.Top, (s, v) => s.Top = v, texture);
-                            break;
-                        case WallPart.Bottom:
-                            e.Set(face, s => s.Bottom, (s, v) => s.Bottom = v, texture);
-                            break;
-                        default:
-                            e.Set(face, s => s.Middle, (s, v) => s.Middle = v, texture);
-                            break;
+                        painted = Section(e, face, texture, at);
+                        PaintFace(e, painted, texture, target.Part);
+                    }
+                    else
+                    {
+                        foreach (var f in faces) PaintFace(e, f, texture, ReferenceEquals(f, face) || f.Line?.Opposite(f) is not null ? target.Part : null);
                     }
                 });
-                Selection.Set(face);
+                Selection.Set(painted);
                 return null;
             case Sector { OnMap: true } area:
                 if (target.Ceiling) History.Record("Put a texture on a ceiling", e => e.Set(area, s => s.CeilingTexture, (s, v) => s.CeilingTexture = v, texture));
@@ -730,26 +730,102 @@ public sealed class EditorSession : IDisposable
         return (face.OffsetX, face.OffsetY);
     }
 
-    public string? Paint(string texture, MapPoint at, double radius, bool ceiling)
+    /// <summary>The face of a wall on the side of <paramref name="at"/>: the back when the point is behind a wall with two sides, else the front.</summary>
+    public static Side FaceToward(Line wall, MapPoint at)
+    {
+        var cross = (wall.End.X - wall.Start.X) * (at.Y - wall.Start.Y) - (wall.End.Y - wall.Start.Y) * (at.X - wall.Start.X);
+        return cross > 0 && wall.Back is { } back ? back : wall.Front;
+    }
+
+    /// <summary>
+    /// The straight wall <paramref name="face"/> is part of, as the player sees it: its own wall and every wall joined to it
+    /// end to end and in line with it that faces the same room, through the pieces a switch, a door or a window cut it
+    /// into. The walls with an action (a switch, a door's face) are left out, so a texture put on the whole wall keeps
+    /// their pictures. The faces, toward that room.
+    /// </summary>
+    public IReadOnlyList<Side> StraightWall(Side face)
+    {
+        if (face.Line is not { } start) return [face];
+        var room = face.Sector;
+        var faces = new List<Side> { face };
+        var seen = new HashSet<Line>(ReferenceEqualityComparer.Instance) { start };
+        var queue = new Queue<Line>([start]);
+        while (queue.Count > 0)
+        {
+            var line = queue.Dequeue();
+            foreach (var end in new[] { line.Start, line.End })
+            {
+                foreach (var next in _geometry.LinesIn(end.X, end.Y, end.X, end.Y))
+                {
+                    if (!next.OnMap || seen.Contains(next) || (next.Start != end && next.End != end) || !Doors.Parallel(next, start)) continue;
+                    var toward = ReferenceEquals(next.Front.Sector, room) ? next.Front : next.Back is { } b && ReferenceEquals(b.Sector, room) ? b : null;
+                    if (toward is null) continue;
+                    seen.Add(next);
+                    // A wall with an action (a switch, a door's face) keeps its picture, and the wall goes on past it.
+                    if (next.Special == 0) faces.Add(toward);
+                    queue.Enqueue(next);
+                }
+            }
+        }
+
+        return faces;
+    }
+
+    /// <summary>Puts a texture on a face as a plain drop does: the middle of a wall with one side, the upper and lower parts of a wall between rooms.</summary>
+    private static void PaintFace(StructureEdit e, Side face, string texture, WallPart? part = null)
+    {
+        if (face.Line?.Opposite(face) is null)
+        {
+            e.Set(face, s => s.Middle, (s, v) => s.Middle = v, texture);
+        }
+        else if (part is WallPart.Top or WallPart.Bottom or WallPart.Middle)
+        {
+            if (part == WallPart.Top) e.Set(face, s => s.Top, (s, v) => s.Top = v, texture);
+            else if (part == WallPart.Bottom) e.Set(face, s => s.Bottom, (s, v) => s.Bottom = v, texture);
+            else e.Set(face, s => s.Middle, (s, v) => s.Middle = v, texture);
+        }
+        else
+        {
+            e.Set(face, s => s.Top, (s, v) => s.Top = v, texture);
+            e.Set(face, s => s.Bottom, (s, v) => s.Bottom = v, texture);
+        }
+    }
+
+    /// <summary>
+    /// The piece of <paramref name="face"/>'s wall a texture dropped at <paramref name="at"/> with Shift covers: a section as wide
+    /// as the picture (64 when its size is unknown) round the point, cut out of the wall (see <see cref="Switches.Piece"/>);
+    /// the face of that piece toward the same room.
+    /// </summary>
+    private Side Section(StructureEdit e, Side face, string texture, MapPoint at)
+    {
+        var wall = face.Line!;
+        var width = Resources?.Textures.FindWall(texture) is { Width: >= 8 } t ? t.Width : Switches.Width;
+        var front = ReferenceEquals(face, wall.Front);
+        var piece = Switches.Piece(e, wall, at, width);
+        return front ? piece.Front : piece.Back ?? piece.Front;
+    }
+
+    public string? Paint(string texture, MapPoint at, double radius, bool ceiling, bool section = false)
     {
         if (_geometry.LineNear(at, radius) is { OnMap: true } wall)
         {
-            var cross = (wall.End.X - wall.Start.X) * (at.Y - wall.Start.Y) - (wall.End.Y - wall.Start.Y) * (at.X - wall.Start.X);
-            var face = cross > 0 && wall.Back is { } back ? back : wall.Front;
-            if (wall.Opposite(face) is null)
+            var face = FaceToward(wall, at);
+            var faces = section ? [] : StraightWall(face);
+            Side painted = face;
+            History.Record(section ? "Put a texture on a section of a wall" : "Put a texture on a wall", e =>
             {
-                History.Record("Put a texture on a wall", e => e.Set(face, s => s.Middle, (s, v) => s.Middle = v, texture));
-            }
-            else
-            {
-                History.Record("Put a texture on a wall", e =>
+                if (section)
                 {
-                    e.Set(face, s => s.Top, (s, v) => s.Top = v, texture);
-                    e.Set(face, s => s.Bottom, (s, v) => s.Bottom = v, texture);
-                });
-            }
+                    painted = Section(e, face, texture, at);
+                    PaintFace(e, painted, texture);
+                }
+                else
+                {
+                    foreach (var f in faces) PaintFace(e, f, texture);
+                }
+            });
 
-            Selection.Set(face);
+            Selection.Set(painted);
             return null;
         }
 

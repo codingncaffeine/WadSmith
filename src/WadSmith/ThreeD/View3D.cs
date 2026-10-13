@@ -249,7 +249,8 @@ internal sealed class View3D : Control
         if (drop.Prefab is not null) return "Prefabs go on the plan: drop it there.";
         if (drop.Texture is null) return hit is { Kind: HitKind.Floor } ? $"Let go to place {drop.Label} here." : "Drop the object on a floor.";
         if (hit is not { Kind: not HitKind.Thing } h) return "Drop it on a wall, a floor or a ceiling.";
-        return $"Let go to put {drop.Label} on {h.Words}." + (drop.From is { } source ? $" It is copied into this project from {source.Game.Title} first." : "");
+        var wall = h.Kind == HitKind.Wall ? " (the whole wall; hold Shift for just a section as wide as the picture)" : "";
+        return $"Let go to put {drop.Label} on {h.Words}{wall}." + (drop.From is { } source ? $" It is copied into this project from {source.Game.Title} first." : "");
     }
 
     /// <summary>A shelf drop on the surface found under it: the texture on that surface, or the object on that floor.</summary>
@@ -269,8 +270,10 @@ internal sealed class View3D : Control
                 return;
             }
 
-            if (drop.From is { } from) session.PaintBorrowedSurface(from, texture, drop.Flat, h.Target);
-            else if (session.PaintSurface(h.Target, texture) is { } why) session.Tell(why);
+            // Shift on a wall: a section as wide as the picture where it was let go, not the whole wall.
+            WadSmith.Editor.Geometry.MapPoint? section = shift && h.Kind == HitKind.Wall ? new(h.X, h.Y) : null;
+            if (drop.From is { } from) session.PaintBorrowedSurface(from, texture, drop.Flat, h.Target, section);
+            else if (session.PaintSurface(h.Target, texture, section) is { } why) session.Tell(why);
             return;
         }
 
