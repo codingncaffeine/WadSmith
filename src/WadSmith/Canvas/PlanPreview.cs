@@ -85,6 +85,13 @@ internal sealed class PlanPreview : Control
             context.DrawRectangle(new SolidColorBrush(fill), edge, R(room.Box));
         }
 
+        // Pools: water blue, a hurting floor (nukage, lava) red-orange; pillars dark.
+        foreach (var room in plan.Rooms)
+        {
+            foreach (var (box, _, damage) in room.Pools) context.FillRectangle(new SolidColorBrush(damage > 0 ? Color.FromRgb(0xC8, 0x50, 0x20) : Color.FromRgb(0x30, 0x60, 0xB0)), R(box));
+            foreach (var pillar in room.Pillars) context.FillRectangle(new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x18)), R(pillar));
+        }
+
         foreach (var t in plan.Teleports) context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromRgb(0x40, 0xD0, 0xE0)), 2), R(t.Pad));
 
         // The way from the start to the exit.

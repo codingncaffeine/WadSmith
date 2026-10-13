@@ -75,6 +75,9 @@ public sealed class PlannedRoom
     /// <summary>Solid columns standing in the room (a castle hall's).</summary>
     public List<Box> Pillars { get; } = [];
 
+    /// <summary>Pools sunk in the floor: their rectangle, their floor picture and how much they hurt (0 for water).</summary>
+    public List<(Box Box, string Flat, int Damage)> Pools { get; } = [];
+
     /// <summary>For a closet: the room it opens into, where on their shared wall its door is, and the line in the room's entrance that opens it.</summary>
     public int ClosetOf { get; set; } = -1;
 
@@ -105,7 +108,7 @@ public sealed class PlannedRoom
         return points;
     }
 
-    /// <summary>Whether a circle of <paramref name="radius"/> at the point stands inside the room, clear of its walls, cut corners and pillars.</summary>
+    /// <summary>Whether a circle of <paramref name="radius"/> at the point stands inside the room, clear of its walls, cut corners, pillars and pools.</summary>
     public bool Holds(double x, double y, double radius)
     {
         var b = Box;
@@ -113,7 +116,8 @@ public sealed class PlannedRoom
         var slack = radius * Math.Sqrt(2);
         var c = Cuts;
         if (x - b.X0 + (y - b.Y0) < c.SW + slack || x - b.X0 + (b.Y1 - y) < c.NW + slack || b.X1 - x + (b.Y1 - y) < c.NE + slack || b.X1 - x + (y - b.Y0) < c.SE + slack) return false;
-        return Pillars.All(p => x + radius <= p.X0 || x - radius >= p.X1 || y + radius <= p.Y0 || y - radius >= p.Y1);
+        bool Clear(Box p) => x + radius <= p.X0 || x - radius >= p.X1 || y + radius <= p.Y0 || y - radius >= p.Y1;
+        return Pillars.All(Clear) && Pools.All(p => Clear(p.Box));
     }
 
     /// <summary>The key a key room holds.</summary>

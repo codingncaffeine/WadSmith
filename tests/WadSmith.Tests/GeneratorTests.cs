@@ -230,6 +230,45 @@ public sealed class GeneratorTests
         Assert.True(secrets >= 30, $"only {secrets} secrets in 10 huge maps");
     }
 
+    /// <summary>Pools come with the hazards and go without them; each is sunk 16 into its room's floor with its picture, and a hurting one hurts by GZDoom's own fields.</summary>
+    [Fact]
+    public void PoolsAreSunkWithTheirPictureAndTheirDamage()
+    {
+        Assert.DoesNotContain(Planner.Plan(For("doom", "grim-keep", MapSize.Huge) with { Hazards = false }).Rooms, r => r.Pools.Count > 0);
+        var hurting = 0;
+        foreach (var family in new[] { "doom", "heretic", "hexen", "strife" })
+        {
+            var made = MapMaker.Make(For(family, "grim-keep", MapSize.Huge, style: MapStyle.Castle));
+            var g = Editor.Geometry.MapGeometry.Build(made.Map.Frame);
+            var pools = made.Plan.Rooms.SelectMany(r => r.Pools.Select(p => (Room: r, Pool: p))).ToList();
+            Assert.NotEmpty(pools);
+            foreach (var (room, (box, flat, damage)) in pools)
+            {
+                var area = g.SectorAt(new(box.CentreX, box.CentreY))!;
+                Assert.Equal((room.Floor - 16, flat), (area.FloorHeight, area.FloorTexture));
+                var amount = area.Extra.TryGet("damageamount", out var v) ? v.AsInt() : 0;
+                Assert.Equal(damage, amount);
+                if (damage > 0) hurting++;
+            }
+        }
+
+        Assert.True(hurting > 0, "no pool hurts in four huge maps");
+    }
+
+    /// <summary>Every game's pool pictures are its own: each is a floor picture of the game (where the game is here).</summary>
+    [Theory]
+    [InlineData("doom", "doom2", "DOOM2.WAD")]
+    [InlineData("doom", "freedoom2", "freedoom2.wad")]
+    [InlineData("heretic", "heretic", "HERETIC.WAD")]
+    [InlineData("hexen", "hexen", "HEXEN.WAD")]
+    [InlineData("strife", "strife", "STRIFE1.WAD")]
+    public void EveryPoolPictureIsTheGamesOwn(string family, string id, string file)
+    {
+        var path = GameFiles.Require(file);
+        var game = GameResources.Load(id, null, [new FoundGame(GameCatalog.Get(id)!, path, new FileInfo(path).Length)], GameFiles.Require("gzdoom.pk3"))!;
+        Assert.Empty(Hazards.Of(family).Where(h => game.Textures.FindFlat(h.Flat) is null).Select(h => h.Flat));
+    }
+
     [Fact]
     public void EveryDifficultyHasMonstersAndTheHardOnesMore()
     {

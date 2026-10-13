@@ -238,6 +238,32 @@ public static class Planner
                     }
                 }
             }
+
+            // A pool in a quarter of a big room, clear of the room's middle lines (where the ways across run), its walls,
+            // its cut corners and its pillars: water, or the game's hurting floor.
+            if (plan.Settings.Hazards && room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Arena && rng.Chance(0.4))
+            {
+                var kinds = Hazards.Of(plan.Settings.Family);
+                var (flat, damage) = rng.Chance(0.4) ? kinds[0] : rng.Pick(kinds);
+                List<(int X, int Y)> quarters = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
+                rng.Shuffle(quarters);
+                foreach (var (sx, sy) in quarters)
+                {
+                    var (x0, x1) = sx > 0 ? (cx + 112, b.X1 - 64.0) : (b.X0 + 64.0, cx - 112);
+                    var (y0, y1) = sy > 0 ? (cy + 112, b.Y1 - 64.0) : (b.Y0 + 64.0, cy - 112);
+                    var width = (int)Math.Min(256, Math.Floor((x1 - x0) / 32) * 32);
+                    var height = (int)Math.Min(256, Math.Floor((y1 - y0) / 32) * 32);
+                    if (width < 96 || height < 96) continue;
+                    var px = (int)(sx > 0 ? x0 : x1 - width);
+                    var py = (int)(sy > 0 ? y0 : y1 - height);
+                    var pool = new Box(px, py, px + width, py + height);
+                    bool Overlaps(Box p) => !(pool.X1 <= p.X0 - 32 || pool.X0 >= p.X1 + 32 || pool.Y1 <= p.Y0 - 32 || pool.Y0 >= p.Y1 + 32);
+                    var inside = new[] { (pool.X0, pool.Y0), (pool.X0, pool.Y1), (pool.X1, pool.Y1), (pool.X1, pool.Y0) }.All(p => room.Holds(p.Item1, p.Item2, 16));
+                    if (!inside || room.Pillars.Any(Overlaps)) continue;
+                    room.Pools.Add((pool, flat, damage));
+                    break;
+                }
+            }
         }
     }
 

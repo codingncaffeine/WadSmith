@@ -64,6 +64,15 @@ public static class MapMaker
                 Line($"room {p.X0} {p.Y0} {p.X1} {p.Y1}");
                 Line($"ceiling {p.CentreX} {p.CentreY} {room.Floor}");
             }
+
+            // Pools: sunk 16 into the floor, the hazard's picture, its damage.
+            foreach (var (p, flat, damage) in room.Pools)
+            {
+                Line($"room {p.X0} {p.Y0} {p.X1} {p.Y1}");
+                Line($"floor {p.CentreX} {p.CentreY} {room.Floor - 16}");
+                Line($"flat {p.CentreX} {p.CentreY} {flat}");
+                if (damage > 0) Line($"damage {p.CentreX} {p.CentreY} {damage}");
+            }
         }
 
         Line($"# Corridors");

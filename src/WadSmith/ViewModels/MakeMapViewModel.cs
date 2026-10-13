@@ -230,6 +230,9 @@ internal sealed partial class MakeMapViewModel : ObservableObject
     private bool _traps = true;
 
     [ObservableProperty]
+    private bool _hazards = true;
+
+    [ObservableProperty]
     private string _seed;
 
     /// <summary>The plan the preview draws; null while the first is made.</summary>
@@ -283,6 +286,8 @@ internal sealed partial class MakeMapViewModel : ObservableObject
     partial void OnDecorationsChanged(bool value) => Remake();
 
     partial void OnTrapsChanged(bool value) => Remake();
+
+    partial void OnHazardsChanged(bool value) => Remake();
 
     partial void OnSeedChanged(string value) => Remake();
 
@@ -372,6 +377,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         Bosses.Index = Math.Clamp(s.Bosses, 0, 3);
         Challenge = s.Challenge;
         (Secrets, Stairs, Lifts, Teleporters, DarkPlaces, Ambushes, Decorations, Traps) = (s.Secrets, s.Stairs, s.Lifts, s.Teleporters, s.DarkPlaces, s.Ambushes, s.Decorations, s.Traps);
+        Hazards = s.Hazards;
         foreach (var row in Sources)
         {
             var mine = row.MonsterKinds(s);
@@ -406,6 +412,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
             Ambushes = Ambushes,
             Decorations = Decorations,
             Traps = Traps,
+            Hazards = Hazards,
             Seed = SeedWords.Tidy(Seed),
             MusicFrom = [.. Sources.Where(r => r.Music && r.CanMusic).Select(r => r.Game.Game.Id)],
             WeaponsFrom = [.. Sources.Where(r => r.Weapons && r.CanWeapons).Select(r => r.Family).Distinct()],
@@ -530,6 +537,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         Ambushes = r.Next(2) > 0;
         Decorations = r.Next(5) > 0;
         Traps = r.Next(3) > 0;
+        Hazards = r.Next(2) > 0;
         foreach (var row in Sources.Where(x => !x.IsBase))
         {
             row.Monsters = r.Next(2) > 0;

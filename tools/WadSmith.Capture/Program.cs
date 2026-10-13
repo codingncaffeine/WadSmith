@@ -301,6 +301,8 @@ foreach (var pose in poses)
 
             if (vm.Page is not MakeMapViewModel page) throw new InvalidOperationException("The page did not open.");
             page.Seed = args.FirstOrDefault(a => a.StartsWith("--seed=", StringComparison.Ordinal))?["--seed=".Length..] ?? "misty-cavern";
+            if (args.FirstOrDefault(a => a.StartsWith("--style=", StringComparison.Ordinal)) is { } chosenStyle) page.Style.Index = (int)Enum.Parse<WadSmith.Editor.Generate.MapStyle>(chosenStyle["--style=".Length..], true);
+            if (args.FirstOrDefault(a => a.StartsWith("--size=", StringComparison.Ordinal)) is { } chosenSize) page.Size.Index = (int)Enum.Parse<WadSmith.Editor.Generate.MapSize>(chosenSize["--size=".Length..], true);
             if (args.Contains("--borrow"))
             {
                 // Every other game's boxes ticked by clicking them, as the user would.

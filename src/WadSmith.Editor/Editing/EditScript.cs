@@ -44,6 +44,8 @@ public static class EditScript
         thing TYPE X Y [ANGLE] [easy|normal|hard] [ambush]
                                     an object by editor number: on every difficulty, or from the one named up; ambush = waits
         brightness X Y LEVEL        the room's brightness, 0 to 255
+        flat X Y NAME               the floor picture of the room at the point
+        damage X Y AMOUNT           the room's floor hurts the player AMOUNT every second or so (5 nukage, 10 slime, 20 lava)
         sign X Y TEXT...            a sign for the room: a WadSmith tour shows it in the game when the player walks in
         """;
 
@@ -205,6 +207,23 @@ public static class EditScript
                 var level = (int)N(3);
                 Record("Change brightness", e => e.Set(dim, s => s.Light, (s, v) => s.Light = v, Math.Clamp(level, 0, 255)));
                 made = string.Create(CultureInfo.InvariantCulture, $"brightness {level}");
+                break;
+            case "flat":
+                var floored = Room(1);
+                var picture = w[3].ToUpperInvariant();
+                Record("Change the floor's picture", e => e.Set(floored, s => s.FloorTexture, (s, v) => s.FloorTexture = v, picture));
+                made = $"floor {picture}";
+                break;
+            case "damage":
+                var hurting = Room(1);
+                var amount = (int)N(3);
+                Record("Change the floor's damage", e =>
+                {
+                    // GZDoom's own fields: the damage every 32 tics, as Doom's nukage (5), its slime (10) and its lava (20) do.
+                    e.Field(hurting, "damageamount", Core.Maps.Udmf.UdmfValue.Int(amount));
+                    e.Field(hurting, "damageinterval", Core.Maps.Udmf.UdmfValue.Int(32));
+                });
+                made = string.Create(CultureInfo.InvariantCulture, $"damage {amount}");
                 break;
             case "sign":
                 var signed = Room(1);

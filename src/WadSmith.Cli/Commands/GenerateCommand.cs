@@ -20,7 +20,7 @@ internal sealed class GenerateCommand : ICommand
         Usage: wadsmith-cli generate (--out=FILE.wad | --project=FOLDER) [--game=doom2] [--seed=misty-cavern]
                [--size=small|medium|large|huge] [--challenge=0..1] [--keys=0..3] [--bosses=0..3]
                [--outdoors=none|some|lots] [--style=base|caves|castle|mixed]
-               [--without=secrets,stairs,lifts,teleporters,dark,ambushes,decorations,traps]
+               [--without=secrets,stairs,lifts,teleporters,dark,ambushes,decorations,traps,hazards]
                [--script]
 
         Plans a map from the seed and the settings, builds it with the editor's own tools (an edit script,
@@ -56,7 +56,8 @@ internal sealed class GenerateCommand : ICommand
                 "ambushes" => s with { Ambushes = false },
                 "decorations" => s with { Decorations = false },
                 "traps" => s with { Traps = false },
-                var other => throw new UsageException($"--without takes secrets, stairs, lifts, teleporters, dark, ambushes, decorations and traps, not {other}."),
+                "hazards" => s with { Hazards = false },
+                var other => throw new UsageException($"--without takes secrets, stairs, lifts, teleporters, dark, ambushes, decorations, traps and hazards, not {other}."),
             };
         }
 
@@ -81,7 +82,7 @@ internal sealed class GenerateCommand : ICommand
 
         var counts = plan.MonsterCounts;
         output.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"{SeedWords.Title(s.Seed)} for {game.Title}: {plan.Rooms.Count(r => r.Role != RoomRole.Closet)} rooms, {plan.Rooms.Count(r => r.Role == RoomRole.Closet)} traps, {plan.Links.Count(l => l.Key is not null)} locked doors, {plan.Rooms.Count(r => r.Role == RoomRole.Secret)} secrets, monsters {counts.Easy}/{counts.Normal}/{counts.Hard} (easy/normal/hard), about {plan.Minutes} minutes; the exit {(walk.ExitReached ? "can" : "CANNOT")} be reached."));
+            $"{SeedWords.Title(s.Seed)} for {game.Title}: {plan.Rooms.Count(r => r.Role != RoomRole.Closet)} rooms, {plan.Rooms.Count(r => r.Role == RoomRole.Closet)} traps, {plan.Rooms.Sum(r => r.Pools.Count)} pools, {plan.Links.Count(l => l.Key is not null)} locked doors, {plan.Rooms.Count(r => r.Role == RoomRole.Secret)} secrets, monsters {counts.Easy}/{counts.Normal}/{counts.Hard} (easy/normal/hard), about {plan.Minutes} minutes; the exit {(walk.ExitReached ? "can" : "CANNOT")} be reached."));
         if (outPath is not null)
         {
             var model = made.Map.Frame.ToModel();

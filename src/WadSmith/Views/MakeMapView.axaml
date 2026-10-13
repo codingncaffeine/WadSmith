@@ -60,7 +60,7 @@
                                     <Grid ColumnDefinitions="*,70,70,70,70">
                                         <StackPanel VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Game.Path}" />
-                                            <TextBlock Text="{Binding Note}" Classes="secondary" FontSize="12" />
+                                            <TextBlock Text="{Binding Note}" Classes="secondary" FontSize="12" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <CheckBox Grid.Column="1" HorizontalAlignment="Center" IsChecked="{Binding Textures}" IsVisible="{Binding CanTextures}"
                                                   ToolTip.Tip="Rooms may look like this game's: its walls, floors and ceilings. With none checked, the base game's own are used." />
@@ -114,6 +114,7 @@
                         <CheckBox Content="Dark places" IsChecked="{Binding DarkPlaces}" Margin="0,0,18,4" ToolTip.Tip="Some rooms dim, with a light glowing in them." />
                         <CheckBox Content="Ambushes" IsChecked="{Binding Ambushes}" Margin="0,0,18,4" ToolTip.Tip="In some rooms the monsters wait silently until they see the player." />
                         <CheckBox Content="Traps" IsChecked="{Binding Traps}" Margin="0,0,18,4" ToolTip.Tip="Monster closets: small rooms beside a room whose doors open behind the player who walks in." />
+                        <CheckBox Content="Water and lava" IsChecked="{Binding Hazards}" Margin="0,0,18,4" ToolTip.Tip="Pools sunk in some rooms' floors: water, and the game's own hurting floors, such as nukage and lava." />
                         <CheckBox Content="Decorations" IsChecked="{Binding Decorations}" Margin="0,0,18,4" ToolTip.Tip="Lamps, columns and barrels in the rooms' corners, trees under the sky." />
                     </WrapPanel>
 
@@ -130,7 +131,7 @@
             <Grid Grid.Column="1" RowDefinitions="*,Auto" Margin="8,0,0,0">
                 <Border CornerRadius="6" ClipToBounds="True" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="1">
                     <canvas:PlanPreview Plan="{Binding Plan}"
-                                        ToolTip.Tip="The map from above. The orange line is the way from the start (green) to the exit (white); a locked door and its key share a colour; the arena is red, secrets violet, rooms under the sky green, teleporter pads blue outlines." />
+                                        ToolTip.Tip="The map from above. The orange line is the way from the start (green) to the exit (white); a locked door and its key share a colour; the arena is red, secrets violet, rooms under the sky green, teleporter pads blue outlines, pools blue (water) or orange (they hurt), pillars dark." />
                 </Border>
                 <StackPanel Grid.Row="1" Spacing="4" Margin="0,10,0,0">
                     <TextBlock Text="{Binding Facts}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />

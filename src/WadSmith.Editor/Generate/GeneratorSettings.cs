@@ -80,6 +80,9 @@ public sealed record GeneratorSettings
     /// <summary>Monsters lying in wait (deaf until they see the player) in some rooms.</summary>
     public bool Ambushes { get; init; } = true;
 
+    /// <summary>Pools in some rooms: water, and the game's hurting floors (nukage, slime, lava).</summary>
+    public bool Hazards { get; init; } = true;
+
     /// <summary>Monster closets: small rooms beside a room whose door opens when the player walks in.</summary>
     public bool Traps { get; init; } = true;
 
