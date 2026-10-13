@@ -328,8 +328,8 @@ public sealed class GeneratorFloorTests
     }
 
     /// <summary>
-    /// Light with a source (the study: 20 light fixtures and 21 areas with a light effect a map; ours 4 and none): nearly
-    /// every map has fixtures and light effects; each patch of light holds one of the game's lamps or torches, is brighter
+    /// Light with a source (the study: 20 light fixtures and 21 areas with a light effect a map; ours 4 and none): every
+    /// map has fixtures and light effects; each patch of light holds one of the game's lamps or torches, is brighter
     /// than its room, lies inside it against a wall and keeps off its pools, columns, dais and balcony.
     /// </summary>
     [Fact]
@@ -356,7 +356,7 @@ public sealed class GeneratorFloorTests
             }
         }
 
-        Assert.True(lit >= maps * 95 / 100 && flickering >= maps * 95 / 100, $"of {maps} maps {lit} have light fixtures and {flickering} a light effect");
+        Assert.True(lit == maps && flickering == maps, $"of {maps} maps {lit} have light fixtures and {flickering} a light effect");
     }
 
     /// <summary>In the built map a patch of light is an area at its brightness, with its effect.</summary>
@@ -429,6 +429,44 @@ public sealed class GeneratorFloorTests
         Assert.True(strength >= maps * 6 / 10 && pack >= maps * 55 / 100, $"of {maps} maps {strength} have a berserk and {pack} a backpack");
         Assert.True(boost >= withSecret * 4 / 10, $"{boost} megaspheres in {withSecret} maps with a secret");
         Assert.True(suit >= withHurting * 7 / 10, $"{suit} radiation suits in {withHurting} maps with a hurting pool");
+    }
+
+    /// <summary>
+    /// Variety and detail (the study: 61 wall pictures a map, 2–3 a room, a third of the walls off the square, 60% of the floor
+    /// under the sky, rooms differing in size twice as much as ours): a map of medium size or more shows several looks and
+    /// trims; most maps outside caves have bevelled halls (cut evenly, the middles kept straight); "some" sky puts a quarter
+    /// of the open rooms or more under it; and most medium or larger maps have a great hall filling its cell.
+    /// </summary>
+    [Fact]
+    public void MapsVaryTheirLooksShapesAndSizes()
+    {
+        var (squared, bevelled, open, sky, biggerMaps, greatHalls) = (0, 0, 0, 0, 0, 0);
+        foreach (var plan in Sweep())
+        {
+            var seed = plan.Settings.Seed;
+            var rooms = plan.Rooms.Where(r => r.Role is not (RoomRole.Closet or RoomRole.Secret)).ToList();
+            if (plan.Settings.Size != MapSize.Small)
+            {
+                var pictures = rooms.Where(r => r.Look is not null).SelectMany(r => new[] { r.Look!.Look.Wall, r.Look.Look.TrimOrWall }).Distinct().Count();
+                Assert.True(pictures >= 5, $"{seed}: only {pictures} wall pictures");
+                biggerMaps++;
+                if (rooms.Any(r => r.Role is RoomRole.Path or RoomRole.Side && Math.Min(r.Box.Width, r.Box.Height) >= 2 * (plan.MaxHalf - 32))) greatHalls++;
+            }
+
+            if (plan.Settings.Style != MapStyle.Caves)
+            {
+                squared++;
+                if (rooms.Any(r => r.Cuts != default)) bevelled++;
+                Assert.All(rooms.Where(r => r.Style != MapStyle.Caves && r.Cuts != default), r => Assert.True(r.Cuts.SW == r.Cuts.NW && r.Cuts.NW == r.Cuts.NE && r.Cuts.NE == r.Cuts.SE && Math.Min(r.Box.Width, r.Box.Height) / 2 - r.Cuts.SW >= 80, $"{seed} {r.Name}: a bevel of {r.Cuts}"));
+            }
+
+            var eligible = rooms.Where(r => r.Role is RoomRole.Path or RoomRole.Side or RoomRole.Arena or RoomRole.Start).ToList();
+            (open, sky) = (open + eligible.Count, sky + eligible.Count(r => r.Outdoors));
+        }
+
+        Assert.True(bevelled >= squared * 7 / 10, $"{bevelled} of {squared} maps outside caves have bevelled halls");
+        Assert.True(sky >= open / 4, $"{sky} of {open} rooms under the sky");
+        Assert.True(greatHalls >= biggerMaps * 6 / 10, $"{greatHalls} of {biggerMaps} medium or larger maps have a great hall");
     }
     /// <summary>Whether the link's two rooms are joined by the other links.</summary>
     private static bool Joined(MapPlan plan, PlannedLink without)

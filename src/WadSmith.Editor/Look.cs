@@ -2,18 +2,21 @@ namespace WadSmith.Editor;
 
 /// <summary>
 /// What new rooms and doors look like in a game: their floor, ceiling and wall textures, heights and
-/// light, the textures of doors (up to 64 wide and wider), door tracks, the exit switch, stair risers, other switches (one matching the walls) and water for pools. One per game family
+/// light, the textures of doors (up to 64 wide and wider), door tracks, the exit switch, stair risers, other switches (one matching the walls), water for pools, and (named looks) a trim for faces and a light panel for ceilings. One per game family
 /// until the Looks shelf lets the user pick and make others.
 /// </summary>
-public sealed record Look(string Floor, string Ceiling, string Wall, double FloorHeight, double CeilingHeight, int Light, string Door = "DOOR3", string BigDoor = "BIGDOOR2", string Track = "DOORTRAK", string ExitSwitch = "SW1EXIT", string Step = "STEP6", string Switch = "SW1STRTN", string Water = "FWATER1")
+public sealed record Look(string Floor, string Ceiling, string Wall, double FloorHeight, double CeilingHeight, int Light, string Door = "DOOR3", string BigDoor = "BIGDOOR2", string Track = "DOORTRAK", string ExitSwitch = "SW1EXIT", string Step = "STEP6", string Switch = "SW1STRTN", string Water = "FWATER1", string? Trim = null, string? LightFlat = null)
 {
+    /// <summary>The picture on the faces of what stands in a room: a balcony's front, a dais, a column, a window's frame (the wall's when the look names none).</summary>
+    public string TrimOrWall => Trim ?? Wall;
+
     /// <summary>Each game family's classic look.</summary>
     public static Look For(string engine) => engine switch
     {
-        "heretic" => new("FLOOR03", "FLAT520", "GRSTNPB", 0, 128, 192, "DOORWOOD", "DOORWOOD", "GRSTNPB", "SW1OFF", "GRSTNPB", "SW2OFF", "FLTWAWA1"),
-        "hexen" => new("F_011", "F_032", "FOREST01", 0, 128, 192, "D_WD01", "D_WD07", "D_ENDBR", "SW_1_UP", "FOREST01", "SW_2_UP", "X_005"),
-        "strife" => new("F_CONCRP", "F_PAVE01", "BRKGRY01", 0, 128, 192, "DORMS01", "DORWL01", "DORTRK01", "SWEXIT01", "STAIR01", "SWKNOB01", "F_WATR01"),
-        _ => new("FLOOR4_8", "CEIL3_5", "STARTAN3", 0, 128, 192),
+        "heretic" => new("FLOOR03", "FLAT520", "GRSTNPB", 0, 128, 192, "DOORWOOD", "DOORWOOD", "GRSTNPB", "SW1OFF", "GRSTNPB", "SW2OFF", "FLTWAWA1", Trim: "GRSTNPBV"),
+        "hexen" => new("F_011", "F_032", "FOREST01", 0, 128, 192, "D_WD01", "D_WD07", "D_ENDBR", "SW_1_UP", "FOREST01", "SW_2_UP", "X_005", Trim: "FOREST02"),
+        "strife" => new("F_CONCRP", "F_PAVE01", "BRKGRY01", 0, 128, 192, "DORMS01", "DORWL01", "DORTRK01", "SWEXIT01", "STAIR01", "SWKNOB01", "F_WATR01", Trim: "BRKGRY02"),
+        _ => new("FLOOR4_8", "CEIL3_5", "STARTAN3", 0, 128, 192, Trim: "SUPPORT2", LightFlat: "TLITE6_4"),
     };
 
     /// <summary>
@@ -32,6 +35,9 @@ public sealed record Look(string Floor, string Ceiling, string Wall, double Floo
             CeilingHeight = l.CeilingHeight ?? defaults.CeilingHeight,
             Light = l.Light ?? defaults.Light,
             Switch = l.Switch ?? defaults.Switch,
+            Step = l.Step ?? defaults.Step,
+            Trim = l.Trim,
+            LightFlat = l.LightFlat,
         }))];
     }
 
@@ -41,9 +47,10 @@ public sealed record Look(string Floor, string Ceiling, string Wall, double Floo
 
     /// <summary>The textures a look puts on the map: walls first, then the floor and ceiling pictures.</summary>
     public IEnumerable<(string Name, bool Flat)> Textures() =>
-        [(Wall, false), (Door, false), (BigDoor, false), (Track, false), (ExitSwitch, false), (Step, false), (Switch, false), (Floor, true), (Ceiling, true), (Water, true)];
+        [(Wall, false), (Door, false), (BigDoor, false), (Track, false), (ExitSwitch, false), (Step, false), (Switch, false), (Floor, true), (Ceiling, true), (Water, true),
+            .. Trim is { } trim ? [(trim, false)] : Array.Empty<(string, bool)>(), .. LightFlat is { } lit ? [(lit, true)] : Array.Empty<(string, bool)>()];
 
-    private sealed record NamedLook(string Name, string Wall, string Floor, string Ceiling, double? CeilingHeight, int? Light, string? Switch);
+    private sealed record NamedLook(string Name, string Wall, string Floor, string Ceiling, double? CeilingHeight, int? Light, string? Switch, string? Step, string? Trim, string? LightFlat);
 
     private static readonly Lazy<Dictionary<string, List<NamedLook>>> Table = new(() =>
     {
@@ -54,7 +61,8 @@ public sealed record Look(string Floor, string Ceiling, string Wall, double Floo
             table[family.Name] = [.. family.Value.EnumerateArray().Select(l => new NamedLook(
                 l.GetProperty("name").GetString()!, l.GetProperty("wall").GetString()!, l.GetProperty("floor").GetString()!, l.GetProperty("ceiling").GetString()!,
                 l.TryGetProperty("ceilingHeight", out var h) ? h.GetDouble() : null, l.TryGetProperty("light", out var light) ? light.GetInt32() : null,
-                l.TryGetProperty("switch", out var sw) ? sw.GetString() : null))];
+                l.TryGetProperty("switch", out var sw) ? sw.GetString() : null, l.TryGetProperty("step", out var st) ? st.GetString() : null,
+                l.TryGetProperty("trim", out var tr) ? tr.GetString() : null, l.TryGetProperty("lightFlat", out var lf) ? lf.GetString() : null))];
         }
 
         return table;

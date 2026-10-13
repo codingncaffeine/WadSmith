@@ -47,6 +47,7 @@ public static class EditScript
         brightness X Y LEVEL        the room's brightness, 0 to 255
         effect X Y NUMBER           the room's effect (65 flickers, 81 flickers like fire, 72 glows, 67 blinks slowly …), its flags kept
         flat X Y NAME               the floor picture of the room at the point
+        ceilingflat X Y NAME        the ceiling picture of the room at the point
         damage X Y AMOUNT           the room's floor hurts the player AMOUNT every second or so (5 nukage, 10 slime, 20 lava)
         sign X Y TEXT...            a sign for the room: a WadSmith tour shows it in the game when the player walks in
         """;
@@ -227,6 +228,12 @@ public static class EditScript
                 var picture = w[3].ToUpperInvariant();
                 Record("Change the floor's picture", e => e.Set(floored, s => s.FloorTexture, (s, v) => s.FloorTexture = v, picture));
                 made = $"floor {picture}";
+                break;
+            case "ceilingflat":
+                var ceiled = Room(1);
+                var overhead = w[3].ToUpperInvariant();
+                Record("Change the ceiling's picture", e => e.Set(ceiled, s => s.CeilingTexture, (s, v) => s.CeilingTexture = v, overhead));
+                made = $"ceiling {overhead}";
                 break;
             case "damage":
                 var hurting = Room(1);

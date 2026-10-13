@@ -111,13 +111,15 @@ public sealed class GeneratorTests
         Assert.NotEmpty(with.Teleports);
         Assert.Contains(with.Rooms, r => r.Role == RoomRole.Closet);
 
-        // The styles: caves cut their corners, castle halls stand pillars; the same seed keeps the same way through.
+        // The styles: caves cut their corners roughly, castle halls stand rows of slim pillars (any style may stand a column
+        // or bevel its corners evenly, D59); the same seed keeps the same way through.
         var caves = Planner.Plan(For("doom", "grim-keep", MapSize.Huge, style: MapStyle.Caves));
         var castle = Planner.Plan(For("doom", "grim-keep", MapSize.Huge, style: MapStyle.Castle));
         Assert.Contains(caves.Rooms, r => r.Cuts != default);
-        Assert.DoesNotContain(caves.Rooms, r => r.Pillars.Count > 0);
-        Assert.Contains(castle.Rooms, r => r.Pillars.Count > 0);
-        Assert.DoesNotContain(castle.Rooms, r => r.Cuts != default);
+        Assert.DoesNotContain(caves.Rooms, r => r.Pillars.Any(p => p.Width == 64));
+        Assert.Contains(castle.Rooms, r => r.Pillars.Any(p => p.Width == 64));
+        Assert.DoesNotContain(castle.Rooms, r => r.Cuts.SW != r.Cuts.NW || r.Cuts.NW != r.Cuts.NE || r.Cuts.NE != r.Cuts.SE);
+        Assert.Contains(caves.Rooms, r => r.Cuts.SW != r.Cuts.NW || r.Cuts.NW != r.Cuts.NE || r.Cuts.NE != r.Cuts.SE);
         Assert.Equal(with.Path.Select(i => with.Rooms[i].Cell), caves.Path.Select(i => caves.Rooms[i].Cell));
 
         // A mixed map without locked doors still mixes: its styles change along the way.

@@ -33,6 +33,7 @@ public static class MapMaker
         void Line(FormattableString line) => text.AppendLine(line.ToString(CultureInfo.InvariantCulture));
         var own = Look.For(s.Family);
         Look LookFor(PlannedRoom r) => r.Look is { } choice ? lookOf?.Invoke(choice) ?? choice.Look : own;
+        Look Trimmed(PlannedRoom r) => LookFor(r) with { Wall = LookFor(r).TrimOrWall };
         void UseLook(Look l) => Line($"look custom {l.Wall} {l.Floor} {l.Ceiling}");
         void Heights(Box b, double floor, double ceiling, int light)
         {
@@ -60,8 +61,8 @@ public static class MapMaker
         Line($"# Pillars: columns closed floor to ceiling");
         foreach (var room in plan.Rooms)
         {
-            // Its columns, dais, pools and balcony show the room's own walls on their faces.
-            if (room.Pillars.Count > 0 || room.Dais is not null || room.Pools.Count > 0 || room.Ledge is not null || room.LightPools.Count > 0) UseLook(LookFor(room));
+            // Its columns, dais, pools and balcony show the room's own trim on their faces (its walls where the look has none).
+            if (room.Pillars.Count > 0 || room.Dais is not null || room.Pools.Count > 0 || room.Ledge is not null || room.LightPools.Count > 0) UseLook(Trimmed(room));
 
             foreach (var p in room.Pillars)
             {
@@ -125,6 +126,7 @@ public static class MapMaker
                 Line($"room {patch.X0} {patch.Y0} {patch.X1} {patch.Y1}");
                 Line($"brightness {patch.CentreX} {patch.CentreY} {light}");
                 if (effect != 0) Line($"effect {patch.CentreX} {patch.CentreY} {effect}");
+                if (LookFor(room).LightFlat is { } panel && !room.Outdoors) Line($"ceilingflat {patch.CentreX} {patch.CentreY} {panel}");
             }
         }
 
@@ -205,6 +207,7 @@ public static class MapMaker
                 Heights(far, b.Floor, w.FarCeiling, b.Light);
             }
 
+            UseLook(Trimmed(b));
             Line($"room {w.Pane.X0} {w.Pane.Y0} {w.Pane.X1} {w.Pane.Y1}");
             Heights(w.Pane, w.Sill, w.Top, Math.Max(a.Light, b.Light));
         }

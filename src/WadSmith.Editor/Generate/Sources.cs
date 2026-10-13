@@ -131,6 +131,8 @@ public static class Sources
                     Wall = Copy(look.Wall, false),
                     Floor = Copy(look.Floor, true),
                     Ceiling = GeneratorSettings.IsSky(look.Ceiling) ? SkyOf(s.Family) : Copy(look.Ceiling, true),
+                    Trim = look.Trim is { } trim ? Copy(trim, false) : null,
+                    LightFlat = look.LightFlat is { } lit ? Copy(lit, true) : null,
                 };
             }
 

@@ -34,6 +34,9 @@ public static class Planner
             Windows(plan, root.Fork("windows"));
             if (attempt < 48 && plan.Windows.Count == 0) continue;
 
+            // And one where a key on its dais cannot spring a trap (every wall of its room taken).
+            if (attempt < 48 && settings.Traps && plan.Rooms.Any(r => r.Key is not null && r.Dais is not null && !plan.Rooms.Any(c => c.ClosetOf == r.Index))) continue;
+
             // And one with no balcony and no drop: somewhere to be above the player, or to drop from (D59).
             if (attempt < 48 && !plan.Rooms.Any(r => r.Ledge is not null) && !plan.Links.Any(l => l.Kind == LinkKind.Drop)) continue;
             Dress(plan, root.Fork("looks"));
@@ -289,6 +292,16 @@ public static class Planner
             RoomRole.Side => castle ? (224, 448) : room.Style == MapStyle.Caves ? (192, 384) : (160, 352),
             _ => castle ? (320, plan.MaxHalf) : room.Style == MapStyle.Caves ? (224, 416) : (192, 416),
         };
+
+        // Halls of every size (D59: the community's rooms differ in size nearly twice as much as ours): now and then a great
+        // hall filling its cell, now and then a small chamber.
+        if (room.Role is RoomRole.Path or RoomRole.Side)
+        {
+            var roll = rng.NextDouble();
+            if (roll < 0.2) (min, max) = (plan.MaxHalf - 32, plan.MaxHalf);
+            else if (roll < 0.45) (min, max) = (Math.Max(128, min - 64), min);
+        }
+
         int Reach() => Math.Min(rng.Between(min / 32, max / 32) * 32, plan.MaxHalf);
         var (cx, cy) = (room.Cell.I * plan.Cell, room.Cell.J * plan.Cell);
         room.Box = new Box(cx - Reach(), cy - Reach(), cx + Reach(), cy + Reach());
@@ -308,6 +321,15 @@ public static class Planner
             var b = room.Box;
             var (cx, cy) = Middle(plan, room);
             var (west, east, south, north) = ((int)(cx - b.X0), (int)(b.X1 - cx), (int)(cy - b.Y0), (int)(b.Y1 - cy));
+
+            // Bevelled corners now and then (D59: 31% of the community's wall length is off the square, ours none outside caves);
+            // every side keeps its middle straight for 80 either way, where corridors and the exit meet it.
+            if (room.Style != MapStyle.Caves && room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Arena or RoomRole.Start && rng.Chance(0.35))
+            {
+                var bevel = Math.Min(rng.Pick([64, 96, 128]), (Math.Min(Math.Min(west, east), Math.Min(south, north)) - 80) / 16 * 16);
+                if (bevel >= 32) room.Cuts = (bevel, bevel, bevel, bevel);
+            }
+
             if (room.Style == MapStyle.Caves)
             {
                 int Cut(int across, int along)
@@ -747,8 +769,10 @@ public static class Planner
             return suiting.Count > 0 ? suiting : indoor;
         }
 
-        var zoneLooks = new Dictionary<(int, MapStyle), LookChoice>();
-        var share = s.Outdoors switch { OutdoorShare.None => 0, OutdoorShare.Some => 0.2, _ => 0.45 };
+        // A look per area (D59: the community's maps change their walls every few rooms — 61 pictures a map, ours 9):
+        // by part of the map, style and every third of a part's way, a quarter of the rooms taking another that suits.
+        var zoneLooks = new Dictionary<(int, MapStyle, int), LookChoice>();
+        var share = s.Outdoors switch { OutdoorShare.None => 0, OutdoorShare.Some => 0.35, _ => 0.6 };
         var counts = new Dictionary<RoomRole, int>();
         foreach (var room in plan.Rooms)
         {
@@ -762,8 +786,9 @@ public static class Planner
 
             var sky = outdoor.Count > 0 && room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Arena or RoomRole.Start && rng.Chance(share);
             var suits = Suiting(room.Style);
-            if (!zoneLooks.TryGetValue((room.Zone, room.Style), out var zoneLook)) zoneLooks[(room.Zone, room.Style)] = zoneLook = suits[(room.Zone + zoneLooks.Count) % suits.Count];
-            room.Look = sky ? rng.Pick(outdoor) : rng.Chance(0.15) ? rng.Pick(suits) : zoneLook;
+            var area = (room.Zone, room.Style, (int)(room.Progress * plan.Path.Count / 3));
+            if (!zoneLooks.TryGetValue(area, out var zoneLook)) zoneLooks[area] = zoneLook = suits[(room.Zone + zoneLooks.Count) % suits.Count];
+            room.Look = sky ? rng.Pick(outdoor) : rng.Chance(0.25) ? rng.Pick(suits) : zoneLook;
             room.Outdoors = sky;
             if (sky) room.Ceiling = Math.Max(room.Ceiling, room.Floor + rng.Between(8, 10) * 32);
             room.Dark = s.DarkPlaces && !sky && room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Key && rng.Chance(room.Style == MapStyle.Caves ? 0.3 : 0.18);
@@ -1028,7 +1053,7 @@ public static class Planner
         // A closet's monsters count with the room it opens into, where its supplies go.
         double HealthIn(int room) => plan.Things.Where(t => t.Room >= 0 && (t.Room == room || plan.Rooms[t.Room].ClosetOf == room) && t.Monster is not null).Sum(t => (double)t.Monster!.Health);
         var total = plan.Rooms.Sum(r => HealthIn(r.Index));
-        var target = total * (1.35 - 0.4 * c);
+        var target = total * (1.35 - 0.35 * c);
         var have = palette.StartDamage + weaponAt.Keys.Sum(w => weapons[w].Gives * (AmmoFor(weapons[w])?.Damage ?? 0));
         var deficit = Math.Max(0, target - have);
 
@@ -1042,9 +1067,11 @@ public static class Planner
         }
 
         var startAmmo = palette.Ammo[0];
+        // What a crowded room has no floor for goes on to the next room along the way.
+        var carried = 0.0;
         foreach (var room in plan.Rooms.Where(r => r.Role != RoomRole.Closet && HealthIn(r.Index) > 0).OrderBy(Position))
         {
-            var share = total <= 0 ? 0 : deficit * HealthIn(room.Index) / total;
+            var share = (total <= 0 ? 0 : deficit * HealthIn(room.Index) / total) + carried;
             var position = Position(room);
             var types = new List<AmmoKind> { startAmmo };
             foreach (var (w, at) in weaponAt.Where(p => p.Value <= position).OrderBy(p => p.Key))
@@ -1060,6 +1087,8 @@ public static class Planner
                 plan.Things.Add(new PlannedThing(ThingRole.Ammo, big ? ammo.Big : ammo.Small, at.X, at.Y, 90, Room: room.Index, Family: ammo.Family != s.Family ? ammo.Family : null));
                 share -= (big ? ammo.BigAmount : ammo.SmallAmount) * ammo.Damage;
             }
+
+            carried = Math.Max(0, share);
 
             // Health: about a twentieth of the monsters' health, more at the gentle end (the community's hard sets give a
             // fiftieth; D59).
@@ -1146,21 +1175,53 @@ public static class Planner
     /// </summary>
     private static void Lighting(MapPlan plan, FamilyPalette palette, List<Spots> spots, Seeded rng)
     {
-        foreach (var room in plan.Rooms.Where(r => r.Role is not (RoomRole.Secret or RoomRole.Closet)))
+        IReadOnlyList<int> KindsFor(PlannedRoom room) => room.Outdoors ? [] : room.Style is MapStyle.Castle or MapStyle.Caves ? palette.Torches : palette.Lights;
+        var lit = plan.Rooms.Where(r => r.Role is not (RoomRole.Secret or RoomRole.Closet)).ToList();
+        foreach (var room in lit)
         {
             for (var i = 0; i < room.Pools.Count; i++)
             {
                 if (room.Pools[i].Damage > 0 && rng.Chance(0.85)) room.Pools[i] = room.Pools[i] with { Effect = 72 };
             }
 
-            var torch = room.Style is MapStyle.Castle or MapStyle.Caves;
-            var kinds = room.Outdoors ? [] : torch ? palette.Torches : palette.Lights;
-            if (!plan.Settings.Decorations || kinds.Count == 0 || !rng.Chance(0.8))
+            if (!plan.Settings.Decorations || KindsFor(room).Count == 0 || !rng.Chance(0.8))
             {
                 if (room.Dark && rng.Chance(0.75)) room.Effect = 65;
                 continue;
             }
 
+            Fixtures(room);
+        }
+
+        // Every map has its light and its flicker: with no fixture placed, the biggest indoor rooms take them where they can; with
+        // no effect anywhere, a patch flickers (or else the dimmest, smallest indoor room).
+        if (plan.Settings.Decorations && !lit.Any(r => r.LightPools.Count > 0))
+        {
+            foreach (var room in lit.Where(r => KindsFor(r).Count > 0).OrderByDescending(r => r.Box.Width * (double)r.Box.Height))
+            {
+                if (Fixtures(room, must: true)) break;
+            }
+        }
+
+        if (!lit.Any(r => r.Effect != 0 || r.LightPools.Any(p => p.Effect != 0) || r.Pools.Any(p => p.Effect != 0)))
+        {
+            if (lit.FirstOrDefault(r => r.LightPools.Count > 0) is { } withPatch)
+            {
+                var (box, light, _) = withPatch.LightPools[0];
+                withPatch.LightPools[0] = (box, light, withPatch.Style is MapStyle.Castle or MapStyle.Caves ? 81 : 65);
+            }
+            else if (lit.Where(r => !r.Outdoors).OrderByDescending(r => r.Dark).ThenBy(r => r.Box.Width * (double)r.Box.Height).FirstOrDefault() is { } dim)
+            {
+                dim.Effect = 65;
+            }
+        }
+
+        // One or two fixtures in a room, each in its patch of light (a must takes a smaller patch nearer the middle lines);
+        // whether any stands.
+        bool Fixtures(PlannedRoom room, bool must = false)
+        {
+            var torch = room.Style is MapStyle.Castle or MapStyle.Caves;
+            var kinds = KindsFor(room);
             var b = room.Box;
             var (cx, cy) = Middle(plan, room);
             var blocked = new List<Box>();
@@ -1188,7 +1249,8 @@ public static class Planner
             blocked.AddRange(room.Pools.Select(p => p.Box));
             var corners = new List<(int SX, int SY)> { (1, 1), (1, -1), (-1, -1), (-1, 1) };
             rng.Shuffle(corners);
-            var size = rng.Pick([128, 160]);
+            var size = must ? 96 : rng.Pick([128, 160]);
+            var clear = must ? 48 : 80;
             var kind = rng.Pick(kinds);
             var wanted = Math.Min(b.Width, b.Height) >= 640 || rng.Chance(0.7) ? 2 : 1;
             // Where a fixture may stand: the corners first (not a cut one), then against a wall's straight run a quarter of the
@@ -1224,7 +1286,7 @@ public static class Planner
             places.AddRange(walls);
             foreach (var (patch, at) in places)
             {
-                if ((patch.X1 > cx - 80 && patch.X0 < cx + 80) || (patch.Y1 > cy - 80 && patch.Y0 < cy + 80)) continue;
+                if ((patch.X1 > cx - clear && patch.X0 < cx + clear) || (patch.Y1 > cy - clear && patch.Y0 < cy + clear)) continue;
                 if (blocked.Any(o => !Apart(patch, o, 0)) || room.LightPools.Any(p => !Apart(patch, p.Box, 32))) continue;
                 if (spots[room.Index].Taken.Any(t => Math.Abs(t.X - at.X) < t.R + 24 && Math.Abs(t.Y - at.Y) < t.R + 24)) continue;
                 spots[room.Index].Taken.Add((at.X, at.Y, 24));
@@ -1236,6 +1298,7 @@ public static class Planner
 
             if (room.LightPools.Count > 0) room.Light = Math.Max(96, room.Light - 16);
             else if (room.Dark && rng.Chance(0.75)) room.Effect = 65;
+            return room.LightPools.Count > 0;
         }
     }
 
