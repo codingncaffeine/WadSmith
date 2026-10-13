@@ -75,8 +75,8 @@ public static partial class DukeBorrowing
                 if (duke.Art.Tile(frame.Tile + view) is not { } tile) continue;
                 var rotation = view + 1;
                 var name = frame.Views == 1 ? $"{sprite}{letter}0" : rotation is 1 or 5 ? $"{sprite}{letter}{rotation}" : $"{sprite}{letter}{rotation}{letter}{10 - rotation}";
-                project.WriteFile($"sprites/{name}.png", ImageCodec.EncodePng(duke.Art.Picture(tile)));
-                project.Record(new CopiedAsset { Kind = "sprite", Game = "duke3d", Original = tile.Number.ToString(CultureInfo.InvariantCulture), Name = name, File = $"sprites/{name}.png" });
+                project.WriteFile($"sprites/{Core.Assets.AssetExtractor.SafeName(name)}.png", ImageCodec.EncodePng(duke.Art.Picture(tile)));
+                project.Record(new CopiedAsset { Kind = "sprite", Game = "duke3d", Original = tile.Number.ToString(CultureInfo.InvariantCulture), Name = name, File = $"sprites/{Core.Assets.AssetExtractor.SafeName(name)}.png" });
                 sprites++;
             }
         }

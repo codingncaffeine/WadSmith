@@ -71,7 +71,8 @@ public sealed class FolderContainer : ResourceContainer
     {
         Path = System.IO.Path.GetFullPath(root);
         var files = Directory.EnumerateFiles(Path, "*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.Hidden })
-            .Select(f => System.IO.Path.GetRelativePath(Path, f).Replace('\\', '/'))
+            // Only the system's own separator: on Linux a \ is a letter of the name (a file a WadSmith before 0.0.8 wrote).
+            .Select(f => System.IO.Path.GetRelativePath(Path, f).Replace(System.IO.Path.DirectorySeparatorChar, '/'))
             .Where(f => !f.Split('/').Any(part => part.StartsWith('.'))) // archive path
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToList();

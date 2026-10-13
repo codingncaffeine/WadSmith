@@ -164,7 +164,34 @@ public sealed class Project
         }
 
         if (info.Format > ProjectInfo.CurrentFormat) throw new CorruptDataException($"This project was saved by a newer WadSmith (format {info.Format}); update WadSmith to open it.");
+        info = RenameBackslashSprites(folder, info);
         return new Project(folder, info);
+    }
+
+    /// <summary>
+    /// Gives a sprite a WadSmith before 0.0.8 wrote with a \ in its name (Hexen's cleric, frame \) GZDoom's ^ for it, and
+    /// its record the new file. Such a file was read as a folder and kept the project's game from loading. Linux only:
+    /// Windows never allowed the name.
+    /// </summary>
+    private static ProjectInfo RenameBackslashSprites(string folder, ProjectInfo info)
+    {
+        var sprites = Path.Combine(folder, "sprites");
+        if (Path.DirectorySeparatorChar == '\\' || !Directory.Exists(sprites)) return info;
+        var renamed = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var file in Directory.EnumerateFiles(sprites).Where(f => Path.GetFileName(f).Contains('\\')))
+        {
+            var name = Path.GetFileName(file);
+            var fixedName = name.Replace('\\', '^');
+            var target = Path.Combine(sprites, fixedName);
+            if (File.Exists(target)) continue;
+            File.Move(file, target);
+            renamed["sprites/" + name] = "sprites/" + fixedName;
+        }
+
+        if (renamed.Count == 0) return info;
+        info = info with { Copied = [.. info.Copied.Select(c => renamed.TryGetValue(c.File, out var now) ? c with { File = now } : c)] };
+        WriteAtomically(Path.Combine(folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(info, Json));
+        return info;
     }
 
     /// <summary>Reads a map of the project.</summary>

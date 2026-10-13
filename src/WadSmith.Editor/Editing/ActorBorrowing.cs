@@ -70,7 +70,7 @@ public static class ActorBorrowing
         {
             foreach (var (_, entry) in from.Sprites.Frames(sprite))
             {
-                var file = $"sprites/{entry.Name}.png";
+                var file = $"sprites/{Core.Assets.AssetExtractor.SafeName(entry.Name)}.png";
                 if (project.FindCopy(from.Game.Id, entry.Name, "sprite") is null && !Pending("sprite", entry.Name))
                 {
                     var image = PictureLoader.Load(entry.Read(), ResourceNamespace.Sprites, from.Textures.Palette, entry.Name).Image;

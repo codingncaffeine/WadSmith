@@ -23,7 +23,9 @@ public readonly record struct SpriteFrameName(string Sprite, char Frame, char Ro
             r2 = n[7];
         }
 
-        name = new SpriteFrameName(n[..4], n[4], n[5], f2, r2);
+        // GZDoom reads ^ as the \ frame a file name cannot hold (R_InstallSprite).
+        static char Frame(char c) => c == '^' ? '\\' : c;
+        name = new SpriteFrameName(n[..4], Frame(n[4]), n[5], f2 is { } m ? Frame(m) : null, r2);
         return true;
     }
 
