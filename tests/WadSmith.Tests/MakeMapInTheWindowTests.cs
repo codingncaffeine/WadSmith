@@ -22,6 +22,9 @@ public sealed class MakeMapInTheWindowTests
 {
     private static void Click(MainWindow window, Visual target)
     {
+        // As the user would: scrolled into view first, then pressed where it shows.
+        if (target is Control control) control.BringIntoView();
+        Ui.Pump(0.2);
         var middle = target.TranslatePoint(new Point(target.Bounds.Width / 2, target.Bounds.Height / 2), window) ?? throw new InvalidOperationException("Not in the window.");
         window.MouseMove(middle, RawInputModifiers.None);
         window.MouseDown(middle, MouseButton.Left, RawInputModifiers.None);
@@ -66,8 +69,14 @@ public sealed class MakeMapInTheWindowTests
                 var walk = Progression.Walk(editor.Session.Geometry, "doom");
                 said.Add($"opened {Path.GetFileName(folder)} in {Path.GetFileName(Path.GetDirectoryName(folder))}, exit reached {walk.ExitReached}, keys {walk.Steps.Count(s => s.Kind == "key")}, settings kept {File.Exists(Path.Combine(folder, MadeProjects.SettingsFile))}");
 
-                // Back on the start screen, the map is on its game's card.
-                Ui.Wait(vm.CloseEditorAsync());
+                // Ctrl+K's "Make another like it": the page again with this map's choices and a new seed; back to the start screen,
+                // the map is on its game's card.
+                editor.Commands().Single(c => c.Name == "Make another like it").Run();
+                for (var i = 0; i < 100 && vm.Page is not MakeMapViewModel; i++) Ui.Pump(0.05);
+                var again = (MakeMapViewModel)vm.Page;
+                said.Add($"another like it: size {again.Size.Index}, keys {again.Keys.Index}, bosses {again.Bosses.Index}, new seed {again.Seed != "bleak-depot"}");
+                Click(window, Shown<Button>(window, b => Equals(b.Content, "‹ Your games")));
+                Ui.Wait(vm.Welcome.RefreshProjectsAsync());
                 for (var i = 0; i < 100 && tile.Projects.Count == 0; i++) Ui.Pump(0.05);
                 said.Add($"card: {string.Join(", ", tile.Projects.Select(p => p.Name))}");
 
@@ -96,9 +105,10 @@ public sealed class MakeMapInTheWindowTests
         Assert.Equal(
         [
             "page for Freedoom: Phase 2, base row Freedoom: Phase 2",
-            "Bleak Depot · 24 rooms · 3 keys · 3 secrets",
+            "Bleak Depot · 24 rooms · 3 keys · 3 secrets · 1 trap",
             "plan bosses 2, preview checked True",
             "opened Bleak Depot in Made maps, exit reached True, keys 3, settings kept True",
+            "another like it: size 2, keys 3, bosses 2, new seed True",
             "card: Bleak Depot",
             "second in True",
             "card: Bleak Depot, Grim Keep",

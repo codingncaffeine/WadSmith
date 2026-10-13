@@ -129,7 +129,8 @@ internal sealed partial class MakeMapViewModel : ObservableObject
     private readonly LatestOnWorker<(MapPlan? Plan, string Facts, string Verdict, string? Error)> _preview;
     private bool _loading = true;
 
-    public MakeMapViewModel(AppServices services, MainViewModel main, FoundGame game, string target)
+    /// <summary>The page for <paramref name="game"/>; with <paramref name="like"/> (a made map's choices) it starts from those, else from the last map made.</summary>
+    public MakeMapViewModel(AppServices services, MainViewModel main, FoundGame game, string target, GeneratorSettings? like = null)
     {
         _services = services;
         _main = main;
@@ -137,16 +138,24 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         Target = target;
         GameTitle = game.Game.Title;
         Size = new SegmentGroup([.. Enum.GetValues<MapSize>().Select(z => (z.ToString(), $"{GeneratorSettings.RoomsFor(z)} rooms."))], 1);
+        Style = new SegmentGroup(
+        [
+            ("Base", "Rooms and halls with square corners, as in a tech base."),
+            ("Caves", "Rough rooms with their corners cut, low and dim."),
+            ("Castle", "Big tall halls with rows of pillars."),
+            ("Mixed", "Each part of the map, between locked doors, in a style of its own."),
+        ], 0);
         Outdoors = new SegmentGroup([("None", "Every room has a ceiling."), ("Some", "About one room in five is open to the sky."), ("Lots", "Nearly half the rooms are open to the sky.")], 1);
         var keyNames = Editor.Smart.Keys.Of(_game.Engine).Select(k => k.Colour).ToList();
         var keys = new List<(string, string)> { ("None", "No locked doors: every door opens.") };
         for (var k = 1; k <= Math.Min(3, FamilyPalette.For(_game.Engine)?.Keys.Count ?? 0); k++) keys.Add((k.ToString(CultureInfo.InvariantCulture), $"{k} locked door{(k > 1 ? "s" : "")}, each with its key earlier on the way: {string.Join(", then ", keyNames.Take(k))}."));
         Keys = new SegmentGroup(keys, Math.Min(2, keys.Count - 1));
         Bosses = new SegmentGroup([("None", "No boss: the exit room ends the map."), ("1", "One boss in an arena before the exit."), ("2", "Two bosses in the arena."), ("3", "Three bosses in the arena.")], 1);
-        foreach (var g in new[] { Size, Outdoors, Keys, Bosses }) g.Changed += Remake;
+        foreach (var g in new[] { Size, Style, Outdoors, Keys, Bosses }) g.Changed += Remake;
         _seed = SeedWords.Shuffle(Random.Shared);
         _preview = new LatestOnWorker<(MapPlan?, string, string, string?)>(MainViewModel.PostToUi, Show, "make-me-a-map preview");
         BuildSources(game);
+        if ((like ?? (services.Settings.Current.LastMadeMap is { } last ? SettingsJson.Read(last) : null)) is { } start) Apply(start);
         _loading = false;
         Remake();
         _ = ReadSourcesAsync();
@@ -160,6 +169,8 @@ internal sealed partial class MakeMapViewModel : ObservableObject
     public ObservableCollection<SourceRow> Sources { get; } = [];
 
     public SegmentGroup Size { get; }
+
+    public SegmentGroup Style { get; }
 
     public SegmentGroup Outdoors { get; }
 
@@ -196,6 +207,9 @@ internal sealed partial class MakeMapViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _decorations = true;
+
+    [ObservableProperty]
+    private bool _traps = true;
 
     [ObservableProperty]
     private string _seed;
@@ -246,7 +260,12 @@ internal sealed partial class MakeMapViewModel : ObservableObject
 
     partial void OnDecorationsChanged(bool value) => Remake();
 
+    partial void OnTrapsChanged(bool value) => Remake();
+
     partial void OnSeedChanged(string value) => Remake();
+
+    /// <summary>The Doom family's games a map may borrow from, fullest first: the id games, then Freedoom.</summary>
+    private static readonly string[] DoomOrder = ["doom2", "doom-ultimate", "doom", "plutonia", "tnt", "freedoom2", "freedoom1", "doom-shareware"];
 
     /// <summary>The rows: the base game first, Doom II's monsters for a Doom map, then one game of each other family the generator knows.</summary>
     private void BuildSources(FoundGame baseGame)
@@ -255,15 +274,18 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         Sources.Add(new SourceRow(this, baseGame, baseGame.Game.Title, true, false));
         if (baseGame.Game.Engine == "doom" && baseGame.Game.MapNames == "ExMy")
         {
-            var doom2 = GameCatalog.All.Select(d => found.FirstOrDefault(f => f.Game.Id == d.Id)).OfType<FoundGame>().FirstOrDefault(f => f.Game.Engine == "doom" && f.Game.MapNames != "ExMy" && !f.Game.Free);
-            doom2 ??= found.FirstOrDefault(f => f.Game.Engine == "doom" && f.Game.MapNames != "ExMy");
+            var doom2 = DoomOrder.Select(id => found.FirstOrDefault(f => f.Game.Id == id)).OfType<FoundGame>().FirstOrDefault(f => f.Game.MapNames != "ExMy");
             if (doom2 is not null) Sources.Add(new SourceRow(this, doom2, $"{doom2.Game.Title}'s monsters", false, true));
         }
 
         foreach (var family in FamilyPalette.Families.Where(f => f != baseGame.Game.Engine))
         {
-            // The fullest game of the family: games.json lists the most specific first, and a paid game before a free one.
-            var best = GameCatalog.All.Where(d => d.Engine == family).Select(d => found.FirstOrDefault(f => f.Game.Id == d.Id)).OfType<FoundGame>().OrderBy(f => f.Game.Free).FirstOrDefault();
+            // The fullest game of the family: for Doom, the id games and Freedoom in that order (a total conversion such as Hacx
+            // draws its own monsters under Doom's names, so it is not offered); otherwise games.json's order, most specific first,
+            // a paid game before a free one.
+            var best = family == "doom"
+                ? DoomOrder.Select(id => found.FirstOrDefault(f => f.Game.Id == id)).OfType<FoundGame>().FirstOrDefault()
+                : GameCatalog.All.Where(d => d.Engine == family).Select(d => found.FirstOrDefault(f => f.Game.Id == d.Id)).OfType<FoundGame>().OrderBy(f => f.Game.Free).FirstOrDefault();
             if (best is not null) Sources.Add(new SourceRow(this, best, best.Game.Title, false, false));
         }
 
@@ -308,10 +330,31 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         var usable = row.MonsterKinds(Settings()).Count;
         var looks = row.LookKinds().Count;
         var parts = new List<string> { $"{usable} monster{(usable == 1 ? "" : "s")}" };
-        if (row.Refused.Count > 0) parts[0] += $" ({row.Refused.Count} share a picture name with {Sources[0].Title}'s, so they wait for a later update)";
+        if (row.Refused.Count > 0) parts[0] += $" (not yet: {string.Join(", ", row.Refused.Order(StringComparer.Ordinal).Select(Spaced))}, whose pictures share a name with {Sources[0].Title}'s)";
         if (row.CanTextures) parts.Add($"{looks} look{(looks == 1 ? "" : "s")}");
         if (!row.IsBase) parts.Add("copied in when used");
         return string.Join(" · ", parts);
+    }
+
+    /// <summary>
+    /// Sets the page to earlier choices (a made map's, or the last map made): every control, and each game's boxes by whether
+    /// those choices used its monsters and looks. The seed stays new: the same choices make another map.
+    /// </summary>
+    private void Apply(GeneratorSettings s)
+    {
+        Size.Index = (int)s.Size;
+        Style.Index = (int)s.Style;
+        Outdoors.Index = (int)s.Outdoors;
+        Keys.Index = Math.Clamp(s.Keys, 0, Keys.Items.Count - 1);
+        Bosses.Index = Math.Clamp(s.Bosses, 0, 3);
+        Challenge = s.Challenge;
+        (Secrets, Stairs, Lifts, Teleporters, DarkPlaces, Ambushes, Decorations, Traps) = (s.Secrets, s.Stairs, s.Lifts, s.Teleporters, s.DarkPlaces, s.Ambushes, s.Decorations, s.Traps);
+        foreach (var row in Sources)
+        {
+            var mine = row.MonsterKinds(s);
+            row.Monsters = s.Monsters.Count == 0 ? row.IsBase : s.Monsters.Any(m => mine.Contains(m));
+            row.Textures = row.CanTextures && (s.Looks.Count == 0 ? row.IsBase : s.Looks.Any(l => l.Family == row.Family));
+        }
     }
 
     /// <summary>The page's choices as the generator's settings.</summary>
@@ -321,6 +364,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         {
             GZDoom = !Targets.IsClassic(Target),
             Size = (MapSize)Size.Index,
+            Style = (MapStyle)Style.Index,
             Outdoors = (OutdoorShare)Outdoors.Index,
             Challenge = Challenge,
             Keys = Keys.Index,
@@ -332,6 +376,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
             DarkPlaces = DarkPlaces,
             Ambushes = Ambushes,
             Decorations = Decorations,
+            Traps = Traps,
             Seed = SeedWords.Tidy(Seed),
         };
         var monsters = Sources.Where(r => r.Monsters).SelectMany(r => r.MonsterKinds(s)).Distinct().ToList();
@@ -367,7 +412,8 @@ internal sealed partial class MakeMapViewModel : ObservableObject
             var names = SkillNames(s.Family);
             var keys = plan.Links.Count(l => l.Key is not null);
             var secrets = plan.Rooms.Count(r => r.Role == RoomRole.Secret);
-            var facts = $"{SeedWords.Title(s.Seed)} · {plan.Rooms.Count} rooms · {Count(keys, "key")} · {Count(secrets, "secret")} · about {Count(plan.Minutes, "minute")}";
+            var traps = plan.Rooms.Count(r => r.Role == RoomRole.Closet);
+            var facts = $"{SeedWords.Title(s.Seed)} · {plan.Rooms.Count - traps} rooms · {Count(keys, "key")} · {Count(secrets, "secret")}{(traps > 0 ? $" · {Count(traps, "trap")}" : "")} · about {Count(plan.Minutes, "minute")}";
             var verdict = new List<string> { $"{hard} monsters on {names[3]}, {normal} on {names[2]}, {easy} on {names[1]}." };
             if (s.Family == "doom" && s.Monsters.All(m => m.Family == "doom") && things is not null && Balance.Read(made.Map.Things, things, s.Family) is { } balance)
             {
@@ -438,6 +484,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         _loading = true;
         var r = Random.Shared;
         Size.Index = r.Next(4);
+        Style.Index = r.Next(4);
         Outdoors.Index = r.Next(3);
         Keys.Index = r.Next(Keys.Items.Count);
         Bosses.Index = r.Next(4);
@@ -449,6 +496,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         DarkPlaces = r.Next(3) > 0;
         Ambushes = r.Next(2) > 0;
         Decorations = r.Next(5) > 0;
+        Traps = r.Next(3) > 0;
         foreach (var row in Sources.Where(x => !x.IsBase))
         {
             row.Monsters = r.Next(2) > 0;

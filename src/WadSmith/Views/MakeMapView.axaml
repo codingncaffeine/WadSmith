@@ -73,6 +73,9 @@
                     <TextBlock Classes="section" Text="SIZE" Margin="0,12,0,0" />
                     <ContentControl Content="{Binding Size}" ContentTemplate="{StaticResource Segments}" />
 
+                    <TextBlock Classes="section" Text="STYLE" Margin="0,12,0,0" />
+                    <ContentControl Content="{Binding Style}" ContentTemplate="{StaticResource Segments}" />
+
                     <TextBlock Classes="section" Text="OPEN TO THE SKY" Margin="0,12,0,0" />
                     <ContentControl Content="{Binding Outdoors}" ContentTemplate="{StaticResource Segments}" />
 
@@ -103,6 +106,7 @@
                         <CheckBox Content="Teleporters" IsChecked="{Binding Teleporters}" Margin="0,0,18,4" ToolTip.Tip="A pad at a dead end that sends the player back to where that part of the map begins." />
                         <CheckBox Content="Dark places" IsChecked="{Binding DarkPlaces}" Margin="0,0,18,4" ToolTip.Tip="Some rooms dim, with a light glowing in them." />
                         <CheckBox Content="Ambushes" IsChecked="{Binding Ambushes}" Margin="0,0,18,4" ToolTip.Tip="In some rooms the monsters wait silently until they see the player." />
+                        <CheckBox Content="Traps" IsChecked="{Binding Traps}" Margin="0,0,18,4" ToolTip.Tip="Monster closets: small rooms beside a room whose doors open behind the player who walks in." />
                         <CheckBox Content="Decorations" IsChecked="{Binding Decorations}" Margin="0,0,18,4" ToolTip.Tip="Lamps, columns and barrels in the rooms' corners, trees under the sky." />
                     </WrapPanel>
 

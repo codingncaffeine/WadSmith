@@ -258,9 +258,13 @@ internal sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>Opens "Make me a map" (D50) for a game found on this computer, for a map that plays in <paramref name="target"/>.</summary>
-    public void OpenMakeMap(FoundGame game, string target)
+    public void OpenMakeMap(FoundGame game, string target) => _ = OpenMakeMapAsync(game, target);
+
+    /// <summary>Opens "Make me a map", closing the map being edited first; <paramref name="like"/> starts it from a made map's choices.</summary>
+    public async Task OpenMakeMapAsync(FoundGame game, string target, WadSmith.Editor.Generate.GeneratorSettings? like = null)
     {
-        Page = new MakeMapViewModel(Services, this, game, target);
+        if (Page is EditorViewModel) await CloseEditorAsync().ConfigureAwait(true);
+        Page = new MakeMapViewModel(Services, this, game, target, like);
         Title = $"Make me a map · {game.Game.Title} · WadSmith";
     }
 

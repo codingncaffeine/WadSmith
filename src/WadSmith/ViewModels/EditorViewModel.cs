@@ -405,6 +405,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Explain this map", "Panels", "", "about|summary|statistics|stats|key flow|monster count|what is in it|map analysis", () => ExplainMapCommand.Execute(null)),
             new("Problems", "Panels", K("", "F4"), "errors|map analysis|check|error checker", () => ShowProblems = !ShowProblems),
             new("Keep a version", "Panels", "", "snapshot|save a copy|backup", () => KeepVersionCommand.Execute(null)),
+            new("Make another like it", "Map", "", "make me a map|generate|random map|procedural|new map like this|reroll", () => _ = MakeAnotherAsync(), () => Session.Origin?.Kind == "generated"),
 
             new("Play", "Play", "F9", "test|test map|run|launch|gzdoom", () => PlayCommand.Execute(null), () => !Playing),
             new("Play from here", "Play", K("Shift+F9", "Ctrl+F9"), "test from current position|start here", () => PlayFromHereCommand.Execute(null), () => !Playing),
@@ -527,6 +528,21 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     [RelayCommand]
     private void BackFromPeek() => _main.BackFromPeek(this);
+
+    /// <summary>"Make another like it" (D50): the page again with the choices this made map was made with, and a new seed.</summary>
+    private async Task MakeAnotherAsync()
+    {
+        var file = Path.Combine(Session.Project.Folder, WadSmith.Editor.Generate.MadeProjects.SettingsFile);
+        var like = await Task.Run(() => File.Exists(file) ? WadSmith.Editor.Generate.SettingsJson.Read(File.ReadAllText(file)) : null).ConfigureAwait(true);
+        var game = like is null ? null : _services.Games?.FirstOrDefault(g => g.Game.Id == like.GameId);
+        if (like is null || game is null)
+        {
+            Hint(like is null ? "This map's choices were not kept, so another like it cannot be made; Make me a map is on its game's card." : "This map's game was not found, so another like it cannot be made now.");
+            return;
+        }
+
+        await _main.OpenMakeMapAsync(game, Session.Project.Info.Target, like).ConfigureAwait(true);
+    }
 
     [RelayCommand]
     private Task RemixPeekAsync() => _main.RemixPeekAsync(this);
