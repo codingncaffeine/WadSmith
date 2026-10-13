@@ -2,7 +2,9 @@ using WadSmith.Core.Maps;
 using WadSmith.Editor;
 using WadSmith.Editor.App;
 using WadSmith.Editor.Editing;
+using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
+using WadSmith.Editor.Smart;
 
 namespace WadSmith.Tests;
 
@@ -86,6 +88,20 @@ public sealed class GuideBookTests
         Assert.False(Done("things", "pickup", both, start, freedoom));
         var health = Then(map, "thing 2012 300 128");
         Assert.True(Done("things", "pickup", health, start, freedoom));
+    }
+
+    [Fact]
+    public void ChoosingADoorsLookFinishesTheLookStep()
+    {
+        var map = EditorMap.FromModel(new MapModel { Name = "MAP01", Namespace = "zdoom" });
+        var withDoor = Then(map, TwoRooms + "\ndoor 256 128");
+        var history = new History(map);
+        var door = map.Sectors.Single(s => s.OnMap && Doors.Recognise(MapGeometry.Build(map.Frame), s) is not null);
+        var found = Doors.Recognise(MapGeometry.Build(map.Frame), door)!;
+        Assert.False(Done("doors", "doorlook", map.Frame, withDoor));
+        // The script's door on a wide opening already shows the big door: a short one is a change.
+        history.Record("Change the door's look", e => Doors.Dress(e, MapGeometry.Build(map.Frame), found, "DOOR1", (64, 72)));
+        Assert.True(Done("doors", "doorlook", map.Frame, withDoor));
     }
 
     [Fact]
@@ -237,7 +253,7 @@ public sealed class GuideBookTests
         // Every step is one these tests finish against its near miss; a new step needs its own test before it is listed here.
         string[] tested =
         [
-            "room", "look", "door", "texture", "things", "exit", "play", "floor", "ceiling", "heights", "lock", "key", "switch", "lift", "stairs", "walk",
+            "room", "look", "door", "texture", "things", "exit", "play", "floor", "ceiling", "heights", "doorlook", "lock", "key", "switch", "lift", "stairs", "walk",
             "flat", "align", "monster", "pickup", "skill", "difficulty", "brightness", "light", "colour", "secret", "hide", "name", "music", "names", "keys", "palette",
         ];
         Assert.Empty(GuideBook.Chapters.SelectMany(c => c.Steps).Select(s => s.Id).Except(tested));
