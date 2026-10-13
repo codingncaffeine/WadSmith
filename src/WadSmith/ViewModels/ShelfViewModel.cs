@@ -45,19 +45,65 @@ internal sealed class ShelfTile(string label, string tooltip, string group, stri
 internal sealed partial class ShelfViewModel : ObservableObject
 {
     private const int Thumb = 64;
-    private readonly Func<IReadOnlyList<ShelfTile>>[] _stages;
+    private readonly Func<IEnumerable<IReadOnlyList<ShelfTile>>>[] _stages;
     private IReadOnlyList<ShelfTile> _all = [];
     private bool _started;
     private int _opened;
 
     /// <param name="empty">What the shelf says before its pictures are ready, or why it has none.</param>
     /// <param name="groups">The groups to choose from, "All" first.</param>
-    /// <param name="stages">What the shelf holds, in parts made one after another on a worker; each shows as soon as it is ready.</param>
-    private ShelfViewModel(string empty, IReadOnlyList<string> groups, params Func<IReadOnlyList<ShelfTile>>[] stages)
+    /// <param name="stages">What the shelf holds, in parts made one after another on a worker; each part shows its batches as they are ready.</param>
+    private ShelfViewModel(string empty, IReadOnlyList<string> groups, params Func<IEnumerable<IReadOnlyList<ShelfTile>>>[] stages)
     {
         Groups = groups;
         _stages = stages;
         _note = empty;
+    }
+
+    /// <summary>A stage made in one piece.</summary>
+    private static Func<IEnumerable<IReadOnlyList<ShelfTile>>> Once(Func<IReadOnlyList<ShelfTile>> stage) => () => [stage()];
+
+    /// <summary>
+    /// The tiles of each of <paramref name="others"/>, made by <paramref name="make"/> on threads of their own (a few, never the
+    /// shared pool), each game's batch handed on as soon as it is ready, so the first games show while the rest are made.
+    /// </summary>
+    private static IEnumerable<IReadOnlyList<ShelfTile>> PerGame(IReadOnlyList<Func<GameResources?>> others, Func<GameResources, IReadOnlyList<ShelfTile>> make)
+    {
+        if (others.Count == 0) yield break;
+        using var done = new System.Collections.Concurrent.BlockingCollection<IReadOnlyList<ShelfTile>>();
+        var queue = new System.Collections.Concurrent.ConcurrentQueue<Func<GameResources?>>(others);
+        var workers = Math.Clamp(Environment.ProcessorCount / 2, 1, Math.Min(4, others.Count));
+        var left = workers;
+        for (var w = 0; w < workers; w++)
+        {
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    while (queue.TryDequeue(out var open))
+                    {
+                        // Opening the game is most of the work: it happens here, on this thread, not before.
+                        if (open() is not { } other) continue;
+                        try
+                        {
+                            done.Add(make(other));
+                        }
+                        catch (Exception ex) when (ex is IOException or WadSmith.Core.CorruptDataException or InvalidOperationException)
+                        {
+                            WadSmith.Editor.App.Log.Warn($"The shelf could not show {other.Game.Title}'s pictures: {ex.Message}");
+                        }
+                    }
+                }
+                finally
+                {
+                    if (Interlocked.Decrement(ref left) == 0) done.CompleteAdding();
+                }
+            })
+            { IsBackground = true, Name = "Shelf pictures", Priority = ThreadPriority.BelowNormal };
+            thread.Start();
+        }
+
+        foreach (var batch in done.GetConsumingEnumerable()) yield return batch;
     }
 
     public ObservableCollection<ShelfTile> Tiles { get; } = [];
@@ -103,9 +149,8 @@ internal sealed partial class ShelfViewModel : ObservableObject
         Task.Run(() =>
         {
             var first = true;
-            foreach (var stage in _stages)
+            foreach (var tiles in _stages.SelectMany(stage => stage()))
             {
-                var tiles = stage();
                 var replace = first;
                 first = false;
                 MainViewModel.PostToUi(() =>
@@ -114,12 +159,22 @@ internal sealed partial class ShelfViewModel : ObservableObject
                     _all = replace ? tiles : [.. _all, .. tiles];
                     var chosen = GameIndex > 0 && GameIndex < Games.Count ? Games[GameIndex] : null;
                     var names = new List<string> { _ownGame ?? "This game" };
-                    names.AddRange(_all.Select(t => t.Game).OfType<string>().Distinct(StringComparer.Ordinal));
+                    names.AddRange(_all.Select(t => t.Game).OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.CurrentCulture));
                     if (!names.SequenceEqual(Games))
                     {
                         Games.Clear();
                         foreach (var n in names) Games.Add(n);
-                        GameIndex = chosen is null ? 0 : Math.Max(0, names.IndexOf(chosen));
+
+                        // Clearing the list unselects it in the view, which takes the new items in after this turn: the choice is said
+                        // again on the next one, even when its number is the same.
+                        var index = chosen is null ? 0 : Math.Max(0, names.IndexOf(chosen));
+                        GameIndex = index;
+                        MainViewModel.PostToUi(() =>
+                        {
+                            if (opening != _opened) return;
+                            GameIndex = -1;
+                            GameIndex = index;
+                        });
                     }
 
                     Filter();
@@ -148,13 +203,13 @@ internal sealed partial class ShelfViewModel : ObservableObject
 
     /// <summary>
     /// The game's wall textures and floor and ceiling pictures, by name; then those of the user's other games
-    /// (<paramref name="others"/> opens them on the worker), copied into the project when used. From a game of the same
+    /// (<paramref name="others"/> lists them, opened on the shelf's own threads), copied into the project when used. From a game of the same
     /// family (Doom for a Doom II map) only the pictures this game lacks.
     /// </summary>
-    public static ShelfViewModel Textures(GameResources? game, Func<IReadOnlyList<GameResources>>? others = null) => new ShelfViewModel(
+    public static ShelfViewModel Textures(GameResources? game, Func<IReadOnlyList<Func<GameResources?>>>? others = null) => new ShelfViewModel(
         game is null ? "Choose a base game to see its textures." : "",
         ["All", "Walls", "Floors and ceilings"],
-        () =>
+        Once(() =>
         {
             if (game is null) return [];
             var tiles = new List<ShelfTile>();
@@ -170,12 +225,10 @@ internal sealed partial class ShelfViewModel : ObservableObject
             }
 
             return tiles;
-        },
-        () =>
+        }),
+        () => game is null ? [] : PerGame(others?.Invoke() ?? [], other =>
         {
             var tiles = new List<ShelfTile>();
-            if (game is null) return tiles;
-            foreach (var other in others?.Invoke() ?? [])
             {
                 var family = other.Game.Engine == game.Game.Engine;
                 foreach (var (infos, flat) in new (IEnumerable<TextureInfo>, bool)[] { (other.Textures.Walls, false), (other.Textures.Flats, true) })
@@ -192,7 +245,7 @@ internal sealed partial class ShelfViewModel : ObservableObject
             }
 
             return tiles;
-        }) { _ownGame = game?.Game.Title };
+        })) { _ownGame = game?.Game.Title };
 
     /// <summary>The words each kind of object is shown under.</summary>
     private static readonly (ThingCategory Category, string Name)[] Kinds =
@@ -208,10 +261,10 @@ internal sealed partial class ShelfViewModel : ObservableObject
     /// The game's objects with their sprites, by kind: monsters, weapons, ammunition and so on; and the project's prefabs
     /// (<paramref name="prefabs"/> lists them on the worker), each pictured from above.
     /// </summary>
-    public static ShelfViewModel Objects(GameResources? game, Func<IReadOnlyList<WadSmith.Editor.Editing.Prefab>>? prefabs = null, Func<IReadOnlyList<GameResources>>? others = null) => new ShelfViewModel(
+    public static ShelfViewModel Objects(GameResources? game, Func<IReadOnlyList<WadSmith.Editor.Editing.Prefab>>? prefabs = null, Func<IReadOnlyList<Func<GameResources?>>>? others = null) => new ShelfViewModel(
         game is null ? "Choose a base game to see its monsters and items." : "",
         ["All", .. Kinds.Select(k => k.Name), PrefabGroup],
-        () =>
+        Once(() =>
         {
             var tiles = new List<ShelfTile>();
             foreach (var prefab in prefabs?.Invoke() ?? [])
@@ -245,14 +298,12 @@ internal sealed partial class ShelfViewModel : ObservableObject
             }
 
             return tiles;
-        },
-        () =>
+        }),
+        // The user's other games (D55): their monsters, weapons, decorations and pickups, brought into the project when placed
+        // with everything they fire, drop or spawn; those whose pictures share a name with this game's come in a later update.
+        () => game is null ? [] : PerGame(others?.Invoke() ?? [], other =>
         {
-            // The user's other games (D55): their monsters, weapons, decorations and pickups, brought into the project when placed
-            // with everything they fire, drop or spawn; those whose pictures share a name with this game's come in a later update.
             var tiles = new List<ShelfTile>();
-            if (game is null) return tiles;
-            foreach (var other in others?.Invoke() ?? [])
             {
                 foreach (var (category, group) in Kinds.Where(k => k.Category is ThingCategory.Monster or ThingCategory.Weapon or ThingCategory.Decoration or ThingCategory.Health or ThingCategory.Armor or ThingCategory.Ammo or ThingCategory.Powerup))
                 {
@@ -267,7 +318,7 @@ internal sealed partial class ShelfViewModel : ObservableObject
             }
 
             return tiles;
-        }) { _ownGame = game?.Game.Title };
+        })) { _ownGame = game?.Game.Title };
 
     /// <summary>A picture shrunk to fit the tile, keeping its shape (nearest pixel, as the game's own pictures look).</summary>
     internal static RgbaImage Shrink(RgbaImage image)

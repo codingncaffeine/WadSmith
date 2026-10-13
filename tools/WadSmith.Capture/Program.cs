@@ -1580,10 +1580,23 @@ foreach (var pose in poses)
                 editor.TextureShelf.Open();
                 for (var i = 0; i < 600 && editor.TextureShelf.Tiles.Count == 0; i++) Pump(0.05);
                 Console.WriteLine($"borrow shelf: this game's {editor.TextureShelf.Tiles.Count} in {filling.ElapsedMilliseconds} ms");
-                var own = editor.TextureShelf.Tiles.Count;
-                for (var i = 0; i < 1200 && editor.TextureShelf.Tiles.Count == own; i++) Pump(0.01);
-                Console.WriteLine($"borrow shelf: all in {filling.ElapsedMilliseconds} ms ({editor.TextureShelf.Note})");
-                editor.TextureShelf.Group = editor.TextureShelf.Groups.ToList().IndexOf("From your other games");
+                // The chooser shows one game at a time: the shelf's own total (its note's "of N") says what has arrived.
+                int Total() => int.TryParse(System.Text.RegularExpressions.Regex.Match(editor.TextureShelf.Note, @"of (\d+)").Groups[1].Value, out var n) ? n : 0;
+                var own = Total();
+                for (var i = 0; i < 2000 && editor.TextureShelf.Games.Count < 2; i++) Pump(0.01);
+                Console.WriteLine($"borrow shelf: the first other game ({editor.TextureShelf.Games.LastOrDefault()}) in {filling.ElapsedMilliseconds} ms");
+                var last = Total();
+                var still = 0;
+                for (var i = 0; i < 4000 && still < 100; i++)
+                {
+                    Pump(0.01);
+                    var now = Total();
+                    still = now == last ? still + 1 : 0;
+                    last = now;
+                }
+
+                Console.WriteLine($"borrow shelf: all {editor.TextureShelf.Games.Count - 1} other games in {filling.ElapsedMilliseconds - 1000} ms ({own} own, {last} in all)");
+                editor.TextureShelf.GameIndex = editor.TextureShelf.Games.ToList().FindIndex(g => g.StartsWith("Heretic", StringComparison.Ordinal));
                 editor.TextureShelf.Search = "grskull";
                 Pump(0.5);
                 Console.WriteLine($"borrow shelf: {editor.TextureShelf.Note}; {string.Join(", ", editor.TextureShelf.Tiles.Take(6).Select(t => t.Label))}");

@@ -82,23 +82,27 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
     /// The user's other games, opened for their pictures, for "From your other games" on the shelves (D43): every supported
     /// game the scan found except <paramref name="own"/> and the game it is an add-on for. Call on a worker.
     /// </summary>
-    public IReadOnlyList<GameResources> OtherGames(GameResources? own)
+    public IReadOnlyList<GameResources> OtherGames(GameResources? own) => [.. OtherGameOpeners(own).Select(open => open()).OfType<GameResources>()];
+
+    /// <summary>
+    /// The user's other games as <see cref="OtherGames"/> lists them, each still to be opened: a shelf opens them on threads of
+    /// its own, so the first game's pictures show while the others are read. Each game is opened once, whoever asks first.
+    /// </summary>
+    public IReadOnlyList<Func<GameResources?>> OtherGameOpeners(GameResources? own)
     {
         var games = Games ?? [];
-        var found = new List<GameResources>();
-        foreach (var g in games.Where(g => g.Game.Supported && g.Game.Id != own?.Game.Id && g.Game.Id != own?.Game.AddOnFor).DistinctBy(g => g.Game.Id))
+        return [.. games.Where(g => (g.Game.Supported || g.Game.Engine == "build") && g.Game.Id != own?.Game.Id && g.Game.Id != own?.Game.AddOnFor).DistinctBy(g => g.Game.Id).Select(g => (Func<GameResources?>)(() =>
         {
             try
             {
-                if (_others.GetOrAdd(g.Game.Id, id => new Lazy<GameResources?>(() => GameResources.Load(id, null, games, EngineData))).Value is { } r) found.Add(r);
+                return _others.GetOrAdd(g.Game.Id, id => new Lazy<GameResources?>(() => GameResources.Load(id, null, games, EngineData))).Value;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Core.CorruptDataException)
             {
                 Log.Warn($"{g.Game.Title} could not be read for its pictures: {ex.Message}");
+                return null;
             }
-        }
-
-        return found;
+        }))];
     }
 
     /// <summary>The games the last scan found, scanning first when none has finished. Call on a worker.</summary>
