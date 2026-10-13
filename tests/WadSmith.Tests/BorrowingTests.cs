@@ -101,14 +101,17 @@ public sealed class BorrowingTests
 
     private static List<string> PasteInto(EditorSession session, MapClip clip)
     {
-        var ui = new ConcurrentQueue<Action>();
-        var told = new List<string>();
-        session.Notice += told.Add;
+        // The paste runs on a worker, which adds the rooms and then says what it copied: wait for both (the rooms alone
+        // were seen once under a busy suite before the sentence came).
+        var told = new ConcurrentQueue<string>();
+        session.Notice += told.Enqueue;
         var before = session.Map.Sectors.Count(x => x.OnMap);
         session.Paste(clip, new MapPoint(1024, 0));
         var until = DateTime.UtcNow.AddSeconds(15);
         while (session.Map.Sectors.Count(x => x.OnMap) == before && DateTime.UtcNow < until) Thread.Sleep(10);
-        return told;
+        var said = DateTime.UtcNow.AddSeconds(2);
+        while (told.IsEmpty && DateTime.UtcNow < said) Thread.Sleep(10);
+        return [.. told];
     }
 
     [Fact]
