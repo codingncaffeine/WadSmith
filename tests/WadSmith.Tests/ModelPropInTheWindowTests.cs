@@ -159,6 +159,39 @@ public sealed class ModelPropInTheWindowTests
     }
 
     [Fact]
+    public async Task TheInspectorMakesASkyAndTheMapTakesIt()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var picture = Path.Combine(temp.Path, "meadow.png");
+        File.WriteAllBytes(picture, WadSmith.Core.Graphics.ImageCodec.EncodePng(SkyTests.Compass(256)));
+        var said = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(Path.Combine(temp.Path, "profile"), Path.GetDirectoryName(wad)!);
+            try
+            {
+                var editor = Ui.NewMap(vm);
+                editor.Session.Selection.Clear();
+                editor.Panel = SidePanel.Inspector;
+                Ui.Pump(0.5);
+                editor.Inspector.PickPanorama = () => Task.FromResult<string?>(picture);
+                var row = editor.Inspector.Rows.OfType<ActionRow>().Single(r => r.Label == "Make a sky from a 360° picture…");
+                Click(window, window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && ReferenceEquals(b.DataContext, row)));
+                for (var i = 0; i < 400 && editor.Session.MapEntry.Sky != "SKYB01"; i++) Ui.Pump(0.05);
+                Ui.Pump(0.5);
+                var sky = editor.Inspector.Rows.OfType<ChoiceRow>().Single(r => r.Label == "Sky");
+                return $"map sky {editor.Session.MapEntry.Sky}; box shows {sky.Options[sky.Value]}";
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.Equal("map sky SKYB01; box shows SKYB01", said);
+    }
+
+    [Fact]
     public async Task TheTextureShelfsButtonBringsAMaterialInAsATexture()
     {
         var wad = GameFiles.Require("freedoom2.wad");

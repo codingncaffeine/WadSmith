@@ -33,6 +33,7 @@ public partial class EditorView : UserControl
             vm.FitMap = Canvas.FitMap;
             vm.PickModel = PickModelAsync;
             vm.PickMaterial = PickMaterialAsync;
+            vm.Inspector.PickPanorama = PickPanoramaAsync;
             vm.ViewSize = () =>
             {
                 var scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
@@ -220,6 +221,19 @@ public partial class EditorView : UserControl
             Title = "Add a material: pick any picture of the set",
             AllowMultiple = false,
             FileTypeFilter = [new("Pictures (PNG, JPG, TGA)") { Patterns = ["*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.tga", "*.TGA"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
+        }).ConfigureAwait(true);
+        return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
+    }
+
+    /// <summary>The file picker for "Make a sky from a 360° picture…".</summary>
+    private async Task<string?> PickPanoramaAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage) return null;
+        var picked = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "Make a sky from a 360° picture",
+            AllowMultiple = false,
+            FileTypeFilter = [new("360° pictures (JPG, PNG, HDR)") { Patterns = ["*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.png", "*.PNG", "*.hdr", "*.HDR", "*.webp", "*.WEBP"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
         }).ConfigureAwait(true);
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }

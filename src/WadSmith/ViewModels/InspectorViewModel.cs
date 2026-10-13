@@ -498,6 +498,16 @@ internal sealed partial class InspectorViewModel : ObservableObject
 
     public ObservableCollection<InspectorRow> Rows { get; } = [];
 
+    /// <summary>Asks the user for a 360° picture (set by the view); null when they chose none.</summary>
+    public Func<Task<string?>>? PickPanorama { get; set; }
+
+    /// <summary>"Make a sky from a 360° picture…": the file picker, then the sky made on a worker and set as the map's.</summary>
+    private async Task MakeSkyAsync()
+    {
+        if (PickPanorama is null || await PickPanorama().ConfigureAwait(true) is not { } path) return;
+        _session.ImportSky(path);
+    }
+
     [ObservableProperty]
     private string _heading = "";
 
@@ -987,6 +997,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         var skies = Choices(_session.Resources?.Skies ?? [], Entry().Sky, sorted: true);
         Rows.Add(new ChoiceRow("Sky", "The sky seen over the map (sky1): the game's own for this slot, or any sky the game has.", [TheGames(defaults?.Sky, "sky"), .. skies],
             () => Index(skies, Entry().Sky), i => _session.ChangeMapSettings(m => m with { Sky = i == 0 ? null : skies[i - 1] })));
+        Rows.Add(new ActionRow("Make a sky from a 360° picture…", "Turns a 360° picture (a panorama twice as wide as tall, or an HDRI photograph in .hdr) into a sky all round and overhead, and makes it this map's sky; GZDoom draws it as a skybox.", () => _ = MakeSkyAsync()));
 
         var ends = ProjectMapInfo.EndToTitle;
         var slots = Choices([.. defaults?.Slots ?? [], .. _session.Project.Maps().Select(m => m.Slot)], Entry().Next is { } n && n != ends ? n : null, sorted: false);

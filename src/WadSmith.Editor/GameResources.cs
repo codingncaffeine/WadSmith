@@ -36,7 +36,16 @@ public sealed class GameResources
     public IReadOnlyList<string> Music { get; }
 
     /// <summary>The sky pictures the game has (every wall texture named SKY…), A to Z.</summary>
-    public IReadOnlyList<string> Skies { get; }
+    public IReadOnlyList<string> Skies { get; private set; }
+
+    /// <summary>Offers a sky the project made (a skybox from a 360° picture) among the game's own (any thread).</summary>
+    public void AddSky(string name)
+    {
+        lock (_carried)
+        {
+            if (!Skies.Contains(name, StringComparer.OrdinalIgnoreCase)) Skies = [.. Skies.Append(name).Order(StringComparer.OrdinalIgnoreCase)];
+        }
+    }
 
     /// <summary>The names of the music in <paramref name="stack"/>, judged by content, A to Z.</summary>
     public static IReadOnlyList<string> FindMusic(ResourceStack stack)
@@ -221,6 +230,8 @@ public sealed class GameResources
         ResourceContainer? projectFiles = null;
         if (projectFolder is not null && Directory.Exists(projectFolder)) stack.Add(projectFiles = ResourceContainer.Open(projectFolder));
 
+        // Skies the project made from 360° pictures (Phase 11), offered with the game's own.
+        var skyboxes = new List<string>();
         var things = engineData is null
             ? ThingCatalog.Empty
             : Catalogues.GetOrAdd((engineData, found.Game.Engine), key => new Lazy<ThingCatalog>(() => ThingCatalog.Load(ResourceContainer.Open(key.Engine), key.Family))).Value;
@@ -231,6 +242,7 @@ public sealed class GameResources
             {
                 var carried = new List<ThingType>();
                 var info = Core.Projects.Project.Open(projectFolder).Info;
+                skyboxes.AddRange(Editing.Skies.Recorded(info));
 
                 // Duke Nukem 3D's enemies (D55): classes the project itself declares, each with a Doom monster's behaviour.
                 foreach (var duke in info.Copied.Where(c => c.Kind == "dukeactor"))
@@ -261,7 +273,9 @@ public sealed class GameResources
             }
         }
 
-        return new GameResources(found.Game, files, stack, new TextureLibrary(stack), new SpriteIndex(stack), things, FindMusic(stack)) { ProjectFiles = projectFiles };
+        var made = new GameResources(found.Game, files, stack, new TextureLibrary(stack), new SpriteIndex(stack), things, FindMusic(stack)) { ProjectFiles = projectFiles };
+        foreach (var sky in skyboxes) made.AddSky(sky);
+        return made;
     }
 
     private static RgbaImage Mirror(RgbaImage image)

@@ -1218,6 +1218,45 @@ public sealed class EditorSession : IDisposable
         });
     }
 
+    /// <summary>
+    /// Makes a sky of the 360° picture at <paramref name="path"/> (a panorama or an HDRI photograph) on a worker, then sets it as
+    /// this map's sky. Raises <see cref="TexturesChanged"/>.
+    /// </summary>
+    public void ImportSky(string path)
+    {
+        var file = Path.GetFileName(path);
+        if (Resources is not { } into)
+        {
+            Notice?.Invoke("Skies need this map's own game to be found first.");
+            return;
+        }
+
+        Notice?.Invoke($"Making a sky of {file}…");
+        Task.Run(() =>
+        {
+            MadeSky made;
+            try
+            {
+                made = Skies.Make(Project, into, path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Making a sky of {path} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"{file} could not be made a sky. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                ChangeMapSettings(m => m with { Sky = made.Name });
+                var notes = made.Notes.Count == 0 ? "" : " " + string.Join(" ", made.Notes);
+                var classic = Project.ClassicFormat ? " It shows in GZDoom only; this project plays in a classic port, which keeps its own sky." : "";
+                Notice?.Invoke($"{file} is this map's sky, {made.Name}: six faces {made.Size} pixels square, all round and overhead, as GZDoom draws a skybox. Other maps can pick it under Sky.{classic}{notes}");
+                TexturesChanged?.Invoke();
+            });
+        });
+    }
+
     /// <summary>Raised on the UI thread when the project gained textures of its own (a material brought in).</summary>
     public event Action? TexturesChanged;
 
