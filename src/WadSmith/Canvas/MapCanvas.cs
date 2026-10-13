@@ -1726,7 +1726,7 @@ internal sealed class MapCanvas : Control
 
         e.DragEffects = DragDropEffects.Copy;
         var p = e.GetPosition(this);
-        var key = drop.Texture is null && drop.Prefab is null && WadSmith.Editor.Smart.Keys.ColourOf(drop.Thing) is not null;
+        var key = drop.Texture is null && drop.Prefab is null && WadSmith.Editor.Smart.Keys.ColourOf(drop.Thing, Session.Engine) is not null;
         Element? target = key ? Session.DoorAt(ToMap(p), 14 / _zoom) : drop.Texture is null ? null : WallAt(p) is { } w ? w : Session.Geometry.SectorAt(ToMap(p));
         // A texture over a wall: the whole straight wall is outlined, or only that wall with Shift (a section of it).
         var section = (e.KeyModifiers & KeyModifiers.Shift) != 0;

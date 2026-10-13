@@ -1192,11 +1192,11 @@ public sealed class EditorSession : IDisposable
     public void LockDoor(Sector door, string? colour)
     {
         if (Doors.Recognise(_geometry, door) is not { } found) return;
-        var lockNumber = colour is null ? 0 : Keys.Doom.FirstOrDefault(k => k.Colour == colour).Lock;
+        var lockNumber = colour is null ? 0 : Keys.Of(Engine).FirstOrDefault(k => k.Colour == colour)?.Lock ?? 0;
         if (colour is not null && lockNumber == 0) return;
         History.Record(colour is null ? "Unlock the door" : $"Lock the door with the {colour} key", e => Doors.Change(e, found, found.Settings with { Lock = lockNumber }, found.Monsters, found.StartsOpen));
         Selection.Set(door);
-        if (colour is not null && Keys.OfColour(_geometry, colour).Count == 0)
+        if (colour is not null && Keys.OfColour(_geometry, colour, Engine).Count == 0)
         {
             Notice?.Invoke($"Locked with the {colour} key. Now put the {colour} key somewhere the player reaches first: drag it from Objects into a room, or press \"Place the {colour} key…\" in the door's Inspector.");
         }
@@ -1208,7 +1208,7 @@ public sealed class EditorSession : IDisposable
     /// </summary>
     public void DropThing(int type, MapPoint at, MapPoint snapped, double reach)
     {
-        if (Keys.ColourOf(type) is { } colour && DoorAt(at, reach) is { } door) LockDoor(door, colour);
+        if (Keys.ColourOf(type, Engine) is { } colour && DoorAt(at, reach) is { } door) LockDoor(door, colour);
         else PlaceThing(type, snapped);
     }
 
@@ -1221,7 +1221,7 @@ public sealed class EditorSession : IDisposable
             return;
         }
 
-        PlaceThing(Keys.Doom.First(k => k.Colour == colour).Card, at);
+        if (Keys.Of(Engine).FirstOrDefault(k => k.Colour == colour) is { } key) PlaceThing(key.Things[0], at);
     }
 
     /// <summary>The door or lift waiting for its switch (the click on a wall that comes next).</summary>

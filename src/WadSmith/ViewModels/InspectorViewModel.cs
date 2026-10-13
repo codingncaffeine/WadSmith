@@ -735,9 +735,9 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = _summaryOf();
                 AddLight(t);
                 break;
-            case Thing t when Keys.ColourOf(t.Type) is { } colour:
+            case Thing t when Keys.ColourOf(t.Type, _session.Engine) is { } colour:
                 Heading = _session.Resources?.Things.Find(t.Type)?.Name ?? $"The {colour} key";
-                _summaryOf = () => Keys.DoorsOpenedBy(_session.Geometry, t.Type).Select(l => l.Args[0] != 0 ? (object)l.Args[0] : l.Back?.Sector ?? (object)l).Distinct().Count() switch
+                _summaryOf = () => Keys.DoorsOpenedBy(_session.Geometry, t.Type, _session.Engine).Select(l => l.Args[0] != 0 ? (object)l.Args[0] : l.Back?.Sector ?? (object)l).Distinct().Count() switch
                 {
                     0 => $"No door is locked with the {colour} key yet: lock one in its Inspector (Locked with).",
                     1 => $"Opens the door locked with the {colour} key.",
@@ -746,7 +746,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = _summaryOf();
                 Rows.Add(new ActionRow("Select the doors it opens", "Selects every wall whose door this key opens.", () =>
                 {
-                    if (Keys.DoorsOpenedBy(_session.Geometry, t.Type) is { Count: > 0 } doors) _session.Selection.Set([.. doors]);
+                    if (Keys.DoorsOpenedBy(_session.Geometry, t.Type, _session.Engine) is { Count: > 0 } doors) _session.Selection.Set([.. doors]);
                 }));
                 AddThing(t);
                 break;
@@ -913,10 +913,10 @@ internal sealed partial class InspectorViewModel : ObservableObject
 
     private void AddDoorKey(Sector area)
     {
-        if (_session.Look != Look.For("doom") || Doors.Recognise(_session.Geometry, area) is not { Settings.Lock: not 0 } door || Keys.ColourOfLock(door.Settings.Lock) is not { } colour) return;
-        var keys = Keys.OfColour(_session.Geometry, colour);
-        if (keys.Count == 0) Rows.Add(new ActionRow($"Place the {colour} key…", $"Click the map next where the {colour} keycard goes: somewhere the player reaches before this door.", () => KeyFor?.Invoke(colour)));
-        else Rows.Add(new ActionRow($"Select its key", $"Selects the {colour} key{(keys.Count > 1 ? "s" : "")} that open{(keys.Count > 1 ? "" : "s")} this door.", () => _session.Selection.Set([.. Keys.OfColour(_session.Geometry, colour)])));
+        if (Doors.Recognise(_session.Geometry, area) is not { Settings.Lock: not 0 } door || Keys.ColourOfLock(door.Settings.Lock, _session.Engine) is not { } colour) return;
+        var keys = Keys.OfColour(_session.Geometry, colour, _session.Engine);
+        if (keys.Count == 0) Rows.Add(new ActionRow($"Place the {colour} key…", $"Click the map next where the {colour} key goes: somewhere the player reaches before this door.", () => KeyFor?.Invoke(colour)));
+        else Rows.Add(new ActionRow($"Select its key", $"Selects the {colour} key{(keys.Count > 1 ? "s" : "")} that open{(keys.Count > 1 ? "" : "s")} this door.", () => _session.Selection.Set([.. Keys.OfColour(_session.Geometry, colour, _session.Engine)])));
     }
 
     private void AddSwitch(Line wall)

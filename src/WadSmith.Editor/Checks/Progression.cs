@@ -27,7 +27,7 @@ public static class Progression
     /// <summary>How far the player reaches to use a wall (the engine's use range).</summary>
     private const double UseRange = 64;
 
-    public static ProgressionResult Walk(MapGeometry g)
+    public static ProgressionResult Walk(MapGeometry g, string family = "doom")
     {
         var f = g.Frame;
         int? AreaAt(double x, double y) => g.SectorAt(new MapPoint(x, y)) is { } s ? s.Slot : null;
@@ -53,7 +53,12 @@ public static class Progression
             return near;
         }
 
-        var keys = f.Things.Where(t => t.Element is not null && Keys.ColourOf(t.Type) is not null && AreaAt(t.X, t.Y) is not null).Select(t => (t.Type, Areas: Reach(t.X, t.Y), Element: (Element)t.Element!, At: new MapPoint(t.X, t.Y))).ToList();
+        var keys = f.Things.Where(t => t.Element is not null && Keys.ColourOf(t.Type, family) is not null && AreaAt(t.X, t.Y) is not null).Select(t => (t.Type, Areas: Reach(t.X, t.Y), Element: (Element)t.Element!, At: new MapPoint(t.X, t.Y))).ToList();
+
+        // In Hexen a key is carried between the maps of a hub: a door whose key is on none of this map's objects opens
+        // with one brought from another map.
+        var hub = family == "hexen";
+        var onMap = keys.Select(k => k.Type).ToHashSet();
 
         // The ways between areas: walls with two sides that do not block (into a door through a locked face of it, only
         // with the key), and teleporters (both ways).
@@ -74,7 +79,8 @@ public static class Progression
             if (l.Back >= 0 && !Problems.Flag(l.Extra, "blocking") && !Problems.Flag(l.Extra, "blockplayers") && !Problems.Flag(l.Extra, "blockeverything"))
             {
                 // A door's face: used from its front, it opens the door behind it, locked or not.
-                var locked = l.Special == Doors.DoorLockedRaise && l.Args[0] == 0 && Keys.Opening(l.Args[3]).Count > 0 ? l.Args[3] : 0;
+                var locked = l.Special == Doors.DoorLockedRaise && l.Args[0] == 0 && Keys.Opening(l.Args[3], family).Count > 0 ? l.Args[3] : 0;
+                if (hub && locked != 0 && !Keys.Opening(locked, family).Any(onMap.Contains)) locked = 0;
                 Way(f.Sides[l.Front].Sector, f.Sides[l.Back].Sector, locked, i);
             }
 
@@ -97,7 +103,7 @@ public static class Progression
         {
             foreach (var k in keys.Where(k => k.Areas.Contains(area) && held.Add(k.Type)))
             {
-                if (Keys.ColourOf(k.Type) is { } colour && colours.Add(colour)) steps.Add(new("key", colour, k.At, k.Element));
+                if (Keys.ColourOf(k.Type, family) is { } colour && colours.Add(colour)) steps.Add(new("key", colour, k.At, k.Element));
             }
 
             queue.Enqueue(area);
@@ -110,22 +116,22 @@ public static class Progression
             foreach (var (next, lockNumber, line) in ways.GetValueOrDefault(area) ?? [])
             {
                 if (reached.Contains(next)) continue;
-                if (lockNumber != 0 && !Keys.Opening(lockNumber).Any(held.Contains))
+                if (lockNumber != 0 && !Keys.Opening(lockNumber, family).Any(held.Contains))
                 {
                     waiting.Add((next, lockNumber, line));
                     continue;
                 }
 
                 reached.Add(next);
-                if (lockNumber != 0) steps.Add(new("door", Keys.ColourOfLock(lockNumber), Middle(f.Lines[line]), f.Lines[line].Element!));
+                if (lockNumber != 0) steps.Add(new("door", Keys.ColourOfLock(lockNumber, family), Middle(f.Lines[line]), f.Lines[line].Element!));
                 Arrive(next);
             }
 
             if (queue.Count > 0) continue;
-            foreach (var (door, lockNumber, line) in waiting.Where(w => !reached.Contains(w.To) && Keys.Opening(w.Lock).Any(held.Contains)).ToList())
+            foreach (var (door, lockNumber, line) in waiting.Where(w => !reached.Contains(w.To) && Keys.Opening(w.Lock, family).Any(held.Contains)).ToList())
             {
                 if (!reached.Add(door)) continue;
-                steps.Add(new("door", Keys.ColourOfLock(lockNumber), Middle(f.Lines[line]), f.Lines[line].Element!));
+                steps.Add(new("door", Keys.ColourOfLock(lockNumber, family), Middle(f.Lines[line]), f.Lines[line].Element!));
                 Arrive(door);
             }
         }
@@ -136,14 +142,14 @@ public static class Progression
         if (exitReached.Element is not null) steps.Add(new("exit", null, Middle(exitReached), exitReached.Element));
 
         var outOfReach = new List<(string, IReadOnlyList<Element>)>();
-        foreach (var (colour, card, skull, _) in Keys.Doom)
+        foreach (var (colour, kinds, _) in Keys.Of(family))
         {
-            var these = keys.Where(k => k.Type == card || k.Type == skull).ToList();
+            var these = keys.Where(k => kinds.Contains(k.Type)).ToList();
             if (these.Count > 0 && !these.Any(k => k.Areas.Overlaps(reached))) outOfReach.Add((colour, [.. these.Select(k => k.Element)]));
         }
 
         // The locked doors still shut at the edge of where the player got: what stands between them and the rest.
-        var shut = waiting.Where(w => !reached.Contains(w.To)).GroupBy(w => w.Lock).Select(g => (Keys.ColourOfLock(g.Key) ?? "locked", Middle(f.Lines[g.First().Line]), (Element)f.Lines[g.First().Line].Element!)).ToList();
+        var shut = waiting.Where(w => !reached.Contains(w.To)).GroupBy(w => w.Lock).Select(g => (Keys.ColourOfLock(g.Key, family) ?? "locked", Middle(f.Lines[g.First().Line]), (Element)f.Lines[g.First().Line].Element!)).ToList();
         return new(reached, steps, outOfReach, exits.Count > 0, exitReached.Element is not null, shut);
     }
 }

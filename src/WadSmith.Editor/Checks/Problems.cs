@@ -80,12 +80,13 @@ public static class Problems
             LowPassages(geometry, fit ?? FitBaseline.None, found);
         }
 
-        var walk = Progression.Walk(geometry);
+        var walk = Progression.Walk(geometry, engine);
         ExitOutOfReach(geometry, walk, found);
-        if (look == Look.For("doom"))
+        if (Keys.Of(engine).Count > 0)
         {
-            MissingKeys(f, found);
-            KeysOutOfReach(geometry, walk, found);
+            // A Hexen key is carried between the maps of a hub, so a door whose key is on another map is no fault.
+            if (engine != "hexen") MissingKeys(f, engine, found);
+            KeysOutOfReach(geometry, walk, engine, found);
         }
 
         return found;
@@ -590,11 +591,11 @@ public static class Problems
     /// stop it (a door locked on one face opens freely from the other). A key is picked up from any area within the
     /// player's reach of it (16 + the key's 20), as the game does across a railing.
     /// </summary>
-    private static void KeysOutOfReach(MapGeometry g, ProgressionResult walk, List<Problem> found)
+    private static void KeysOutOfReach(MapGeometry g, ProgressionResult walk, string engine, List<Problem> found)
     {
         foreach (var (colour, keys) in walk.KeysOutOfReach)
         {
-            var doors = g.Frame.Lines.Where(l => l.Element is not null && l.Special == Doors.DoorLockedRaise && Keys.ColourOfLock(l.Args[3]) == colour).Select(l => (Element)l.Element!).ToList();
+            var doors = g.Frame.Lines.Where(l => l.Element is not null && l.Special == Doors.DoorLockedRaise && Keys.ColourOfLock(l.Args[3], engine) == colour).Select(l => (Element)l.Element!).ToList();
             found.Add(new Problem("key-out-of-reach-" + colour, Severity.Error, $"The {colour} key can't be reached from the player start: every way to it goes through a locked door the player can't open first.", [.. keys, .. doors]));
         }
     }
@@ -611,24 +612,17 @@ public static class Problems
         found.Add(new Problem("exit-out-of-reach", Severity.Error, $"The exit can't be reached from the player start: {why}.", [.. exits, .. shut.Select(s => s.Wall)]));
     }
 
-    private static void MissingKeys(MapFrame f, List<Problem> found)
+    private static void MissingKeys(MapFrame f, string engine, List<Problem> found)
     {
-        // Doom's keys by colour: card and skull. Locks 1–6 need that one; 129–131 either of a colour.
-        int[][] keys = [[13, 38], [5, 40], [6, 39]];
-        string[] colours = ["red", "blue", "yellow"];
+        // The game's keys by colour; a lock takes the keys LOCKDEFS gives it (Doom's 129–131 either of a colour).
         var present = f.Things.Where(t => t.Element is not null).Select(t => t.Type).ToHashSet();
         foreach (var l in f.Lines)
         {
             if (l.Element is null || l.Special != Doors.DoorLockedRaise) continue;
             var lockNumber = l.Args[3];
-            int[] needed = lockNumber switch
-            {
-                1 => [13], 2 => [5], 3 => [6], 4 => [38], 5 => [40], 6 => [39],
-                129 => keys[0], 130 => keys[1], 131 => keys[2],
-                _ => [],
-            };
-            if (needed.Length == 0 || needed.Any(present.Contains)) continue;
-            var colour = colours[Array.FindIndex(keys, k => k.Contains(needed[0]))];
+            var needed = Keys.Opening(lockNumber, engine);
+            if (needed.Count == 0 || needed.Any(present.Contains)) continue;
+            var colour = Keys.ColourOf(needed[0], engine)!;
             if (found.Any(p => p.Rule == "missing-key-" + colour)) continue;
             var doorsOfColour = f.Lines.Where(x => x.Element is not null && x.Special == Doors.DoorLockedRaise && x.Args[3] == lockNumber).Select(x => (Element)x.Element!).ToList();
             found.Add(new Problem("missing-key-" + colour, Severity.Error, $"The {colour} key door can never open: there's no {colour} key in the map.", doorsOfColour));

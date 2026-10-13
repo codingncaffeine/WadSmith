@@ -99,7 +99,7 @@ public static class Explaining
         if (Teleports.IsArrival(t)) return new("Teleport arrival", "Where a teleporter sends whoever steps on it, facing the way its arrow points.");
         var known = resources?.Things.Find(t.Type);
         if (t.Type is >= 1 and <= 4) return new($"Player {t.Type} start", t.Type == 1 ? "Where the player begins the map, facing the way its arrow points. Play starts you here." : $"Where player {t.Type} begins in a game with friends.");
-        if (Keys.ColourOf(t.Type) is { } colour) return new(known?.Name ?? $"The {colour} key", $"The player picks it up to open doors locked with the {colour} key.");
+        if (Keys.ColourOf(t.Type, resources?.Game.Engine ?? "doom") is { } colour) return new(known?.Name ?? $"The {colour} key", $"The player picks it up to open doors locked with the {colour} key.");
         var name = known?.Name ?? string.Create(CultureInfo.InvariantCulture, $"Object {t.Type}");
         var what = known?.Category switch
         {

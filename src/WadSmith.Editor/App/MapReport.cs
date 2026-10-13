@@ -32,7 +32,8 @@ public static class MapReporting
         var map = EditorMap.FromModel(frame.ToModel());
         var geometry = MapGeometry.Build(map.Frame);
         ThingCategory? Category(int type) => resources?.Things.Find(type)?.Category;
-        bool IsKey(int type) => Category(type) == ThingCategory.Key || Keys.ColourOf(type) is not null;
+        var family = resources?.Game.Engine ?? "doom";
+        bool IsKey(int type) => Category(type) == ThingCategory.Key || Keys.ColourOf(type, family) is not null;
         string Name(int type) => resources?.Things.Find(type)?.Name ?? string.Create(CultureInfo.InvariantCulture, $"Object {type}");
 
         var rooms = map.Sectors.Count(s => s.OnMap);
@@ -55,24 +56,24 @@ public static class MapReporting
         var keyLines = new List<ReportLine>();
         foreach (var group in things.Where(t => IsKey(t.Type)).GroupBy(t => t.Type))
         {
-            var opens = Keys.DoorsOpenedBy(geometry, group.Key).Select(l => l.Back?.Sector ?? (object)l).Distinct().Count();
+            var opens = Keys.DoorsOpenedBy(geometry, group.Key, family).Select(l => l.Back?.Sector ?? (object)l).Distinct().Count();
             var first = group.First();
             keyLines.Add(new($"{Name(group.Key)}{(group.Count() > 1 ? $" (×{group.Count()})" : "")} opens {(opens == 0 ? "no door here" : opens == 1 ? "1 door" : $"{opens} doors")}.", new(first.X, first.Y)));
         }
 
         foreach (var locked in map.Lines.Where(l => l.OnMap && l.Special == Doors.DoorLockedRaise && l.Args[3] != 0).GroupBy(l => l.Args[3]))
         {
-            var needs = Keys.Opening(locked.Key);
+            var needs = Keys.Opening(locked.Key, family);
             if (needs.Count == 0 || things.Any(t => needs.Contains(t.Type))) continue;
             var wall = locked.First();
-            var colour = Keys.ColourOfLock(locked.Key);
+            var colour = Keys.ColourOfLock(locked.Key, family);
             keyLines.Add(new($"A door needs the {colour ?? "missing"} key, and the map has none: the player cannot open it.", Middle(wall)));
         }
 
         if (keyLines.Count > 0) sections.Add(new("KEYS", keyLines));
 
         // The way from the start to the exit (D29): keys and locked doors in the order the player meets them.
-        var walk = Checks.Progression.Walk(geometry);
+        var walk = Checks.Progression.Walk(geometry, family);
         var way = new List<ReportLine>();
         var number = 0;
         foreach (var step in walk.Steps)
