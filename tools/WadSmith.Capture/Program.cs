@@ -622,10 +622,26 @@ foreach (var pose in poses)
                 var texture = session.Project.CopiedNow().First(c => c.Kind == "wall" && c.Game == "picture").Name;
                 var north = session.Map.Lines.Where(l => l.OnMap && l.Back is null).MaxBy(l => l.Start.Y + l.End.Y)!;
                 var at = new WadSmith.Editor.Geometry.MapPoint((north.Start.X + north.End.X) / 2, (north.Start.Y + north.End.Y) / 2 - 4);
-                Console.WriteLine($"3d picture: {texture}; paint '{session.Paint(texture, at, 8, false)}'; status '{editor.Status}'");
-                session.FitWall(north.Front);
-                Console.WriteLine($"3d picture fit: '{editor.Status}'");
+                // A wall already showing the picture across it, fitted (what an earlier build left): WS_BEFORE=fitted.
+                if (Environment.GetEnvironmentVariable("WS_BEFORE") == "fitted")
+                {
+                    session.History.Record("picture", e => e.Set(north.Front, s => s.Middle, (s, v) => s.Middle = v, texture));
+                    session.FitWall(north.Front);
+                }
+
+                // As the user drops it: the plan's drop, no Shift (WS_DROP=left drops near the wall's west end).
+                if (Environment.GetEnvironmentVariable("WS_DROP") == "left") at = new WadSmith.Editor.Geometry.MapPoint(Math.Min(north.Start.X, north.End.X) + 40, at.Y);
+                Console.WriteLine($"3d picture: {texture} {session.Resources.Textures.GetWall(texture)?.Width}×{session.Resources.Textures.GetWall(texture)?.Height}; paint '{session.Paint(texture, at, 8, false)}'; status '{editor.Status}'");
+                foreach (var l in session.Map.Lines.Where(l => l.OnMap && l.Back is null && Math.Abs(l.Start.Y - north.Start.Y) < 1e-6 && Math.Abs(l.End.Y - north.Start.Y) < 1e-6))
+                {
+                    Console.WriteLine($"3d piece ({l.Start.X},{l.Start.Y})→({l.End.X},{l.End.Y}) {l.Front.Middle} offsetx {l.Front.OffsetX} fields {string.Join(" ", l.Front.Extra.Select(f => $"{f.Key}={f.Value.AsFloat():0.###}"))}");
+                }
+
                 var floor = north.Front.Sector.FloorHeight;
+                // Head-on, from inside the room facing north, as the game would show it, once the shapes have caught up.
+                for (var i = 0; i < 200 && session.Geometry.Version != session.Map.Version; i++) Pump(0.05);
+                var straight = WadSmith.App.ThreeD.Offscreen3D.RenderPng(WadSmith.Editor.Scene.MapScene.Build(session.Geometry, n => session.Resources?.Textures.GetWall(n) is { } w ? (w.Width, w.Height) : null), session.Resources, new WadSmith.App.ThreeD.Camera3D(at.X, at.Y - 250, floor + 64, 90, 0), 1280, 800, inside: true);
+                File.WriteAllBytes(Path.Combine(output, "editor-3d-picture-straight.png"), straight);
                 view3d.LookAt(new WadSmith.Editor.Geometry.MapPoint(at.X, at.Y - 160), floor + 64, 300);
                 for (var i = 0; i < 100 && view3d.SceneVersion < session.Map.Version; i++) Pump(0.05);
                 Pump(1.5);

@@ -55,6 +55,29 @@ public sealed class PosterTests
     }
 
     [Fact]
+    public void AWallAlreadyCoveredByYourPictureGetsItsOwnWallBackEitherSide()
+    {
+        // What an earlier build left: the picture across the whole wall, stretched to it. Dropped again, the section shows
+        // it whole and the pieces either side are the room's ordinary wall, with none of the old stretch.
+        using var temp = new TempFolder();
+        var (session, texture) = Open(temp, 100, 100);
+        var wall = North(session);
+        var plain = wall.Front.Middle;
+        session.History.Record("picture", e => e.Set(wall.Front, s => s.Middle, (s, v) => s.Middle = v, texture));
+        session.FitWall(wall.Front);
+        var middle = new MapPoint((wall.Start.X + wall.End.X) / 2, (wall.Start.Y + wall.End.Y) / 2 - 4);
+        session.Paint(texture, middle, 8, false);
+        var pieces = session.Map.Lines.Where(l => l.OnMap && l.Back is null && Math.Abs(l.Start.Y - wall.Start.Y) < 1e-6 && Math.Abs(l.End.Y - wall.Start.Y) < 1e-6).ToList();
+        Assert.Equal(3, pieces.Count);
+        Assert.Single(pieces, l => l.Front.Middle == texture);
+        Assert.All(pieces.Where(l => l.Front.Middle != texture), l =>
+        {
+            Assert.Equal(plain, l.Front.Middle);
+            Assert.False(l.Front.Extra.Contains("scalex_mid"));
+        });
+    }
+
+    [Fact]
     public void APictureWiderThanTheWallTakesTheWholeWall()
     {
         using var temp = new TempFolder();

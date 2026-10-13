@@ -959,10 +959,32 @@ public sealed class EditorSession : IDisposable
         {
             var tall = face.Sector.CeilingHeight - face.Sector.FloorHeight;
             var width = Math.Round(tall * size.Width / size.Height);
-            if (tall > 0 && width >= 8 && width < wall.Length - 1)
+            var length = wall.Length;
+            if (tall > 0 && width >= 8 && length > width + 16)
             {
-                var piece = Switches.Piece(e, wall, at, width);
-                painted = ReferenceEquals(face, wall.Front) ? piece.Front : piece.Back ?? piece.Front;
+                // The section round the drop point, kept on the wall; the pieces either side are the wall as it was.
+                var (dx, dy) = ((wall.End.X - wall.Start.X) / length, (wall.End.Y - wall.Start.Y) / length);
+                var from = Math.Clamp(Math.Round((at.X - wall.Start.X) * dx + (at.Y - wall.Start.Y) * dy - width / 2), 0, length - width);
+                Vertex Corner(double d) => e.Add(new Vertex { X = wall.Start.X + dx * d, Y = wall.Start.Y + dy * d });
+                var front = ReferenceEquals(face, wall.Front);
+                var stale = IsOwnPicture(face.Middle);
+                var right = from + width < length - 1e-6 ? Walls.Split(e, wall, Corner(from + width)) : null;
+                var piece = from > 1e-6 ? Walls.Split(e, wall, Corner(from)) : wall;
+                var left = ReferenceEquals(piece, wall) ? null : wall;
+                painted = front ? piece.Front : piece.Back ?? piece.Front;
+
+                // A wall that already showed a picture of the user's own (dropped before) would keep slices of it either
+                // side, stretched for the whole wall: those pieces become an ordinary wall again.
+                if (stale)
+                {
+                    var plain = PlainWall(face.Sector);
+                    foreach (var rest in new[] { left, right }.OfType<Line>())
+                    {
+                        var side = front ? rest.Front : rest.Back ?? rest.Front;
+                        e.Set(side, s => s.Middle, (s, v) => s.Middle = v, plain);
+                        foreach (var field in new[] { "scalex_mid", "scaley_mid", "offsetx_mid", "offsety_mid" }) e.Field(side, field, null);
+                    }
+                }
             }
         }
 
@@ -970,6 +992,14 @@ public sealed class EditorSession : IDisposable
         Fitting.FitWall(e, painted, WallSize);
         return painted;
     }
+
+    /// <summary>The wall picture a room's other solid walls show most (none of the user's own pictures), else the game's usual wall.</summary>
+    private string PlainWall(Sector room) =>
+        Map.Lines.Where(l => l.OnMap && l.Back is null && ReferenceEquals(l.Front.Sector, room) && l.Front.Middle is not ("-" or "") && !IsOwnPicture(l.Front.Middle))
+            .GroupBy(l => l.Front.Middle, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .FirstOrDefault() ?? Look.For(Engine).Wall;
 
     /// <summary>A picture on a floor or ceiling, one undo step; a picture of the user's own fills the room once (<see cref="Fitting.FitFlat"/>).</summary>
     private void PaintFlat(Sector area, string texture, bool ceiling)
