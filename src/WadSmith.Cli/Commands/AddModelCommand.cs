@@ -13,10 +13,10 @@ internal sealed class AddModelCommand : ICommand
 {
     public string Name => "add-model";
 
-    public string Summary => "Bring a 3D model (OBJ, glTF, MD3, IQM) or voxels (VOX, KVX) into a project as a prop, and place it on a map.";
+    public string Summary => "Bring a 3D model (OBJ, glTF, MD3, IQM, MD2, MDL) or voxels (VOX, KVX) into a project as a prop, and place it on a map.";
 
     public string Usage => """
-        Usage: wadsmith-cli add-model PROJECT MODEL(.obj|.glb|.gltf|.md3|.iqm|.vox|.kvx) [--at="X Y"] [--map=SLOT] [--games=FOLDER] [--engine-data=gzdoom.pk3]
+        Usage: wadsmith-cli add-model PROJECT MODEL(.obj|.glb|.gltf|.md3|.iqm|.md2|.mdl|.vox|.kvx) [--at="X Y"] [--map=SLOT] [--games=FOLDER] [--engine-data=gzdoom.pk3]
 
         Copies the model and its pictures into the project, writes its MODELDEF entry and a decoration class
         with a number of the project's own, and bakes eight sprites from it, as the editor does. With --at it
@@ -44,7 +44,7 @@ internal sealed class AddModelCommand : ICommand
             var project = Project.Open(args.Positional[0]);
             var found = GameLocator.Scan([.. GameLocator.StandardFolders(Environment.GetEnvironmentVariable), .. games is null ? Array.Empty<string>() : [games]]);
             var resources = GameResources.Load(project.Info.Game, project.Folder, found, enginePath) ?? throw new CorruptDataException($"The project's game ({project.Info.Game}) was not found on this computer; name its folder with --games.");
-            var made = ModelProps.Import(project, resources, args.Positional[1]);
+            var made = ModelProps.Import(project, resources, args.Positional[1], () => found.FirstOrDefault(g => g.Game.Engine == "quake") is { } quake ? Core.Quake.PakArchive.Open(quake.Path).Read("gfx/palette.lmp") : null);
             ProjectMapInfo.Refresh(project, resources.Game, resources.Files, enginePath);
             foreach (var note in made.Notes) output.WriteLine($"note: {note}");
             var thing = made.Actor.Thing;

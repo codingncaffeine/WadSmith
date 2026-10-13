@@ -27,7 +27,7 @@ public static class ModelProps
     private const string DefinitionMark = "// Written by WadSmith: the 3D models brought into this project. Edits here are replaced.";
 
     /// <summary>The model files a prop can be made from.</summary>
-    public static readonly IReadOnlyList<string> Extensions = [".obj", ".md3", ".iqm", ".glb", ".gltf", ".vox", ".kvx"];
+    public static readonly IReadOnlyList<string> Extensions = [".obj", ".md3", ".iqm", ".glb", ".gltf", ".md2", ".mdl", ".vox", ".kvx"];
 
     /// <summary>Whether <paramref name="path"/> names a model file WadSmith brings in as a prop, or a picture of a block set (<see cref="BlockSet"/>).</summary>
     public static bool IsModel(string path) => Extensions.Contains(Path.GetExtension(path).ToLowerInvariant()) || BlockSet.Of(path) is not null;
@@ -65,6 +65,29 @@ public static class ModelProps
     {
         var tall = mesh.Max.Z - mesh.Min.Z;
         return (UnitsPerMetre * Stretch, $"in metres: {tall.ToString("0.##", CultureInfo.InvariantCulture)} m tall, {Math.Max(4, Math.Ceiling(tall * UnitsPerMetre))} units in the map");
+    }
+
+    /// <summary>A Quake model's size: Quake's units are Doom's, so the model is scaled by the pixel stretch to stand as tall in the map as in Quake.</summary>
+    public static (double Scale, string Note) QuakeUnits(Mesh mesh)
+    {
+        var tall = mesh.Max.Z - mesh.Min.Z;
+        return (Stretch, $"in Quake's units, which are Doom's: {Math.Max(4, Math.Ceiling(tall))} units tall in the map");
+    }
+
+    /// <summary>
+    /// Quake's palette for a model at <paramref name="path"/>: a <c>palette.lmp</c> beside it or in a <c>gfx</c> folder beside it
+    /// or above it (Quake's files taken out of their PAK), else <paramref name="fromQuake"/> (the user's own Quake).
+    /// </summary>
+    private static byte[]? PaletteFor(string path, Func<byte[]?>? fromQuake)
+    {
+        var folder = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
+        var parent = Path.GetDirectoryName(folder);
+        foreach (var candidate in new[] { Path.Combine(folder, "palette.lmp"), Path.Combine(folder, "gfx", "palette.lmp"), parent is null ? null : Path.Combine(parent, "gfx", "palette.lmp") })
+        {
+            if (candidate is not null && ObjModel.Find(Path.GetDirectoryName(candidate)!, Path.GetFileName(candidate)) is { } file && new FileInfo(file).Length >= 768) return File.ReadAllBytes(file);
+        }
+
+        return fromQuake?.Invoke() is { Length: >= 768 } palette ? palette : null;
     }
 
     /// <summary>The widest a model's picture is copied (D15's cap for media): bigger ones are shrunk, keeping their shape.</summary>
@@ -110,23 +133,34 @@ public static class ModelProps
     /// Brings the model at <paramref name="path"/> into <paramref name="project"/> as a prop of <paramref name="into"/>'s game.
     /// Reads, bakes and writes files: call it on a worker.
     /// </summary>
-    public static ImportedModel Import(Project project, GameResources into, string path)
+    public static ImportedModel Import(Project project, GameResources into, string path, Func<byte[]?>? quakePalette = null)
     {
         if (!IsModel(path)) throw new CorruptDataException($"{Path.GetFileName(path)} is not a model WadSmith brings in yet (it takes {string.Join(", ", Extensions)}).");
         var notes = new List<string>();
         var kind = Path.GetExtension(path).ToLowerInvariant();
         if (kind is ".vox" or ".kvx") return ImportVoxels(project, into, path, kind, notes);
+
+        // Quake's models: an MD2 comes as it is; an MDL becomes an MD2 (GZDoom reads no MDL), its colours through Quake's palette.
+        var quake = kind switch
+        {
+            ".md2" => Md2.Read(path, notes),
+            ".mdl" => Mdl.Read(File.ReadAllBytes(path), PaletteFor(path, quakePalette) ?? throw new CorruptDataException($"{Path.GetFileName(path)} is a Quake model whose colours are in Quake's palette, and no Quake was found: add your Quake folder to the games, or put its gfx/palette.lmp beside the model."), Path.GetFileName(path)),
+            _ => null,
+        };
         var mesh = kind switch
         {
             ".md3" => Md3Model.Read(path, notes),
             ".iqm" => IqmModel.Read(path, notes),
             ".glb" or ".gltf" => GltfModel.Read(path, notes),
+            ".md2" or ".mdl" => quake!.ToMesh(),
             _ when BlockSet.Of(path) is not null => BlockSet.Read(path, notes),
             _ => ObjModel.Read(path, notes),
         };
-        // glTF is in metres by its own rule and a block is a metre cube; other formats say nothing, so their height is read.
+        // glTF is in metres by its own rule and a block is a metre cube; Quake's units are Doom's (both players stand 56 tall,
+        // so the model is drawn 1.2 times its own height to stand as tall in the map); other formats say nothing, so their
+        // height is read.
         var block = BlockSet.Of(path) is not null;
-        var (scale, sizeNote) = kind is ".glb" or ".gltf" || block ? Metres(mesh) : SizeOf(mesh);
+        var (scale, sizeNote) = kind is ".glb" or ".gltf" || block ? Metres(mesh) : quake is not null ? QuakeUnits(mesh) : SizeOf(mesh);
         var stem = block ? BlockSet.NameOf(path) : Path.GetFileNameWithoutExtension(path);
 
         var className = ClassName(project, into, stem);
@@ -150,11 +184,19 @@ public static class ModelProps
             files.Add(($"{folder}/{pictures[s]}", ImageCodec.EncodePng(image)));
         }
 
-        var modelFile = "model" + (kind is ".md3" or ".iqm" ? kind : ".obj");
-        files.Add(($"{folder}/{modelFile}", kind is ".md3" or ".iqm" ? File.ReadAllBytes(path) : Encoding.UTF8.GetBytes(ObjModel.Write(mesh, s => pictures[s]))));
-        var skins = kind is ".md3" or ".iqm"
-            ? string.Concat(pictures.Select((p, s) => p is null ? "" : $"\tSurfaceSkin 0 {s} \"{p}\"\n"))
-            : "";
+        var modelFile = "model" + (kind is ".md3" or ".iqm" or ".md2" ? kind : kind == ".mdl" ? ".md2" : ".obj");
+        files.Add(($"{folder}/{modelFile}", kind switch
+        {
+            ".md3" or ".iqm" or ".md2" => File.ReadAllBytes(path),
+            ".mdl" => Md2.Write(quake!, pictures[0] ?? ""),
+            _ => Encoding.UTF8.GetBytes(ObjModel.Write(mesh, s => pictures[s])),
+        }));
+        var skins = kind switch
+        {
+            ".md3" or ".iqm" => string.Concat(pictures.Select((p, s) => p is null ? "" : $"\tSurfaceSkin 0 {s} \"{p}\"\n")),
+            ".md2" or ".mdl" when pictures[0] is { } skin => $"\tSkin 0 \"{skin}\"\n",
+            _ => "",
+        };
 
         // Stood on its base, centred on its middle: MODELDEF's offsets are in map units.
         var origin = ((mesh.Min.X + mesh.Max.X) / 2, (mesh.Min.Y + mesh.Max.Y) / 2, mesh.Min.Z);
@@ -308,7 +350,7 @@ public static class ModelProps
         var definition = File.ReadAllText(Path.Combine(dir, "modeldef.txt"));
         var file = Regex.Match(definition, "(?im)^\\s*Model\\s+0\\s+\"([^\"]+)\"") is { Success: true } m ? m.Groups[1].Value : "model.obj";
         var path = Path.Combine(dir, file);
-        var mesh = Path.GetExtension(path).ToLowerInvariant() switch { ".md3" => Md3Model.Read(path), ".iqm" => IqmModel.Read(path), _ => ObjModel.Read(path) };
+        var mesh = Path.GetExtension(path).ToLowerInvariant() switch { ".md3" => Md3Model.Read(path), ".iqm" => IqmModel.Read(path), ".md2" => Md2.Read(path).ToMesh(), _ => ObjModel.Read(path) };
         var scale = Regex.Match(definition, @"(?im)^\s*Scale\s+([-0-9.eE]+)") is { Success: true } s ? double.Parse(s.Groups[1].Value, CultureInfo.InvariantCulture) : 1;
         var turn = Regex.Match(definition, @"(?im)^\s*AngleOffset\s+([-0-9.eE]+)") is { Success: true } a ? double.Parse(a.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
         var offset = Regex.Match(definition, @"(?im)^\s*Offset\s+([-0-9.eE]+)\s+([-0-9.eE]+)\s+([-0-9.eE]+)");

@@ -206,7 +206,7 @@ public partial class EditorView : UserControl
         {
             Title = "Add a 3D model",
             AllowMultiple = false,
-            FileTypeFilter = [new("3D models and voxels (OBJ, glTF, MD3, IQM, VOX, KVX)") { Patterns = ["*.obj", "*.OBJ", "*.glb", "*.GLB", "*.gltf", "*.GLTF", "*.md3", "*.MD3", "*.iqm", "*.IQM", "*.vox", "*.VOX", "*.kvx", "*.KVX"] }, new("Block sets (any picture of one: NAME_side.png, NAME_top.png…)") { Patterns = ["*_side.*", "*_top.*", "*_bottom.*", "*_front.*", "*_back.*", "*_left.*", "*_right.*"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
+            FileTypeFilter = [new("3D models and voxels (OBJ, glTF, MD3, IQM, MD2, MDL, VOX, KVX)") { Patterns = ["*.obj", "*.OBJ", "*.glb", "*.GLB", "*.gltf", "*.GLTF", "*.md3", "*.MD3", "*.iqm", "*.IQM", "*.md2", "*.MD2", "*.mdl", "*.MDL", "*.vox", "*.VOX", "*.kvx", "*.KVX"] }, new("Block sets (any picture of one: NAME_side.png, NAME_top.png…)") { Patterns = ["*_side.*", "*_top.*", "*_bottom.*", "*_front.*", "*_back.*", "*_left.*", "*_right.*"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
         }).ConfigureAwait(true);
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }

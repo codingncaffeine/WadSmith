@@ -33,7 +33,8 @@ public enum SaveState
 /// <param name="Resources">The project's game opened for textures, sprites and object names, when found.</param>
 /// <param name="Picture">Paints a map as PNG for the versions list (on a worker); null for the automap drawing.</param>
 /// <param name="EngineData">The engine's gzdoom.pk3, whose MAPINFO gives the game's own settings for each map; null when the engine is not installed.</param>
-public sealed record SessionHooks(Action<Action> OnUiThread, GameResources? Resources = null, Func<MapFrame, byte[]?>? Picture = null, string? EngineData = null);
+/// <param name="QuakePalette">Quake's palette (gfx/palette.lmp) from the user's own copy, for Quake models brought in; null when Quake was not found.</param>
+public sealed record SessionHooks(Action<Action> OnUiThread, GameResources? Resources = null, Func<MapFrame, byte[]?>? Picture = null, string? EngineData = null, Func<byte[]?>? QuakePalette = null);
 
 /// <summary>
 /// The game's own settings for a map's slot, as the engine reads them: shown beside the map's settings, so "the game's"
@@ -1080,7 +1081,7 @@ public sealed class EditorSession : IDisposable
             ImportedModel made;
             try
             {
-                made = ModelProps.Import(Project, into, path);
+                made = ModelProps.Import(Project, into, path, Hooks.QuakePalette);
                 ProjectMapInfo.Refresh(Project, into.Game, into.Files, engineData);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)

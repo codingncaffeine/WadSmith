@@ -67,7 +67,22 @@ internal sealed partial class MainViewModel : ObservableObject
     public static SessionHooks HooksFor(GameResources? resources, string? engineData)
     {
         var look = new Canvas.MapLook(resources);
-        return new SessionHooks(PostToUi, resources, frame => Canvas.MapThumbnail.Render(frame, look, 384, 256), engineData);
+        return new SessionHooks(PostToUi, resources, frame => Canvas.MapThumbnail.Render(frame, look, 384, 256), engineData, QuakePalette);
+    }
+
+    /// <summary>Quake's palette from the user's own Quake (its PAK0), for Quake models; null when no Quake was found. Reads a file: call it on a worker.</summary>
+    private static byte[]? QuakePalette()
+    {
+        if (WadSmith.App.App.Services?.Games?.FirstOrDefault(g => g.Game.Engine == "quake") is not { } quake) return null;
+        try
+        {
+            return Core.Quake.PakArchive.Open(quake.Path).Read("gfx/palette.lmp");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Core.CorruptDataException)
+        {
+            WadSmith.Editor.App.Log.Warn($"Quake's palette could not be read from {quake.Path}: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>Reads a project's map on a worker and opens it in the editor.</summary>

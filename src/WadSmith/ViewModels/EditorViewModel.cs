@@ -75,7 +75,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         LookNames = [.. _looks.Select(l => l.Name)];
         ObjectShelf = ShelfViewModel.Objects(session.Resources, () => WadSmith.Editor.Editing.Prefabs.In(session.Project.Folder), () => services.OtherGameOpeners(session.Resources), ModelNumbers);
         ObjectShelf.AddLabel = "Add a 3D model…";
-        ObjectShelf.AddTip = "Brings in a 3D model of your own (OBJ with its .mtl and pictures, glTF/GLB, MD3, IQM, or MagicaVoxel and KVX voxels, or a block from a block texture set) as a prop for this map: it is copied into the project, GZDoom draws it, and it waits under Your models. You can also drop a model file onto the plan.";
+        ObjectShelf.AddTip = "Brings in a 3D model of your own (OBJ with its .mtl and pictures, glTF/GLB, MD3, IQM, Quake's MD2 and MDL, or MagicaVoxel and KVX voxels, or a block from a block texture set) as a prop for this map: it is copied into the project, GZDoom draws it, and it waits under Your models. You can also drop a model file onto the plan.";
         ObjectShelf.Add = () => _ = AddModelAsync();
         session.PrefabsChanged += ObjectShelf.Refresh;
         session.PropsChanged += ObjectShelf.Refresh;
