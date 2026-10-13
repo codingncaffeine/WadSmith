@@ -100,6 +100,43 @@ public sealed class ClassicMap
         return m;
     }
 
+    /// <summary>
+    /// Sets lumps this class does not interpret (a node build's SEGS, NODES, BLOCKMAP …), keeping their place in the lump order
+    /// when the map had them and adding them after the others when it did not.
+    /// </summary>
+    public void SetLumps(IReadOnlyDictionary<string, byte[]> lumps)
+    {
+        var records = new HashSet<string>(["THINGS", "LINEDEFS", "SIDEDEFS", "VERTEXES", "SECTORS"], StringComparer.OrdinalIgnoreCase);
+        var others = new Queue<(string Name, byte[] Data)>(OtherLumps);
+        var rebuilt = new List<(string Name, byte[] Data)>();
+        var placed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in LumpOrder)
+        {
+            if (records.Contains(LumpName.Normalize(name))) continue;
+            var existing = others.Count > 0 ? others.Dequeue() : (name, []);
+            if (lumps.TryGetValue(LumpName.Normalize(name), out var data))
+            {
+                rebuilt.Add((name, data));
+                placed.Add(LumpName.Normalize(name));
+            }
+            else
+            {
+                rebuilt.Add(existing);
+            }
+        }
+
+        rebuilt.AddRange(others);
+        foreach (var (name, data) in lumps)
+        {
+            if (placed.Contains(name)) continue;
+            LumpOrder.Add(name);
+            rebuilt.Add((name, data));
+        }
+
+        OtherLumps.Clear();
+        OtherLumps.AddRange(rebuilt);
+    }
+
     /// <summary>The map's lumps after its name marker, in the original order.</summary>
     public IReadOnlyList<(string Name, byte[] Data)> WriteLumps()
     {

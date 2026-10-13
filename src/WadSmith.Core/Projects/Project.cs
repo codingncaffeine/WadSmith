@@ -205,7 +205,13 @@ public sealed class Project
         if (ClassicFormat && map.Namespace == "zdoom") throw new ArgumentException("A project with a classic target keeps its maps in the classic format; translate this map back first.", nameof(map));
         var relative = $"maps/{map.Name.ToUpperInvariant()}.wad";
         var lumps = new List<(string, ReadOnlyMemory<byte>)> { (map.Name.ToUpperInvariant(), Array.Empty<byte>()) };
-        if (ClassicFormat) lumps.AddRange(MapConversion.ToClassic(map, map.Namespace == "hexen" ? MapFormat.Hexen : MapFormat.Doom).WriteLumps().Select(l => (l.Name, (ReadOnlyMemory<byte>)l.Data)));
+        if (ClassicFormat)
+        {
+            // The classic ports need the map's nodes: built by WadSmith on every save (6b.2).
+            var classic = MapConversion.ToClassic(map, map.Namespace == "hexen" ? MapFormat.Hexen : MapFormat.Doom);
+            WadSmith.Core.Maps.Classic.NodeBuilder.Build(classic);
+            lumps.AddRange(classic.WriteLumps().Select(l => (l.Name, (ReadOnlyMemory<byte>)l.Data)));
+        }
         else lumps.AddRange(MapConversion.ToUdmfLumps(map).Select(l => (l.Name, (ReadOnlyMemory<byte>)l.Data)));
         WriteAtomically(Path.Combine(Folder, relative), WadWriter.Write(WadKind.Pwad, lumps));
 
