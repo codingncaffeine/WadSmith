@@ -385,7 +385,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-make-exit" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-model" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-climb" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark" or "landmark-sheet" or "editor-explain" or "editor-tour":
+        case "editor" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-make-exit" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-model" or "editor-3d-picture" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-climb" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark" or "landmark-sheet" or "editor-explain" or "editor-tour":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -597,6 +597,39 @@ foreach (var pose in poses)
                 editor.Inspector.Rows.OfType<FlagRow>().Single(r => r.Label == "Courtyard is hidden").Value = true;
                 Pump(1.5);
                 Save("editor-groups-hidden");
+                break;
+            }
+
+            if (pose == "editor-3d-picture")
+            {
+                // A picture of the user's own (WS_PICTURE: a GIF, say) brought in, put on the starter room's north wall and fitted
+                // to it, then seen in the real 3D view: one copy across the wall.
+                var file = Environment.GetEnvironmentVariable("WS_PICTURE");
+                if (file is null || !File.Exists(file))
+                {
+                    Console.Error.WriteLine("editor-3d-picture needs WS_PICTURE=PATH to a picture.");
+                    return 1;
+                }
+
+                var session = editor.Session;
+                editor.Layout = WadSmith.Editor.App.MapLayout.Split;
+                var view3d = window.GetVisualDescendants().OfType<WadSmith.App.ThreeD.View3D>().First();
+                for (var i = 0; i < 200 && (view3d.SceneVersion < 0 || !view3d.HasPicture); i++) Pump(0.05);
+                var walls = session.Resources!.Textures.Walls.Count();
+                session.ImportPicture(file);
+                for (var i = 0; i < 400 && session.Resources.Textures.Walls.Count() == walls; i++) Pump(0.05);
+                Pump(0.5);
+                var texture = session.Project.CopiedNow().First(c => c.Kind == "wall" && c.Game == "picture").Name;
+                var north = session.Map.Lines.Where(l => l.OnMap && l.Back is null).MaxBy(l => l.Start.Y + l.End.Y)!;
+                var at = new WadSmith.Editor.Geometry.MapPoint((north.Start.X + north.End.X) / 2, (north.Start.Y + north.End.Y) / 2 - 4);
+                Console.WriteLine($"3d picture: {texture}; paint '{session.Paint(texture, at, 8, false)}'; status '{editor.Status}'");
+                session.FitWall(north.Front);
+                Console.WriteLine($"3d picture fit: '{editor.Status}'");
+                var floor = north.Front.Sector.FloorHeight;
+                view3d.LookAt(new WadSmith.Editor.Geometry.MapPoint(at.X, at.Y - 160), floor + 64, 300);
+                for (var i = 0; i < 100 && view3d.SceneVersion < session.Map.Version; i++) Pump(0.05);
+                Pump(1.5);
+                Save("editor-3d-picture");
                 break;
             }
 

@@ -613,6 +613,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = "Its floor, ceiling and light.";
                 AddSector(s);
                 AddPlatforms(s);
+                Rows.Add(new ActionRow("Fit the floor picture to this room", "Sizes the floor's picture so one copy covers the room corner to corner, its top to the north (UDMF floor scale and panning).", () => _session.FitFlat(s, ceiling: false)));
+                Rows.Add(new ActionRow("Fit the ceiling picture to this room", "Sizes the ceiling's picture so one copy covers the room corner to corner (UDMF ceiling scale and panning).", () => _session.FitFlat(s, ceiling: true)));
                 Rows.Add(new ActionRow("Make it a secret", "Finding it counts toward the secrets at the end of the map, and the walls into it show as solid walls on the in-game map so they do not give it away.", () => _session.MakeSecret(s)));
                 Rows.Add(new ActionRow("Save as a prefab", "Keeps a copy of this room, its walls and the things in it in this project, under Objects, Prefabs, to drag onto any of its maps.", _session.SavePrefab));
                 Rows.Add(new ActionRow("Draw new rooms like this one", "New rooms take its floor and ceiling pictures, heights, light and the texture of its walls (the Look in the Textures panel).", () => LookLike?.Invoke(s)));
@@ -730,6 +732,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Heading = "Wall face";
                 Summary = solid ? "The side of a solid wall you see from its room: its texture and how it lines up." : "One side of a wall between two areas, as you see it from this side: its textures and how they line up.";
                 AddFace(side);
+                Rows.Add(new ActionRow("Fit the picture to this wall", "Sizes the picture so one copy fills this face, not repeated or cut: for a poster, a screen or an animated picture (UDMF scale on this side; the wall's own size is unchanged).", () => _session.FitWall(side)));
                 if (side.Line is { } wall)
                 {
                     Rows.Add(new HeadingRow("THE WHOLE WALL"));

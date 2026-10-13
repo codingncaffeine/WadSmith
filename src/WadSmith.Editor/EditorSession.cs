@@ -1177,6 +1177,26 @@ public sealed class EditorSession : IDisposable
         });
     }
 
+    /// <summary>A wall texture's size from the game's index (no picture is read); null when the game has none of that name.</summary>
+    private (int Width, int Height)? WallSize(string name) => Resources?.Textures.FindWall(name) is { } w ? (w.Width, w.Height) : Resources?.Textures.FindFlat(name) is { } f ? (f.Width, f.Height) : null;
+
+    /// <summary>Fits the picture on each showing part of <paramref name="side"/>'s face (D15), one undo step; says why not when it cannot.</summary>
+    public void FitWall(Side side)
+    {
+        string? why = null;
+        History.Record("Fit the picture to the wall", e => why = Fitting.FitWall(e, side, WallSize));
+        Notice?.Invoke(why ?? "The picture fills this wall face once. GZDoom draws it so; Undo puts it back.");
+    }
+
+    /// <summary>Fits <paramref name="room"/>'s floor or ceiling picture to the room (D15), one undo step; says why not when it cannot.</summary>
+    public void FitFlat(Sector room, bool ceiling)
+    {
+        string? why = null;
+        var walls = Map.Lines.Where(l => l.OnMap).ToList();
+        History.Record(ceiling ? "Fit the ceiling picture" : "Fit the floor picture", e => why = Fitting.FitFlat(e, room, walls, ceiling, FlatSize));
+        Notice?.Invoke(why ?? $"The {(ceiling ? "ceiling" : "floor")} picture covers this room once, its top to the north. Undo puts it back.");
+    }
+
     /// <summary>Raised on the UI thread when a 3D model has been brought in or turned.</summary>
     public event Action? PropsChanged;
 

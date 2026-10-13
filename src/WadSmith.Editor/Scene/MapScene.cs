@@ -497,7 +497,7 @@ public sealed class MapScene
                 {
                     // One-sided: the middle texture from floor to ceiling, hung from the ceiling unless
                     // anchored at the bottom.
-                    var h = Height(side.Middle);
+                    var h = Height(side.Middle) / WallScale(side, WallPart.Middle).Y;
                     var top = lowerUnpegged ? here.FloorHeight + h : here.CeilingHeight;
                     Quad(side.Middle, from, to, hereFloor, hereCeiling, top, side, length, light, tint, line, WallPart.Middle);
                     return;
@@ -509,7 +509,7 @@ public sealed class MapScene
                 // Upper part, where this side's ceiling is higher; none between two skies (Doom's sky trick).
                 if ((hereCeiling.From > thereCeiling.From || hereCeiling.To > thereCeiling.To) && !(IsSky(here.CeilingTexture) && IsSky(there.CeilingTexture)))
                 {
-                    var top = upperUnpegged ? here.CeilingHeight : there.CeilingHeight + Height(side.Top);
+                    var top = upperUnpegged ? here.CeilingHeight : there.CeilingHeight + Height(side.Top) / WallScale(side, WallPart.Top).Y;
                     Quad(side.Top, from, to, thereCeiling, hereCeiling, top, side, length, light, tint, line, WallPart.Top);
                 }
 
@@ -525,11 +525,14 @@ public sealed class MapScene
                 {
                     var bottom = Math.Max(here.FloorHeight, there.FloorHeight);
                     var ceiling = Math.Min(here.CeilingHeight, there.CeilingHeight);
-                    var h = Height(side.Middle);
-                    var top = (lowerUnpegged ? bottom + h : ceiling) + side.OffsetY;
+                    // Heights in map units: the texture's height and its row offset divided by the wall's scale, as GZDoom does.
+                    var sy = WallScale(side, WallPart.Middle).Y;
+                    var h = Height(side.Middle) / sy;
+                    var anchor = lowerUnpegged ? bottom + h : ceiling;
+                    var top = anchor + (side.OffsetY + WallNumber(side, "offsety", WallPart.Middle, 0)) / sy;
                     var z0 = Math.Max(bottom, top - h);
                     var z1 = Math.Min(ceiling, top);
-                    if (z1 > z0) Quad(side.Middle, from, to, (z0, z0), (z1, z1), top - side.OffsetY, side, length, light, tint, line, WallPart.Middle);
+                    if (z1 > z0) Quad(side.Middle, from, to, (z0, z0), (z1, z1), anchor, side, length, light, tint, line, WallPart.Middle);
                 }
             }
         }
@@ -676,9 +679,12 @@ public sealed class MapScene
             batch.Walls.Add(wall);
             batch.Parts.Add((byte)part);
             batch.Parts.Add((byte)part);
-            var u0 = side.OffsetX;
-            var u1 = side.OffsetX + length;
-            double V(double z) => top - z + side.OffsetY;
+            // GZDoom's per-wall scale (a scale of 2 shows the texture half size) and the part's own offsets, in texture pixels.
+            var (sx, sy) = WallScale(side, part);
+            var (ox, oy) = (side.OffsetX + WallNumber(side, "offsetx", part, 0), side.OffsetY + WallNumber(side, "offsety", part, 0));
+            var u0 = ox;
+            var u1 = ox + length * sx;
+            double V(double z) => (top - z) * sy + oy;
 
             // Counter-clockwise as seen from the area the face belongs to.
             batch.Add(from.X, from.Y, z0.From, u0, V(z0.From), light, tint);
@@ -688,6 +694,25 @@ public sealed class MapScene
             batch.Add(to.X, to.Y, z1.To, u1, V(z1.To), light, tint);
             batch.Add(from.X, from.Y, z1.From, u0, V(z1.From), light, tint);
         }
+    }
+
+    /// <summary>A side's UDMF number for a part of the wall ("scalex" + "_mid"…), or <paramref name="otherwise"/>.</summary>
+    public static double WallNumber(SideFrame side, string field, WallPart part, double otherwise)
+    {
+        var name = field + part switch { WallPart.Top => "_top", WallPart.Bottom => "_bottom", _ => "_mid" };
+        foreach (var (k, v) in side.Extra)
+        {
+            if (string.Equals(k, name, StringComparison.OrdinalIgnoreCase) && v.Kind is UdmfValueKind.Float or UdmfValueKind.Integer) return v.AsFloat();
+        }
+
+        return otherwise;
+    }
+
+    /// <summary>A wall part's texture scale (UDMF scalex_/scaley_; 1 each unless set, never 0).</summary>
+    public static (double X, double Y) WallScale(SideFrame side, WallPart part)
+    {
+        var (x, y) = (WallNumber(side, "scalex", part, 1), WallNumber(side, "scaley", part, 1));
+        return (x == 0 ? 1 : x, y == 0 ? 1 : y);
     }
 
     private static bool Flag(KeyValuePair<string, UdmfValue>[] extra, string name)
