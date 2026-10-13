@@ -38,7 +38,7 @@ public sealed class WadContainer : ResourceContainer
     /// <summary>The raw bytes of the whole file.</summary>
     public ReadOnlyMemory<byte> Bytes => _data;
 
-    public static new WadContainer Open(string path) => new(File.ReadAllBytes(path), path);
+    public static new WadContainer Open(string path) => new(SharedFiles.ReadAllBytes(path), path);
 
     public static WadContainer FromBytes(byte[] data, string? path = null) => new(data, path);
 

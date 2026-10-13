@@ -156,7 +156,7 @@ public sealed class Project
         ProjectInfo info;
         try
         {
-            info = JsonSerializer.Deserialize<ProjectInfo>(File.ReadAllText(path), Json) ?? throw new CorruptDataException($"{SidecarName} is empty.");
+            info = JsonSerializer.Deserialize<ProjectInfo>(SharedFiles.ReadAllText(path), Json) ?? throw new CorruptDataException($"{SidecarName} is empty.");
         }
         catch (JsonException ex)
         {
@@ -309,7 +309,7 @@ public sealed class Project
             if (!File.Exists(sidecar)) continue;
             try
             {
-                var info = JsonSerializer.Deserialize<ProjectInfo>(File.ReadAllText(sidecar), Json);
+                var info = JsonSerializer.Deserialize<ProjectInfo>(SharedFiles.ReadAllText(sidecar), Json);
                 if (info is null) continue;
                 var maps = Path.Combine(folder, "maps");
                 var modified = File.GetLastWriteTimeUtc(sidecar);
@@ -446,7 +446,7 @@ public sealed class Project
                 if (!linux) f.Flush(flushToDisk: true);
             }
 
-            File.Move(temp, path, overwrite: true);
+            SharedFiles.Replace(temp, path);
         }
 
         if (linux) SyncFileSystem(Folder);
@@ -480,7 +480,7 @@ public sealed class Project
             f.Flush(flushToDisk: true);
         }
 
-        File.Move(temp, path, overwrite: true);
+        SharedFiles.Replace(temp, path);
     }
 
     private static readonly JsonSerializerOptions Json = new()
