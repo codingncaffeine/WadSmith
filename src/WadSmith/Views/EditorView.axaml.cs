@@ -205,7 +205,7 @@ public partial class EditorView : UserControl
         {
             Title = "Add a 3D model",
             AllowMultiple = false,
-            FileTypeFilter = [new("3D models (OBJ)") { Patterns = ["*.obj", "*.OBJ"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
+            FileTypeFilter = [new("3D models (OBJ, MD3, IQM)") { Patterns = ["*.obj", "*.OBJ", "*.md3", "*.MD3", "*.iqm", "*.IQM"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
         }).ConfigureAwait(true);
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }

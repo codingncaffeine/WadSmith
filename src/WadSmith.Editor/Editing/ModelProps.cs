@@ -26,7 +26,7 @@ public static class ModelProps
     private const string DefinitionMark = "// Written by WadSmith: the 3D models brought into this project. Edits here are replaced.";
 
     /// <summary>The model files a prop can be made from.</summary>
-    public static readonly IReadOnlyList<string> Extensions = [".obj"];
+    public static readonly IReadOnlyList<string> Extensions = [".obj", ".md3", ".iqm"];
 
     /// <summary>Whether <paramref name="path"/> names a model file WadSmith brings in as a prop.</summary>
     public static bool IsModel(string path) => Extensions.Contains(Path.GetExtension(path).ToLowerInvariant());
@@ -74,7 +74,13 @@ public static class ModelProps
     {
         if (!IsModel(path)) throw new CorruptDataException($"{Path.GetFileName(path)} is not a model WadSmith brings in yet (it takes {string.Join(", ", Extensions)}).");
         var notes = new List<string>();
-        var mesh = ObjModel.Read(path, notes);
+        var kind = Path.GetExtension(path).ToLowerInvariant();
+        var mesh = kind switch
+        {
+            ".md3" => Md3Model.Read(path, notes),
+            ".iqm" => IqmModel.Read(path, notes),
+            _ => ObjModel.Read(path, notes),
+        };
         var (scale, sizeNote) = SizeOf(mesh);
 
         var className = ClassName(project, into, Path.GetFileNameWithoutExtension(path));
@@ -82,7 +88,8 @@ public static class ModelProps
         var folder = $"models/{className}";
         var files = new List<(string, byte[])>();
 
-        // The pictures beside the model, as PNG (GZDoom reads each usemtl name as a picture in the model's folder).
+        // The pictures beside the model, as PNG: an OBJ written again names them in its usemtl lines (GZDoom reads each as a
+        // picture in the model's folder); an MD3 or IQM is copied as it is and MODELDEF skins its surfaces by number.
         var pictures = new string?[mesh.Surfaces.Count];
         for (var s = 0; s < mesh.Surfaces.Count; s++)
         {
@@ -91,14 +98,18 @@ public static class ModelProps
             files.Add(($"{folder}/{pictures[s]}", ImageCodec.EncodePng(image)));
         }
 
-        files.Add(($"{folder}/model.obj", Encoding.UTF8.GetBytes(ObjModel.Write(mesh, s => pictures[s]))));
+        var modelFile = "model" + (kind is ".md3" or ".iqm" ? kind : ".obj");
+        files.Add(($"{folder}/{modelFile}", kind is ".md3" or ".iqm" ? File.ReadAllBytes(path) : Encoding.UTF8.GetBytes(ObjModel.Write(mesh, s => pictures[s]))));
+        var skins = kind is ".md3" or ".iqm"
+            ? string.Concat(pictures.Select((p, s) => p is null ? "" : $"\tSurfaceSkin 0 {s} \"{p}\"\n"))
+            : "";
 
         // Stood on its base, centred on its middle: MODELDEF's offsets are in map units.
         var origin = ((mesh.Min.X + mesh.Max.X) / 2, (mesh.Min.Y + mesh.Max.Y) / 2, mesh.Min.Z);
         var c = CultureInfo.InvariantCulture;
         var s3 = scale.ToString("R", c);
         files.Add(($"{folder}/modeldef.txt", Encoding.UTF8.GetBytes(
-            $"Model {className}\n{{\n\tPath \"{folder}\"\n\tModel 0 \"model.obj\"\n\tScale {s3} {s3} {s3}\n" +
+            $"Model {className}\n{{\n\tPath \"{folder}\"\n\tModel 0 \"{modelFile}\"\n{skins}\tScale {s3} {s3} {s3}\n" +
             string.Create(c, $"\tOffset {Offset(origin.Item1)} {Offset(origin.Item2)} {Offset(origin.Item3)}\n") +
             $"\tFrameIndex {sprite} A 0 0\n}}\n")));
 

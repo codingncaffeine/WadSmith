@@ -124,7 +124,7 @@ public static class ObjModel
     }
 
     /// <summary>A picture named like the material beside the model, when no library names one.</summary>
-    private static string? Guess(string folder, string material)
+    internal static string? Guess(string folder, string material)
     {
         if (material.Length == 0) return null;
         foreach (var ext in new[] { "", ".png", ".tga", ".jpg", ".jpeg" })
@@ -141,7 +141,7 @@ public static class ObjModel
     /// The picture for a model that names none: one named like it ("spot.png"), else one whose name starts with its first word
     /// ("spot_texture.png" for "spot_triangulated.obj"), else the only picture in its folder; null when that is not one.
     /// </summary>
-    private static string? Beside(string folder, string stem)
+    internal static string? Beside(string folder, string stem)
     {
         var all = Directory.EnumerateFiles(folder).Where(f => PictureExtensions.Contains(Path.GetExtension(f).ToLowerInvariant())).Order(StringComparer.Ordinal).ToList();
         var word = stem.Split('_', '-', ' ', '.')[0];
