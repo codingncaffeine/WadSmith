@@ -248,13 +248,13 @@ internal sealed partial class ShelfViewModel : ObservableObject
         },
         () =>
         {
-            // The user's other games (D55): their decorations and pickups, brought into the project when placed; those
-            // whose pictures share a name with this game's, and monsters and weapons, come in later updates.
+            // The user's other games (D55): their monsters, decorations and pickups, brought into the project when placed with
+            // everything they fire, drop or spawn; those whose pictures share a name with this game's, and weapons, come in later updates.
             var tiles = new List<ShelfTile>();
             if (game is null) return tiles;
             foreach (var other in others?.Invoke() ?? [])
             {
-                foreach (var (category, group) in Kinds.Where(k => k.Category is ThingCategory.Decoration or ThingCategory.Health or ThingCategory.Armor or ThingCategory.Ammo or ThingCategory.Powerup))
+                foreach (var (category, group) in Kinds.Where(k => k.Category is ThingCategory.Monster or ThingCategory.Decoration or ThingCategory.Health or ThingCategory.Armor or ThingCategory.Ammo or ThingCategory.Powerup))
                 {
                     foreach (var t in other.Things.All.Where(t => t.Category == category && other.CanShow(t.Number)).OrderBy(t => t.Name, StringComparer.CurrentCulture))
                     {

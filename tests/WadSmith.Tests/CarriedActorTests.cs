@@ -77,6 +77,26 @@ public sealed class CarriedActorTests
     }
 
     [Fact]
+    public void AMonsterComesWithWhatItFiresAndTheSoundsItMakes()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var doom = Load("doom2", "DOOM2.WAD", project.Folder);
+        var heretic = Load("heretic", "HERETIC.WAD");
+        var leader = heretic.Things.FindClass("HereticImpLeader")!;
+        Assert.Equal(ThingCategory.Monster, leader.Category);
+
+        var carried = ActorBorrowing.Carry(project, doom, heretic, leader);
+        Assert.True(File.Exists(Path.Combine(project.Folder, "sprites", "IMPXA1.png")));
+        Assert.Contains(Directory.GetFiles(Path.Combine(project.Folder, "sprites")), f => Path.GetFileName(f).StartsWith("FX10", StringComparison.Ordinal));
+        Assert.True(carried.Sounds > 0);
+        var table = File.ReadAllText(Path.Combine(project.Folder, ActorBorrowing.SoundFile));
+        Assert.Contains("himp/sight", table);
+        Assert.True(doom.CanShow(carried.Number));
+    }
+
+    [Fact]
     public void AnObjectWhosePicturesShareANameWithThisGamesWaitsForALaterUpdate()
     {
         // Hexen's Fighter boss draws as the player (PLAY), which Doom II has too.
