@@ -19,6 +19,28 @@ public static class Sources
         _ => "F_SKY1",
     };
 
+    /// <summary>
+    /// The sky picture the game itself shows in <paramref name="slot"/>, as the original engines pick it: Doom II by map number
+    /// (SKY1 to MAP11, SKY2 to MAP20, SKY3 after), Doom and Heretic by episode, Hexen's first sky, Strife's mountains. A made
+    /// map with outdoors names it in its settings, so its sky never rests on the game's own definition of the slot.
+    /// </summary>
+    public static string SkyPicture(string family, string slot)
+    {
+        var upper = slot.ToUpperInvariant();
+        if (upper.Length == 4 && upper[0] == 'E' && upper[2] == 'M' && char.IsDigit(upper[1]))
+        {
+            var episode = upper[1] - '0';
+            return family == "heretic" ? episode switch { 2 => "SKY2", 3 or 5 => "SKY3", _ => "SKY1" } : $"SKY{Math.Clamp(episode, 1, 4)}";
+        }
+
+        return family switch
+        {
+            "hexen" => "SKY1",
+            "strife" => "SKYMNT02",
+            _ => upper.StartsWith("MAP", StringComparison.Ordinal) && int.TryParse(upper[3..], out var n) ? n < 12 ? "SKY1" : n < 21 ? "SKY2" : "SKY3" : "SKY1",
+        };
+    }
+
     /// <summary>Whether a monster has to be carried into a map of these settings.</summary>
     public static bool NeedsCarrying(MonsterKind m, GeneratorSettings s) => m.Family != s.Family || (m.Doom2 && !s.Doom2Things);
 

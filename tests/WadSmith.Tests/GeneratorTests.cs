@@ -506,6 +506,36 @@ public sealed class GeneratorTests
     }
 
     [Fact]
+    public void AMadeMapWithOutdoorsNamesTheGamesSkyAndAnIndoorOneLeavesItToTheGame()
+    {
+        // The user (2026-10-13): a made map with outdoor areas came out with no sky. Each map with outdoors now names its sky.
+        using var temp = new TempFolder();
+        var (outside, made) = MadeProjects.Create(Path.Combine(temp.Path, "Open Fields"), For("doom", "open-fields") with { Maps = 3, Outdoors = OutdoorShare.Lots });
+        Assert.All(made, m => Assert.Contains(m.Plan.Rooms, r => r.Outdoors));
+        Assert.Equal(["SKY1", "SKY1", "SKY1"], outside.Info.Maps.Select(m => m.Sky));
+        var text = WadSmith.Core.Projects.ProjectMapInfo.Text(outside.Maps(), WadSmith.Core.Games.MapDefinitions.None, _ => []);
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Count(text!, "sky1 = \"SKY1\""));
+
+        var (inside, _) = MadeProjects.Create(Path.Combine(temp.Path, "Closed Halls"), For("doom", "closed-halls") with { Outdoors = OutdoorShare.None });
+        Assert.Null(Assert.Single(inside.Info.Maps).Sky);
+
+        // The game's own sky for each slot, as the original engines pick it.
+        Assert.Equal(["SKY1", "SKY2", "SKY3", "SKY3", "SKY4", "SKY1", "SKY2", "SKY1", "SKY1", "SKYMNT02"],
+            new[] { ("doom", "MAP11"), ("doom", "MAP12"), ("doom", "MAP21"), ("doom", "E3M1"), ("doom", "E4M2"), ("heretic", "E4M1"), ("heretic", "E2M5"), ("hexen", "MAP01"), ("doom", "MAP01"), ("strife", "MAP02") }
+                .Select(x => Sources.SkyPicture(x.Item1, x.Item2)));
+
+        // Each is a picture the game has, in every game here (Freedoom's in CI).
+        foreach (var (file, family, slot) in new[] { ("freedoom2.wad", "doom", "MAP01"), ("freedoom2.wad", "doom", "MAP15"), ("freedoom2.wad", "doom", "MAP25"), ("freedoom1.wad", "doom", "E4M1") })
+        {
+            var wad = GameFiles.Require(file);
+            var games = WadSmith.Core.Games.GameLocator.Scan([Path.GetDirectoryName(wad)!], cancel: TestContext.Current.CancellationToken);
+            var game = games.First(g => string.Equals(Path.GetFileName(g.Path), file, StringComparison.OrdinalIgnoreCase)).Game.Id;
+            var resources = Editor.GameResources.Load(game, null, games, GameFiles.Require("gzdoom.pk3"))!;
+            Assert.NotNull(resources.Textures.FindWall(Sources.SkyPicture(family, slot)));
+        }
+    }
+
+    [Fact]
     public void MakeItWritesAProjectThatKeepsItsSettings()
     {
         using var temp = new TempFolder();

@@ -253,6 +253,9 @@ public static class MadeProjects
             var plan = Planner.Plan(maps[i]);
             var map = MapMaker.Build(plan, prepare?.Invoke(project, plan));
             project.SaveMap(map.Map.Frame.ToModel(), Episodes.TitleOf(settings, i), new WadSmith.Core.Projects.MapOrigin { Kind = "generated", Game = settings.GameId, Map = SeedWords.Tidy(maps[i].Seed) });
+
+            // A map with outdoors names its sky, so it has one even where the project's map settings stand in for the game's own.
+            if (plan.Rooms.Any(r => r.Outdoors)) project.UpdateMap(maps[i].Slot, m => m with { Sky = Sources.SkyPicture(maps[i].Family, maps[i].Slot) });
             made.Add(map);
         }
 
