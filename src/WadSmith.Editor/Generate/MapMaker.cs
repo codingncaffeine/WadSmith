@@ -59,6 +59,9 @@ public static class MapMaker
         Line($"# Pillars: columns closed floor to ceiling");
         foreach (var room in plan.Rooms)
         {
+            // Its columns, dais, pools and balcony show the room's own walls on their faces.
+            if (room.Pillars.Count > 0 || room.Dais is not null || room.Pools.Count > 0 || room.Ledge is not null) UseLook(LookFor(room));
+
             foreach (var p in room.Pillars)
             {
                 Line($"room {p.X0} {p.Y0} {p.X1} {p.Y1}");
@@ -97,6 +100,21 @@ public static class MapMaker
                 Line($"flat {island.CentreX} {island.CentreY} {LookFor(room).Floor}");
                 Line($"damage {island.CentreX} {island.CentreY} 0");
                 Line($"brightness {island.CentreX} {island.CentreY} {room.Light}");
+            }
+
+            // The balcony: raised along its wall, the stairs up to it from the floor (bottom corner first, as the tool takes it).
+            if (room.Ledge is { } ledge && room.LedgeStairs is { } st)
+            {
+                Line($"room {ledge.X0} {ledge.Y0} {ledge.X1} {ledge.Y1}");
+                Line($"floor {ledge.CentreX} {ledge.CentreY} {room.Floor + room.LedgeRise}");
+                var (from, to, axis) = room.LedgeSide switch
+                {
+                    "north" => ((st.X0, st.Y0), (st.X1, st.Y1), "y"),
+                    "south" => ((st.X0, st.Y1), (st.X1, st.Y0), "y"),
+                    "east" => ((st.X0, st.Y0), (st.X1, st.Y1), "x"),
+                    _ => ((st.X1, st.Y0), (st.X0, st.Y1), "x"),
+                };
+                Line($"stairs {from.Item1} {from.Item2} {to.Item1} {to.Item2} {axis}");
             }
         }
 

@@ -213,6 +213,83 @@ public sealed class GeneratorFloorTests
             }
         }
     }
+
+    /// <summary>
+    /// Height (the study: ledge edges, drops and a floor range our flat maps lacked): every map has a balcony or a drop;
+    /// a balcony lies along its room's wall inside the room, 64 to 128 up with 96 of headroom, with stairs inside the room
+    /// against it, long enough for steps the player climbs, clear of pools, columns and the dais, and with someone on it
+    /// to shoot from it; a drop runs at the higher room's floor into a room tall enough to drop into; and the floors spread
+    /// as each size's median at least.
+    /// </summary>
+    [Fact]
+    public void EveryMapHasHeightToBeAboveTheEnemyOrToDropFrom()
+    {
+        var ranges = new Dictionary<MapSize, List<double>>();
+        foreach (var plan in Sweep())
+        {
+            var seed = plan.Settings.Seed;
+            Assert.True(plan.Rooms.Any(r => r.Ledge is not null) || plan.Links.Any(l => l.Kind == LinkKind.Drop), $"{seed}: no balcony and no drop");
+            foreach (var room in plan.Rooms.Where(r => r.Ledge is not null))
+            {
+                var (b, ledge, stairs) = (room.Box, room.Ledge!.Value, room.LedgeStairs!.Value);
+                bool Inside(Box x) => x.X0 >= b.X0 && x.X1 <= b.X1 && x.Y0 >= b.Y0 && x.Y1 <= b.Y1;
+                bool Touch(Box x, Box y) => (x.X0 == y.X1 || x.X1 == y.X0) && x.Y0 < y.Y1 && y.Y0 < x.Y1 || (x.Y0 == y.Y1 || x.Y1 == y.Y0) && x.X0 < y.X1 && y.X0 < x.X1;
+                Assert.True(Inside(ledge) && Inside(stairs), $"{seed} {room.Name}: the balcony or its stairs leave the room");
+                Assert.True(room.LedgeSide switch { "north" => ledge.Y1 == b.Y1, "south" => ledge.Y0 == b.Y0, "east" => ledge.X1 == b.X1, _ => ledge.X0 == b.X0 }, $"{seed} {room.Name}: the balcony is not against its wall");
+                Assert.True(Touch(stairs, ledge), $"{seed} {room.Name}: the stairs do not reach the balcony");
+                Assert.True(room.LedgeRise is >= 64 and <= 128 && room.Ceiling - room.Floor - room.LedgeRise >= 96, $"{seed} {room.Name}: a balcony {room.LedgeRise} up under a ceiling {room.Ceiling - room.Floor} up");
+                var steps = Math.Ceiling(room.LedgeRise / Editor.Smart.Stairs.ComfortRise) - 1;
+                Assert.True((room.LedgeSide is "north" or "south" ? stairs.Height : stairs.Width) >= steps * Editor.Smart.Stairs.MinDepth, $"{seed} {room.Name}: the stairs are too short for their steps");
+                foreach (var x in new[] { ledge, stairs })
+                {
+                    Assert.DoesNotContain(room.Pools, p => x.X0 < p.Box.X1 && p.Box.X0 < x.X1 && x.Y0 < p.Box.Y1 && p.Box.Y0 < x.Y1);
+                    Assert.DoesNotContain(room.Pillars, p => x.X0 < p.X1 && p.X0 < x.X1 && x.Y0 < p.Y1 && p.Y0 < x.Y1);
+                }
+
+                Assert.Contains(plan.Things, t => t.Monster is not null && t.Room == room.Index && ledge.Contains(t.X, t.Y));
+            }
+
+            foreach (var drop in plan.Links.Where(l => l.Kind == LinkKind.Drop))
+            {
+                var (a, c) = (plan.Rooms[drop.A], plan.Rooms[drop.B]);
+                var (low, high) = a.Floor < c.Floor ? (a, c) : (c, a);
+                Assert.Equal(high.Floor, drop.Floor);
+                Assert.True(high.Floor - low.Floor >= 48 && low.Ceiling >= drop.Floor + 96, $"{seed}: a drop from {high.Floor} into a room {low.Floor}–{low.Ceiling}");
+            }
+
+            var floors = plan.Rooms.Where(r => r.Role != RoomRole.Closet).Select(r => r.Floor + r.LedgeRise).Concat(plan.Rooms.Select(r => r.Floor)).ToList();
+            (ranges.TryGetValue(plan.Settings.Size, out var list) ? list : ranges[plan.Settings.Size] = []).Add(floors.Max() - floors.Min());
+        }
+
+        foreach (var (size, least) in new[] { (MapSize.Small, 160.0), (MapSize.Medium, 224), (MapSize.Large, 320) })
+        {
+            var sorted = ranges[size].Order().ToList();
+            Assert.True(sorted[sorted.Count / 2] >= least, $"{size}: floors span {sorted[sorted.Count / 2]} at the median, under {least}");
+        }
+    }
+
+    /// <summary>In the built map a balcony stands at its rise above the room, and its stairs climb between the two.</summary>
+    [Fact]
+    public void ABalconyIsBuiltWithStairsUpToIt()
+    {
+        var seen = 0;
+        foreach (var plan in Sweep().Where((_, i) => i % 7 == 0))
+        {
+            var made = MapMaker.Make(plan.Settings);
+            Assert.Empty(made.Failed);
+            var g = Editor.Geometry.MapGeometry.Build(made.Map.Frame);
+            foreach (var room in made.Plan.Rooms.Where(r => r.Ledge is not null))
+            {
+                var (ledge, stairs) = (room.Ledge!.Value, room.LedgeStairs!.Value);
+                Assert.Equal(room.Floor + room.LedgeRise, g.SectorAt(new(ledge.CentreX, ledge.CentreY))!.FloorHeight);
+                var step = g.SectorAt(new(stairs.CentreX, stairs.CentreY))!.FloorHeight;
+                Assert.True(step > room.Floor && step < room.Floor + room.LedgeRise, $"{plan.Settings.Seed} {room.Name}: the middle step is at {step}, the floor {room.Floor}, the balcony {room.Floor + room.LedgeRise}");
+                seen++;
+            }
+        }
+
+        Assert.True(seen > 0);
+    }
     /// <summary>Whether the link's two rooms are joined by the other links.</summary>
     private static bool Joined(MapPlan plan, PlannedLink without)
     {

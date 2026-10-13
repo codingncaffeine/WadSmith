@@ -32,6 +32,9 @@ public static class Planner
             Shape(plan, root.Fork("shapes"));
             Windows(plan, root.Fork("windows"));
             if (attempt < 48 && plan.Windows.Count == 0) continue;
+
+            // And one with no balcony and no drop: somewhere to be above the player, or to drop from (D59).
+            if (attempt < 48 && !plan.Rooms.Any(r => r.Ledge is not null) && !plan.Links.Any(l => l.Kind == LinkKind.Drop)) continue;
             if (settings.Traps) Closets(plan, root.Fork("closets"));
             Dress(plan, root.Fork("looks"));
             Populate(plan, palette, root.Fork("things"));
@@ -42,6 +45,9 @@ public static class Planner
     }
 
     private static int KeysFor(GeneratorSettings s, FamilyPalette p) => Math.Clamp(s.Keys, 0, p.Keys.Count);
+
+    /// <summary>Whether two rectangles keep at least <paramref name="margin"/> apart.</summary>
+    private static bool Apart(Box a, Box b, int margin) => a.X1 + margin <= b.X0 || a.X0 - margin >= b.X1 || a.Y1 + margin <= b.Y0 || a.Y0 - margin >= b.Y1;
 
     /// <summary>The fewest ways round a map of <paramref name="size"/> gets when its rooms have the neighbours for them (D59).</summary>
     public static int LoopsFor(MapSize size) => size switch { MapSize.Small => 1, MapSize.Medium => 2, MapSize.Large => 3, _ => 5 };
@@ -333,12 +339,88 @@ public static class Planner
                 room.Dais = new Box((int)cx - dais, (int)cy - dais, (int)cx + dais, (int)cy + dais);
             }
 
+            var ways = plan.Links.Where(l => l.A == room.Index || l.B == room.Index).Select(l => SideOf(l, room)).ToHashSet();
+            var big = room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Arena;
+            if (big && room.Pillars.Count == 0 && room.Dais is null && rng.Chance(0.4)) Columns(plan, room, rng);
+
             // A hazard as structure (D59): a channel, a river with its bridge, or a flooded hall with walkways — never a patch.
-            if (plan.Settings.Hazards && room.Role is RoomRole.Path or RoomRole.Side or RoomRole.Arena && rng.Chance(0.4))
+            if (plan.Settings.Hazards && big && rng.Chance(0.4)) Hazards.Lay(plan, room, ways, rng);
+            if (big && rng.Chance(room.Role == RoomRole.Arena ? 0.7 : 0.45)) Balcony(plan, room, ways, rng);
+        }
+    }
+
+    /// <summary>
+    /// Columns to walk round in a big room (D59: the community's maps have 14 small loops at the median — round columns and
+    /// structures — ours none): a square block 128 or 160 across, floor to ceiling, in the middle of one or two quarters,
+    /// 112 or more from the middle lines (where the ways run) and 96 from the walls and cut corners.
+    /// </summary>
+    private static void Columns(MapPlan plan, PlannedRoom room, Seeded rng)
+    {
+        var b = room.Box;
+        if (Math.Min(b.Width, b.Height) < 640) return;
+        var (cx, cy) = Middle(plan, room);
+        var quarters = new List<(int X, int Y)> { (1, 1), (1, -1), (-1, -1), (-1, 1) };
+        rng.Shuffle(quarters);
+        var wanted = rng.Chance(0.4) ? 2 : 1;
+        foreach (var (sx, sy) in quarters)
+        {
+            var half = rng.Pick([64, 80]);
+            var (qx, qy) = ((int)((sx > 0 ? cx + b.X1 : cx + b.X0) / 2), (int)((sy > 0 ? cy + b.Y1 : cy + b.Y0) / 2));
+            var block = new Box(qx - half, qy - half, qx + half, qy + half);
+            if (Math.Min(Math.Abs(block.X0 - cx), Math.Abs(block.X1 - cx)) < 112 || Math.Min(Math.Abs(block.Y0 - cy), Math.Abs(block.Y1 - cy)) < 112) continue;
+            if (!new[] { (block.X0, block.Y0), (block.X0, block.Y1), (block.X1, block.Y1), (block.X1, block.Y0) }.All(p => room.Holds(p.Item1, p.Item2, 96))) continue;
+            room.Pillars.Add(block);
+            if (--wanted == 0) break;
+        }
+    }
+
+    /// <summary>
+    /// A balcony along a side no corridor meets (D59: the community's maps put monsters above the player — 552 ledge edges a
+    /// map at the median, ours none): a strip the side's straight run long, 128 or 160 deep, 64 to 128 above the floor with
+    /// 96 of headroom, and stairs up from the floor at one end, along the wall, 96 wide; clear of pools, columns, the dais
+    /// and the band round the room's middle lines. Windows and closets keep off its wall.
+    /// </summary>
+    private static void Balcony(MapPlan plan, PlannedRoom room, IReadOnlySet<string> ways, Seeded rng)
+    {
+        var b = room.Box;
+        var c = room.Cuts;
+        if (Math.Min(b.Width, b.Height) < 576) return;
+        var (cx, cy) = Middle(plan, room);
+        var rises = new[] { 64, 96, 128 }.Where(r => room.Ceiling - (room.Floor + r) >= 96).ToList();
+        if (rises.Count == 0) return;
+        var rise = rng.Pick(rises);
+        var depth = rng.Pick([128, 160]);
+        var run = (int)(Math.Ceiling(rise / Smart.Stairs.ComfortRise) - 1) * 24;
+        const int wide = 96;
+        var sides = new List<string> { "north", "south", "east", "west" }.Where(s => !ways.Contains(s)).ToList();
+        rng.Shuffle(sides);
+        bool Clear(Box box, int margin) =>
+            room.Pools.All(p => Apart(box, p.Box, margin)) && room.Pillars.All(p => Apart(box, p, 32)) && (room.Dais is not { } d || Apart(box, d, 32));
+        foreach (var side in sides)
+        {
+            // The strip and, at either end, the flight up to it: built for the north side, turned for the others.
+            (Box Ledge, Box Low, Box High) Build(int from, int to, int wall, int inward)
             {
-                var ways = plan.Links.Where(l => l.A == room.Index || l.B == room.Index).Select(l => SideOf(l, room)).ToHashSet();
-                Hazards.Lay(plan, room, ways, rng);
+                Box Span(int a0, int a1, int d0, int d1) => side is "north" or "south"
+                    ? new Box(Math.Min(a0, a1), Math.Min(wall + inward * d0, wall + inward * d1), Math.Max(a0, a1), Math.Max(wall + inward * d0, wall + inward * d1))
+                    : new Box(Math.Min(wall + inward * d0, wall + inward * d1), Math.Min(a0, a1), Math.Max(wall + inward * d0, wall + inward * d1), Math.Max(a0, a1));
+                return (Span(from, to, 0, depth), Span(from, from + wide, depth, depth + run), Span(to - wide, to, depth, depth + run));
             }
+
+            var (lo, hi, wallAt, inwardSign, middle) = side switch
+            {
+                "north" => (b.X0 + c.NW, b.X1 - c.NE, b.Y1, -1, cy),
+                "south" => (b.X0 + c.SW, b.X1 - c.SE, b.Y0, 1, cy),
+                "east" => (b.Y0 + c.SE, b.Y1 - c.NE, b.X1, -1, cx),
+                _ => (b.Y0 + c.SW, b.Y1 - c.NW, b.X0, 1, cx),
+            };
+            if (hi - lo < 320 || Math.Abs(wallAt - middle) - depth - run < 96 || Math.Abs(wallAt - middle) - depth < 112) continue;
+            var (ledge, low, high) = Build(lo, hi, wallAt, inwardSign);
+            var stairs = rng.Chance(0.5) ? low : high;
+            if (!Clear(ledge, 32) || !Clear(stairs, 32)) stairs = stairs == low ? high : low;
+            if (!Clear(ledge, 32) || !Clear(stairs, 32)) continue;
+            (room.Ledge, room.LedgeRise, room.LedgeSide, room.LedgeStairs) = (ledge, rise, side, stairs);
+            return;
         }
     }
 
@@ -364,7 +446,8 @@ public static class Planner
             // The sides with no corridor: each with its flat stretch (between cut corners) along it.
             var sides = new List<(string Side, int From, int To)>();
             bool Free(string side) => !plan.Links.Any(l => (l.A == room.Index || l.B == room.Index) && SideOf(l, room) == side)
-                && !plan.Windows.Any(w => (w.From == room.Index && w.FromSide == side) || (w.To == room.Index && w.ToSide == side));
+                && !plan.Windows.Any(w => (w.From == room.Index && w.FromSide == side) || (w.To == room.Index && w.ToSide == side))
+                && room.LedgeSide != side;
             if (Free("north") && b.Y1 - cy + depth <= plan.MaxHalf) sides.Add(("north", b.X0 + c.NW, b.X1 - c.NE));
             if (Free("south") && cy - b.Y0 + depth <= plan.MaxHalf) sides.Add(("south", b.X0 + c.SW, b.X1 - c.SE));
             if (Free("east") && b.X1 - cx + depth <= plan.MaxHalf) sides.Add(("east", b.Y0 + c.SE, b.Y1 - c.NE));
@@ -396,6 +479,16 @@ public static class Planner
                     ? room.Pools.Any(p => p.Contains(start + width * f, door.Item2 + inY))
                     : room.Pools.Any(p => p.Contains(door.Item1 + inX, start + width * f));
                 if (Wet(0.1) || Wet(0.5) || Wet(0.9)) continue;
+
+                // Nor onto a balcony, its stairs or a column: plain floor 64 deep in front of the door.
+                Box front = side switch
+                {
+                    "north" => new(start, b.Y1 - 64, start + width, b.Y1),
+                    "south" => new(start, b.Y0, start + width, b.Y0 + 64),
+                    "east" => new(b.X1 - 64, start, b.X1, start + width),
+                    _ => new(b.X0, start, b.X0 + 64, start + width),
+                };
+                if (new[] { room.Ledge, room.LedgeStairs }.OfType<Box>().Concat(room.Pillars).Any(o => !Apart(front, o, 16))) continue;
                 var closet = new PlannedRoom
                 {
                     Index = plan.Rooms.Count, Cell = room.Cell, Role = RoomRole.Closet, Zone = room.Zone, Style = room.Style, Progress = room.Progress,
@@ -450,6 +543,7 @@ public static class Planner
                 var aWall = alongX ? (forward > 0 ? a.Box.X1 : a.Box.X0) : (forward > 0 ? a.Box.Y1 : a.Box.Y0);
                 var bWall = alongX ? (forward > 0 ? b.Box.X0 : b.Box.X1) : (forward > 0 ? b.Box.Y0 : b.Box.Y1);
                 var gap = Math.Abs(bWall - aWall);
+                if (a.LedgeSide == aSide || b.LedgeSide == bSide) continue;
                 if (gap - pane < 32 || gap - pane > 2 * MaxNook) continue;
 
                 // Where along the walls: inside both rooms' straight runs, clear of the corridor between them (if any).
@@ -486,6 +580,15 @@ public static class Planner
                 // The nooks' mouths stay dry; the heights leave a pane no one steps through.
                 bool Wet(PlannedRoom r, int wall, int inward) => r.Pools.Any(p => alongX ? p.Contains(wall + inward * 24.0, from + width / 2.0) : p.Contains(from + width / 2.0, wall + inward * 24.0));
                 if (Wet(a, aWall, -forward) || (split && Wet(b, bWall, forward))) continue;
+
+                // And the floor in front of each mouth (64 into the room) is plain floor: no balcony, its stairs or a column.
+                bool Blocked(PlannedRoom r, int wall, int inward)
+                {
+                    var front = Span(wall, wall + inward * 64);
+                    return new[] { r.Ledge, r.LedgeStairs }.OfType<Box>().Concat(r.Pillars).Any(o => !Apart(front, o, 16));
+                }
+
+                if (Blocked(a, aWall, -forward) || Blocked(b, bWall, forward)) continue;
                 var nookCeiling = Math.Min(a.Ceiling, a.Floor + rng.Pick([128, 144, 160]));
                 var farCeiling = split ? Math.Min(b.Ceiling, b.Floor + rng.Pick([128, 144, 160])) : b.Ceiling;
                 var sill = Math.Max(a.Floor, b.Floor) + rng.Pick([32, 40, 48]);
@@ -529,15 +632,15 @@ public static class Planner
                 // A secret's door is flush with the room's wall, where it can pass for the wall.
                 if (to.Role == RoomRole.Secret) link.DoorAt = from.Index;
             }
-            else if (s.Lifts && length >= 256 && rng.Chance(0.12))
+            else if (s.Lifts && length >= 256 && rng.Chance(0.15))
             {
                 link.Kind = LinkKind.Lift;
-                delta = rng.Between(6, 8) * 16 * (rng.Chance(0.6) ? 1 : -1);
+                delta = rng.Between(7, 10) * 16 * (rng.Chance(0.6) ? 1 : -1);
             }
-            else if (s.Stairs && rng.Chance(0.25))
+            else if (s.Stairs && rng.Chance(0.35))
             {
                 link.Kind = LinkKind.Stairs;
-                delta = rng.Between(3, 6) * 16 * (rng.Chance(0.6) ? 1 : -1);
+                delta = rng.Between(3, Math.Clamp(length / 16 * 20 / 16, 3, 8)) * 16 * (rng.Chance(0.6) ? 1 : -1);
             }
             else
             {
@@ -548,7 +651,7 @@ public static class Planner
                 if (link.Kind == LinkKind.Door && rng.Chance(0.5)) link.DoorAt = from.Index;
             }
 
-            if (from.Floor + delta is < -256 or > 512) delta = -delta;
+            if (from.Floor + delta is < -384 or > 640) delta = -delta;
             to.Floor = from.Floor + delta;
             done.Add(to.Index);
         }
@@ -566,6 +669,9 @@ public static class Planner
                 else shortcuts++;
             }
             else if (d <= 24) link.Kind = rng.Chance(0.4) ? LinkKind.Door : LinkKind.Open;
+
+            // Far apart, often a drop instead: one way down from the higher room, which the player may not have reached.
+            else if (d >= 48 && rng.Chance(0.45)) link.Kind = LinkKind.Drop;
             else if (s.Stairs && d <= (length / 16 + 1) * 20) link.Kind = LinkKind.Stairs;
             else if (s.Lifts && length >= 256) link.Kind = LinkKind.Lift;
             else plan.Links.Remove(link);
@@ -589,7 +695,10 @@ public static class Planner
         foreach (var link in plan.Links)
         {
             var (a, b) = (plan.Rooms[link.A], plan.Rooms[link.B]);
-            link.Floor = Math.Min(a.Floor, b.Floor);
+            link.Floor = link.Kind == LinkKind.Drop ? Math.Max(a.Floor, b.Floor) : Math.Min(a.Floor, b.Floor);
+
+            // A drop opens into the lower room high on its wall: that room is tall enough to be dropped into.
+            if (link.Kind == LinkKind.Drop) (a.Floor < b.Floor ? a : b).Ceiling = Math.Max((a.Floor < b.Floor ? a : b).Ceiling, link.Floor + 96);
             link.Ceiling = Math.Max(a.Floor, b.Floor) + 128;
         }
     }
@@ -848,6 +957,22 @@ public static class Planner
                 plan.Things.Add(new PlannedThing(ThingRole.Monster, kind.Number, at.X, at.Y, AngleTo(at, entry), skill, ambush, kind, room.Index));
                 budget -= kind.Health;
                 placed++;
+            }
+
+            // Snipers on the balcony (D59): monsters that shoot, above the player, along it, facing the room's middle.
+            if (room.Ledge is { } ledge)
+            {
+                var shooters = fits.Where(m => !m.Flies && m.Radius <= 24 && m.Tier <= 2).ToList();
+                var count = Math.Min(3, 1 + (c >= 0.5 ? 1 : 0) + (Math.Max(ledge.Width, ledge.Height) >= 512 ? 1 : 0));
+                for (var k = 0; shooters.Count > 0 && k < count; k++)
+                {
+                    var along = (k + 1.0) / (count + 1);
+                    var at = ledge.Width > ledge.Height ? (X: ledge.X0 + ledge.Width * along, Y: ledge.CentreY) : (X: ledge.CentreX, Y: ledge.Y0 + ledge.Height * along);
+                    var kind = rng.Pick(shooters);
+                    if (spots[room.Index].Taken.Any(t => Math.Abs(t.X - at.X) < t.R + kind.Radius + 8 && Math.Abs(t.Y - at.Y) < t.R + kind.Radius + 8)) continue;
+                    spots[room.Index].Taken.Add((at.X, at.Y, kind.Radius));
+                    plan.Things.Add(new PlannedThing(ThingRole.Monster, kind.Number, at.X, at.Y, AngleTo(at, Middle(plan, room)), k == 0 ? 0 : 1, false, kind, room.Index));
+                }
             }
         }
 

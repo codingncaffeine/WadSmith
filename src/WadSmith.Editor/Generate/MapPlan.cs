@@ -15,7 +15,7 @@ public enum RoomRole
     Closet,
 }
 
-/// <summary>How two rooms are joined: an open corridor, a door, a locked door, stairs, or a lift.</summary>
+/// <summary>How two rooms are joined: an open corridor, a door, a locked door, stairs, a lift, or a drop.</summary>
 public enum LinkKind
 {
     Open,
@@ -23,6 +23,9 @@ public enum LinkKind
     Locked,
     Stairs,
     Lift,
+
+    /// <summary>A loop's corridor at the higher room's floor, ending in a ledge over the lower one: a way down, not up (D59).</summary>
+    Drop,
 }
 
 /// <summary>A rectangle on the map, west/south/east/north, in map units.</summary>
@@ -80,6 +83,18 @@ public sealed class PlannedRoom
 
     /// <summary>Dry squares at the room's floor height standing in its pools, each holding a reward.</summary>
     public List<Box> Islands { get; } = [];
+
+    /// <summary>
+    /// A balcony along a wall no way comes through (D59: the community's maps put monsters above the player and let them
+    /// drop down), its height above the room's floor, the side it is on, and the stairs up to it from the floor.
+    /// </summary>
+    public Box? Ledge { get; set; }
+
+    public double LedgeRise { get; set; }
+
+    public string? LedgeSide { get; set; }
+
+    public Box? LedgeStairs { get; set; }
 
     /// <summary>A dais a step high round the room's middle (a key room's pedestal), when it has one.</summary>
     public Box? Dais { get; set; }
