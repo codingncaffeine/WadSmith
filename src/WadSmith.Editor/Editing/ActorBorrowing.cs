@@ -36,6 +36,9 @@ public static class ActorBorrowing
     public static string? WhyNot(GameResources into, GameResources from, ThingType thing)
     {
         if (thing.Category is ThingCategory.Start or ThingCategory.Marker) return "Player starts and markers belong to each game.";
+        // Within one family a sprite both games have is the same picture (Doom II's Hell Knight throws the Baron's fireball,
+        // which Doom has too): what the game lacks is carried, what it has is its own.
+        if (from.Game.Engine == into.Game.Engine) return null;
         var needs = from.Things.Needs(thing.ClassName);
         // A sprite clashes when the game's own files draw it; one copied into the project from this game before (the same
         // pictures, for a monster that shares them, as Heretic's golem and its ghost do) does not.

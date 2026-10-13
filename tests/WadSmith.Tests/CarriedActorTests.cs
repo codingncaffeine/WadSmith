@@ -121,6 +121,24 @@ public sealed class CarriedActorTests
         Assert.Contains("PLAY", ActorBorrowing.WhyNot(again, hexen, hexen.Things.FindClass("FighterBoss")!));
     }
 
+    /// <summary>Doom II's Hell Knight in a Doom map: its own pictures come, the Baron's fireball it throws is Doom's own, and it shows.</summary>
+    [Fact]
+    public void ADoomTwoMonsterComesIntoADoomMapWithWhatDoomLacks()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom");
+        project.SaveMap(StarterRoom.Create("E1M1", "doom"));
+        var doom = Load("doom", "DOOM.WAD", project.Folder);
+        var doom2 = Load("doom2", "DOOM2.WAD");
+        var knight = doom2.Things.FindClass("HellKnight")!;
+        Assert.Null(ActorBorrowing.WhyNot(doom, doom2, knight));
+        var carried = ActorBorrowing.Carry(project, doom, doom2, knight);
+        var sprites = Directory.GetFiles(Path.Combine(project.Folder, "sprites")).Select(Path.GetFileName).ToList();
+        Assert.Contains(sprites, f => f!.StartsWith("BOS2", StringComparison.Ordinal));
+        Assert.DoesNotContain(sprites, f => f!.StartsWith("BAL7", StringComparison.Ordinal));
+        Assert.True(doom.CanShow(carried.Number));
+    }
+
     [Fact]
     public void AWeaponComesWithItsAmmunitionAndItsSlot()
     {
