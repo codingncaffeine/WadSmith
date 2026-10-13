@@ -375,6 +375,19 @@ public sealed class Project
         }
     }
 
+    /// <summary>Replaces one entry of the project's record (found by reference) and writes the record (any thread); false when it is no longer there.</summary>
+    public bool Replace(CopiedAsset old, CopiedAsset with)
+    {
+        lock (_gate)
+        {
+            var at = Info.Copied.IndexOf(old);
+            if (at < 0) return false;
+            Info.Copied[at] = with;
+            WriteAtomically(Path.Combine(Folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(Info, Json));
+            return true;
+        }
+    }
+
     /// <summary>Notes many copies in the project's record and writes the record once (any thread).</summary>
     public void Record(IReadOnlyCollection<CopiedAsset> copies)
     {

@@ -1451,6 +1451,16 @@ internal sealed partial class InspectorViewModel : ObservableObject
 
     private void AddThing(Thing t)
     {
+        // A prop from a 3D model (Phase 11): which way the model faces, for models made facing another way than Doom's forward.
+        if (ModelProps.Of(_session.Project, t.Type) is { } model)
+        {
+            double[] turns = [0, 90, 180, 270];
+            Rows.Add(new ChoiceRow("Model faces", "Which way the model is turned, for one made facing another way than Doom's forward (Blender's usual front is a quarter turn off). Every one placed turns with it, in the editor and in GZDoom (MODELDEF AngleOffset).",
+                ["As it was made", "A quarter turn left", "Turned around", "A quarter turn right"],
+                () => Math.Max(0, Array.IndexOf(turns, ModelProps.TurnOf(_session.Project.CopiedNow(), model))),
+                i => _session.TurnModel(t, turns[i])));
+        }
+
         // A Duke Nukem 3D enemy (D55): which Doom monster's behaviour it has.
         if (DukeBorrowing.Of(_session.Project, t.Type) is { } duke)
         {

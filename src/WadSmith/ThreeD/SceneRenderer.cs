@@ -255,6 +255,9 @@ internal sealed unsafe class SceneRenderer : IDisposable
     /// <summary>The pictures of the scene's 3D models' surfaces, by batch name (null: the surface has none).</summary>
     private readonly Dictionary<string, RgbaImage?> _modelPictures = [];
 
+    /// <summary>The game's <see cref="GameResources.PicturesVersion"/> the sprite textures were made at.</summary>
+    private int _picturesVersion;
+
     public SceneRenderer(Gl gl)
     {
         _gl = gl;
@@ -693,6 +696,18 @@ internal sealed unsafe class SceneRenderer : IDisposable
 
     private (int Id, int Width, int Height) SpriteTexture(int type)
     {
+        if (_resources is { } changed && changed.PicturesVersion != _picturesVersion)
+        {
+            foreach (var (old, _, _) in _spriteTextures.Values.Where(s => s.Id != 0).ToList())
+            {
+                var gone = old;
+                _gl.DeleteTextures(1, &gone);
+            }
+
+            _spriteTextures.Clear();
+            _picturesVersion = changed.PicturesVersion;
+        }
+
         if (_spriteTextures.TryGetValue(type, out var t)) return t;
         if (_resources?.SpriteFor(type) is not { } image) return _spriteTextures[type] = (0, 1, 1);
         int id;

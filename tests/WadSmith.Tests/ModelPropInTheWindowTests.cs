@@ -74,4 +74,44 @@ public sealed class ModelPropInTheWindowTests
 
         Assert.Equal($"asked 1; Crate box:True; placed {WadSmith.Editor.Editing.ActorBorrowing.FirstNumber + 1}@64,64", said);
     }
+
+    [Fact]
+    public async Task TheInspectorTurnsTheModelAndTheEditorShowsItTurned()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var model = ModelPropTests.WriteBox(Path.Combine(temp.Path, "source"));
+        var said = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(Path.Combine(temp.Path, "profile"), Path.GetDirectoryName(wad)!);
+            try
+            {
+                var editor = Ui.NewMap(vm);
+                var session = editor.Session;
+                var before = session.Map.Things.Count;
+                session.ImportModel(model, new MapPoint(64, 64));
+                for (var i = 0; i < 400 && session.Map.Things.Count == before; i++) Ui.Pump(0.05);
+                var prop = session.Map.Things.Last();
+                session.Selection.Set(prop);
+                editor.Panel = SidePanel.Inspector;
+                Ui.Pump(0.5);
+                string Front() => session.Resources!.SpriteFor(prop.Type) is { } s && s.Get(s.Width / 2, s.Height / 2).R > 0 ? "red" : "not red";
+                var was = Front();
+
+                // As the user goes: the Model faces box, a quarter turn left.
+                var row = editor.Inspector.Rows.OfType<ChoiceRow>().Single(r => r.Label == "Model faces");
+                var box = window.GetVisualDescendants().OfType<ComboBox>().First(c => c.IsEffectivelyVisible && ReferenceEquals(c.DataContext, row));
+                box.SelectedIndex = 1;
+                for (var i = 0; i < 400 && WadSmith.Editor.Editing.ModelProps.TurnOf(session.Project.CopiedNow(), WadSmith.Editor.Editing.ModelProps.Of(session.Project, prop.Type)!) != 90; i++) Ui.Pump(0.05);
+                Ui.Pump(0.5);
+                return $"{was} → {Front()}; row shows {row.Value}; status '{editor.Status}'";
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.Equal("red → not red; row shows 1; status 'The model is turned; every one placed turns with it, in the editor and in GZDoom.'", said);
+    }
 }

@@ -81,3 +81,16 @@ public sealed class Mesh
         }
     }
 }
+
+/// <summary>Turning a mesh about its upright axis.</summary>
+public static class MeshTurning
+{
+    /// <summary>The mesh turned anticlockwise (seen from above) by <paramref name="degrees"/> about the model's own origin, as MODELDEF's AngleOffset turns it.</summary>
+    public static Mesh Turned(this Mesh mesh, double degrees)
+    {
+        if (degrees % 360 == 0) return mesh;
+        var a = degrees * Math.PI / 180;
+        var (cos, sin) = ((float)Math.Round(Math.Cos(a), 12), (float)Math.Round(Math.Sin(a), 12));
+        return new Mesh([.. mesh.Surfaces.Select(s => new MeshSurface(s.Name, [.. s.Triangles.Select(v => v with { X = v.X * cos - v.Y * sin, Y = v.X * sin + v.Y * cos })], s.Picture, s.Image))]);
+    }
+}

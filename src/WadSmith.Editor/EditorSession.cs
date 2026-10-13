@@ -1101,7 +1101,36 @@ public sealed class EditorSession : IDisposable
         });
     }
 
-    /// <summary>Raised on the UI thread when a 3D model has been brought in.</summary>
+    /// <summary>
+    /// Turns the model a placed prop shows to face <paramref name="degrees"/> anticlockwise of the way it was made (every object
+    /// of that prop turns, as they share one model): written and baked again on a worker, then <see cref="PropsChanged"/>.
+    /// </summary>
+    public void TurnModel(Thing thing, double degrees)
+    {
+        if (ModelProps.Of(Project, thing.Type) is not { } className || Resources is not { } resources) return;
+        Task.Run(() =>
+        {
+            try
+            {
+                ModelProps.Turn(Project, className, degrees);
+                resources.PicturesChanged();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Turning the model of {className} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"The model could not be turned. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                Notice?.Invoke("The model is turned; every one placed turns with it, in the editor and in GZDoom.");
+                PropsChanged?.Invoke();
+            });
+        });
+    }
+
+    /// <summary>Raised on the UI thread when a 3D model has been brought in or turned.</summary>
     public event Action? PropsChanged;
 
     /// <summary>

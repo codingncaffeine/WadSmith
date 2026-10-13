@@ -104,6 +104,19 @@ public sealed class GameResources
 
     private readonly object _carried = new();
 
+    /// <summary>Counts changes to the project's own object pictures (a model turned and baked again); caches of sprite pictures compare it.</summary>
+    public int PicturesVersion { get; private set; }
+
+    /// <summary>The project's object pictures were written again under the same names: forget the ones read (any thread).</summary>
+    public void PicturesChanged()
+    {
+        lock (_carried)
+        {
+            _sprites.Clear();
+            PicturesVersion++;
+        }
+    }
+
     /// <summary>
     /// Takes in objects carried into the project from another game (D55): their sprites, now in the project's folder, join
     /// the sprite index, and the objects join the catalogue under their numbers here. Any thread.

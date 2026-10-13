@@ -63,7 +63,7 @@ public static class ModelProps
     /// <summary>The model a placed object's number shows in <paramref name="project"/>, by its class; null for any other object.</summary>
     public static string? Of(Project project, int number)
     {
-        var actor = project.Info.Copied.FirstOrDefault(c => c.Kind == "actor" && c.Game == "model" && c.Name == number.ToString(CultureInfo.InvariantCulture));
+        var actor = project.CopiedNow().FirstOrDefault(c => c.Kind == "actor" && c.Game == "model" && c.Name == number.ToString(CultureInfo.InvariantCulture));
         return actor?.Original;
     }
 
@@ -158,14 +158,7 @@ public static class ModelProps
         var dir = Path.Combine(folder, prop.File);
         try
         {
-            var definition = File.ReadAllText(Path.Combine(dir, "modeldef.txt"));
-            var file = Regex.Match(definition, "(?im)^\\s*Model\\s+0\\s+\"([^\"]+)\"") is { Success: true } m ? m.Groups[1].Value : "model.obj";
-            var path = Path.Combine(dir, file);
-            var kind = Path.GetExtension(path).ToLowerInvariant();
-            var mesh = kind switch { ".md3" => Md3Model.Read(path), ".iqm" => IqmModel.Read(path), _ => ObjModel.Read(path) };
-            var scale = Regex.Match(definition, @"(?im)^\s*Scale\s+([-0-9.eE]+)") is { Success: true } s ? double.Parse(s.Groups[1].Value, CultureInfo.InvariantCulture) : 1;
-            var offset = Regex.Match(definition, @"(?im)^\s*Offset\s+([-0-9.eE]+)\s+([-0-9.eE]+)\s+([-0-9.eE]+)");
-            float Back(int group) => offset.Success && scale != 0 ? (float)(-double.Parse(offset.Groups[group].Value, CultureInfo.InvariantCulture) / scale) : 0;
+            var (mesh, scale, turn, origin) = Definition(dir);
             var pictures = new RgbaImage?[mesh.Surfaces.Count];
             for (var i = 0; i < pictures.Length; i++)
             {
@@ -173,13 +166,70 @@ public static class ModelProps
                 pictures[i] = File.Exists(skin) ? ImageCodec.Decode(File.ReadAllBytes(skin), skin) : mesh.Surfaces[i].Image;
             }
 
-            return new Scene.PropShape(mesh, scale, (Back(1), Back(2), Back(3)), className, pictures, Stretch);
+            // Keyed by the turn too, so a turned model is a new picture set in the view.
+            return new Scene.PropShape(mesh.Turned(turn), scale, origin, $"{className}@{turn.ToString(CultureInfo.InvariantCulture)}", pictures, Stretch);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException or FormatException)
         {
             App.Log.Warn($"The model of {className} could not be read for the 3D view: {ex.Message}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// A prop's MODELDEF entry in <paramref name="dir"/> as GZDoom reads it: the model (unturned), its scale, its AngleOffset
+    /// (degrees anticlockwise, applied to the model before the offset) and the point of the turned model its Offset stands on
+    /// the object's spot.
+    /// </summary>
+    private static (Mesh Mesh, double Scale, double Turn, (float X, float Y, float Z) Origin) Definition(string dir)
+    {
+        var definition = File.ReadAllText(Path.Combine(dir, "modeldef.txt"));
+        var file = Regex.Match(definition, "(?im)^\\s*Model\\s+0\\s+\"([^\"]+)\"") is { Success: true } m ? m.Groups[1].Value : "model.obj";
+        var path = Path.Combine(dir, file);
+        var mesh = Path.GetExtension(path).ToLowerInvariant() switch { ".md3" => Md3Model.Read(path), ".iqm" => IqmModel.Read(path), _ => ObjModel.Read(path) };
+        var scale = Regex.Match(definition, @"(?im)^\s*Scale\s+([-0-9.eE]+)") is { Success: true } s ? double.Parse(s.Groups[1].Value, CultureInfo.InvariantCulture) : 1;
+        var turn = Regex.Match(definition, @"(?im)^\s*AngleOffset\s+([-0-9.eE]+)") is { Success: true } a ? double.Parse(a.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
+        var offset = Regex.Match(definition, @"(?im)^\s*Offset\s+([-0-9.eE]+)\s+([-0-9.eE]+)\s+([-0-9.eE]+)");
+        float Back(int group) => offset.Success && scale != 0 ? (float)(-double.Parse(offset.Groups[group].Value, CultureInfo.InvariantCulture) / scale) : 0;
+        return (mesh, scale, turn, (Back(1), Back(2), Back(3)));
+    }
+
+    /// <summary>How far a prop's model is turned from the way it was made, in degrees anticlockwise, as the project's record keeps it (no file is read: any thread).</summary>
+    public static double TurnOf(IReadOnlyList<CopiedAsset> copied, string className) =>
+        copied.FirstOrDefault(c => c.Kind == "modelprop" && c.Original == className)?.Name.Split('|') is { Length: >= 6 } parts
+        && double.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out var turn) ? turn : 0;
+
+    /// <summary>
+    /// Turns a prop's model to face <paramref name="degrees"/> anticlockwise of the way it was made (a model made facing another
+    /// way than Doom's forward): MODELDEF's AngleOffset, the offset that stands the turned model on its base and middle, and
+    /// the eight sprites baked again. Its size and class stay. Reads and writes files: call it on a worker.
+    /// </summary>
+    public static void Turn(Project project, string className, double degrees)
+    {
+        var prop = project.CopiedNow().FirstOrDefault(c => c.Kind == "modelprop" && c.Original == className) ?? throw new CorruptDataException($"{className} is not a model of this project.");
+        var dir = Path.Combine(project.Folder, prop.File);
+        var (mesh, scale, _, _) = Definition(dir);
+        var pictures = Enumerable.Range(0, mesh.Surfaces.Count).Select(i => Path.Combine(dir, $"skin{i}.png")).Select(p => File.Exists(p) ? ImageCodec.Decode(File.ReadAllBytes(p), p) : null).ToList();
+        var turned = new Mesh([.. mesh.Turned(degrees).Surfaces.Select((s, i) => new MeshSurface(s.Name, s.Triangles, s.Picture, pictures[i] ?? s.Image))]);
+        var origin = ((turned.Min.X + turned.Max.X) / 2, (turned.Min.Y + turned.Max.Y) / 2, turned.Min.Z);
+        var c = CultureInfo.InvariantCulture;
+        string Offset(float at) => (Math.Round(-at * scale, 3) + 0.0).ToString("0.###", c);
+
+        // AngleOffset just before the Offset line (written once), the Offset for the turned model.
+        var definition = File.ReadAllText(Path.Combine(dir, "modeldef.txt"));
+        definition = Regex.Replace(definition, @"(?im)^\s*AngleOffset\s+[-0-9.eE]+\r?\n", "");
+        var turnLine = degrees % 360 == 0 ? "" : $"\tAngleOffset {(degrees % 360).ToString(c)}\n";
+        definition = Regex.Replace(definition, @"(?im)^\s*Offset\s+[-0-9.eE]+\s+[-0-9.eE]+\s+[-0-9.eE]+\r?\n", _ => $"{turnLine}\tOffset {Offset(origin.Item1)} {Offset(origin.Item2)} {Offset(origin.Item3)}\n");
+        var sprite = prop.Name.Split('|')[0];
+        var files = new List<(string, byte[])> { ($"{prop.File}/modeldef.txt", Encoding.UTF8.GetBytes(definition)) };
+        for (var rotation = 1; rotation <= 8; rotation++) files.Add(($"sprites/{sprite}A{rotation}.png", ImageCodec.EncodePng(MeshBaker.Bake(turned, scale, origin, rotation, Stretch))));
+        project.WriteFiles(files);
+
+        // The record keeps the turn too, for the Inspector to read without the file.
+        var parts = prop.Name.Split('|').ToList();
+        while (parts.Count < 6) parts.Add("");
+        parts[5] = (degrees % 360).ToString(c);
+        project.Replace(prop, prop with { Name = string.Join('|', parts) });
     }
 
     /// <summary>The catalogue entry of a prop: a solid decoration showing its baked sprites.</summary>

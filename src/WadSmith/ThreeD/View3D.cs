@@ -352,6 +352,7 @@ internal sealed class View3D : Control
                 old.GeometryChanged -= RequestScene;
                 old.Selection.Changed -= RequestTint;
                 old.HiddenChanged -= RequestScene;
+                old.PropsChanged -= RequestScene;
             }
 
             if (change.NewValue is EditorSession s)
@@ -359,6 +360,7 @@ internal sealed class View3D : Control
                 s.GeometryChanged += RequestScene;
                 s.Selection.Changed += RequestTint;
                 s.HiddenChanged += RequestScene;
+                s.PropsChanged += RequestScene;
             }
             _framed = false;
             _scene = null;

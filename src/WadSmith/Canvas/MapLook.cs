@@ -83,7 +83,20 @@ internal sealed class MapLook(GameResources? resources)
     /// <summary>The sky marker every Doom-engine game uses for open-air ceilings.</summary>
     public static bool IsSky(string flat) => flat.Equals("F_SKY1", StringComparison.OrdinalIgnoreCase) || flat.Equals("F_SKY", StringComparison.OrdinalIgnoreCase);
 
-    public SKImage? Sprite(int type) => resources is null ? null : _sprites.GetOrAdd(type, t => resources.SpriteFor(t) is { } image ? ToImage(image) : null);
+    private int _picturesVersion;
+
+    public SKImage? Sprite(int type)
+    {
+        if (resources is null) return null;
+        // A model turned and baked again: its pictures are read afresh.
+        if (resources.PicturesVersion != _picturesVersion)
+        {
+            _sprites.Clear();
+            _picturesVersion = resources.PicturesVersion;
+        }
+
+        return _sprites.GetOrAdd(type, t => resources.SpriteFor(t) is { } image ? ToImage(image) : null);
+    }
 
     /// <summary>The object's radius in map units (16 when the game does not define it).</summary>
     public float Radius(int type) => (float)(resources?.Things.Find(type)?.Radius ?? 16);

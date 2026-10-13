@@ -244,6 +244,41 @@ public sealed class ModelPropTests
     }
 
     [Fact]
+    public void TurningAModelWritesItsAngleOffsetStandsItAgainAndBakesItAgain()
+    {
+        using var temp = new TempFolder();
+        var path = WriteBox(Path.Combine(temp.Path, "source"));
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        var wad = GameFiles.Require("freedoom2.wad");
+        var game = GameResources.Load("freedoom2", project.Folder, [new FoundGame(GameCatalog.Get("freedoom2")!, wad, new FileInfo(wad).Length)], null)!;
+        var made = ModelProps.Import(project, game, path);
+        var name = made.Actor.Thing.ClassName;
+        var sprite = made.Actor.Thing.Sprite;
+        RgbaImage Rotation(int r) => ImageCodec.Decode(File.ReadAllBytes(Path.Combine(project.Folder, "sprites", $"{sprite}A{r}.png")));
+        static (byte R, byte B) Middle(RgbaImage i) => (i.Get(i.Width / 2, i.Height / 2).R, i.Get(i.Width / 2, i.Height / 2).B);
+        Assert.Equal(0, ModelProps.TurnOf(project.CopiedNow(), name));
+        Assert.True(Middle(Rotation(1)).R > 0);
+
+        // A quarter turn left: the red front now faces north, so rotation 3 (seen from its left) is red and rotation 1 is not.
+        ModelProps.Turn(project, name, 90);
+        var definition = File.ReadAllText(Path.Combine(project.Folder, "models", name, "modeldef.txt"));
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(definition, "AngleOffset 90"));
+        Assert.Contains("Offset 0 0 0", definition, StringComparison.Ordinal);
+        Assert.Equal(90, ModelProps.TurnOf(project.CopiedNow(), name));
+        Assert.Equal(90, ModelProps.TurnOf(Project.Open(project.Folder).Info.Copied, name));
+        Assert.Equal(0, Middle(Rotation(1)).R);
+        Assert.True(Middle(Rotation(3)).R > 0);
+        var shape = ModelProps.Shape(project.Folder, project.CopiedNow(), made.Actor.Number)!;
+        Assert.Equal((-2f, -1f, 0f), (MathF.Round(shape.Mesh.Min.X, 4), MathF.Round(shape.Mesh.Min.Y, 4), shape.Mesh.Min.Z));
+        Assert.EndsWith("@90", shape.Key, StringComparison.Ordinal);
+
+        // Back as it was made: no AngleOffset line at all, the front red again.
+        ModelProps.Turn(project, name, 0);
+        Assert.DoesNotContain("AngleOffset", File.ReadAllText(Path.Combine(project.Folder, "models", name, "modeldef.txt")), StringComparison.Ordinal);
+        Assert.True(Middle(Rotation(1)).R > 0);
+    }
+
+    [Fact]
     public void AModelWithNoMaterialsTakesThePictureNamedLikeItAndSaysSo()
     {
         // As downloads often come: "spot_triangulated.obj" with "spot_texture.png" beside it and no .mtl.
