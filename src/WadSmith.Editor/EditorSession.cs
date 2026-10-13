@@ -962,6 +962,46 @@ public sealed class EditorSession : IDisposable
     /// <summary>Raised when <see cref="KeyToPlace"/> changes.</summary>
     public event Action? KeyToPlaceChanged;
 
+    /// <summary>The door at a point on the plan: the area there when it is a door, else the door one of whose faces lies within <paramref name="reach"/>; null when none.</summary>
+    public Sector? DoorAt(MapPoint at, double reach)
+    {
+        if (_geometry.SectorAt(at) is { } area && Doors.Recognise(_geometry, area) is not null) return area;
+        if (_geometry.LineNear(at, reach) is { } wall)
+        {
+            if (Doors.Recognise(_geometry, wall.Front.Sector) is not null) return wall.Front.Sector;
+            if (wall.Back is { } back && Doors.Recognise(_geometry, back.Sector) is not null) return back.Sector;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Locks a door with the key of <paramref name="colour"/> (red, blue or yellow; null unlocks it), one undo step, and says
+    /// where the key must then be put when none of that colour is on the map yet.
+    /// </summary>
+    public void LockDoor(Sector door, string? colour)
+    {
+        if (Doors.Recognise(_geometry, door) is not { } found) return;
+        var lockNumber = colour is null ? 0 : Keys.Doom.FirstOrDefault(k => k.Colour == colour).Lock;
+        if (colour is not null && lockNumber == 0) return;
+        History.Record(colour is null ? "Unlock the door" : $"Lock the door with the {colour} key", e => Doors.Change(e, found, found.Settings with { Lock = lockNumber }, found.Monsters, found.StartsOpen));
+        Selection.Set(door);
+        if (colour is not null && Keys.OfColour(_geometry, colour).Count == 0)
+        {
+            Notice?.Invoke($"Locked with the {colour} key. Now put the {colour} key somewhere the player reaches first: drag it from Objects into a room, or press \"Place the {colour} key…\" in the door's Inspector.");
+        }
+    }
+
+    /// <summary>
+    /// What a thing dragged from the shelf and let go at <paramref name="at"/> does: a key let go on a door (within <paramref name="reach"/>
+    /// of its faces) locks the door with it instead of lying there; anything else is placed at <paramref name="snapped"/> (the point on the grid).
+    /// </summary>
+    public void DropThing(int type, MapPoint at, MapPoint snapped, double reach)
+    {
+        if (Keys.ColourOf(type) is { } colour && DoorAt(at, reach) is { } door) LockDoor(door, colour);
+        else PlaceThing(type, snapped);
+    }
+
     /// <summary>Places the keycard of a colour at a point inside a room (one undo step) and selects it; says why when the point is outside.</summary>
     public void PlaceKey(string colour, MapPoint at)
     {

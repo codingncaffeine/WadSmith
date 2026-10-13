@@ -1110,6 +1110,12 @@ internal sealed class MapCanvas : Control
             var flyout = new MenuFlyout { Placement = PlacementMode.Pointer };
             foreach (var c in choices)
             {
+                if (c.Header == "-")
+                {
+                    flyout.Items.Add(new Separator());
+                    continue;
+                }
+
                 var item = new MenuItem { Header = c.Header, Command = new CommunityToolkit.Mvvm.Input.RelayCommand(c.Act) };
                 ToolTip.SetTip(item, c.Tip);
                 flyout.Items.Add(item);
@@ -1704,7 +1710,8 @@ internal sealed class MapCanvas : Control
 
         e.DragEffects = DragDropEffects.Copy;
         var p = e.GetPosition(this);
-        Element? target = drop.Texture is null ? null : WallAt(p) is { } w ? w : Session.Geometry.SectorAt(ToMap(p));
+        var key = drop.Texture is null && drop.Prefab is null && WadSmith.Editor.Smart.Keys.ColourOf(drop.Thing) is not null;
+        Element? target = key ? Session.DoorAt(ToMap(p), 14 / _zoom) : drop.Texture is null ? null : WallAt(p) is { } w ? w : Session.Geometry.SectorAt(ToMap(p));
         if (!ReferenceEquals(target, _hover))
         {
             _hover = target;
@@ -1715,7 +1722,7 @@ internal sealed class MapCanvas : Control
         DropHint?.Invoke(drop.Prefab is not null
             ? $"Let go to put a copy of {drop.Label} here."
             : drop.Texture is null
-            ? $"Let go to place {drop.Label} here."
+            ? (key && target is Sector ? $"Let go to lock this door with {drop.Label}; the key itself then goes somewhere the player reaches first." : $"Let go to place {drop.Label} here.")
             : target switch
             {
                 Line { Back: null } => $"Let go to put {drop.Label} on this wall.",
@@ -1747,7 +1754,7 @@ internal sealed class MapCanvas : Control
         {
             var m = ToMap(p);
             var step = GridStep();
-            session.PlaceThing(drop.Thing, (e.KeyModifiers & KeyModifiers.Shift) != 0 ? m : new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step));
+            session.DropThing(drop.Thing, m, (e.KeyModifiers & KeyModifiers.Shift) != 0 ? m : new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step), 14 / _zoom);
         }
 
         Focus();

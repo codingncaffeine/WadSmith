@@ -607,8 +607,8 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>The Guide's chapters, for the Guide menu.</summary>
     /// <summary>
-    /// The choices a right-click on the plan offers for an element: a door (its area, or one of its faces) gets its looks,
-    /// the game's own door pictures; anything else gets none, and no menu opens.
+    /// The choices a right-click on the plan offers for an element: a door (its area, or one of its faces) gets its locks
+    /// (Doom's keys) and its looks, the game's own door pictures; anything else gets none, and no menu opens.
     /// </summary>
     public Func<Element, IReadOnlyList<MenuChoice>> ContextMenuFor => element =>
     {
@@ -619,12 +619,29 @@ internal sealed partial class EditorViewModel : ObservableObject
             Line l => Doors.Recognise(Session.Geometry, l.Front.Sector) is not null ? l.Front.Sector : l.Back is { } b && Doors.Recognise(Session.Geometry, b.Sector) is not null ? b.Sector : null,
             _ => null,
         };
-        if (area is null || Doors.Recognise(Session.Geometry, area) is null) return [];
+        if (area is null || Doors.Recognise(Session.Geometry, area) is not { } found) return [];
+        var choices = new List<MenuChoice>();
+
+        // Doom's keys: lock the door with one, or unlock it; the key itself then goes somewhere the player reaches first.
+        if (Session.Look == Look.For("doom"))
+        {
+            var locked = Keys.ColourOfLock(found.Settings.Lock);
+            foreach (var (colour, _, _, _) in Keys.Doom)
+            {
+                var c = colour;
+                choices.Add(new MenuChoice($"{(locked == c ? "✓ " : "")}Lock with the {c} key", $"The player needs the {c} key (the card or the skull) to open this door; the game tells them so. Put that key somewhere they reach first.", () => Session.LockDoor(area, c)));
+            }
+
+            if (locked is not null) choices.Add(new MenuChoice("Unlock", "Takes the lock away: the door opens for anyone.", () => Session.LockDoor(area, null)));
+            choices.Add(new MenuChoice("-", "", () => { }));
+        }
+
         var looks = Doors.Looks(resources.Game.Engine, resources.Textures.Walls);
-        return [.. looks.Select(t => new MenuChoice($"Looks like {t.Name}", $"{t.Name}, {t.Width} × {t.Height}: the door shows this picture, and its doorway becomes {t.Height} tall.", () =>
+        choices.AddRange(looks.Select(t => new MenuChoice($"Looks like {t.Name}", $"{t.Name}, {t.Width} × {t.Height}: the door shows this picture, and its doorway becomes {t.Height} tall.", () =>
         {
             if (Doors.Recognise(Session.Geometry, area) is { } door) Session.History.Record("Change the door's look", e => Doors.Dress(e, Session.Geometry, door, t.Name, (t.Width, t.Height)));
-        }))];
+        })));
+        return choices;
     };
 
     public IReadOnlyList<GuideLink> GuideMenu => _guideMenu ??= [.. GuideBook.Chapters.Select(c => new GuideLink(c.Title, c.Summary, new RelayCommand(() => StartGuide(c.Id)))),
