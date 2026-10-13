@@ -14,6 +14,9 @@
 
 ## What's Fixed
 
+- **A corner clicked just short of a room's corner lands on it** — Zoomed in, a click a few units from a room's corner, near its wall, used to leave a new corner beside it, slightly off the grid; the rooms then never quite shared their wall, and a thin sliver of room could end up between them. The corner now goes onto the room's own corner. Problems also calls out a sliver of room left in an older map, with "Join it to the room beside it".
+- **Changing a door's look leaves the rooms alone** — On a door built without a doorway, choosing a shorter door picture used to bring the ceilings of the rooms on either side down to the picture's height.
+
 - **A door between two rooms is a door in a wall** — On an opening wider than a door, the Door tool now makes a standard door in the middle and closes the rest with wall either side; a dragged stretch is the door, with wall beside it. "Wall it off" on an opening closes it entirely. A first map used to end with a door standing alone in a gap.
 - **A texture on the whole wall, or on just a section** — A texture dropped on a wall covers the whole straight wall, through the pieces a door or a switch cut it into (the switch keeps its picture); hold Shift as you let go and it covers a section as wide as the picture, where you dropped it. The hint and the outline say which, and the Guide teaches it.
 - **Lock a door with a key, the way you'd expect** — Drag a key from the Objects shelf onto a door to lock it with that key, or right-click the door and pick "Lock with the red key" (and "Unlock"); the Inspector's "Locked with" is still there. A door locked with a key not yet on the map says where the key must go.

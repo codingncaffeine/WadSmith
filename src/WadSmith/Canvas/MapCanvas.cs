@@ -614,6 +614,17 @@ internal sealed class MapCanvas : Control
         return t is > 0 and < 1 ? on : new MapPoint((ax + bx) / 2, (ay + by) / 2);
     }
 
+    /// <summary>Whether a point lies on a wall, between its ends or on one, within half a unit.</summary>
+    private static bool OnWall(MapPoint q, Line wall)
+    {
+        var (ax, ay, dx, dy) = (wall.Start.X, wall.Start.Y, wall.End.X - wall.Start.X, wall.End.Y - wall.Start.Y);
+        var length = Math.Sqrt(dx * dx + dy * dy);
+        if (length <= 0) return false;
+        var along = ((q.X - ax) * dx + (q.Y - ay) * dy) / length;
+        var across = Math.Abs((q.X - ax) * dy - (q.Y - ay) * dx) / length;
+        return across <= 0.5 && along >= -0.5 && along <= length + 0.5;
+    }
+
     private MapPoint? Nearest(IEnumerable<MapPoint> points)
     {
         MapPoint? best = null;
@@ -1057,13 +1068,17 @@ internal sealed class MapCanvas : Control
 
     /// <summary>
     /// Where a corner clicked here goes: on a corner within a few pixels, else on the grid, unless a wall within a few
-    /// pixels passes nearer the pointer than the grid point does (a slanted wall): then on the wall.
+    /// pixels passes nearer the pointer than the grid point does (a slanted wall): then on the wall. When the grid point
+    /// itself lies on that wall, its ends included, the corner goes there — onto the wall's own corner when it is one, so a
+    /// click a few units short of a room's corner, zoomed in, does not leave a corner beside it (a user's map, 2026-10-12:
+    /// a corner 3.9 units off another left a sliver of room between two rooms).
     /// </summary>
-    private MapPoint SnapCorner(Point p)
+    internal MapPoint SnapCorner(Point p)
     {
         var grid = Snap(p);
         var m = ToMap(p);
         if (Session?.Geometry.VertexNear(m, 8 / _zoom) is not null || WallAt(p) is not { } wall) return grid;
+        if (OnWall(grid, wall)) return Session?.Geometry.VertexNear(grid, 0.5) is { } corner ? new MapPoint(corner.X, corner.Y) : grid;
         var on = CornerOn(wall, p);
         var (dx, dy) = (wall.End.X - wall.Start.X, wall.End.Y - wall.Start.Y);
         var away = Math.Abs((m.X - wall.Start.X) * dy - (m.Y - wall.Start.Y) * dx) / Math.Max(Math.Sqrt(dx * dx + dy * dy), 1e-9);
