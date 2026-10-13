@@ -56,6 +56,7 @@ public static class ClassicTranslation
         // Crossed by players and monsters is how GZDoom spells a classic walk-over line monsters set off too (the engine
         // reads that type as players crossing with monsteractivate): the monsters are the type's MONST, not its activation.
         if (activation.Contains("playercross")) activation.Remove("monstercross");
+        var secretUse = flag("secret") && activation.Contains("playeruse");
 
         // Using a wall through the wall in front of it is a line flag in a classic map (Boom's 0x200), not part of the type.
         activation.Remove("passuse");
@@ -64,8 +65,9 @@ public static class ClassicTranslation
             if (entry.Special != special) continue;
             if (rules is not null && !rules.Lines.Contains(type)) continue;
             if (((entry.Flags & 1) != 0) != repeats) continue;
-            // Monsters never open a locked door, so whether one says they may does not decide its type.
-            if (((entry.Flags & 0x10) != 0) != monsters && entry.Special != LockedDoor) continue;
+            // Monsters never open a locked door, nor a secret one used by the player (the engine takes MONST off a secret
+            // use line as it reads it: Heretic's E1M6 doors had no type), so whether one says they may does not decide its type.
+            if (((entry.Flags & 0x10) != 0) != monsters && entry.Special != LockedDoor && !secretUse) continue;
             if (!activation.SetEquals(MapTranslation.ActivationFieldsOf(entry.Flags))) continue;
             var tag = -1;
             var fits = true;

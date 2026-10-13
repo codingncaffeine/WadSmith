@@ -212,6 +212,13 @@ public sealed class ExportTests
             var line = MapTranslation.ToZDoom(classic, Xlat.Value, []).Lines[0];
             Assert.Equal((type, 8), ClassicTranslation.TypeOf(line, Xlat.Value, vanilla));
         }
+
+        // A secret door (the secret flag): the engine reads it without monsters, and it is still Doom's type 1.
+        var secret = new MapModel { Name = "MAP01", Namespace = "doom" };
+        secret.Lines.Add(new MapLine { Special = 1, Id = 31, SourceFlags = 0x20 | 0x04 });
+        var door = MapTranslation.ToZDoom(secret, Xlat.Value, []).Lines[0];
+        Assert.False(door.Flag("monsteractivate"));
+        Assert.Equal(1, ClassicTranslation.TypeOf(door, Xlat.Value, vanilla)?.Type);
     }
 
     [Fact]
