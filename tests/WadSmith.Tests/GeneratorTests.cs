@@ -177,6 +177,32 @@ public sealed class GeneratorTests
         Assert.Empty(missing);
     }
 
+    /// <summary>
+    /// Another game's weapons join the base game's along the way, in an order that mixes them, with their own ammunition;
+    /// carried in by the numbers the project gives them, and left out when they cannot come.
+    /// </summary>
+    [Fact]
+    public void AnotherGamesWeaponsComeWithTheirAmmunition()
+    {
+        var plan = Planner.Plan(For("doom", "grim-keep", MapSize.Huge) with { WeaponsFrom = ["heretic"] });
+        var lentWeapons = plan.Things.Where(t => t.Role == ThingRole.Weapon && t.Family == "heretic").ToList();
+        var heretic = FamilyPalette.For("heretic")!;
+        Assert.InRange(lentWeapons.Count, 1, 4);
+        Assert.All(lentWeapons, w => Assert.Contains(heretic.Weapons, k => k.Number == w.Number));
+        var ammo = plan.Things.Where(t => t.Role == ThingRole.Ammo && t.Family == "heretic").ToList();
+        Assert.NotEmpty(ammo);
+        Assert.All(ammo, a => Assert.Contains(heretic.Ammo, k => k.Small == a.Number || k.Big == a.Number));
+        Assert.Contains(plan.Things, t => t.Role == ThingRole.Weapon && t.Family is null);
+
+        // Built with the project's numbers they are on the map; with none, they are left out and the map is still sound.
+        var carried = MapMaker.Build(plan, new Lent(Items: (family, number) => family == "heretic" ? 21000 + number : null));
+        Assert.Empty(Faults(carried));
+        Assert.Equal(lentWeapons.Count + ammo.Count, carried.Map.Things.Count(t => t.OnMap && t.Type > 21000));
+        var without = MapMaker.Build(plan);
+        Assert.Empty(Faults(without));
+        Assert.DoesNotContain(without.Map.Things, t => t.OnMap && t.Type > 21000);
+    }
+
     [Fact]
     public void EveryDifficultyHasMonstersAndTheHardOnesMore()
     {
@@ -315,7 +341,7 @@ public sealed class GeneratorTests
     {
         using var temp = new TempFolder();
         var settings = For("doom", "bleak-depot", MapSize.Small) with { Monsters = [.. FamilyPalette.For("heretic")!.Monsters.Take(2)] };
-        var (project, made) = MadeProjects.Create(Path.Combine(temp.Path, "Bleak Depot"), Planner.Plan(settings), prepare: _ => (m => 20000 + m.Number, null));
+        var (project, made) = MadeProjects.Create(Path.Combine(temp.Path, "Bleak Depot"), Planner.Plan(settings), prepare: _ => new Lent(m => 20000 + m.Number));
         Assert.Empty(made.Failed);
         Assert.Equal("Bleak Depot", project.Info.Name);
         Assert.Equal("MAP01", project.Info.Maps.Single().Slot);

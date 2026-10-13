@@ -24,10 +24,11 @@ public static class Sources
 
     /// <summary>
     /// Carries in what <paramref name="plan"/> uses from other games: <paramref name="into"/> is the project's game,
-    /// <paramref name="monsterFrom"/> and <paramref name="lookFrom"/> give the game each is taken from (null when none was found).
-    /// Returns the numbers and looks to build the map with, and a sentence for each thing that could not come.
+    /// <paramref name="monsterFrom"/>, <paramref name="lookFrom"/> and <paramref name="itemFrom"/> (by family) give the game each
+    /// is taken from (null when none was found). Returns how they are named in the project to build the map with, and a
+    /// sentence for each thing that could not come.
     /// </summary>
-    public static (Func<MonsterKind, int?> Numbers, Func<LookChoice, Look> Looks, IReadOnlyList<string> Notes) Carry(Project project, GameResources into, Func<MonsterKind, GameResources?> monsterFrom, Func<LookChoice, GameResources?> lookFrom, MapPlan plan, string? engineData)
+    public static (Lent Lent, IReadOnlyList<string> Notes) Carry(Project project, GameResources into, Func<MonsterKind, GameResources?> monsterFrom, Func<LookChoice, GameResources?> lookFrom, Func<string, GameResources?> itemFrom, MapPlan plan, string? engineData)
     {
         var s = plan.Settings;
         var notes = new List<string>();
@@ -61,7 +62,28 @@ public static class Sources
             numbers[m] = number;
         }
 
-        if (numbers.Values.Any(n => n is not null)) ProjectMapInfo.Refresh(project, into.Game, into.Files, engineData);
+        // Weapons and their ammunition from other games, with their slots.
+        var items = new Dictionary<(string, int), int?>();
+        foreach (var (family, original) in plan.Things.Where(t => t.Family is { } f && f != s.Family).Select(t => (t.Family!, t.Number)).Distinct())
+        {
+            int? number = null;
+            try
+            {
+                if (itemFrom(family) is { } from && from.Things.Find(original) is { } thing)
+                {
+                    if (ActorBorrowing.WhyNot(into, from, thing) is { } why) notes.Add(why);
+                    else number = ActorBorrowing.Carry(project, into, from, thing).Number;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                notes.Add($"Object {original} of the {family} games could not be brought in: {ex.Message}");
+            }
+
+            items[(family, original)] = number;
+        }
+
+        if (numbers.Values.Concat(items.Values).Any(n => n is not null)) ProjectMapInfo.Refresh(project, into.Game, into.Files, engineData);
 
         var looks = new Dictionary<LookChoice, Look>();
         foreach (var choice in plan.Rooms.Select(r => r.Look).OfType<LookChoice>().Distinct().Where(l => l.Family != s.Family))
@@ -93,7 +115,7 @@ public static class Sources
             looks[choice] = look;
         }
 
-        return (m => numbers.GetValueOrDefault(m), l => looks.GetValueOrDefault(l) ?? l.Look, notes);
+        return (new Lent(m => numbers.GetValueOrDefault(m), l => looks.GetValueOrDefault(l) ?? l.Look, (family, number) => items.GetValueOrDefault((family, number))), notes);
     }
 }
 

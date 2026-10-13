@@ -45,18 +45,19 @@
                     <!-- The user's games, each with what it may lend (D50 "Use things from"). -->
                     <TextBlock Classes="section" Text="USE THINGS FROM" />
                     <TextBlock Classes="secondary" TextWrapping="Wrap" FontSize="12"
-                               Text="Your games WadSmith found. Another game's monsters and textures are copied into the map's folder when it uses them; it still plays in your base game. Weapons, ammunition and health come from the base game." />
-                    <Grid ColumnDefinitions="*,80,80,80" Margin="0,4,0,0">
+                               Text="Your games WadSmith found. Another game's monsters, textures, weapons and music are copied into the map's folder when it uses them; it still plays in your base game. Health and armour come from the base game." />
+                    <Grid ColumnDefinitions="*,70,70,70,70" Margin="0,4,0,0">
                         <TextBlock Classes="secondary" FontSize="12" Text="Game" />
                         <TextBlock Grid.Column="1" Classes="secondary" FontSize="12" Text="Textures" HorizontalAlignment="Center" />
                         <TextBlock Grid.Column="2" Classes="secondary" FontSize="12" Text="Monsters" HorizontalAlignment="Center" />
-                        <TextBlock Grid.Column="3" Classes="secondary" FontSize="12" Text="Music" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="3" Classes="secondary" FontSize="12" Text="Weapons" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="4" Classes="secondary" FontSize="12" Text="Music" HorizontalAlignment="Center" />
                     </Grid>
                     <ItemsControl ItemsSource="{Binding Sources}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:SourceRow">
                                 <Border BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1" Padding="0,5">
-                                    <Grid ColumnDefinitions="*,80,80,80">
+                                    <Grid ColumnDefinitions="*,70,70,70,70">
                                         <StackPanel VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Game.Path}" />
                                             <TextBlock Text="{Binding Note}" Classes="secondary" FontSize="12" />
@@ -65,7 +66,9 @@
                                                   ToolTip.Tip="Rooms may look like this game's: its walls, floors and ceilings. With none checked, the base game's own are used." />
                                         <CheckBox Grid.Column="2" HorizontalAlignment="Center" IsChecked="{Binding Monsters}"
                                                   ToolTip.Tip="This game's monsters may be in the map. With none checked, the base game's own are used." />
-                                        <CheckBox Grid.Column="3" HorizontalAlignment="Center" IsChecked="{Binding Music}" IsVisible="{Binding CanMusic}"
+                                        <CheckBox Grid.Column="3" HorizontalAlignment="Center" IsChecked="{Binding Weapons}" IsVisible="{Binding CanWeapons}"
+                                                  ToolTip.Tip="This game's weapons join the base game's along the way, each in its own slot, with its ammunition counted for the challenge. The base game's weapons are always there." />
+                                        <CheckBox Grid.Column="4" HorizontalAlignment="Center" IsChecked="{Binding Music}" IsVisible="{Binding CanMusic}"
                                                   ToolTip.Tip="The map may play one of this game's tracks, picked by the seed (another game's is copied in). With none checked, the base game's own for the map's slot plays." />
                                     </Grid>
                                 </Border>

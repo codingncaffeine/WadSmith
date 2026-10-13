@@ -173,7 +173,7 @@ public enum ThingRole
 /// the normal one, 2 the hard ones only), whether it waits for the player, and for a monster which one (its number may
 /// come from another game, given when the map is made).
 /// </summary>
-public sealed record PlannedThing(ThingRole Role, int Number, double X, double Y, int Angle, int FromSkill = 0, bool Ambush = false, MonsterKind? Monster = null, int Room = -1);
+public sealed record PlannedThing(ThingRole Role, int Number, double X, double Y, int Angle, int FromSkill = 0, bool Ambush = false, MonsterKind? Monster = null, int Room = -1, string? Family = null);
 
 /// <summary>A teleporter: the pad's rectangle in a room and where it sends the player.</summary>
 public sealed record PlannedTeleport(int Room, Box Pad, int ToRoom, double ToX, double ToY);

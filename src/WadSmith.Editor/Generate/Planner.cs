@@ -546,10 +546,16 @@ public static class Planner
             plan.Things.Add(new PlannedThing(ThingRole.Key, keyRoom.Key!.Number, at.X, at.Y, 90, Room: keyRoom.Index));
         }
 
-        // Weapons along the way in the game's order.
-        var weapons = palette.Weapons.Where(w => s.Doom2Things || !w.Doom2).ToList();
-        var weaponCount = Math.Min(weapons.Count, s.Size switch { MapSize.Small => 3, MapSize.Medium => 4, MapSize.Large => 5, _ => 6 });
-        if (s.Bosses == 0 && s.Size != MapSize.Huge && weaponCount == weapons.Count && weaponCount > 2) weaponCount--;
+        // Weapons along the way in the game's order; another game's join them by how far along its own order each comes (its
+        // second of five beside the base game's second of six), the first of each few left out on a small map.
+        var own = palette.Weapons.Where(w => s.Doom2Things || !w.Doom2).ToList();
+        var ownCount = Math.Min(own.Count, s.Size switch { MapSize.Small => 3, MapSize.Medium => 4, MapSize.Large => 5, _ => 6 });
+        if (s.Bosses == 0 && s.Size != MapSize.Huge && ownCount == own.Count && ownCount > 2) ownCount--;
+        var lent = s.WeaponsFrom.Where(f => f != s.Family).Select(FamilyPalette.For).OfType<FamilyPalette>().SelectMany(p => p.Weapons.Select((w, i) => (Weapon: w, At: (i + 1.0) / (p.Weapons.Count + 1) + 0.01))).ToList();
+        var lentCount = Math.Min(lent.Count, s.Size switch { MapSize.Small => 1, MapSize.Medium => 2, MapSize.Large => 3, _ => 4 });
+        var weapons = own.Take(ownCount).Select((w, i) => (Weapon: w, At: (i + 1.0) / (ownCount + 1))).Concat(lent.OrderBy(l => l.At).Where((_, i) => i % Math.Max(1, lent.Count / Math.Max(1, lentCount)) == 0).Take(lentCount))
+            .OrderBy(w => w.At).Select(w => w.Weapon).ToList();
+        var weaponCount = weapons.Count;
         var walkPath = plan.Path.Where(i => plan.Rooms[i].Role is RoomRole.Start or RoomRole.Path or RoomRole.Arena).ToList();
         var weaponAt = new Dictionary<int, int>();
         for (var w = 0; w < weaponCount; w++)
@@ -558,8 +564,9 @@ public static class Planner
             if (w == 0 && walkPath.Count > 2) index = 1;
             var room = plan.Rooms[walkPath[index]];
             if (spots[room.Index].Find(24, rng) is not { } at) continue;
-            plan.Things.Add(new PlannedThing(ThingRole.Weapon, weapons[w].Number, at.X, at.Y, 90, Room: room.Index));
-            foreach (var other in weapons[w].With)
+            var lentWeapon = weapons[w].Family != s.Family;
+            plan.Things.Add(new PlannedThing(ThingRole.Weapon, weapons[w].Number, at.X, at.Y, 90, Room: room.Index, Family: lentWeapon ? weapons[w].Family : null));
+            foreach (var other in lentWeapon ? [] : weapons[w].With)
             {
                 // The other classes' weapons of the same tier beside it (Hexen: each class picks up its own).
                 if (spots[room.Index].Find(20, rng, at) is { } beside) plan.Things.Add(new PlannedThing(ThingRole.Weapon, other, beside.X, beside.Y, 90, Room: room.Index));
@@ -638,6 +645,9 @@ public static class Planner
         }
     }
 
+    /// <summary>The ammunition a weapon uses, from its own game's table.</summary>
+    private static AmmoKind? AmmoFor(WeaponKind weapon) => FamilyPalette.For(weapon.Family)?.AmmoOf(weapon.Ammo);
+
     /// <summary>Ammunition and health for the monsters placed: enough damage for the hard difficulty's monsters with a margin the challenge shrinks, put where the fighting is.</summary>
     private static void Supplies(MapPlan plan, FamilyPalette palette, List<Spots> spots, List<WeaponKind> weapons, Dictionary<int, int> weaponAt, Seeded rng)
     {
@@ -647,7 +657,7 @@ public static class Planner
         double HealthIn(int room) => plan.Things.Where(t => t.Room >= 0 && (t.Room == room || plan.Rooms[t.Room].ClosetOf == room) && t.Monster is not null).Sum(t => (double)t.Monster!.Health);
         var total = plan.Rooms.Sum(r => HealthIn(r.Index));
         var target = total * (1.6 - 0.45 * c);
-        var have = palette.StartDamage + weaponAt.Keys.Sum(w => weapons[w].Gives * (palette.AmmoOf(weapons[w].Ammo)?.Damage ?? 0));
+        var have = palette.StartDamage + weaponAt.Keys.Sum(w => weapons[w].Gives * (AmmoFor(weapons[w])?.Damage ?? 0));
         var deficit = Math.Max(0, target - have);
 
         // Path position of a room: its own on the way, or its parent's for a room off it.
@@ -667,7 +677,7 @@ public static class Planner
             var types = new List<AmmoKind> { startAmmo };
             foreach (var (w, at) in weaponAt.Where(p => p.Value <= position).OrderBy(p => p.Key))
             {
-                if (palette.AmmoOf(weapons[w].Ammo) is { } a && !types.Contains(a)) types.Add(a);
+                if (AmmoFor(weapons[w]) is { } a && !types.Contains(a)) types.Add(a);
             }
 
             for (var guard = 0; share > 0 && guard < 30; guard++)
@@ -675,7 +685,7 @@ public static class Planner
                 var ammo = types.Count > 1 && rng.Chance(0.6) ? types[^1] : rng.Pick(types);
                 var big = share >= ammo.BigAmount * ammo.Damage * 0.8;
                 if (spots[room.Index].Find(16, rng) is not { } at) break;
-                plan.Things.Add(new PlannedThing(ThingRole.Ammo, big ? ammo.Big : ammo.Small, at.X, at.Y, 90, Room: room.Index));
+                plan.Things.Add(new PlannedThing(ThingRole.Ammo, big ? ammo.Big : ammo.Small, at.X, at.Y, 90, Room: room.Index, Family: ammo.Family != s.Family ? ammo.Family : null));
                 share -= (big ? ammo.BigAmount : ammo.SmallAmount) * ammo.Damage;
             }
 
@@ -700,7 +710,9 @@ public static class Planner
 
         foreach (var secret in plan.Rooms.Where(r => r.Role == RoomRole.Secret))
         {
-            var best = weaponAt.Count > 0 ? palette.AmmoOf(weapons[weaponAt.Keys.Max()].Ammo) : null;
+            // The secret's ammunition is for the base game's best weapon given so far.
+            var ownBest = weaponAt.Keys.Where(w => weapons[w].Family == s.Family).DefaultIfEmpty(-1).Max();
+            var best = ownBest >= 0 ? AmmoFor(weapons[ownBest]) : null;
             var gift = rng.Next(3) switch { 0 => palette.Health.Super, 1 => palette.Armor.Heavy, _ => best?.Big ?? palette.Health.Super };
             if (spots[secret.Index].Find(16, rng, (secret.Box.CentreX, secret.Box.CentreY)) is { } at) plan.Things.Add(new PlannedThing(gift == palette.Armor.Heavy ? ThingRole.Armor : gift == palette.Health.Super ? ThingRole.Health : ThingRole.Ammo, gift, at.X, at.Y, 90, Room: secret.Index));
         }

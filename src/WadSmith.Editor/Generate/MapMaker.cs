@@ -6,6 +6,13 @@ using WadSmith.Editor.Model;
 
 namespace WadSmith.Editor.Generate;
 
+/// <summary>
+/// What a made map borrows, as it is in its project: the number each monster from another game was carried in as, the look
+/// a room's choice has there (another game's pictures under the names they were copied in as), and the number another
+/// game's weapon or ammunition (its family and own number) was carried in as. A null answer leaves the thing out.
+/// </summary>
+public sealed record Lent(Func<MonsterKind, int?>? Monsters = null, Func<LookChoice, Look>? Looks = null, Func<string, int, int?>? Items = null);
+
 /// <summary>A made map: its plan, the map the editor's tools built from it, the script they ran, and any line that failed.</summary>
 public sealed record MadeMap(MapPlan Plan, EditorMap Map, string Script, IReadOnlyList<ScriptStep> Failed);
 
@@ -16,13 +23,11 @@ public sealed record MadeMap(MapPlan Plan, EditorMap Map, string Script, IReadOn
 /// </summary>
 public static class MapMaker
 {
-    /// <summary>
-    /// The plan as an edit script. <paramref name="numberOf"/> gives the number a monster from another game is placed by in
-    /// the project (null leaves it out); <paramref name="lookOf"/> the look a room's choice has in the project (another game's
-    /// pictures under the names they were copied in as).
-    /// </summary>
-    public static string Script(MapPlan plan, Func<MonsterKind, int?>? numberOf = null, Func<LookChoice, Look>? lookOf = null)
+    /// <summary>The plan as an edit script, with what it borrows as <paramref name="lent"/> has it in the project.</summary>
+    public static string Script(MapPlan plan, Lent? lent = null)
     {
+        var numberOf = lent?.Monsters;
+        var lookOf = lent?.Looks;
         var s = plan.Settings;
         var text = new StringBuilder();
         void Line(FormattableString line) => text.AppendLine(line.ToString(CultureInfo.InvariantCulture));
@@ -170,7 +175,8 @@ public static class MapMaker
                     break;
                 default:
                     // A monster from another game (or one this game lacks) is placed by the number it was carried in as; none, and it is left out.
-                    var number = t.Monster is { } m ? numberOf?.Invoke(m) ?? (m.Family == s.Family && (s.Doom2Things || !m.Doom2) ? t.Number : null) : t.Number;
+                    var number = t.Monster is { } m ? numberOf?.Invoke(m) ?? (m.Family == s.Family && (s.Doom2Things || !m.Doom2) ? t.Number : null)
+                        : t.Family is { } family && family != s.Family ? lent?.Items?.Invoke(family, t.Number) : t.Number;
                     if (number is not { } n) break;
                     var skill = t.FromSkill switch { 1 => " normal", 2 => " hard", _ => "" };
                     Line($"thing {n} {t.X} {t.Y} {t.Angle}{skill}{(t.Ambush ? " ambush" : "")}");
@@ -182,14 +188,13 @@ public static class MapMaker
     }
 
     /// <summary>Plans and builds a map from <paramref name="settings"/> on an empty map in the slot the settings name.</summary>
-    public static MadeMap Make(GeneratorSettings settings, Func<MonsterKind, int?>? numberOf = null, Func<LookChoice, Look>? lookOf = null) =>
-        Build(Planner.Plan(settings), numberOf, lookOf);
+    public static MadeMap Make(GeneratorSettings settings, Lent? lent = null) => Build(Planner.Plan(settings), lent);
 
     /// <summary>Builds the map a plan describes.</summary>
-    public static MadeMap Build(MapPlan plan, Func<MonsterKind, int?>? numberOf = null, Func<LookChoice, Look>? lookOf = null)
+    public static MadeMap Build(MapPlan plan, Lent? lent = null)
     {
         var s = plan.Settings;
-        var script = Script(plan, numberOf, lookOf);
+        var script = Script(plan, lent);
         var map = EditorMap.FromModel(new MapModel { Name = s.Slot, Namespace = "zdoom" });
         var steps = EditScript.Run(map, script, Look.For(s.Family), s.Family);
         return new MadeMap(plan, map, script, [.. steps.Where(x => !x.Done)]);
@@ -205,15 +210,14 @@ public static class MadeProjects
     /// <summary>
     /// Creates the project in <paramref name="folder"/> for a made map, named after its seed, and saves the map in its slot with
     /// the settings beside it. <paramref name="prepare"/> runs on the new project before the map is built (to carry in other
-    /// games' monsters and pictures) and gives the numbers and looks to build with. Writes files: call it on a worker.
+    /// games' monsters, pictures, weapons and ammunition) and says how they are named there. Writes files: call it on a worker.
     /// </summary>
-    public static (WadSmith.Core.Projects.Project Project, MadeMap Made) Create(string folder, MapPlan plan, string target = WadSmith.Core.Projects.Targets.GZDoom, Func<WadSmith.Core.Projects.Project, (Func<MonsterKind, int?>? Numbers, Func<LookChoice, Look>? Looks)>? prepare = null)
+    public static (WadSmith.Core.Projects.Project Project, MadeMap Made) Create(string folder, MapPlan plan, string target = WadSmith.Core.Projects.Targets.GZDoom, Func<WadSmith.Core.Projects.Project, Lent?>? prepare = null)
     {
         var s = plan.Settings;
         var name = SeedWords.Title(s.Seed);
         var project = WadSmith.Core.Projects.Project.Create(folder, name, s.GameId, target);
-        var (numbers, looks) = prepare?.Invoke(project) ?? (null, null);
-        var made = MapMaker.Build(plan, numbers, looks);
+        var made = MapMaker.Build(plan, prepare?.Invoke(project));
         project.SaveMap(made.Map.Frame.ToModel(), name, new WadSmith.Core.Projects.MapOrigin { Kind = "generated", Game = s.GameId, Map = SeedWords.Tidy(s.Seed) });
         project.WriteFile(SettingsFile, System.Text.Encoding.UTF8.GetBytes(SettingsJson.Write(s)));
         return (project, made);

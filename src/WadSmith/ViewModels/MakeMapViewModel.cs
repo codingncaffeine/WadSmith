@@ -111,6 +111,15 @@ internal sealed partial class SourceRow(MakeMapViewModel owner, FoundGame game, 
 
     partial void OnMusicChanged(bool value) => owner.Remake();
 
+    /// <summary>Whether this game's weapons (and their ammunition) join the base game's along the way: another game's only.</summary>
+    [ObservableProperty]
+    private bool _weapons;
+
+    /// <summary>Whether the row offers its weapons: another game of another family (the base game's are always there).</summary>
+    public bool CanWeapons => !IsBase && !Doom2Only;
+
+    partial void OnWeaponsChanged(bool value) => owner.Remake();
+
     /// <summary>The monsters the row gives when its Monsters box is checked.</summary>
     public IReadOnlyList<MonsterKind> MonsterKinds(GeneratorSettings s)
     {
@@ -345,6 +354,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         var parts = new List<string> { $"{usable} monster{(usable == 1 ? "" : "s")}" };
         if (row.Refused.Count > 0) parts[0] += $" (not yet: {string.Join(", ", row.Refused.Order(StringComparer.Ordinal).Select(Spaced))}, whose pictures share a name with {Sources[0].Title}'s)";
         if (row.CanTextures) parts.Add($"{looks} look{(looks == 1 ? "" : "s")}");
+        if (row.CanWeapons && FamilyPalette.For(row.Family) is { } weapons) parts.Add($"{weapons.Weapons.Count} weapons");
         if (!row.IsBase) parts.Add("copied in when used");
         return string.Join(" · ", parts);
     }
@@ -368,6 +378,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
             row.Monsters = s.Monsters.Count == 0 ? row.IsBase : s.Monsters.Any(m => mine.Contains(m));
             row.Textures = row.CanTextures && (s.Looks.Count == 0 ? row.IsBase : s.Looks.Any(l => l.Family == row.Family));
             row.Music = row.CanMusic && (s.MusicFrom.Count == 0 ? row.IsBase : s.MusicFrom.Contains(row.Game.Game.Id));
+            row.Weapons = row.CanWeapons && s.WeaponsFrom.Contains(row.Family);
         }
     }
 
@@ -397,6 +408,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
             Traps = Traps,
             Seed = SeedWords.Tidy(Seed),
             MusicFrom = [.. Sources.Where(r => r.Music && r.CanMusic).Select(r => r.Game.Game.Id)],
+            WeaponsFrom = [.. Sources.Where(r => r.Weapons && r.CanWeapons).Select(r => r.Family).Distinct()],
         };
         var monsters = Sources.Where(r => r.Monsters).SelectMany(r => r.MonsterKinds(s)).Distinct().ToList();
         var looks = Sources.Where(r => r.Textures).SelectMany(r => r.LookKinds()).Distinct().ToList();
@@ -425,7 +437,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         try
         {
             var plan = Planner.Plan(s);
-            var made = MapMaker.Build(plan, m => m.Number);
+            var made = MapMaker.Build(plan, new Lent(m => m.Number, null, (_, number) => number));
             var g = MapGeometry.Build(made.Map.Frame);
             var walk = Progression.Walk(g, s.Family);
             var problems = Problems.Check(g, null, Look.For(s.Family), s.Family);
@@ -523,6 +535,7 @@ internal sealed partial class MakeMapViewModel : ObservableObject
             row.Monsters = r.Next(2) > 0;
             row.Textures = row.CanTextures && r.Next(2) > 0;
             row.Music = row.CanMusic && r.Next(3) == 0;
+            row.Weapons = row.CanWeapons && r.Next(3) == 0;
         }
 
         Seed = SeedWords.Shuffle(r);
@@ -575,13 +588,13 @@ internal sealed partial class MakeMapViewModel : ObservableObject
                 IReadOnlyList<string> said = [];
                 var (project, _) = MadeProjects.Create(folder, plan, Target, project =>
                 {
-                    if (_services.ResourcesFor(project) is not { } into) return (null, null);
+                    if (_services.ResourcesFor(project) is not { } into) return null;
                     madeInto = into;
                     GameResources? From(string family, bool doom2) => rows.FirstOrDefault(r => r.Family == family && (r.IsBase || r.Doom2Only == doom2) && !(r.IsBase && doom2))?.Resources
                         ?? rows.FirstOrDefault(r => r.Family == family && !r.IsBase)?.Resources;
-                    var carried = Sources_Carry(project, into, plan, s, From, engine);
-                    said = carried.Notes;
-                    return (carried.Numbers, carried.Looks);
+                    var (lent, notes) = Editor.Generate.Sources.Carry(project, into, m => From(m.Family, m.Doom2 && m.Family == s.Family), l => From(l.Family, false), family => From(family, false), plan, engine);
+                    said = notes;
+                    return lent;
                 });
                 // The music the seed picks, once the map is in the project.
                 if (music is { } pick && madeInto is { } inGame && rows.FirstOrDefault(r => r.Game.Game.Id == pick.Game)?.Resources is { } from)
@@ -616,9 +629,6 @@ internal sealed partial class MakeMapViewModel : ObservableObject
             Busy = false;
         }
     }
-
-    private static (Func<MonsterKind, int?> Numbers, Func<LookChoice, Look> Looks, IReadOnlyList<string> Notes) Sources_Carry(Project project, GameResources into, MapPlan plan, GeneratorSettings s, Func<string, bool, GameResources?> from, string? engine) =>
-        Editor.Generate.Sources.Carry(project, into, m => from(m.Family, m.Doom2 && m.Family == s.Family), l => from(l.Family, false), plan, engine);
 
     /// <summary>A folder named <paramref name="name"/> in <paramref name="parent"/>, numbered when one of that name is there.</summary>
     internal static string UniqueFolder(string parent, string name)

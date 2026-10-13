@@ -7,10 +7,10 @@ namespace WadSmith.Editor.Generate;
 public sealed record MonsterKind(string Family, string Class, int Number, int Health, double Radius, int Tier, bool Flies, bool Boss, bool Doom2);
 
 /// <summary>A weapon the generator hands out: its class and number, the ammunition it uses and how much of it comes with it; <paramref name="With"/> are the other classes' weapons placed beside it (Hexen).</summary>
-public sealed record WeaponKind(string Class, int Number, string Ammo, int Gives, bool Doom2, IReadOnlyList<int> With);
+public sealed record WeaponKind(string Class, int Number, string Ammo, int Gives, bool Doom2, IReadOnlyList<int> With, string Family = "doom");
 
 /// <summary>Ammunition: the damage a unit does on average, and the small and big pickups with what each gives.</summary>
-public sealed record AmmoKind(string Type, double Damage, int Small, int SmallAmount, int Big, int BigAmount);
+public sealed record AmmoKind(string Type, double Damage, int Small, int SmallAmount, int Big, int BigAmount, string Family = "doom");
 
 /// <summary>A key: its colour (or name), its object, and the lock a door takes for it.</summary>
 public sealed record KeyKind(string Colour, int Number, int Lock);
@@ -51,8 +51,8 @@ public sealed record FamilyPalette(
                 family.Name,
                 raw.Start,
                 [.. raw.Monsters.Select(m => new MonsterKind(family.Name, m.Class, m.Number, m.Health, m.Radius, m.Tier, m.Flies, m.Boss, m.Doom2))],
-                [.. raw.Weapons.Select(w => new WeaponKind(w.Class, w.Number, w.Ammo, w.Gives, w.Doom2, w.With ?? []))],
-                [.. raw.Ammo.Select(a => new AmmoKind(a.Type, a.Damage, a.Small, a.SmallAmount, a.Big, a.BigAmount))],
+                [.. raw.Weapons.Select(w => new WeaponKind(w.Class, w.Number, w.Ammo, w.Gives, w.Doom2, w.With ?? [], family.Name))],
+                [.. raw.Ammo.Select(a => new AmmoKind(a.Type, a.Damage, a.Small, a.SmallAmount, a.Big, a.BigAmount, family.Name))],
                 (raw.Health.Small, raw.Health.SmallAmount, raw.Health.Big, raw.Health.BigAmount, raw.Health.Super),
                 (raw.Armor.Light, raw.Armor.Heavy),
                 [.. raw.Keys.Select(k => new KeyKind(k.Colour, k.Number, k.Lock))],
