@@ -1799,7 +1799,8 @@ internal sealed class MapCanvas : Control
             var m = ToMap(p);
             var step = GridStep();
             var snapped = (e.KeyModifiers & KeyModifiers.Shift) != 0 ? m : new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step);
-            if (drop.From is { } other) session.PlaceBorrowedThing(other, drop.Thing, snapped);
+            if (drop.QuakeModel is { } quakeModel && drop.From is { } quake) session.PlaceQuakeModel(quake, quakeModel, snapped);
+            else if (drop.From is { } other) session.PlaceBorrowedThing(other, drop.Thing, snapped);
             else session.DropThing(drop.Thing, m, snapped, 14 / _zoom);
         }
 

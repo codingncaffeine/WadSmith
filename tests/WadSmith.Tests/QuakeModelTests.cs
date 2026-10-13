@@ -120,6 +120,24 @@ public sealed class QuakeModelTests
     }
 
     [Fact]
+    public void QuakesOwnArmourComesInOnceAndIsRecordedAsQuakes()
+    {
+        using var temp = new TempFolder();
+        var library = QuakeModelLibrary.Open(GameFiles.Require("PAK0.PAK"));
+        Assert.Contains("progs/armor.mdl", library.Models);
+        Assert.DoesNotContain(library.Models, m => Path.GetFileName(m).StartsWith("v_", StringComparison.Ordinal));
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        var wad = GameFiles.Require("freedoom2.wad");
+        var game = GameResources.Load("freedoom2", project.Folder, [new FoundGame(GameCatalog.Get("freedoom2")!, wad, new FileInfo(wad).Length)], null)!;
+        var made = ModelProps.ImportQuake(project, game, library.Read("progs/armor.mdl"), "progs/armor.mdl", library.Palette);
+        Assert.True(made.Actor.New);
+        Assert.Equal("Armor", made.Actor.Thing.Name);
+        Assert.Equal(made.Actor.Thing.ClassName, project.FindCopy("quake", "progs/armor.mdl", "model")?.Name);
+        var again = ModelProps.ImportQuake(project, game, library.Read("progs/armor.mdl"), "progs/armor.mdl", library.Palette);
+        Assert.Equal((false, made.Actor.Number), (again.Actor.New, again.Actor.Number));
+    }
+
+    [Fact]
     public void QuakesOwnSoldierIsReadFromTheUsersPak()
     {
         var pak = PakArchive.Open(GameFiles.Require("PAK0.PAK"));

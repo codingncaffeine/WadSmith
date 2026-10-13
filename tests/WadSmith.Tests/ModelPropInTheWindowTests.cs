@@ -116,6 +116,49 @@ public sealed class ModelPropInTheWindowTests
     }
 
     [Fact]
+    public async Task QuakesModelsAreOnTheObjectsShelfAndOneIsPlaced()
+    {
+        var doom2 = GameFiles.Require("DOOM2.WAD");
+        GameFiles.Require("PAK0.PAK");
+        using var temp = new TempFolder();
+        var said = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(Path.Combine(temp.Path, "profile"), Path.GetDirectoryName(doom2)!);
+            try
+            {
+                var tile = vm.Welcome.Games.Single(g => g.Found.Game.Id == "doom2");
+                Ui.Wait(tile.NewMap!.ExecuteAsync(tile));
+                Ui.Pump(1.0);
+                var editor = (EditorViewModel)vm.Page!;
+                editor.ShowObjects = true;
+                var shelf = editor.ObjectShelf;
+                for (var i = 0; i < 600 && !shelf.Games.Any(g => g.StartsWith("Quake", StringComparison.Ordinal)); i++) Ui.Pump(0.05);
+
+                // As the user goes: Quake in the shelf's game box.
+                var chooser = window.GetVisualDescendants().OfType<ComboBox>().First(c => c.IsEffectivelyVisible && ReferenceEquals(c.ItemsSource, shelf.Games));
+                chooser.SelectedIndex = shelf.Games.ToList().FindIndex(g => g.StartsWith("Quake", StringComparison.Ordinal));
+                Ui.Pump(0.5);
+                var armour = shelf.Tiles.FirstOrDefault(t => t.Drop.QuakeModel == "progs/armor.mdl");
+                var pictured = shelf.Tiles.Count(t => t.Picture is not null);
+
+                // Dropped on the plan (the drop handler's own call).
+                var session = editor.Session;
+                var before = session.Map.Things.Count;
+                session.PlaceQuakeModel(armour!.Drop.From!, armour.Drop.QuakeModel!, new MapPoint(64, 64));
+                for (var i = 0; i < 400 && session.Map.Things.Count == before; i++) Ui.Pump(0.05);
+                var placed = session.Map.Things.Skip(before).Select(t => session.Resources!.Things.Find(t.Type)?.Name);
+                return $"{armour.Label} on '{chooser.SelectedItem}', {pictured} of {shelf.Tiles.Count} pictured; placed {string.Join(",", placed)}";
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.Matches(@"^Armor on 'Quake', (\d+) of \1 pictured; placed Armor$", said);
+    }
+
+    [Fact]
     public async Task TheTextureShelfsButtonBringsAMaterialInAsATexture()
     {
         var wad = GameFiles.Require("freedoom2.wad");

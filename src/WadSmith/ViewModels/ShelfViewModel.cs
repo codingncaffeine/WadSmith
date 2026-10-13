@@ -9,9 +9,9 @@ namespace WadSmith.App.ViewModels;
 
 /// <summary>
 /// What a shelf tile carries when dragged onto the map: a texture's name, an object's number, or a prefab; a picture from
-/// another game says which (<paramref name="From"/>) and whether it is a floor; a 3D model file dragged in from the file manager is <paramref name="ModelFile"/>.
+/// another game says which (<paramref name="From"/>) and whether it is a floor; a 3D model file dragged in from the file manager is <paramref name="ModelFile"/>; one of Quake's own models is <paramref name="QuakeModel"/> (its path in the PAK).
 /// </summary>
-internal sealed record ShelfDrop(string? Texture, int Thing, string Label, WadSmith.Editor.Editing.Prefab? Prefab = null, GameResources? From = null, bool Flat = false, string? ModelFile = null)
+internal sealed record ShelfDrop(string? Texture, int Thing, string Label, WadSmith.Editor.Editing.Prefab? Prefab = null, GameResources? From = null, bool Flat = false, string? ModelFile = null, string? QuakeModel = null)
 {
     /// <summary>The drag's format: an object handed over within WadSmith.</summary>
     public static readonly Avalonia.Input.DataFormat<ShelfDrop> Format = Avalonia.Input.DataFormat.CreateInProcessFormat<ShelfDrop>("wadsmith-shelf");
@@ -320,6 +320,42 @@ internal sealed partial class ShelfViewModel : ObservableObject
         () => game is null ? [] : PerGame(others?.Invoke() ?? [], other =>
         {
             var tiles = new List<ShelfTile>();
+
+            // Quake's own models (D43, Phase 11): props pictured from the front, brought in as models when placed.
+            if (other.Game.Engine == "quake")
+            {
+                WadSmith.Core.Quake.QuakeModelLibrary library;
+                try
+                {
+                    library = WadSmith.Core.Quake.QuakeModelLibrary.Open(other.Files[0]);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or WadSmith.Core.CorruptDataException)
+                {
+                    WadSmith.Editor.App.Log.Warn($"Quake's models could not be listed: {ex.Message}");
+                    return tiles;
+                }
+
+                foreach (var model in library.Models)
+                {
+                    Bitmap? picture = null;
+                    try
+                    {
+                        var mesh = WadSmith.Core.Models.Mdl.Read(library.Read(model), library.Palette, model).ToMesh();
+                        var origin = ((mesh.Min.X + mesh.Max.X) / 2, (mesh.Min.Y + mesh.Max.Y) / 2, mesh.Min.Z);
+                        picture = Imaging.ToBitmap(Shrink(WadSmith.Core.Models.MeshBaker.Bake(mesh, WadSmith.Editor.Editing.ModelProps.Stretch, origin, 1)));
+                    }
+                    catch (WadSmith.Core.CorruptDataException ex)
+                    {
+                        WadSmith.Editor.App.Log.Warn($"Quake's {model} could not be pictured: {ex.Message}");
+                        continue;
+                    }
+
+                    var title = WadSmith.Editor.Editing.ModelProps.Title(Path.GetFileNameWithoutExtension(model));
+                    tiles.Add(new ShelfTile(title, $"Quake's {title} ({model}). Drag it onto the map: its model and skin are copied into this project as a prop that stands still, and GZDoom draws it.", "Decorations", $"{title} {model} quake model decorations".ToLowerInvariant(), picture, new ShelfDrop(null, 0, $"{title} from Quake", From: other, QuakeModel: model), other.Game.Title));
+                }
+
+                return tiles;
+            }
 
             // Duke Nukem 3D's enemies (D55): Duke's look, a Doom monster's behaviour.
             if (other.Build is { } build)

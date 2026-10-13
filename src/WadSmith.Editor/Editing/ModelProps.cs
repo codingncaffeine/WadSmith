@@ -160,9 +160,34 @@ public static class ModelProps
         // so the model is drawn 1.2 times its own height to stand as tall in the map); other formats say nothing, so their
         // height is read.
         var block = BlockSet.Of(path) is not null;
-        var (scale, sizeNote) = kind is ".glb" or ".gltf" || block ? Metres(mesh) : quake is not null ? QuakeUnits(mesh) : SizeOf(mesh);
         var stem = block ? BlockSet.NameOf(path) : Path.GetFileNameWithoutExtension(path);
+        return Bring(project, into, kind, stem, Path.GetFileName(path), mesh, quake, block, () => File.ReadAllBytes(path), notes);
+    }
 
+    /// <summary>
+    /// Brings one of Quake's own models (D43) from the user's PAK into <paramref name="project"/>: written as an MD2 with every
+    /// frame, its colours through <paramref name="palette"/>, recorded as Quake's (the Share check names it). Once per model:
+    /// a second use finds the first. Call it on a worker.
+    /// </summary>
+    public static ImportedModel ImportQuake(Project project, GameResources into, byte[] mdl, string pakName, byte[] palette)
+    {
+        if (project.FindCopy("quake", pakName, "model") is { } done && project.CopiedNow().FirstOrDefault(c => c.Kind == "actor" && c.Game == "model" && c.Original == done.Name) is { } actor
+            && int.TryParse(actor.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var had) && into.Things.Find(had) is { } known)
+        {
+            return new ImportedModel(new CarriedActor(had, known, 0, 0, false), Stretch, "", []);
+        }
+
+        var notes = new List<string>();
+        var quake = Mdl.Read(mdl, palette, Path.GetFileName(pakName));
+        var made = Bring(project, into, ".mdl", Path.GetFileNameWithoutExtension(pakName), Path.GetFileName(pakName), quake.ToMesh(), quake, false, () => mdl, notes);
+        project.Record(new CopiedAsset { Kind = "model", Game = "quake", Original = pakName, Name = made.Actor.Thing.ClassName, File = $"models/{made.Actor.Thing.ClassName}" });
+        return made;
+    }
+
+    /// <summary>The prop's files, class, sprites and record, from a model read (shared by every way a model comes in).</summary>
+    private static ImportedModel Bring(Project project, GameResources into, string kind, string stem, string sourceName, Mesh mesh, AnimatedModel? quake, bool block, Func<byte[]> original, List<string> notes)
+    {
+        var (scale, sizeNote) = kind is ".glb" or ".gltf" || block ? Metres(mesh) : quake is not null ? QuakeUnits(mesh) : SizeOf(mesh);
         var className = ClassName(project, into, stem);
         var sprite = SpriteName(project, into);
         var folder = $"models/{className}";
@@ -187,7 +212,7 @@ public static class ModelProps
         var modelFile = "model" + (kind is ".md3" or ".iqm" or ".md2" ? kind : kind == ".mdl" ? ".md2" : ".obj");
         files.Add(($"{folder}/{modelFile}", kind switch
         {
-            ".md3" or ".iqm" or ".md2" => File.ReadAllBytes(path),
+            ".md3" or ".iqm" or ".md2" => original(),
             ".mdl" => Md2.Write(quake!, pictures[0] ?? ""),
             _ => Encoding.UTF8.GetBytes(ObjModel.Write(mesh, s => pictures[s])),
         }));
@@ -228,7 +253,7 @@ public static class ModelProps
             new CopiedAsset { Kind = "zscript", Game = "model", Original = className, Name = className, File = script },
             new CopiedAsset { Kind = "modeldef", Game = "model", Original = className, Name = className, File = $"{folder}/modeldef.txt" },
             new CopiedAsset { Kind = "actor", Game = "model", Original = className, Name = number.ToString(c), File = script },
-            new CopiedAsset { Kind = "modelprop", Game = "model", Original = className, Name = string.Join('|', sprite, radius.ToString(c), height.ToString(c), title, Path.GetFileName(path)), File = folder },
+            new CopiedAsset { Kind = "modelprop", Game = "model", Original = className, Name = string.Join('|', sprite, radius.ToString(c), height.ToString(c), title, sourceName), File = folder },
         ]);
         DukeBorrowing.WriteScript(project);
         WriteDefinitions(project);

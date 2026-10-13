@@ -1131,6 +1131,52 @@ public sealed class EditorSession : IDisposable
         });
     }
 
+    /// <summary>
+    /// Places one of Quake's own models (D43) from the user's Quake (<paramref name="quake"/>): brought into the project on a
+    /// worker the first time (an MD2 with every frame, its sprites, a class and a number), then placed at <paramref name="at"/>.
+    /// </summary>
+    public void PlaceQuakeModel(GameResources quake, string model, MapPoint at, double? standAt = null)
+    {
+        var title = ModelProps.Title(Path.GetFileNameWithoutExtension(model));
+        if (Resources is not { } into)
+        {
+            Notice?.Invoke("Quake's models need this map's own game to be found first.");
+            return;
+        }
+
+        if (Project.ClassicFormat)
+        {
+            Notice?.Invoke($"Quake's {title} is a 3D model: models play in GZDoom only. Change what the project plays in under Map settings to use it.");
+            return;
+        }
+
+        var engineData = Hooks.EngineData;
+        Task.Run(() =>
+        {
+            ImportedModel made;
+            try
+            {
+                var library = Core.Quake.QuakeModelLibrary.Open(quake.Files[0]);
+                made = ModelProps.ImportQuake(Project, into, library.Read(model), model, library.Palette);
+                ProjectMapInfo.Refresh(Project, into.Game, into.Files, engineData);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Bringing in Quake's {model} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"Quake's {title} could not be brought in. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                PlaceThing(made.Actor.Number, at, standAt);
+                if (!made.Actor.New) return;
+                Notice?.Invoke($"Quake's {title} was brought in: its model and skin are copied into this project as a prop, so GZDoom draws it. It stands still; Quake's own behaviour is not carried.");
+                PropsChanged?.Invoke();
+            });
+        });
+    }
+
     /// <summary>Raised on the UI thread when a 3D model has been brought in or turned.</summary>
     public event Action? PropsChanged;
 
