@@ -47,10 +47,12 @@ public sealed class MakeMapInTheWindowTests
             try
             {
                 var tile = vm.Welcome.Games.First(t => t.Found.Game.Id == "freedoom2");
+                // The card set to vanilla Doom: the page says a made map plays in GZDoom.
+                tile.TargetIndex = WadSmith.Core.Projects.Targets.All.ToList().FindIndex(t => t.Id == WadSmith.Core.Projects.Targets.Vanilla);
                 var card = Shown<ContentPresenter>(window, p => ReferenceEquals(p.DataContext, tile));
                 Click(window, card.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "Make me a map…")));
                 var page = (MakeMapViewModel)vm.Page;
-                said.Add($"page for {page.GameTitle}, base row {page.Sources[0].Title}");
+                said.Add($"page for {page.GameTitle}, base row {page.Sources[0].Title}, plays in {page.Target}, note {page.TargetNote.Length > 0}");
 
                 // Large, three locked doors, two bosses, by their segments; the seed typed.
                 Click(window, Shown<ToggleButton>(window, b => ReferenceEquals(b.DataContext, page.Size.Items[2])));
@@ -67,7 +69,7 @@ public sealed class MakeMapInTheWindowTests
                 var folder = editor.Session.Project.Folder;
                 Ui.Pump(1.0);
                 var walk = Progression.Walk(editor.Session.Geometry, "doom");
-                said.Add($"opened {Path.GetFileName(folder)} in {Path.GetFileName(Path.GetDirectoryName(folder))}, exit reached {walk.ExitReached}, keys {walk.Steps.Count(s => s.Kind == "key")}, settings kept {File.Exists(Path.Combine(folder, MadeProjects.SettingsFile))}");
+                said.Add($"opened {Path.GetFileName(folder)} in {Path.GetFileName(Path.GetDirectoryName(folder))}, exit reached {walk.ExitReached}, keys {walk.Steps.Count(s => s.Kind == "key")}, settings kept {File.Exists(Path.Combine(folder, MadeProjects.SettingsFile))}, project plays in {editor.Session.Project.Info.Target}");
 
                 // Ctrl+K's "Make another like it": the page again with this map's choices and a new seed; back to the start screen,
                 // the map is on its game's card.
@@ -104,10 +106,10 @@ public sealed class MakeMapInTheWindowTests
         });
         Assert.Equal(
         [
-            "page for Freedoom: Phase 2, base row Freedoom: Phase 2",
+            "page for Freedoom: Phase 2, base row Freedoom: Phase 2, plays in gzdoom, note True",
             "Bleak Depot · 24 rooms · 3 keys · 3 secrets · 1 trap",
             "plan bosses 2, preview checked True",
-            "opened Bleak Depot in Made maps, exit reached True, keys 3, settings kept True",
+            "opened Bleak Depot in Made maps, exit reached True, keys 3, settings kept True, project plays in gzdoom",
             "another like it: size 2, keys 3, bosses 2, new seed True",
             "card: Bleak Depot",
             "second in True",

@@ -153,7 +153,10 @@ internal sealed partial class MakeMapViewModel : ObservableObject
         _services = services;
         _main = main;
         _game = game.Game;
-        Target = target;
+        // A made map plays in GZDoom: it uses dynamic lights, GZDoom's damage fields and other games' objects. A card set to a
+        // classic target is told so on the page.
+        Target = Targets.GZDoom;
+        TargetNote = Targets.IsClassic(target) ? $"Made maps play in GZDoom; {Targets.TitleOf(target)} maps come later." : "";
         GameTitle = game.Game.Title;
         Size = new SegmentGroup([.. Enum.GetValues<MapSize>().Select(z => (z.ToString(), $"{GeneratorSettings.RoomsFor(z)} rooms."))], 1);
         Style = new SegmentGroup(
@@ -181,8 +184,11 @@ internal sealed partial class MakeMapViewModel : ObservableObject
 
     public string GameTitle { get; }
 
-    /// <summary>What the map plays in (D51), from the card.</summary>
+    /// <summary>What the map plays in (D51): GZDoom.</summary>
     public string Target { get; }
+
+    /// <summary>Why a classic target chosen on the card is not used, in words; empty otherwise.</summary>
+    public string TargetNote { get; }
 
     public ObservableCollection<SourceRow> Sources { get; } = [];
 
