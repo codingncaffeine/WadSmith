@@ -424,7 +424,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         [Sector s] when Platforms.ControlOf(_session.Geometry, s) is not null => "platform control",
         [Sector s] => (Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room") + $" {Platforms.Of(_session.Geometry, s).Count}" + ClimbKind(s),
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : LiftOf(l) is not null ? "lift face" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : DoorOf(l) is { } doorArea ? $"door {Doors.Recognise(_session.Geometry, doorArea)?.Settings.Lock} face" : WindowOf(l) is not null ? "window face" : l.Special == 0 ? "wall" : "wall with an action",
-        [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : "thing",
+        [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : $"thing {t.Type}",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
         [var one] => one.GetType().Name,
         var many => many.Count.ToString(CultureInfo.InvariantCulture),
@@ -1451,6 +1451,15 @@ internal sealed partial class InspectorViewModel : ObservableObject
 
     private void AddThing(Thing t)
     {
+        // A Duke Nukem 3D enemy (D55): which Doom monster's behaviour it has.
+        if (DukeBorrowing.Of(_session.Project, t.Type) is { } duke)
+        {
+            var behaviours = WadSmith.Core.Build.DukeEnemies.Behaviours;
+            Rows.Add(new ChoiceRow("Behaves like", "The Doom monster whose mind, attacks, health and sounds it has; it keeps Duke's look. Duke's own behaviour lives in scripts GZDoom cannot run.", [.. behaviours.Select(b => b.Name)],
+                () => Math.Max(0, behaviours.ToList().FindIndex(b => b.Class == (DukeBorrowing.Of(_session.Project, t.Type)?.Behaviour ?? duke.Behaviour))),
+                i => _session.ChangeDukeBehaviour(t, behaviours[i].Class)));
+        }
+
         Rows.Add(new NumberRow("Type", "Which monster, item or decoration this is (editor number, type).", () => t.Type, v => Set(t, "Change thing type", e => e.Type, (e, x) => e.Type = x, (int)v), 1, 0, 65535));
         Rows.Add(new NumberRow("Facing", "The direction it faces, in degrees: 0 east, 90 north (angle).", () => t.Angle, v => Set(t, "Turn thing", e => e.Angle, (e, x) => e.Angle = x, (int)v), 45, -360, 360));
         Rows.Add(new NumberRow("Height above floor", "For things that float or hang (height).", () => (decimal)t.Height, v => Set(t, "Change thing height", e => e.Height, (e, x) => e.Height = x, (double)v), 8));

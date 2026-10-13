@@ -82,5 +82,14 @@ public sealed class DukeEnemyTests
         Assert.True(again.CanShow(carried.Number));
         Assert.Equal(carried.Thing.Name, again.Things.Find(carried.Number)!.Name);
         Assert.False(DukeBorrowing.Carry(project, again, art, pig, "ShotgunGuy").New);
+
+        // The placed object says what it is; another behaviour is another class, and the first stays.
+        Assert.Equal(("PIGCOP", "ShotgunGuy", grp), DukeBorrowing.Of(project, carried.Number));
+        var imp = DukeBorrowing.Carry(project, again, art, pig, "DoomImp");
+        Assert.NotEqual(carried.Number, imp.Number);
+        Assert.Equal(("PIGCOP", "DoomImp", grp), DukeBorrowing.Of(project, imp.Number));
+        Assert.Contains("A_TroopAttack", File.ReadAllText(Path.Combine(project.Folder, "zscript", "wadsmith", "DukePigcopAsDoomImp.zs")));
+        Assert.Equal(2, File.ReadAllText(Path.Combine(project.Folder, DukeBorrowing.ScriptFile)).Split("#include").Length - 1);
+        Assert.Null(DukeBorrowing.Of(project, 3001));
     }
 }

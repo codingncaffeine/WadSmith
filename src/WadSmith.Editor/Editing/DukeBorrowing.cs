@@ -22,6 +22,16 @@ public static partial class DukeBorrowing
 
     private const string ScriptMark = "// Written by WadSmith: Duke Nukem 3D's enemies with Doom monsters' behaviour. Edits here are replaced.";
 
+    /// <summary>The Duke enemy and its behaviour behind a placed object's number in <paramref name="project"/>, and the group file it came from; null for any other object.</summary>
+    public static (string Enemy, string Behaviour, string Grp)? Of(Project project, int number)
+    {
+        var copied = project.Info.Copied;
+        var actor = copied.FirstOrDefault(c => c.Kind == "actor" && c.Game == "duke3d" && c.Name == number.ToString(CultureInfo.InvariantCulture));
+        if (actor is null || copied.FirstOrDefault(c => c.Kind == "dukeactor" && c.Original == actor.Original) is not { } duke) return null;
+        var parts = duke.Name.Split('|');
+        return parts.Length >= 6 ? (parts[4], parts[0], parts[5]) : null;
+    }
+
     /// <summary>The class an enemy with a behaviour is declared as: "DukePigcopAsShotgunGuy".</summary>
     public static string ClassName(DukeEnemy enemy, string behaviour) => $"Duke{char.ToUpperInvariant(enemy.Key[0])}{enemy.Key[1..].ToLowerInvariant()}As{behaviour}";
 
@@ -83,7 +93,7 @@ public static partial class DukeBorrowing
         while (taken.Contains(number)) number++;
         var title = $"{enemy.Name} (Duke Nukem 3D, as a {parent.Name.ToLowerInvariant()})";
         project.Record(new CopiedAsset { Kind = "actor", Game = "duke3d", Original = className, Name = number.ToString(CultureInfo.InvariantCulture), File = file });
-        project.Record(new CopiedAsset { Kind = "dukeactor", Game = "duke3d", Original = className, Name = string.Join('|', behaviour, sprite, scale.ToString(CultureInfo.InvariantCulture), title), File = file });
+        project.Record(new CopiedAsset { Kind = "dukeactor", Game = "duke3d", Original = className, Name = string.Join('|', behaviour, sprite, scale.ToString(CultureInfo.InvariantCulture), title, enemy.Key, duke.Path ?? ""), File = file });
 
         var thing = parent with { Number = number, ClassName = className, Name = title, Sprite = sprite, Frame = 'A', ScaleX = scale, ScaleY = scale };
         into.Carry([thing], project.Folder);

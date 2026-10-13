@@ -689,6 +689,39 @@ public sealed class EditorSession : IDisposable
         });
     }
 
+    /// <summary>
+    /// Gives a placed Duke Nukem 3D enemy the behaviour of another Doom monster (D55): the pair is carried in on a worker the
+    /// first time, then the object becomes it, one undo step, keeping where it stands and which way it faces.
+    /// </summary>
+    public void ChangeDukeBehaviour(Thing thing, string behaviour)
+    {
+        if (Resources is not { } into || DukeBorrowing.Of(Project, thing.Type) is not { } was || was.Behaviour == behaviour) return;
+        var engineData = Hooks.EngineData;
+        Task.Run(() =>
+        {
+            CarriedActor carried;
+            try
+            {
+                var duke = Core.Build.BuildArtContainer.Open(was.Grp);
+                var enemy = duke.Enemies.FirstOrDefault(e => e.Key == was.Enemy) ?? throw new CorruptDataException($"{Path.GetFileName(was.Grp)} no longer describes the {was.Enemy}.");
+                carried = DukeBorrowing.Carry(Project, into, duke, enemy, behaviour);
+                ProjectMapInfo.Refresh(Project, into.Game, into.Files, engineData);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Changing a Duke enemy's behaviour to {behaviour} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"The behaviour could not be changed. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                if (!thing.OnMap) return;
+                History.Record("Change what it behaves like", e => e.Set(thing, t => t.Type, (t, v) => t.Type = v, carried.Number));
+            });
+        });
+    }
+
     /// <summary>Copies a picture from another game into the project on a worker, then <paramref name="paint"/>s it (its name here) on the UI thread, saying what happened.</summary>
     private void Borrow(GameResources from, string name, bool flat, Func<string, string?> paint)
     {
