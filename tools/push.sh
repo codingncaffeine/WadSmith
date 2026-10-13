@@ -26,7 +26,21 @@ for _ in $(seq 1 40); do
 done
 [ -n "$run" ] || { echo "PUSH FAILED: no CI run appeared for $short on gate"; exit 1; }
 
-if gh run watch "$run" --exit-status --interval 30 > "scratch/gate/ci-$short.log" 2>&1; then
+# The run's own conclusion decides, never the watcher's exit code: a GitHub 502 mid-watch ends `gh run watch` with an
+# error while the run is still going (2026-10-13, run 38466343363 reported red while in progress). Watch again until the
+# run says it has completed; give up after two hours.
+: > "scratch/gate/ci-$short.log"
+conclusion=""
+for _ in $(seq 1 240); do
+    gh run watch "$run" --interval 30 >> "scratch/gate/ci-$short.log" 2>&1
+    state=$(gh run view "$run" --json status,conclusion --jq '"\(.status) \(.conclusion)"' 2>/dev/null)
+    case "$state" in
+        "completed "*) conclusion=${state#completed }; break ;;
+    esac
+    sleep 30
+done
+
+if [ "$conclusion" = success ]; then
     git push -q origin "$sha:main" || { echo "PUSH FAILED: main"; exit 1; }
     echo "PUSHED $short to main: CI run $run green on Linux and Windows"
 else
