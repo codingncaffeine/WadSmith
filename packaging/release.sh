@@ -7,13 +7,15 @@
 #                                   packaging/RELEASE-NOTES-<version>.md is the release's text
 #
 # Before it: tools/gate.sh, then push. Needs gh (logged in), podman or docker, xvfb-run, dbus-run-session, makepkg and
-# an SSH key for aur.archlinux.org. Takes about twenty minutes, most of it the container test and CI.
+# an SSH key for aur.archlinux.org. Takes about half an hour, most of it the container test, CI and the Windows build
+# (.github/workflows/windows-release.yml, started here for the commit released and smoke-run on its Windows runner).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VER=$(grep -oPm1 '(?<=<VersionPrefix>)[^<]+' Directory.Build.props)
 TAG="v$VER"
 TARBALL="packaging/out/WadSmith-$VER-linux-x64.tar.gz"
 DEB="packaging/out/wadsmith_${VER}_amd64.deb"
+ZIP="packaging/out/WadSmith-$VER-win-x64.zip"
 NOTES="packaging/RELEASE-NOTES-$VER.md"
 AUR=scratch/aur-wadsmith-bin
 say() { printf '\n── %s\n' "$*"; }
@@ -40,8 +42,38 @@ for i in $(seq 1 60); do
     sleep 30
 done
 
+say "the Windows build of $(git rev-parse --short HEAD), started on CI"
+SHA=$(git rev-parse HEAD)
+STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+gh workflow run windows-release.yml --ref main -f sha="$SHA"
+WIN=""
+for i in $(seq 1 24); do
+    WIN=$(gh run list --workflow windows-release.yml --event workflow_dispatch --json databaseId,headSha,createdAt -q "[.[] | select(.headSha == \"$SHA\" and .createdAt >= \"$STARTED\")][0].databaseId // empty" 2>/dev/null || true)
+    [ -n "$WIN" ] && break
+    sleep 5
+done
+[ -n "$WIN" ] || { echo "the Windows build did not start"; exit 1; }
+echo "run $WIN"
+
 say "artifacts"
 packaging/build-release.sh
+
+say "the Windows zip"
+for i in $(seq 1 60); do
+    s=$(gh run view "$WIN" --json status,conclusion -q '"\(.status) \(.conclusion)"' 2>/dev/null || true)
+    case "$s" in
+        "completed success") echo "built and smoke-run on Windows"; break ;;
+        "completed "*) echo "the Windows build: $s (gh run view $WIN --log-failed)"; exit 1 ;;
+    esac
+    [ "$i" = 60 ] && { echo "the Windows build did not finish in 30 minutes"; exit 1; }
+    sleep 30
+done
+gh run download "$WIN" -n windows-zip -D packaging/out
+[ -f "$ZIP" ] || { echo "no $ZIP in the run's artifact"; exit 1; }
+for f in wadsmith.exe wadsmith-cli.exe SDL2.dll README-SDL.txt LICENSE.txt; do
+    unzip -l "$ZIP" | grep -q " $f$" || { echo "$ZIP has no $f"; exit 1; }
+done
+echo "ok: $(du -h "$ZIP" | cut -f1)"
 
 say "smoke: the tarball and the .deb, on a private screen and bus"
 xvfb-run -a dbus-run-session --config-file=packaging/isolated-bus.conf -- packaging/smoke-test.sh "$TARBALL" "$DEB"
@@ -61,7 +93,7 @@ git tag -a "$TAG" -m "WadSmith $VER"
 git push -q origin "$TAG"
 
 say "GitHub release"
-gh release create "$TAG" --title "WadSmith $VER" --notes-file "$NOTES" "$TARBALL" "$DEB"
+gh release create "$TAG" --title "WadSmith $VER" --notes-file "$NOTES" "$TARBALL" "$DEB" "$ZIP"
 gh release view "$TAG" --json url -q .url
 
 say "AUR: wadsmith-bin $VER-1"
@@ -85,4 +117,4 @@ git commit -q -m "AUR: the $VER tarball's checksum" || true
 git push -q origin main
 
 say "released $TAG"
-sha256sum "$TARBALL" "$DEB"
+sha256sum "$TARBALL" "$DEB" "$ZIP"

@@ -1,0 +1,102 @@
+name: Windows release build
+
+# The Windows zip a release ships (WadSmith-<version>-win-x64.zip): wadsmith.exe and wadsmith-cli.exe, self-contained,
+# with SDL2.dll for the shelf's sounds, smoke-run here before it is kept. packaging/release.sh starts it for the commit
+# it releases once CI is green, waits for it, and attaches the zip to the GitHub release.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: The commit to build (empty for the branch's head)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  windows-zip:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      # SDL2 for Windows, pinned: libsdl-org's release zip and its SHA-256 (zlib licence, its README ships beside it).
+      SDL_VERSION: 2.32.10
+      SDL_SHA256: 6cf9706eefd0a4a06dc764007934d428afaf029fabdd408a9e646048c91e18fb
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Publish (self-contained win-x64)
+        shell: pwsh
+        run: |
+          $ver = (Select-String -Path Directory.Build.props -Pattern '<VersionPrefix>([^<]+)</VersionPrefix>').Matches[0].Groups[1].Value
+          "VER=$ver" >> $env:GITHUB_ENV
+          dotnet publish src/WadSmith/WadSmith.csproj -c Release -r win-x64 --self-contained true -p:VersionPrefix=$ver -o out/WadSmith -v q --nologo
+          if ($LASTEXITCODE -ne 0) { throw "publishing wadsmith failed" }
+          dotnet publish src/WadSmith.Cli/WadSmith.Cli.csproj -c Release -r win-x64 --self-contained true -p:VersionPrefix=$ver -o out/WadSmith -v q --nologo
+          if ($LASTEXITCODE -ne 0) { throw "publishing wadsmith-cli failed" }
+          # The views must be compiled into the app; a publish that fell back to loading XAML at run time is not shipped.
+          if (-not (Select-String -Path out/WadSmith/wadsmith.dll -Pattern CompiledAvaloniaXaml -SimpleMatch -Quiet)) { throw "wadsmith.dll carries no compiled XAML" }
+
+      - name: SDL2 and the words beside the program
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://github.com/libsdl-org/SDL/releases/download/release-$env:SDL_VERSION/SDL2-$env:SDL_VERSION-win32-x64.zip" -OutFile sdl.zip
+          $hash = (Get-FileHash sdl.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $env:SDL_SHA256) { throw "SDL2's zip is not the one pinned (its checksum is $hash)" }
+          Expand-Archive sdl.zip -DestinationPath sdl
+          Copy-Item sdl/SDL2.dll out/WadSmith/
+          Copy-Item sdl/README-SDL.txt out/WadSmith/
+          Copy-Item LICENSE out/WadSmith/LICENSE.txt
+          Copy-Item packaging/README.txt out/WadSmith/README.txt
+
+      # As the Linux smoke test: the version, the command-line tool, a window opened on a private profile that stays up
+      # ten seconds, and no error in the log.
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $dir = (Resolve-Path out/WadSmith).Path
+          $version = (& "$dir/wadsmith.exe" --version | Out-String).Trim()
+          if ($version -notmatch '^WadSmith') { throw "--version said: $version" }
+          "--version: $version"
+          $help = & "$dir/wadsmith-cli.exe" help | Out-String
+          if ($LASTEXITCODE -ne 0 -or $help -notmatch 'extract') { throw "wadsmith-cli help said: $help" }
+          "wadsmith-cli lists its commands"
+          $profile = Join-Path $env:RUNNER_TEMP "profile"
+          $log = Join-Path $profile "state/logs/wadsmith.log"
+          $app = Start-Process "$dir/wadsmith.exe" -ArgumentList "--portable", "`"$profile`"" -PassThru
+          for ($i = 0; $i -lt 160; $i++) {
+            if ((Test-Path $log) -and (Select-String -Path $log -Pattern 'Windowing:' -Quiet)) { break }
+            if ($app.HasExited) { break }
+            Start-Sleep -Milliseconds 250
+          }
+          if (-not ((Test-Path $log) -and (Select-String -Path $log -Pattern 'Windowing:' -Quiet))) {
+            if (Test-Path $log) { Get-Content $log | Select-Object -Last 20 }
+            throw "no window opened"
+          }
+          (Select-String -Path $log -Pattern 'Windowing:.*').Matches[0].Value
+          Start-Sleep -Seconds 10
+          if ($app.HasExited) { throw "the app exited by itself (code $($app.ExitCode))" }
+          "still running after 10 s"
+          Stop-Process -Id $app.Id
+          $errors = Select-String -Path $log -Pattern ' (ERR|FTL) '
+          if ($errors) { $errors; throw "errors in the log" }
+          "no errors in the log"
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path out/WadSmith/* -DestinationPath "WadSmith-$env:VER-win-x64.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-zip
+          path: WadSmith-*-win-x64.zip
+          if-no-files-found: error
+          retention-days: 30
