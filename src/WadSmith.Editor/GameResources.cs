@@ -38,7 +38,16 @@ public sealed class GameResources
     private Lazy<IReadOnlySet<string>>? _switches;
 
     /// <summary>The music the game (and the project) has, by name, A to Z: every lump or file holding a MUS or MIDI score, or an Ogg, FLAC or MP3 stream.</summary>
-    public IReadOnlyList<string> Music { get; }
+    public IReadOnlyList<string> Music { get; private set; }
+
+    /// <summary>Offers music the project brought in (a file of the user's own) among the game's own (any thread).</summary>
+    public void AddMusic(string name)
+    {
+        lock (_carried)
+        {
+            if (!Music.Contains(name, StringComparer.OrdinalIgnoreCase)) Music = [.. Music.Append(name).Order(StringComparer.OrdinalIgnoreCase)];
+        }
+    }
 
     /// <summary>The sky pictures the game has (every wall texture named SKY…), A to Z.</summary>
     public IReadOnlyList<string> Skies { get; private set; }
@@ -70,7 +79,8 @@ public sealed class GameResources
             }
 
             var head = data.AsSpan(0, 4);
-            if (head.SequenceEqual("MUS\x1a"u8) || head.SequenceEqual("MThd"u8) || head.SequenceEqual("OggS"u8) || head.SequenceEqual("fLaC"u8) || head[..3].SequenceEqual("ID3"u8) || (head[0] == 0xFF && (head[1] & 0xE0) == 0xE0 && entry.Name.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)))
+            if (head.SequenceEqual("MUS\x1a"u8) || head.SequenceEqual("MThd"u8) || head.SequenceEqual("OggS"u8) || head.SequenceEqual("fLaC"u8) || head[..3].SequenceEqual("ID3"u8) || (head[0] == 0xFF && (head[1] & 0xE0) == 0xE0 && entry.Name.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+                || (entry.Namespace == ResourceNamespace.Music && Core.Audio.AudioFormats.Detect(data) == Core.Audio.AudioKind.Module))
             {
                 names.Add(entry.Name);
             }
@@ -264,6 +274,9 @@ public sealed class GameResources
 
                 // Objects downloaded from the free sources (D61): classes the project's own definition lumps declare.
                 carried.AddRange(Editing.LibraryObjects.Recorded(info.Copied));
+
+                // Sounds of the user's own placed in the map (Phase 7): one class plays them all.
+                carried.AddRange(Editing.SoundFiles.Recorded(info));
 
                 // Other games' objects take their definitions from the engine's data.
                 foreach (var copy in info.Copied.Where(c => c.Kind == "actor" && c.Game != "duke3d" && c.Game != "model"))

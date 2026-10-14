@@ -11,7 +11,7 @@ namespace WadSmith.App.ViewModels;
 /// What a shelf tile carries when dragged onto the map: a texture's name, an object's number, or a prefab; a picture from
 /// another game says which (<paramref name="From"/>) and whether it is a floor; a 3D model file dragged in from the file manager is <paramref name="ModelFile"/>; one of Quake's own models is <paramref name="QuakeModel"/> (its path in the PAK); an object from a free source (D61) is <paramref name="Library"/>, downloaded when placed.
 /// </summary>
-internal sealed record ShelfDrop(string? Texture, int Thing, string Label, WadSmith.Editor.Editing.Prefab? Prefab = null, GameResources? From = null, bool Flat = false, string? ModelFile = null, string? QuakeModel = null, WadSmith.Core.Library.LibraryItem? Library = null)
+internal sealed record ShelfDrop(string? Texture, int Thing, string Label, WadSmith.Editor.Editing.Prefab? Prefab = null, GameResources? From = null, bool Flat = false, string? ModelFile = null, string? QuakeModel = null, WadSmith.Core.Library.LibraryItem? Library = null, string? AudioFile = null)
 {
     /// <summary>The drag's format: an object handed over within WadSmith.</summary>
     public static readonly Avalonia.Input.DataFormat<ShelfDrop> Format = Avalonia.Input.DataFormat.CreateInProcessFormat<ShelfDrop>("wadsmith-shelf");

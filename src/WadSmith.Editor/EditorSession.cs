@@ -1157,12 +1157,13 @@ public sealed class EditorSession : IDisposable
     /// every game mode (and for every class in Hexen), one undo step, and selects it. With <paramref name="standAt"/> (the top
     /// of a platform in the 3D view) it stands that high, as a height above the floor (GZDoom puts it on the floor otherwise).
     /// </summary>
-    public Thing PlaceThing(int type, MapPoint at, double? standAt = null)
+    public Thing PlaceThing(int type, MapPoint at, double? standAt = null, IReadOnlyList<int>? args = null)
     {
         var height = standAt is { } z && _geometry.AreaAt(at) is { } area ? Math.Max(0, Math.Round(z - SlopePlane.FloorAt(area, at))) : 0;
         Thing New(MapPoint p, int angle)
         {
             var t = new Thing { X = p.X, Y = p.Y, Type = type, Angle = angle, Height = height };
+            for (var i = 0; args is not null && i < Math.Min(args.Count, t.Args.Length); i++) t.Args[i] = args[i];
             foreach (var f in Smart.Things.Everywhere(Engine)) t.SetFlag(f, true);
             return t;
         }
@@ -1279,6 +1280,72 @@ public sealed class EditorSession : IDisposable
                 Notice?.Invoke($"{made.Actor.Thing.Name} is in this project as a prop, {made.SizeNote}. It is under Objects, Your models; GZDoom draws the model, and pictures made from it show it on the plan.{notes}");
                 PropsChanged?.Invoke();
             });
+        });
+    }
+
+    /// <summary>
+    /// Brings in a sound or music file of the user's own (Phase 7). Music (a score or a tracker module, or any file when
+    /// <paramref name="at"/> is null) becomes this map's music; a sound dropped at a spot is placed there, playing over and
+    /// over until its Inspector says otherwise. The files are written on a worker.
+    /// </summary>
+    public void ImportAudio(string path, MapPoint? at = null)
+    {
+        var file = Path.GetFileName(path);
+        if (Resources is not { } into)
+        {
+            Notice?.Invoke("Sounds and music need this map's own game to be found first.");
+            return;
+        }
+
+        if (History.ReadOnly)
+        {
+            Tell(ReadOnlyNotice);
+            return;
+        }
+
+        Notice?.Invoke($"Bringing in {file}…");
+        Task.Run(() =>
+        {
+            try
+            {
+                byte[] head;
+                using (var stream = File.OpenRead(path))
+                {
+                    head = new byte[Math.Min(stream.Length, 4096)];
+                    stream.ReadExactly(head);
+                }
+
+                if (at is not { } spot || SoundFiles.IsMusicOnly(head))
+                {
+                    var music = SoundFiles.ImportMusic(Project, into, path);
+                    _onUiThread(() =>
+                    {
+                        ChangeMapSettings(m => m with { Music = music });
+                        Notice?.Invoke($"{file} is this map's music now. Map settings (click an empty spot) choose other music.");
+                    });
+                    return;
+                }
+
+                if (Project.ClassicFormat)
+                {
+                    _onUiThread(() => Notice?.Invoke($"{file} would be a sound in the map: those play in GZDoom only. Change what the project plays in under Map settings to use it."));
+                    return;
+                }
+
+                var sound = SoundFiles.ImportSound(Project, into, path);
+                ProjectMapInfo.Refresh(Project, into.Game, into.Files, Hooks.EngineData);
+                _onUiThread(() =>
+                {
+                    PlaceThing(sound.Number, spot, null, SoundSettings.New(sound.Sound).Args);
+                    Notice?.Invoke($"{sound.Title} plays here over and over. Its Inspector sets how: now and then, every few seconds, or once when a player comes into the room.");
+                    PropsChanged?.Invoke();
+                });
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Bringing in the sound {path} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"{file} could not be brought in. {ex.Message}"));
+            }
         });
     }
 

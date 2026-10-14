@@ -1775,6 +1775,10 @@ internal sealed class MapCanvas : Control
     internal static string? ModelFileIn(DragEventArgs e) =>
         e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p is not null && ModelProps.IsModel(p));
 
+    /// <summary>A sound or music file dragged in from the file manager, its local path; null for anything else.</summary>
+    internal static string? AudioFileIn(DragEventArgs e) =>
+        e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p is not null && SoundFiles.IsAudio(p));
+
     /// <summary>A shelf picture held over the plan: the wall or room under it lights up, and the status says what a drop does.</summary>
     private void OnDragOver(object? sender, DragEventArgs e)
     {
@@ -1782,6 +1786,13 @@ internal sealed class MapCanvas : Control
         {
             e.DragEffects = DragDropEffects.Copy;
             DropHint?.Invoke($"Let go to bring in {System.IO.Path.GetFileName(model)} as a prop and place it here.");
+            return;
+        }
+
+        if (Session is not null && AudioFileIn(e) is { } audio)
+        {
+            e.DragEffects = DragDropEffects.Copy;
+            DropHint?.Invoke($"Let go to place {System.IO.Path.GetFileName(audio)} here as a sound (music becomes the map's music).");
             return;
         }
 
@@ -1830,6 +1841,16 @@ internal sealed class MapCanvas : Control
             var m = ToMap(e.GetPosition(this));
             var step = GridStep();
             importing.ImportModel(model, (e.KeyModifiers & KeyModifiers.Shift) != 0 ? m : new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step));
+            Focus();
+            e.Handled = true;
+            return;
+        }
+
+        if (Session is { } hearing && AudioFileIn(e) is { } audio)
+        {
+            var m = ToMap(e.GetPosition(this));
+            var step = GridStep();
+            hearing.ImportAudio(audio, (e.KeyModifiers & KeyModifiers.Shift) != 0 ? m : new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step));
             Focus();
             e.Handled = true;
             return;

@@ -507,6 +507,16 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>The grid the plan snaps to now, for "Snap to the grid"; set by the editor.</summary>
     public Func<double>? GridStep { get; set; }
 
+    /// <summary>Asks the user for a music file (set by the view); null when they chose none.</summary>
+    public Func<Task<string?>>? PickMusic { get; set; }
+
+    /// <summary>"Bring in a music file…": the file picker, then the file copied in on a worker and made this map's music.</summary>
+    private async Task PickMusicAsync()
+    {
+        if (PickMusic is null || await PickMusic().ConfigureAwait(true) is not { } path) return;
+        _session.ImportAudio(path);
+    }
+
     /// <summary>Asks the user for a Wolfenstein 3D MAPHEAD file (set by the view); null when they chose none.</summary>
     public Func<Task<string?>>? PickGrid { get; set; }
 
@@ -769,6 +779,12 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 }
 
                 break;
+            case Thing t when SoundFiles.IsPlacedSound(_session.Project, t):
+                Heading = "Sound";
+                _summaryOf = () => SoundFiles.Describe(SoundSettings.Of(t), SoundTitle(t));
+                Summary = _summaryOf();
+                AddSound(t);
+                break;
             case Thing t when Lights.Recognise(t) is not null:
                 Heading = "Light";
                 _summaryOf = () => Lights.Recognise(t) is { } light ? Explaining.Describe(light) : "No longer a light.";
@@ -912,6 +928,41 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new InfoRow("Set off from", "The walls that set it off: switches used from below, lines walked across at the top.", () => Now() is { } l ? string.Join(", ", Triggers.Ways(l.Triggers)) : "—"));
     }
 
+    /// <summary>The name a placed sound came with (its file's), or "a sound" when its number is not the project's.</summary>
+    private string SoundTitle(Thing t) => SoundFiles.Sounds(_session.Project.CopiedNow()).FirstOrDefault(s => s.Sound == t.Args[0]).Title ?? "a sound";
+
+    /// <summary>A placed sound: which of the project's sounds, how it plays, its waits, volume and how far it is heard; each change one undo step.</summary>
+    private void AddSound(Thing t)
+    {
+        var sounds = SoundFiles.Sounds(_session.Project.CopiedNow());
+        void Change(string label, Func<SoundSettings, SoundSettings> to)
+        {
+            var args = to(SoundSettings.Of(t)).Args;
+            _session.History.Record(label, e =>
+            {
+                for (var i = 0; i < args.Length; i++)
+                {
+                    var index = i;
+                    e.Set(t, x => x.Args[index], (x, v) => x.Args[index] = v, args[index]);
+                }
+            });
+            Summary = _summaryOf?.Invoke() ?? Summary;
+        }
+
+        Rows.Add(new ChoiceRow("Sound", "Which of the sounds brought into this project it plays (its first argument). Drop another sound file on the plan to add one.", [.. sounds.Select(s => s.Title)],
+            () => sounds.ToList().FindIndex(s => s.Sound == t.Args[0]), v => Change("Change the sound", s => s with { Sound = sounds[v].Sound })));
+        Rows.Add(new ChoiceRow("Plays", "Over and over (rain, a hum); now and then after a random wait (drips, a distant growl); every so many seconds; or once, the first time a player comes into the room it stands in (a creak, a voice).",
+            ["Over and over", "Now and then", "Every few seconds", "Once, when a player comes in"], () => (int)SoundSettings.Of(t).Plays, v => Change("Change how the sound plays", s => s with { Plays = (SoundPlays)v })));
+        Rows.Add(new NumberRow("Waits at least", "Now and then: the shortest wait between plays. Every few seconds: the wait between plays. In seconds.", () => SoundSettings.Of(t).Wait,
+            v => Change("Change the sound's wait", s => s with { Wait = (int)v }), 1, 1, 3600, () => "seconds"));
+        Rows.Add(new NumberRow("Waits at most", "Now and then: the longest wait between plays, in seconds.", () => Math.Max(SoundSettings.Of(t).Wait, SoundSettings.Of(t).LongestWait),
+            v => Change("Change the sound's longest wait", s => s with { LongestWait = (int)v }), 1, 1, 3600, () => "seconds"));
+        Rows.Add(new NumberRow("Volume", "How loud it plays, from 1 to 100 percent of the file's own volume.", () => SoundSettings.Of(t).Volume,
+            v => Change("Change the sound's volume", s => s with { Volume = (int)v }), 5, 1, 100, () => "%"));
+        Rows.Add(new ChoiceRow("Heard", "Nearby: louder the closer the player is, as the game's own sounds. Everywhere: as loud anywhere in the map.", ["Nearby", "Everywhere"],
+            () => SoundSettings.Of(t).Everywhere ? 1 : 0, v => Change("Change where the sound is heard", s => s with { Everywhere = v == 1 })));
+    }
+
     private void AddLight(Thing t)
     {
         void Arg(string label, int index, int value) => _session.History.Record(label, e => e.Set(t, x => x.Args[index], (x, v) => x.Args[index] = v, value));
@@ -1037,6 +1088,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         var music = Choices(_session.Resources?.Music ?? [], Entry().Music, sorted: true);
         Rows.Add(new ChoiceRow("Music", "The music played in this map (music): the game's own for this slot, or any of the game's tracks.", [TheGames(defaults?.Music, "music"), .. music],
             () => Index(music, Entry().Music), i => _session.ChangeMapSettings(m => m with { Music = i == 0 ? null : music[i - 1] })));
+        Rows.Add(new ActionRow("Bring in a music file…", "Copies a music file of your own (OGG, MP3, FLAC, WAV, MIDI, MUS or a MOD, XM, IT or S3M module) into the project and makes it this map's music. A music file dropped on the plan does the same.", () => _ = PickMusicAsync()));
 
         var skies = Choices(_session.Resources?.Skies ?? [], Entry().Sky, sorted: true);
         Rows.Add(new ChoiceRow("Sky", "The sky seen over the map (sky1): the game's own for this slot, or any sky the game has.", [TheGames(defaults?.Sky, "sky"), .. skies],

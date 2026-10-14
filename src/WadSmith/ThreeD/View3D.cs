@@ -246,10 +246,12 @@ internal sealed class View3D : Control
 
     /// <summary>What is dragged over the view: a shelf picture, or a 3D model file from the file manager as a drop of its own.</summary>
     private static ViewModels.ShelfDrop? DropOf(DragEventArgs e) =>
-        e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) ?? (Canvas.MapCanvas.ModelFileIn(e) is { } model ? new ViewModels.ShelfDrop(null, 0, System.IO.Path.GetFileName(model), ModelFile: model) : null);
+        e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) ?? (Canvas.MapCanvas.ModelFileIn(e) is { } model ? new ViewModels.ShelfDrop(null, 0, System.IO.Path.GetFileName(model), ModelFile: model)
+        : Canvas.MapCanvas.AudioFileIn(e) is { } audio ? new ViewModels.ShelfDrop(null, 0, System.IO.Path.GetFileName(audio), AudioFile: audio) : null);
 
     private static string DropWords(ViewModels.ShelfDrop drop, SceneHit? hit)
     {
+        if (drop.AudioFile is not null) return hit is { Kind: HitKind.Floor } ? $"Let go to place {drop.Label} here as a sound (music becomes the map's music)." : "Drop the sound on a floor.";
         if (drop.ModelFile is not null) return hit is { Kind: HitKind.Floor } ? $"Let go to bring in {drop.Label} as a prop and place it here." : "Drop the model on a floor.";
         if (drop.Prefab is not null) return "Prefabs go on the plan: drop it there.";
         if (drop.Texture is null) return hit is { Kind: HitKind.Floor } ? $"Let go to place {drop.Label} here." : "Drop the object on a floor.";
@@ -290,7 +292,8 @@ internal sealed class View3D : Control
 
         const double step = 8;
         var at = shift ? new MapPoint(floor.X, floor.Y) : new MapPoint(Math.Round(floor.X / step) * step, Math.Round(floor.Y / step) * step);
-        if (drop.ModelFile is { } model) session.ImportModel(model, at, floor.Platform ? floor.Z : null);
+        if (drop.AudioFile is { } audio) session.ImportAudio(audio, at);
+        else if (drop.ModelFile is { } model) session.ImportModel(model, at, floor.Platform ? floor.Z : null);
         else if (drop.Library is { } item) session.PlaceLibraryObject(item, at, floor.Platform ? floor.Z : null);
         else if (drop.QuakeModel is { } quakeModel && drop.From is { } quake) session.PlaceQuakeModel(quake, quakeModel, at, floor.Platform ? floor.Z : null);
         else if (drop.From is { } other) session.PlaceBorrowedThing(other, drop.Thing, at, floor.Platform ? floor.Z : null);

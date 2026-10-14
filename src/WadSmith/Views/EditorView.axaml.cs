@@ -41,6 +41,7 @@ public partial class EditorView : UserControl
             vm.PickExportFile = PickExportFileAsync;
             vm.Inspector.PickPanorama = PickPanoramaAsync;
             vm.Inspector.PickGrid = PickGridAsync;
+            vm.Inspector.PickMusic = PickMusicAsync;
             vm.ViewSize = () =>
             {
                 var scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
@@ -284,6 +285,20 @@ public partial class EditorView : UserControl
             Title = "Make a sky from a 360° picture",
             AllowMultiple = false,
             FileTypeFilter = [new("360° pictures (JPG, PNG, HDR)") { Patterns = ["*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.png", "*.PNG", "*.hdr", "*.HDR", "*.webp", "*.WEBP"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
+        }).ConfigureAwait(true);
+        return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
+    }
+
+    /// <summary>The file picker for "Bring in a music file…": any music GZDoom plays.</summary>
+    private async Task<string?> PickMusicAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage) return null;
+        string[] kinds = ["ogg", "mp3", "flac", "wav", "mid", "midi", "mus", "mod", "xm", "it", "s3m"];
+        var picked = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "Bring in a music file for this map",
+            AllowMultiple = false,
+            FileTypeFilter = [new("Music (OGG, MP3, FLAC, WAV, MIDI, MUS, MOD, XM, IT, S3M)") { Patterns = [.. kinds.Select(k => $"*.{k}"), .. kinds.Select(k => $"*.{k.ToUpperInvariant()}")] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
         }).ConfigureAwait(true);
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }
