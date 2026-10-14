@@ -17,6 +17,23 @@ namespace WadSmith.Core.Exporting;
 /// </summary>
 public static class ProjectExport
 {
+    /// <summary>
+    /// The Share check (D22): what the project copied from games others must own (the commercial games in the catalogue; free
+    /// ones such as Freedoom and Blasphemer are free to share), counted by game, in a sentence; null when it copied none.
+    /// </summary>
+    public static string? ShareCheck(IReadOnlyList<CopiedAsset> copied)
+    {
+        var games = copied
+            .Select(c => GameCatalog.Get(c.Game))
+            .Where(g => g is { Free: false })
+            .GroupBy(g => g!.Title)
+            .Select(g => string.Create(CultureInfo.InvariantCulture, $"{g.Key} ({g.Count()})"))
+            .ToList();
+        if (games.Count == 0) return null;
+        var list = games.Count == 1 ? games[0] : string.Join(", ", games.Take(games.Count - 1)) + " and " + games[^1];
+        return $"Share check: it holds pictures, sounds or objects copied from {list}, which whoever plays it must own. Fine for your own play and friends who own them; before posting it publicly, leave those out.";
+    }
+
     /// <summary>The export for GZDoom (and UZDoom): the project as a .pk3.</summary>
     public const string GZDoom = "gzdoom";
 
@@ -58,6 +75,8 @@ public static class ProjectExport
                 ? $"It carries {count} ({names}); their credits are in the .pk3's credits folder, as their authors ask."
                 : $"The project has {count} ({names}); their credits are in its credits folder: share them beside the WAD.");
         }
+
+        if (ShareCheck(project.CopiedNow()) is { } check) report.Notes.Add(check);
 
         var folder = Path.GetDirectoryName(Path.GetFullPath(outFile))!;
         Directory.CreateDirectory(folder);
