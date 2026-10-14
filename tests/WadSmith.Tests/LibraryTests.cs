@@ -334,6 +334,17 @@ public sealed class LibraryTests
         Assert.Equal((false, brought.Main.Number), (second.New, second.Main.Number));
         Assert.Single(Project.Open(project.Folder).Info.Copied, c => c.Kind == "library");
 
+        // Exported for GZDoom, the .pk3 carries the object and its credits, and the report says so.
+        var pk3 = Path.Combine(temp.Path, "out.pk3");
+        var report = WadSmith.Core.Exporting.ProjectExport.Write(Project.Open(project.Folder), WadSmith.Core.Exporting.ProjectExport.GZDoom, pk3, null);
+        using (var zip = ZipFile.OpenRead(pk3))
+        {
+            Assert.Contains(zip.Entries, e => e.FullName == "DECORATE.r667-901");
+            Assert.Contains(zip.Entries, e => e.FullName == "credits/r667-901.txt");
+        }
+
+        Assert.Contains(report.Notes, n => n.Contains("one free download (Test Crate)", StringComparison.Ordinal));
+
         // Another download declaring the same class would stop GZDoom loading: refused in words.
         var clash = Item("r667-902", "Other Crate", "TestCrate");
         Assert.Throws<CorruptDataException>(() => LibraryObjects.Bring(Project.Open(project.Folder), game, clash, [wad], _ => null));

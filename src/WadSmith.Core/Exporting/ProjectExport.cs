@@ -48,6 +48,17 @@ public static class ProjectExport
             data = Wad(project, port, engineData, game, report);
         }
 
+        // Free downloads (D61): their authors' credits go with the map.
+        var downloads = project.CopiedNow().Where(c => c.Kind == "library").Select(c => c.Name).Distinct(StringComparer.Ordinal).ToList();
+        if (downloads.Count > 0)
+        {
+            var names = string.Join(", ", downloads.Take(6)) + (downloads.Count > 6 ? string.Create(CultureInfo.InvariantCulture, $" and {downloads.Count - 6} more") : "");
+            var count = downloads.Count == 1 ? "one free download" : string.Create(CultureInfo.InvariantCulture, $"{downloads.Count} free downloads");
+            report.Notes.Add(exportId == GZDoom
+                ? $"It carries {count} ({names}); their credits are in the .pk3's credits folder, as their authors ask."
+                : $"The project has {count} ({names}); their credits are in its credits folder: share them beside the WAD.");
+        }
+
         var folder = Path.GetDirectoryName(Path.GetFullPath(outFile))!;
         Directory.CreateDirectory(folder);
         var temp = outFile + ".part";
