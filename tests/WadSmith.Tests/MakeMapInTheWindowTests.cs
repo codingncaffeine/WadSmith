@@ -39,8 +39,18 @@ public sealed class MakeMapInTheWindowTests
         Click(window, Shown<Button>(window, b => ReferenceEquals(b.DataContext, tile) && AutomationProperties.GetName(b) == "Make me a map"));
     }
 
+    /// <summary>The control once it shows: a page just swapped in is laid out on a later pass, so it is waited for (up to five seconds).</summary>
     private static T Shown<T>(MainWindow window, Func<T, bool> which)
-        where T : Visual => window.GetVisualDescendants().OfType<T>().First(v => v.IsEffectivelyVisible && which(v));
+        where T : Visual
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            if (window.GetVisualDescendants().OfType<T>().FirstOrDefault(v => v.IsEffectivelyVisible && which(v)) is { } found) return found;
+            Ui.Pump(0.05);
+        }
+
+        return window.GetVisualDescendants().OfType<T>().First(v => v.IsEffectivelyVisible && which(v));
+    }
 
     [Fact]
     public async Task TheCardsButtonMakesAMapThatOpensAndIsListedOnTheCard()
