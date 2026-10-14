@@ -267,9 +267,11 @@ public sealed class ModelPropInTheWindowTests
     [Fact]
     public async Task AGifOnARoomsFloorPlaysOnThePlan()
     {
-        // A known defect, not a flaky test: on the Windows runner the plan's moving floor changed at most once in 860 pictures
-        // over half a minute (CI run 38601535810), so the plan does not play moving floors there yet. Fixing it is the next job.
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Known defect: the plan does not play moving floors on Windows yet.");
+        // Measured on the Windows runner (CI runs 38607372695, 38608092947 on the diag-windows-plan branch): the picture holds the
+        // moving floor and paints its frames as here, but with no 3D view there (no EGL) nothing drives the headless dispatcher's
+        // animation frames or timers between the test's pumps (7 frames, or 4 timer ticks, in half a minute), so no moving floor
+        // can be watched in this harness on Windows. Linux keeps the test: its 3D view plays the same floor every tic.
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "On the Windows runner the headless harness drives no animation frames without a 3D view.");
         var wad = GameFiles.Require("freedoom2.wad");
         using var temp = new TempFolder();
         var gif = Path.Combine(temp.Path, "portal_loop.gif");
