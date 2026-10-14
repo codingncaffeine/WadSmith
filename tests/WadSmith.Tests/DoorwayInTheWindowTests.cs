@@ -55,6 +55,65 @@ public sealed class DoorwayInTheWindowTests
         Assert.True(int.Parse(height, System.Globalization.CultureInfo.InvariantCulture) < 128, seen[0]);
     }
 
+    /// <summary>
+    /// The user's report (2026-10-14): a door clicked onto a long wall is 64 wide, and choosing a big door for it showed half the
+    /// picture. Picked in the Inspector's strip, BIGDOOR2 makes the doorway 128 wide about its middle and as tall as itself;
+    /// DOOR1 brings it back to 64. With WADSMITH_DOOR_SHOT set to a folder, the window is kept there as door-big.png.
+    /// </summary>
+    [Fact]
+    public async Task ABigDoorsPictureWidensADoorOnALongWall()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var seen = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(temp.Path, Path.GetDirectoryName(wad)!);
+            try
+            {
+                var editor = Ui.NewMap(vm);
+                var session = editor.Session;
+                var corners = session.Map.Vertices.Where(v => v.OnMap).ToList();
+                var (x1, y0, y1) = (corners.Max(v => v.X), corners.Min(v => v.Y), corners.Max(v => v.Y));
+                session.DrawRoom([new(x1, y0), new(x1 + 256, y0), new(x1 + 256, y1), new(x1, y1)]);
+                Ui.Pump(0.5);
+                var wall = session.Map.Lines.Single(l => l.OnMap && l.Back is not null);
+                session.MakeDoor(wall);
+                Ui.Pump(0.8);
+                var door = session.Selection.Items.OfType<Sector>().Single();
+                Door Now() => Doors.Recognise(session.Geometry, door)!;
+                string Width() => string.Join("/", Now().Own.Select(l => l.Length.ToString("0", System.Globalization.CultureInfo.InvariantCulture)).Distinct());
+                var said = new List<string> { $"made: {Width()} wide, {Now().Own.First().Front.Top}" };
+
+                var strip = editor.Inspector.Rows.OfType<App.ViewModels.PictureChoiceRow>().Single(r => r.Label == "Looks like");
+                strip.Choices.Single(c => c.Name == "BIGDOOR2").IsCurrent = true;
+                Ui.Pump(0.8);
+                var frames = Doors.FramesOf(session.Geometry, Now());
+                said.Add($"BIGDOOR2: {Width()} wide, frames {string.Join("/", frames.Select(f => f.Frame.CeilingHeight - f.Frame.FloorHeight).Distinct())} tall, {(editor.Status.StartsWith("The picture is", StringComparison.Ordinal) ? "told why" : "nothing to say")}");
+                if (Environment.GetEnvironmentVariable("WADSMITH_DOOR_SHOT") is { Length: > 0 } shots)
+                {
+                    session.Selection.Clear();
+                    Ui.Pump(1.0);
+                    using var frame = Avalonia.Headless.HeadlessWindowExtensions.CaptureRenderedFrame(window)!;
+                    frame.Save(Path.Combine(shots, "door-big.png"), Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
+                    session.Selection.Set(door);
+                    Ui.Pump(0.3);
+                }
+
+                strip = editor.Inspector.Rows.OfType<App.ViewModels.PictureChoiceRow>().Single(r => r.Label == "Looks like");
+                strip.Choices.Single(c => c.Name == "DOOR1").IsCurrent = true;
+                Ui.Pump(0.8);
+                said.Add($"DOOR1: {Width()} wide");
+                return said;
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.Equal(["made: 64 wide, DOOR3", "BIGDOOR2: 128 wide, frames 128 tall, nothing to say", "DOOR1: 64 wide"], seen);
+    }
+
     [Fact]
     public async Task TheDoorsLookIsChosenFromTheGamesOwnDoorsInTheInspectorOrByRightClick()
     {

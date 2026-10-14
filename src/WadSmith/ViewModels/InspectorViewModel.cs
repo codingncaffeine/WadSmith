@@ -1207,11 +1207,14 @@ internal sealed partial class InspectorViewModel : ObservableObject
         if (looks.Count == 0) return;
         Door? Now() => Doors.Recognise(_session.Geometry, area);
         string Current() => Now()?.Own.FirstOrDefault()?.Front.Top ?? "";
-        var choices = looks.Select(t => new PictureChoice(t.Name, $"{t.Name}, {t.Width} × {t.Height}: the door shows this picture, and its doorway becomes {t.Height} tall.",
+        var choices = looks.Select(t => new PictureChoice(t.Name, $"{t.Name}, {t.Width} × {t.Height}: the door shows this picture, and its doorway becomes {t.Width} wide and {t.Height} tall to fit it.",
             () => string.Equals(Current(), t.Name, StringComparison.OrdinalIgnoreCase),
             () =>
             {
-                if (Now() is { } door) _session.History.Record("Change the door's look", e => Doors.Dress(e, _session.Geometry, door, t.Name, (t.Width, t.Height)));
+                if (Now() is not { } door) return;
+                string? why = null;
+                _session.History.Record("Change the door's look", e => why = Doors.Dress(e, _session.Geometry, door, t.Name, (t.Width, t.Height)));
+                if (why is not null) _session.Tell(why);
             },
             () => resources.Textures.GetWall(t.Name), _session.OnUiThread)).ToList();
         Rows.Add(new PictureChoiceRow("Looks like", "The door's picture, one of the game's own doors. The doorway takes the picture's height: the wall shows above a short door, and a tall one fills the doorway. Right-click the door on the plan for the same choice.", choices));

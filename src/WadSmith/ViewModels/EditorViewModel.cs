@@ -871,9 +871,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         }
 
         var looks = Doors.Looks(resources.Game.Engine, resources.Textures.Walls);
-        choices.AddRange(looks.Select(t => new MenuChoice($"Looks like {t.Name}", $"{t.Name}, {t.Width} × {t.Height}: the door shows this picture, and its doorway becomes {t.Height} tall.", () =>
+        choices.AddRange(looks.Select(t => new MenuChoice($"Looks like {t.Name}", $"{t.Name}, {t.Width} × {t.Height}: the door shows this picture, and its doorway becomes {t.Width} wide and {t.Height} tall to fit it.", () =>
         {
-            if (Doors.Recognise(Session.Geometry, area) is { } door) Session.History.Record("Change the door's look", e => Doors.Dress(e, Session.Geometry, door, t.Name, (t.Width, t.Height)));
+            if (Doors.Recognise(Session.Geometry, area) is not { } door) return;
+            string? why = null;
+            Session.History.Record("Change the door's look", e => why = Doors.Dress(e, Session.Geometry, door, t.Name, (t.Width, t.Height)));
+            if (why is not null) Session.Tell(why);
         })));
         return choices;
     };

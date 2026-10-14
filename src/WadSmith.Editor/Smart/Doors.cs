@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using WadSmith.Core.Graphics;
 using WadSmith.Editor.Editing;
@@ -92,11 +93,15 @@ public static partial class Doors
 
     /// <summary>
     /// Gives a door the picture <paramref name="texture"/> on its faces through <paramref name="edit"/>, hung from the door's
-    /// top edge as before, and its doorway's frames the picture's height (<paramref name="size"/>) when it has them, so the
-    /// wall shows above a short door and a tall one fills the doorway.
+    /// top edge as before, and the doorway the picture's size (<paramref name="size"/>): as wide as the picture about the door's
+    /// middle, the wall either side giving way or growing back (<see cref="Refit"/>), and its frames, when it has them, as tall,
+    /// so the wall shows above a short door and a tall one fills the doorway. Returns why the door is not the picture's width,
+    /// or null when it is.
     /// </summary>
-    public static void Dress(StructureEdit edit, MapGeometry geometry, Door door, string texture, (int Width, int Height)? size)
+    public static string? Dress(StructureEdit edit, MapGeometry geometry, Door door, string texture, (int Width, int Height)? size)
     {
+        // The frames are found on the map as it was, before the doorway changes width.
+        var frames = FramesOf(geometry, door);
         foreach (var l in door.Own)
         {
             edit.Set(l.Front, x => x.Top, (x, v) => x.Top = v, texture);
@@ -104,12 +109,89 @@ public static partial class Doors
             edit.Set(l.Front, x => x.OffsetY, (x, v) => x.OffsetY = v, 0);
         }
 
-        if (size is not { Height: > 0 } s) return;
-        foreach (var (frame, room) in FramesOf(geometry, door))
+        if (size is not { } s) return null;
+        string? why = s.Width > 0 ? Refit(edit, door, [.. frames.Select(f => f.Frame)], s.Width) : null;
+        if (s.Height <= 0) return why;
+        foreach (var (frame, room) in frames)
         {
             var ceiling = Math.Min(room.CeilingHeight, frame.FloorHeight + s.Height);
             edit.Set(frame, x => x.CeilingHeight, (x, v) => x.CeilingHeight = v, ceiling);
         }
+
+        return why;
+    }
+
+    /// <summary>The narrowest a piece of wall beside a door is left when the door widens.</summary>
+    public const double MinSlab = 8;
+
+    /// <summary>
+    /// Makes a door's column — the door and the frames in front of and behind it — <paramref name="width"/> wide along its wall,
+    /// about its middle: the corners of the column's two sides move along the wall, so the door, its frames, its tracks and the
+    /// pieces of wall either side (which share those corners) change together and the map stays whole. A side that is a room's
+    /// own wall (a door filling its opening) cannot move; the pieces of wall beside keep <see cref="MinSlab"/>, so a picture
+    /// wider than there is room for gets the widest door that fits. Returns why the door is not <paramref name="width"/> wide.
+    /// </summary>
+    private static string? Refit(StructureEdit edit, Door door, IReadOnlyList<Sector> frames, double width)
+    {
+        if (door.Own.FirstOrDefault() is not { } face || face.Length <= 0) return null;
+        var (ox, oy) = (face.Start.X, face.Start.Y);
+        var (dx, dy) = ((face.End.X - face.Start.X) / face.Length, (face.End.Y - face.Start.Y) / face.Length);
+        double Along(Vertex v) => (v.X - ox) * dx + (v.Y - oy) * dy;
+
+        var column = new HashSet<Sector>(ReferenceEqualityComparer.Instance) { door.Area };
+        foreach (var f in frames) column.Add(f);
+        bool Bounds(Line l, ISet<Sector> areas) => areas.Contains(l.Front.Sector) || (l.Back?.Sector is { } b && areas.Contains(b));
+        var lines = edit.Map.Lines.Where(l => l.OnMap && Bounds(l, column)).ToList();
+        var corners = lines.SelectMany(l => new[] { l.Start, l.End }).Distinct().ToList();
+        var doorCorners = lines.Where(l => Bounds(l, new HashSet<Sector>(ReferenceEqualityComparer.Instance) { door.Area })).SelectMany(l => new[] { l.Start, l.End }).ToList();
+        var (left, right) = (doorCorners.Min(Along), doorCorners.Max(Along));
+        var now = right - left;
+        if (Math.Abs(now - width) < 0.5) return null;
+
+        // The column's two sides: its walls square to the door, at either end; beyond each, a piece of wall or the room's own wall.
+        double? Room(double at, int outward)
+        {
+            var side = lines.Where(l => Math.Abs(Along(l.Start) - at) < 0.5 && Math.Abs(Along(l.End) - at) < 0.5).ToList();
+            if (side.Count == 0) return null;
+            var beyond = new HashSet<Sector>(ReferenceEqualityComparer.Instance);
+            foreach (var l in side)
+            {
+                // Only a closed piece of wall (floor up on its ceiling, as the Door tool makes them) gives way; a room never does.
+                var other = column.Contains(l.Front.Sector) ? l.Back?.Sector : l.Front.Sector;
+                if (other is null || column.Contains(other) || other.FloorHeight < other.CeilingHeight) return null;
+                beyond.Add(other);
+            }
+
+            // How far the side can move outward: to the far end of the piece of wall beyond it, less what a piece keeps.
+            var far = edit.Map.Lines.Where(l => l.OnMap && Bounds(l, beyond)).SelectMany(l => new[] { l.Start, l.End }).Select(Along).ToList();
+            var reach = outward < 0 ? at - far.Min() : far.Max() - at;
+            return reach - MinSlab;
+        }
+
+        var (roomLeft, roomRight) = (Room(left, -1), Room(right, +1));
+        if (roomLeft is null || roomRight is null)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"The picture is {width:0} wide and the door {now:0}: the door's sides are rooms' walls, which it does not move. Make its opening {width:0} wide, or choose a picture {now:0} wide.");
+        }
+
+        // The middle stays; a wider door takes from both sides alike, as far as the narrower side has room.
+        var half = width / 2;
+        var most = now / 2 + Math.Min(roomLeft.Value, roomRight.Value);
+        var fits = Math.Min(half, Math.Floor(most));
+        var middle = (left + right) / 2;
+        var (newLeft, newRight) = (Math.Round(middle - fits), Math.Round(middle + fits));
+        foreach (var v in corners)
+        {
+            var at = Along(v);
+            var shift = Math.Abs(at - left) < 0.5 ? newLeft - left : Math.Abs(at - right) < 0.5 ? newRight - right : 0;
+            if (shift == 0) continue;
+            edit.Set(v, x => x.X, (x, value) => x.X = value, Math.Round(v.X + dx * shift, 3));
+            edit.Set(v, x => x.Y, (x, value) => x.Y = value, Math.Round(v.Y + dy * shift, 3));
+        }
+
+        return fits < half
+            ? string.Create(CultureInfo.InvariantCulture, $"The picture is {width:0} wide; this wall has room for a door {newRight - newLeft:0} wide, which it is now. Choose a narrower picture, or make the wall longer.")
+            : null;
     }
 
     /// <summary>Whether a corner lies along a wall between its two ends (half a unit either way), seen square to it.</summary>
