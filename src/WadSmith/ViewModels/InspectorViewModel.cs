@@ -850,6 +850,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         if (items[0] is Sector) AddShaping();
         AddGrouping(items);
         AddLikeIt(items[0]);
+        AddRawFields(items[0]);
 
         // Last: deleting it, in words that say what happens to the rest (Delete does the same).
         var (verb, tip) = items[0] switch
@@ -892,6 +893,150 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Vertex => "Corner",
         _ => "Item",
     };
+
+    /// <summary>Whether the raw fields show (Advanced), while the editor is open: asked for once, they stay for every element picked.</summary>
+    private bool _raw;
+
+    // The map file's own fields that rows above set (or that tie the map together): never added as raw fields.
+    private static readonly HashSet<string> OwnFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "id", "v1", "v2", "special", "arg0", "arg1", "arg2", "arg3", "arg4", "sidefront", "sideback", "x", "y", "height", "angle", "type",
+        "heightfloor", "heightceiling", "texturefloor", "textureceiling", "lightlevel", "tag", "sector", "offsetx", "offsety",
+        "texturetop", "texturebottom", "texturemiddle",
+    };
+
+    /// <summary>
+    /// The element as the map file holds it (6c, Eureka's raw fields): its action and arguments by number, its id, and every
+    /// UDMF field of its own, each changed by hand as one undo step; a field written empty is taken out, and a new one is added as
+    /// name = value. Shown when asked for, so the Inspector stays in words for everyone else.
+    /// </summary>
+    private void AddRawFields(Element e)
+    {
+        if (e is not (Line or Thing or Sector or Side or Vertex)) return;
+        if (!_raw)
+        {
+            Rows.Add(new ActionRow("Raw fields…", "Shows the action and arguments by number and every field the map file keeps for this, to set by hand what no row above offers (for those who know UDMF).", () =>
+            {
+                _raw = true;
+                BuildRows();
+            }));
+            return;
+        }
+
+        Rows.Add(new HeadingRow("RAW FIELDS"));
+        const string args = "A number the action reads (UDMF arg";
+        switch (e)
+        {
+            case Line l:
+                Rows.Add(new NumberRow("Action number", "The line's action (special) by number, as GZDoom's action list numbers it; 0 for none.", () => l.Special, v => Set(l, "Change the action number", x => x.Special, (x, y) => x.Special = y, (int)v), 1, 0, 65535));
+                for (var i = 0; i < 5; i++)
+                {
+                    var n = i;
+                    Rows.Add(new NumberRow($"Argument {n + 1}", string.Create(CultureInfo.InvariantCulture, $"{args}{n})."), () => l.Args[n], v => Set(l, $"Change argument {n + 1}", x => x.Args[n], (x, y) => x.Args[n] = y, (int)v), 1, int.MinValue, int.MaxValue));
+                }
+
+                Rows.Add(new NumberRow("Line id", "The number scripts and actions find this line by (UDMF id); -1 for none.", () => l.LineId, v => Set(l, "Change the line id", x => x.LineId, (x, y) => x.LineId = y, (int)v), 1, -1, 65535));
+                break;
+            case Thing t:
+                Rows.Add(new NumberRow("Action number", "The action the thing runs when it dies or is picked up (special), by number; 0 for none.", () => t.Special, v => Set(t, "Change the action number", x => x.Special, (x, y) => x.Special = y, (int)v), 1, 0, 65535));
+                for (var i = 0; i < 5; i++)
+                {
+                    var n = i;
+                    Rows.Add(new NumberRow($"Argument {n + 1}", string.Create(CultureInfo.InvariantCulture, $"{args}{n})."), () => t.Args[n], v => Set(t, $"Change argument {n + 1}", x => x.Args[n], (x, y) => x.Args[n] = y, (int)v), 1, int.MinValue, int.MaxValue));
+                }
+
+                Rows.Add(new NumberRow("Thing id", "The number scripts and actions find this thing by (UDMF id, its tid); 0 for none.", () => t.Tid, v => Set(t, "Change the thing id", x => x.Tid, (x, y) => x.Tid = y, (int)v), 1, 0, 65535));
+                break;
+            case Sector s:
+                Rows.Add(new NumberRow("Effect number", "The room's effect (special) by number: damage, secrets, light that flickers …; 0 for none.", () => s.Special, v => Set(s, "Change the effect number", x => x.Special, (x, y) => x.Special = y, (int)v), 1, 0, 65535));
+                break;
+        }
+
+        foreach (var (key, value) in e.Extra.ToList())
+        {
+            var kind = value.Kind;
+            Rows.Add(new TextRow(key, string.Create(CultureInfo.InvariantCulture, $"The map file's {key}, as GZDoom reads it ({Describe(kind)}); written empty, it is taken out."),
+                () => e.Extra.TryGet(key, out var now) ? Show(now) : "", text => SetRaw(e, key, text, kind), texture: false));
+        }
+
+        Rows.Add(new TextRow("Add a field", "A field the map file does not have yet, written name = value: true or false, a number, or words. Names GZDoom does not know are kept and ignored by it; user_ ones are for your own notes.",
+            () => "", text => AddRaw(e, text), texture: false));
+        Rows.Add(new ActionRow("Hide raw fields", "Back to the rows in words only.", () =>
+        {
+            _raw = false;
+            BuildRows();
+        }));
+
+        static string Show(Core.Maps.Udmf.UdmfValue v) => v.Kind == Core.Maps.Udmf.UdmfValueKind.String ? v.AsString() : v.ToString();
+
+        static string Describe(Core.Maps.Udmf.UdmfValueKind kind) => kind switch
+        {
+            Core.Maps.Udmf.UdmfValueKind.Integer => "a whole number",
+            Core.Maps.Udmf.UdmfValueKind.Float => "a number",
+            Core.Maps.Udmf.UdmfValueKind.Boolean => "true or false",
+            _ => "words",
+        };
+    }
+
+    /// <summary>A raw field changed by hand, kept of its kind; empty text takes it out and its row goes (one undo step).</summary>
+    private void SetRaw(Element e, string key, string text, Core.Maps.Udmf.UdmfValueKind kind)
+    {
+        if (text.Trim().Length == 0)
+        {
+            _session.History.Record($"Take out {key}", x => x.Field(e, key, null));
+            BuildRows();
+            return;
+        }
+
+        if (ParseRaw(text, kind) is not { } value)
+        {
+            _session.Tell($"{key} holds {(kind == Core.Maps.Udmf.UdmfValueKind.Integer ? "a whole number" : kind == Core.Maps.Udmf.UdmfValueKind.Float ? "a number" : "true or false")}.");
+            return;
+        }
+
+        _session.History.Record($"Change {key}", x => x.Field(e, key, value));
+    }
+
+    /// <summary>A new raw field from "name = value", shown in a row of its own; a field the rows above set, or one already there, is refused with the reason.</summary>
+    private void AddRaw(Element e, string text)
+    {
+        var at = text.IndexOf('=', StringComparison.Ordinal);
+        var name = at < 0 ? "" : text[..at].Trim();
+        if (name.Length == 0 || !char.IsAsciiLetter(name[0]) && name[0] != '_' || !name.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'))
+        {
+            _session.Tell("Write the new field as name = value: a name of letters, digits and _, then its value.");
+            return;
+        }
+
+        if (OwnFields.Contains(name) || e.Extra.Contains(name))
+        {
+            _session.Tell(OwnFields.Contains(name) ? $"{name} is set by its own row." : $"{name} is there already: change it in its row.");
+            return;
+        }
+
+        if (ParseRaw(text[(at + 1)..], null) is not { } value) return;
+        _session.History.Record($"Add {name}", x => x.Field(e, name.ToLowerInvariant(), value));
+        BuildRows();
+    }
+
+    /// <summary>Text as a UDMF value of <paramref name="kind"/>, or of the kind it reads as (true/false, a whole number, a number, words) when null.</summary>
+    internal static Core.Maps.Udmf.UdmfValue? ParseRaw(string text, Core.Maps.Udmf.UdmfValueKind? kind)
+    {
+        text = text.Trim();
+        var inv = CultureInfo.InvariantCulture;
+        bool? flag = text.Equals("true", StringComparison.OrdinalIgnoreCase) ? true : text.Equals("false", StringComparison.OrdinalIgnoreCase) ? false : null;
+        return kind switch
+        {
+            Core.Maps.Udmf.UdmfValueKind.Integer => long.TryParse(text, NumberStyles.Integer, inv, out var i) ? Core.Maps.Udmf.UdmfValue.Int(i) : (Core.Maps.Udmf.UdmfValue?)null,
+            Core.Maps.Udmf.UdmfValueKind.Float => double.TryParse(text, NumberStyles.Float, inv, out var f) ? Core.Maps.Udmf.UdmfValue.Float(f) : (Core.Maps.Udmf.UdmfValue?)null,
+            Core.Maps.Udmf.UdmfValueKind.Boolean => flag is { } b ? Core.Maps.Udmf.UdmfValue.Bool(b) : (Core.Maps.Udmf.UdmfValue?)null,
+            Core.Maps.Udmf.UdmfValueKind.String => Core.Maps.Udmf.UdmfValue.Str(text),
+            _ => flag is { } guessed ? Core.Maps.Udmf.UdmfValue.Bool(guessed)
+                : long.TryParse(text, NumberStyles.Integer, inv, out var whole) ? Core.Maps.Udmf.UdmfValue.Int(whole)
+                : double.TryParse(text, NumberStyles.Float, inv, out var real) ? Core.Maps.Udmf.UdmfValue.Float(real)
+                : Core.Maps.Udmf.UdmfValue.Str(text.Trim('"')),
+        };
+    }
 
     private void Set<TElement, TValue>(TElement element, string label, Func<TElement, TValue> get, Action<TElement, TValue> set, TValue value)
         where TElement : Element => _session.History.Run(new SetProperty<TElement, TValue>(element, label, get, set, value));
