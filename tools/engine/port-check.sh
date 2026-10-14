@@ -13,6 +13,8 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="$(mkdir -p "$1" && cd "$1" && pwd)"; PORT="$2"; IWAD="$3"; WAD="$(cd "$(dirname "$4")" && pwd)/$(basename "$4")"; SLOT="$5"
 FORMAT="${6:-vanilla}"; SKILL="${7:-3}"; TICS="${8:-700}"
+# A WAD that is not there would leave the port playing the game alone, which passes: refuse it.
+[ -f "$WAD" ] || { echo "port-check: $4 does not exist"; exit 2; }
 PROGRAM="$(command -v "$PORT")" || { echo "port-check: $PORT is not installed"; exit 2; }
 rm -rf "$WORK/home" "$WORK/port-output.txt" "$WORK/port-exit.txt"; mkdir -p "$WORK/home"
 if [ "$FORMAT" = none ]; then
