@@ -200,7 +200,7 @@
                 <ToggleButton Classes="segment tool" Content="{Binding Faces.Teleport.Label}" IsChecked="{Binding IsTeleportTool}"
                               ToolTip.Tip="{Binding Faces.Teleport.Tip}" />
                 <ToggleButton Classes="segment tool" Content="{Binding Faces.Light.Label}" Classes.guide="{Binding Marks.Light}" IsChecked="{Binding IsLightTool}"
-                              ToolTip.Tip="{Binding Faces.Light.Tip}" />
+                              IsEnabled="{Binding LightAllowed}" ToolTip.ShowOnDisabled="True" ToolTip.Tip="{Binding LightTip}" />
                 <ToggleButton Classes="segment tool" Content="{Binding Faces.Stairs.Label}" Classes.guide="{Binding Marks.Stairs}" IsChecked="{Binding IsStairsTool}"
                               ToolTip.Tip="{Binding Faces.Stairs.Tip}" />
                 <ToggleButton Classes="segment tool last" Content="{Binding Faces.Measure.Label}" IsChecked="{Binding IsMeasureTool}"
@@ -498,9 +498,10 @@
                         <TextBlock Text="{Binding Inspector.Heading}" FontSize="18" FontWeight="SemiBold" ToolTip.Tip="{Binding Inspector.HeadingTip}" />
                         <TextBlock Text="{Binding Inspector.Summary}" Classes="secondary" TextWrapping="Wrap" Margin="0,4,0,14" />
                         <ItemsControl ItemsSource="{Binding Inspector.Rows}">
+                            <!-- A row GZDoom alone has, in a project for a classic port (6b.3), is greyed with its reason in the tooltip (each template's Enabled). -->
                             <ItemsControl.DataTemplates>
                                 <DataTemplate DataType="vm:NumberRow">
-                                    <StackPanel Margin="0,0,0,10">
+                                    <StackPanel Margin="0,0,0,10" IsEnabled="{Binding Enabled}" ToolTip.ShowOnDisabled="True">
                                         <TextBlock Text="{Binding Label}" Classes="secondary" ToolTip.Tip="{Binding Tooltip}" Margin="0,0,0,3" />
                                         <NumericUpDown Value="{Binding Value}" Increment="{Binding Step}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}"
                                                        FormatString="0.##" ToolTip.Tip="{Binding Tooltip}" />
@@ -530,7 +531,7 @@
                                     </StackPanel>
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:PictureChoiceRow">
-                                    <StackPanel Spacing="4" Margin="0,4,0,8">
+                                    <StackPanel Spacing="4" Margin="0,4,0,8" IsEnabled="{Binding Enabled}" ToolTip.ShowOnDisabled="True">
                                         <TextBlock Text="{Binding Label}" Classes="secondary" ToolTip.Tip="{Binding Tooltip}" />
                                         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                                             <ItemsControl ItemsSource="{Binding Choices}">
@@ -554,14 +555,14 @@
                                     </StackPanel>
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:TextRow">
-                                    <StackPanel Margin="0,0,0,10">
+                                    <StackPanel Margin="0,0,0,10" IsEnabled="{Binding Enabled}" ToolTip.ShowOnDisabled="True">
                                         <TextBlock Text="{Binding Label}" Classes="secondary" ToolTip.Tip="{Binding Tooltip}" Margin="0,0,0,3" />
                                         <TextBox Text="{Binding Value}" ToolTip.Tip="{Binding Tooltip}" LostFocus="OnTextRowLostFocus" KeyDown="OnTextRowKeyDown" />
                                         <TextBlock Text="{Binding HintText}" Classes="secondary" FontSize="12" Margin="0,3,0,0" TextWrapping="Wrap" IsVisible="{Binding HintText.Length}" />
                                     </StackPanel>
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:ChoiceRow">
-                                    <StackPanel Margin="0,0,0,10">
+                                    <StackPanel Margin="0,0,0,10" IsEnabled="{Binding Enabled}" ToolTip.ShowOnDisabled="True">
                                         <TextBlock Text="{Binding Label}" Classes="secondary" ToolTip.Tip="{Binding Tooltip}" Margin="0,0,0,3" />
                                         <ComboBox ItemsSource="{Binding Options}" SelectedIndex="{Binding Value}" HorizontalAlignment="Stretch" ToolTip.Tip="{Binding Tooltip}" />
                                     </StackPanel>
@@ -570,10 +571,10 @@
                                     <TextBlock Classes="section" Text="{Binding Label}" Margin="0,10,0,8" />
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:ActionRow">
-                                    <Button Classes="metal" Content="{Binding Label}" Command="{Binding Command}" ToolTip.Tip="{Binding Tooltip}" HorizontalAlignment="Left" Margin="0,2,0,8" />
+                                    <Button Classes="metal" Content="{Binding Label}" Command="{Binding Command}" ToolTip.Tip="{Binding Tooltip}" HorizontalAlignment="Left" Margin="0,2,0,8" IsEnabled="{Binding Enabled}" ToolTip.ShowOnDisabled="True" />
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:FlagRow">
-                                    <CheckBox Content="{Binding Label}" IsChecked="{Binding Value}" ToolTip.Tip="{Binding Tooltip}" Margin="0,0,0,6" />
+                                    <CheckBox Content="{Binding Label}" IsChecked="{Binding Value}" ToolTip.Tip="{Binding Tooltip}" Margin="0,0,0,6" IsEnabled="{Binding Enabled}" ToolTip.ShowOnDisabled="True" />
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:InfoRow">
                                     <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,10" ToolTip.Tip="{Binding Tooltip}">

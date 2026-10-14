@@ -32,6 +32,17 @@ internal abstract partial class InspectorRow(string label, string tooltip) : Obs
 
     /// <summary>Re-reads the value after any change to the map (an undo, an edit elsewhere).</summary>
     public abstract void Refresh();
+
+    /// <summary>Whether the row can be used: false for what only GZDoom has, in a project that plays in a classic port (6b.3).</summary>
+    public bool Enabled { get; private set; } = true;
+
+    /// <summary>Greys the row as GZDoom's alone, with the reason first in its tooltip.</summary>
+    public void GZDoomOnly(string why)
+    {
+        Enabled = false;
+        Label += " (GZDoom only)";
+        Tooltip = $"GZDoom only: {why} Change what the project plays in under Map settings to use it. " + Tooltip;
+    }
 }
 
 /// <summary>One picture to choose from (a door's look): its name, its picture when it has arrived, and whether it is the one in use.</summary>
@@ -661,7 +672,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Heading = "Room area";
                 Summary = "Its floor, ceiling and light.";
                 AddSector(s);
-                AddPlatforms(s);
+                GZDoomOnly("platforms and water over a floor are GZDoom's 3D floors.", () => AddPlatforms(s));
                 Rows.Add(new ActionRow("Fit the floor picture to this room", "Sizes the floor's picture so one copy covers the room corner to corner, its top to the north (UDMF floor scale and panning).", () => _session.FitFlat(s, ceiling: false)));
                 Rows.Add(new ActionRow("Fit the ceiling picture to this room", "Sizes the ceiling's picture so one copy covers the room corner to corner (UDMF ceiling scale and panning).", () => _session.FitFlat(s, ceiling: true)));
                 Rows.Add(new ActionRow("Swap the floor and ceiling pictures", "The floor takes the ceiling's picture and the ceiling the floor's, with how each is shifted, turned and lit (swap flats).", _session.SwapFlats));
@@ -796,13 +807,13 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Heading = "Sound";
                 _summaryOf = () => SoundFiles.Describe(SoundSettings.Of(t), SoundTitle(t));
                 Summary = _summaryOf();
-                AddSound(t);
+                GZDoomOnly("placed sounds are played by a script GZDoom runs.", () => AddSound(t));
                 break;
             case Thing t when Lights.Recognise(t) is not null:
                 Heading = "Light";
                 _summaryOf = () => Lights.Recognise(t) is { } light ? Explaining.Describe(light) : "No longer a light.";
                 Summary = _summaryOf();
-                AddLight(t);
+                GZDoomOnly("lights that shine on what is round them are GZDoom's.", () => AddLight(t));
                 break;
             case Thing t when Keys.ColourOf(t.Type, _session.Engine) is { } colour:
                 Heading = _session.Resources?.Things.Find(t.Type)?.Name ?? $"The {colour} key";
@@ -900,18 +911,27 @@ internal sealed partial class InspectorViewModel : ObservableObject
             presets: PresetChoice.For(Presets.RoomHeights, () => s.CeilingHeight - s.FloorHeight, h => Set(s, "Make the room " + Presets.Named(Presets.RoomHeights, h)!.Name.ToLowerInvariant(), e => e.CeilingHeight, (e, x) => e.CeilingHeight = x, s.FloorHeight + h), HeightTip, bars: true)));
         Rows.Add(new NumberRow("Brightness", "0 is dark, 255 full light (lightlevel). Doom's rooms are usually around 160.", () => s.Light, v => Set(s, "Change brightness", e => e.Light, (e, x) => e.Light = x, (int)v), 16, 0, 255,
             presets: PresetChoice.For(Presets.Brightness, () => s.Light, l => Set(s, "Make the room " + Presets.Named(Presets.Brightness, l)!.Name.ToLowerInvariant(), e => e.Light, (e, x) => e.Light = x, (int)l), LightTip, swatches: true)));
-        Rows.Add(new TextRow("Light colour", "Tints everything in the room (lightcolor), as #RRGGBB in a paint program's words; #FFFFFF is plain white light. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "lightcolor", 0xFFFFFF)), text => SetRoomColour(s, "lightcolor", text, 0xFFFFFF, "Change the light colour"), texture: false));
-        Rows.Add(new TextRow("Fog colour", "Fog that thickens with distance in the room, thicker the darker the room (fadecolor), as #RRGGBB; #000000 is none. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "fadecolor", 0)), text => SetRoomColour(s, "fadecolor", text, 0, "Change the fog colour"), texture: false));
-        AddAtmosphere([s]);
+        GZDoomOnly("coloured light and fog are GZDoom's.", () =>
+        {
+            Rows.Add(new TextRow("Light colour", "Tints everything in the room (lightcolor), as #RRGGBB in a paint program's words; #FFFFFF is plain white light. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "lightcolor", 0xFFFFFF)), text => SetRoomColour(s, "lightcolor", text, 0xFFFFFF, "Change the light colour"), texture: false));
+            Rows.Add(new TextRow("Fog colour", "Fog that thickens with distance in the room, thicker the darker the room (fadecolor), as #RRGGBB; #000000 is none. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "fadecolor", 0)), text => SetRoomColour(s, "fadecolor", text, 0, "Change the fog colour"), texture: false));
+            AddAtmosphere([s]);
+        });
         AddEditPicture(s.FloorTexture, "the floor's picture");
         if (!string.Equals(s.CeilingTexture, s.FloorTexture, StringComparison.OrdinalIgnoreCase)) AddEditPicture(s.CeilingTexture, "the ceiling's picture");
         AddMatchNeighbour(s);
-        AddSlope(s, ceiling: false);
-        AddSlope(s, ceiling: true);
+        GZDoomOnly("the classic ports draw only level floors and ceilings.", () =>
+        {
+            AddSlope(s, ceiling: false);
+            AddSlope(s, ceiling: true);
+        });
         Rows.Add(new TextRow("Floor texture", "The picture on the floor (texturefloor).", () => s.FloorTexture, v => Set(s, "Change floor texture", e => e.FloorTexture, (e, x) => e.FloorTexture = x, v)));
         Rows.Add(new TextRow("Ceiling texture", "The picture on the ceiling (textureceiling).", () => s.CeilingTexture, v => Set(s, "Change ceiling texture", e => e.CeilingTexture, (e, x) => e.CeilingTexture = x, v)));
-        AddFlatPlacement(s, ceiling: false);
-        AddFlatPlacement(s, ceiling: true);
+        GZDoomOnly("the classic ports lay every floor picture on the same grid, unturned.", () =>
+        {
+            AddFlatPlacement(s, ceiling: false);
+            AddFlatPlacement(s, ceiling: true);
+        });
         Rows.Add(new FlagRow("Counts as a secret", "Finding this area counts toward the secrets at the end of the map (sector type 1024).", () => (s.Special & 1024) != 0, on => Set(s, on ? "Make a secret" : "Unmake a secret", e => e.Special, (e, x) => e.Special = x, on ? s.Special | 1024 : s.Special & ~1024)));
         // The effect by name (Eureka's sector-type browser); one the list does not name stays as it is, listed by its number.
         var effects = RoomEffects.All.ToList();
@@ -920,6 +940,21 @@ internal sealed partial class InspectorViewModel : ObservableObject
             () => Math.Max(0, effects.FindIndex(x => x.Number == (s.Special & RoomEffects.Mask))),
             i => Set(s, "Change the room's effect", e => e.Special, (e, x) => e.Special = x, RoomEffects.With(s.Special, effects[i].Number))));
         Rows.Add(new NumberRow("Tag", "A number that links a switch or trigger to this area (sector tag, id).", () => s.Tag, v => Set(s, "Change tag", e => e.Tag, (e, x) => e.Tag = x, (int)v), 1, 0, 65535));
+    }
+
+    /// <summary>
+    /// Adds rows with <paramref name="add"/>; in a project that plays in a classic port they are greyed as GZDoom's alone, with
+    /// <paramref name="why"/> (6b.3): shown, so the player learns they exist, and untouchable, so nothing the port lacks is made.
+    /// </summary>
+    private void GZDoomOnly(string why, Action add)
+    {
+        var from = Rows.Count;
+        add();
+        if (!_session.Project.ClassicFormat) return;
+        for (var i = from; i < Rows.Count; i++)
+        {
+            if (Rows[i] is not HeadingRow) Rows[i].GZDoomOnly(why);
+        }
     }
 
     /// <summary>A lift's settings, each one undoable change to every wall that sets it off.</summary>
@@ -1542,7 +1577,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new FlagRow("Counts as a secret", "Shown as a solid wall on the in-game map so it does not give a secret away (secret).", () => l.Flag("secret"), on => Flag(l, "secret", on, "Change secret")));
         Rows.Add(new FlagRow("Shown on the map from the start", "Drawn on the in-game map before the player has seen it (mapped).", () => l.Flag("mapped"), on => Flag(l, "mapped", on, "Change map visibility")));
         Rows.Add(new FlagRow("Blocks sound", "Muffles shots: a monster hears the player through one such wall but not through two (sound block, blocksound). Ctrl+K “Show sound zones” colours the rooms that hear each other.", () => l.Flag("blocksound"), on => Flag(l, "blocksound", on, "Change sound blocking")));
-        if (!_session.Project.ClassicFormat) Rows.Add(new FlagRow("Blocks players", "Monsters pass, players do not (blockplayers).", () => l.Flag("blockplayers"), on => Flag(l, "blockplayers", on, "Change player blocking")));
+        GZDoomOnly("the classic ports have no wall that stops only players.", () => Rows.Add(new FlagRow("Blocks players", "Monsters pass, players do not (blockplayers).", () => l.Flag("blockplayers"), on => Flag(l, "blockplayers", on, "Change player blocking"))));
         if (l.Back is null)
         {
             Rows.Add(new FlagRow("Texture sits on the floor", "The texture's bottom edge rests on the floor, so it stays put when the ceiling moves, as door tracks need (lower unpegged, dontpegbottom).", () => l.Flag("dontpegbottom"), on => Flag(l, "dontpegbottom", on, "Change texture anchoring")));
@@ -1565,10 +1600,10 @@ internal sealed partial class InspectorViewModel : ObservableObject
             Rows.Add(new FlagRow("Lower texture continues the wall above", "The lower texture is placed as if the wall ran down from the ceiling, so it carries on the pattern above it (lower unpegged, dontpegbottom).", () => l.Flag("dontpegbottom"), on => Flag(l, "dontpegbottom", on, "Change texture anchoring")));
         }
 
-        if (l.Back is null && l.Special is 0 or Mirror && !_session.Project.ClassicFormat)
+        if (l.Back is null && l.Special is 0 or Mirror)
         {
-            Rows.Add(new FlagRow("A mirror", "The wall reflects the room in the game (GZDoom's Line_Mirror, special 182); the 3D view shows its picture, G shows GZDoom's own view with the reflection.",
-                () => l.Special == Mirror, on => Set(l, on ? "Make the wall a mirror" : "Make the mirror a plain wall", e => e.Special, (e, x) => e.Special = x, on ? Mirror : 0)));
+            GZDoomOnly("mirrors are GZDoom's.", () => Rows.Add(new FlagRow("A mirror", "The wall reflects the room in the game (GZDoom's Line_Mirror, special 182); the 3D view shows its picture, G shows GZDoom's own view with the reflection.",
+                () => l.Special == Mirror, on => Set(l, on ? "Make the wall a mirror" : "Make the mirror a plain wall", e => e.Special, (e, x) => e.Special = x, on ? Mirror : 0))));
         }
 
         if (sign && l.Back is null) AddSign(l.Front);
@@ -1608,9 +1643,9 @@ internal sealed partial class InspectorViewModel : ObservableObject
             Rows.Add(new TextRow("Texture", "The picture on this wall (texturemiddle).", () => side.Middle, v => Set(side, "Change wall texture", e => e.Middle, (e, x) => e.Middle = x, v)));
             AddSign(side);
             AddEditPicture(side.Middle, "the wall's picture");
-            if (!_session.Project.ClassicFormat && Cameras.Screens(_session.Project.CopiedNow()).All(s => !string.Equals(s.Texture, side.Middle, StringComparison.OrdinalIgnoreCase)))
+            if (Cameras.Screens(_session.Project.CopiedNow()).All(s => !string.Equals(s.Texture, side.Middle, StringComparison.OrdinalIgnoreCase)))
             {
-                Rows.Add(new ActionRow("Make it a camera screen…", "The wall shows, in the game, what a camera sees: click where the camera stands next (anywhere in the map). The editor shows a stand-in screen; G shows GZDoom's own view.", () => CameraFor?.Invoke(side)));
+                GZDoomOnly("camera screens are drawn by GZDoom.", () => Rows.Add(new ActionRow("Make it a camera screen…", "The wall shows, in the game, what a camera sees: click where the camera stands next (anywhere in the map). The editor shows a stand-in screen; G shows GZDoom's own view.", () => CameraFor?.Invoke(side))));
             }
         }
         else
@@ -1705,10 +1740,12 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new FlagRow("In single player", "Included when one person plays (single; off = multiplayer only).", () => t.Flag("single"), on => Flags(t, ["single"], on)));
         Rows.Add(new FlagRow("In co-op", "Included when friends play the map together (coop).", () => t.Flag("coop"), on => Flags(t, ["coop"], on)));
         Rows.Add(new FlagRow("In deathmatch", "Included when players fight each other on the map (dm).", () => t.Flag("dm"), on => Flags(t, ["dm"], on)));
-        if (_session.Project.ClassicFormat) return;
+        GZDoomOnly("the classic ports have no friendly monsters, sleeping objects or object ids.", () =>
+        {
         Rows.Add(new FlagRow("Friendly", "A monster that fights for the player instead of against them (friend).", () => t.Flag("friend"), on => Flags(t, ["friend"], on)));
         Rows.Add(new FlagRow("Asleep until woken", "Does nothing at all until a script or a wall's action wakes it with its id (dormant).", () => t.Flag("dormant"), on => Flags(t, ["dormant"], on)));
         Rows.Add(new NumberRow("Id", "A number a wall's action or a script finds this object by, to wake it, move it or send something to it (thing id, TID).", () => t.Tid, v => Set(t, "Change the object's id", e => e.Tid, (e, x) => e.Tid = x, (int)v), 1, 0, 32767));
+        });
     }
 
     private void Flag(Element e, string name, bool on, string label) => _session.History.Run(new SetProperty<Element, bool>(e, label, x => x.Flag(name), (x, v) => x.SetFlag(name, v), on));

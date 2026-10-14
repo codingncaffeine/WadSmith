@@ -126,6 +126,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         };
         session.TeleportPadChanged += UpdateStatus;
         session.SwitchTargetChanged += UpdateStatus;
+        session.TargetChanged += () =>
+        {
+            if (!LightAllowed && Tool == Canvas.EditorTool.Light) Tool = Canvas.EditorTool.Select;
+            OnPropertyChanged(nameof(LightAllowed));
+            OnPropertyChanged(nameof(LightTip));
+        };
         session.KeyToPlaceChanged += UpdateStatus;
         Inspector.LookLike += LookLike;
         Inspector.GridStep = () => GridSize > 0 ? GridSize : GridNow?.Invoke() ?? 64;
@@ -480,7 +486,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Door tool", "Tools", K("D", "Shift+D"), "make a door|make door|doorway|opening", () => Tool = Canvas.EditorTool.Door),
             new("Window tool", "Tools", K("W", ""), "make a window|hole in a wall", () => Tool = Canvas.EditorTool.Window),
             new("Teleport tool", "Tools", K("T", ""), "teleporter|warp|pad", () => Tool = Canvas.EditorTool.Teleport),
-            new("Light tool", "Tools", K("L", ""), "lamp|brightness|light level|glow|dynamic light", () => Tool = Canvas.EditorTool.Light),
+            new("Light tool", "Tools", K("L", ""), "lamp|brightness|light level|glow|dynamic light", () => Tool = Canvas.EditorTool.Light, () => LightAllowed),
             new("Stairs tool", "Tools", K("S", ""), "steps|staircase|stair builder", () => Tool = Canvas.EditorTool.Stairs),
             new("Measure tool", "Tools", K("M", ""), "ruler|distance|length|tape", () => Tool = Canvas.EditorTool.Measure),
             new("No drawing mirror", "Tools", "", "symmetry off", () => MirrorChoice = 0),
@@ -882,6 +888,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         _commands = null;
         _faces = null;
         OnPropertyChanged(nameof(Faces));
+        OnPropertyChanged(nameof(LightTip));
         OnPropertyChanged(nameof(SelectLabel));
         OnPropertyChanged(nameof(ClassicKeys));
         Inspector.Rebuild();
@@ -994,6 +1001,12 @@ internal sealed partial class EditorViewModel : ObservableObject
         _measure = null;
         Profile = null;
     }
+
+    /// <summary>Whether the Light tool can be used: its lights are GZDoom's, so not in a project for a classic port (6b.3).</summary>
+    public bool LightAllowed => !Session.Project.ClassicFormat;
+
+    /// <summary>The Light tool's tooltip, saying first why it is greyed in a project for a classic port.</summary>
+    public string LightTip => LightAllowed ? Faces.Light.Tip : "GZDoom only: lights that shine on what is round them are GZDoom's; a classic port lights each room by its brightness alone. " + Faces.Light.Tip;
 
     public bool IsLightTool
     {
