@@ -773,7 +773,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 if (side.Line is { } wall)
                 {
                     Rows.Add(new HeadingRow("THE WHOLE WALL"));
-                    AddLine(wall);
+                    AddLine(wall, sign: false);
                     Rows.Add(new ActionRow("Select the whole wall", "Selects the wall with both its faces, as clicking it on the map does.", () => _session.Selection.Set(wall)));
                     if (wall.Opposite(side) is { } other) Rows.Add(new ActionRow("Select the other face", "Shows the side of this wall you see from the other area.", () => _session.Selection.Set(other)));
                 }
@@ -1513,7 +1513,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
         }));
     }
 
-    private void AddLine(Line l)
+    /// <summary>A wall's rows; <paramref name="sign"/> false when its face's rows (which hold the sign) are shown above.</summary>
+    private void AddLine(Line l, bool sign = true)
     {
         Rows.Add(new InfoRow("Length", "How long the wall is, in map units.", () => l.Length.ToString("0.#", CultureInfo.InvariantCulture)));
         Rows.Add(new InfoRow("Action", "What happens when the wall is used, crossed or shot (line special).", () => l.Special == 0 ? "None" : $"{ActionCatalog.Get(l.Special)?.Name ?? "Unknown"} ({l.Special.ToString(CultureInfo.InvariantCulture)})"));
@@ -1546,16 +1547,42 @@ internal sealed partial class InspectorViewModel : ObservableObject
             Rows.Add(new FlagRow("Lower texture continues the wall above", "The lower texture is placed as if the wall ran down from the ceiling, so it carries on the pattern above it (lower unpegged, dontpegbottom).", () => l.Flag("dontpegbottom"), on => Flag(l, "dontpegbottom", on, "Change texture anchoring")));
         }
 
+        if (sign && l.Back is null) AddSign(l.Front);
         Rows.Add(new ActionRow("Split it in half", "Adds a corner in the middle of the wall, making two walls of it (Eureka's split in half).", _session.SplitWalls));
     }
 
     /// <summary>One face on its own: only the parts it can show, with whether each is seen, and its offsets.</summary>
+    /// <summary>A one-sided wall's sign: "Write a sign here…", or, when the face shows one, its words, letters, colour and background.</summary>
+    private void AddSign(Side face)
+    {
+        if (SignPictures.Of(_session.Project.CopiedNow(), face.Middle) is not { } sign)
+        {
+            Rows.Add(new ActionRow("Write a sign here…", "Writes words on this wall as a picture: in the game's own letters or a font of your computer's, painted on the wall or on a plate, as large as fit. Its rows then change the words and the look.", () => _session.WriteSign(face)));
+            return;
+        }
+
+        var s = sign.Settings;
+        Rows.Add(new HeadingRow("SIGN"));
+        Rows.Add(new TextRow("Words", "What the sign says; it lays itself out on up to six lines, as large as fit.", () => s.Text, text => _session.WriteSign(face, s with { Text = text }), texture: false));
+        Rows.Add(new ChoiceRow("Letters", "The game's own lettering (capitals, as its status bar has them) or a font of your computer's.", ["The game's", "Plain", "Bold", "Serif", "Typewriter"],
+            () => (int)s.Lettering, v => _session.WriteSign(face, s with { Lettering = (SignLettering)v })));
+        Rows.Add(new ChoiceRow("Colour", "The colour of the letters.", [.. SignPictures.Colours.Select(c => c.Name), "Other"],
+            () => SignPictures.Colours.ToList().FindIndex(c => c.Colour == s.Colour) is var i and >= 0 ? i : SignPictures.Colours.Count,
+            v =>
+            {
+                if (v < SignPictures.Colours.Count) _session.WriteSign(face, s with { Colour = SignPictures.Colours[v].Colour });
+            }));
+        Rows.Add(new ChoiceRow("Written on", "Painted on the wall's own picture, or on a dark or a light plate with a frame.", ["The wall", "A dark plate", "A light plate"],
+            () => (int)s.Back, v => _session.WriteSign(face, s with { Back = (SignBack)v })));
+    }
+
     private void AddFace(Side side)
     {
         var wall = side.Line;
         if (wall?.Opposite(side) is not { } other)
         {
             Rows.Add(new TextRow("Texture", "The picture on this wall (texturemiddle).", () => side.Middle, v => Set(side, "Change wall texture", e => e.Middle, (e, x) => e.Middle = x, v)));
+            AddSign(side);
         }
         else
         {

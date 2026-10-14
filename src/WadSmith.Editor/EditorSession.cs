@@ -1290,6 +1290,62 @@ public sealed class EditorSession : IDisposable
     }
 
     /// <summary>
+    /// Writes a sign on a wall face (Phase 7): new words with <see cref="SignSettings.New"/> go on as a poster centred on the
+    /// wall (as wide as twice its height at most); a face that shows a sign gets it drawn again with <paramref name="settings"/>,
+    /// every face showing it changed in one undo step. The picture is made on a worker.
+    /// </summary>
+    public void WriteSign(Side face, SignSettings? settings = null)
+    {
+        if (Resources is not { } into || face.Line is not { } line || face.Sector is not { } room)
+        {
+            Notice?.Invoke("Signs need this map's own game to be found first.");
+            return;
+        }
+
+        if (History.ReadOnly)
+        {
+            Tell(ReadOnlyNotice);
+            return;
+        }
+
+        var old = SignPictures.Of(Project.CopiedNow(), face.Middle);
+        var words = settings ?? old?.Settings ?? SignSettings.New;
+        var tall = (int)Math.Max(16, room.CeilingHeight - room.FloorHeight);
+        var (width, height, wall) = old is null ? ((int)Math.Min(line.Length, 2 * tall), tall, face.Middle) : (old.Width, old.Height, old.Wall);
+        Task.Run(() =>
+        {
+            SignPicture made;
+            try
+            {
+                made = SignPictures.Write(Project, into, words, width, height, wall);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Writing a sign failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"The sign could not be written. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                TexturesChanged?.Invoke();
+                if (old is null)
+                {
+                    if (PaintSurface(new SurfaceTarget(face, WallPart.Middle, false), made.Texture) is { } why) Tell(why);
+                    else Notice?.Invoke("The sign is on the wall: its Inspector rows change its words, letters, colour and background.");
+                    return;
+                }
+
+                var showing = Map.Sides.Where(s => s.OnMap && string.Equals(s.Middle, old.Texture, StringComparison.OrdinalIgnoreCase)).ToList();
+                History.Record("Change the sign", e =>
+                {
+                    foreach (var s in showing) e.Set(s, x => x.Middle, (x, v) => x.Middle = v, made.Texture);
+                });
+            });
+        });
+    }
+
+    /// <summary>
     /// Brings a picture of the user's own in as a decoration (Phase 7): an object showing it from every side, a moving
     /// picture playing at its own pace; placed at <paramref name="at"/> when given. The files are written on a worker.
     /// </summary>
