@@ -165,7 +165,7 @@ public static class SoundFiles
         text.Append("\t\t}\n\t\treturn \"\";\n\t}\n\n");
         text.Append("\tint Plays() { return args[2] & 3; }\n\n");
         text.Append("\tvoid Play(int channel, int flags)\n\t{\n\t\tstring name = SoundOf(args[0]);\n\t\tif (name == \"\") return;\n");
-        text.Append("\t\tA_StartSound(name, channel, flags, args[1] > 0 ? args[1] / 100. : 1., (args[2] & 4) != 0 ? ATTN_NONE : ATTN_NORM);\n\t}\n\n");
+        text.Append("\t\tA_StartSound(name, channel, flags, args[1] > 0 ? args[1] / 100.0 : 1.0, (args[2] & 4) != 0 ? ATTN_NONE : ATTN_NORM);\n\t}\n\n");
         text.Append("\tint NextWait()\n\t{\n\t\tint shortest = max(1, args[3]);\n\t\treturn (Plays() == 1 ? random(shortest, max(shortest, args[4])) : shortest) * TICRATE;\n\t}\n\n");
         text.Append("\toverride void PostBeginPlay()\n\t{\n\t\tSuper.PostBeginPlay();\n\t\tif (Plays() == 0) Play(CHAN_BODY, CHANF_LOOPING);\n\t\telse if (Plays() != 3) wait = NextWait();\n\t}\n\n");
         text.Append("\toverride void Tick()\n\t{\n\t\tif (isFrozen() || done) return;\n\t\tint plays = Plays();\n");
