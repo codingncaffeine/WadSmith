@@ -467,9 +467,9 @@ internal sealed partial class ShelfViewModel : ObservableObject
     /// The game's objects with their sprites, by kind: monsters, weapons, ammunition and so on; and the project's prefabs
     /// (<paramref name="prefabs"/> lists them on the worker), each pictured from above.
     /// </summary>
-    public static ShelfViewModel Objects(GameResources? game, Func<IReadOnlyList<WadSmith.Editor.Editing.Prefab>>? prefabs = null, Func<IReadOnlyList<Func<GameResources?>>>? others = null, Func<IReadOnlyCollection<int>>? models = null) => new ShelfViewModel(
+    public static ShelfViewModel Objects(GameResources? game, Func<IReadOnlyList<WadSmith.Editor.Editing.Prefab>>? prefabs = null, Func<IReadOnlyList<Func<GameResources?>>>? others = null, Func<IReadOnlyCollection<int>>? models = null, Func<IReadOnlyCollection<int>>? pictures = null) => new ShelfViewModel(
         game is null ? "Choose a base game to see its monsters and items." : "",
-        ["All", .. Kinds.Select(k => k.Name), PrefabGroup, ModelGroup],
+        ["All", .. Kinds.Select(k => k.Name), PrefabGroup, ModelGroup, PictureGroup],
         Once(() =>
         {
             var tiles = new List<ShelfTile>();
@@ -493,6 +493,7 @@ internal sealed partial class ShelfViewModel : ObservableObject
 
             if (game is null) return tiles;
             var props = models?.Invoke() ?? [];
+            var decorations = pictures?.Invoke() ?? [];
             foreach (var (category, group) in Kinds)
             {
                 // Only what this game's own data can show: another game's objects (Doom II's super shotgun in Doom) would show an error in the game.
@@ -500,8 +501,12 @@ internal sealed partial class ShelfViewModel : ObservableObject
                 {
                     var picture = game.SpriteFor(t.Number) is { } image ? Imaging.ToBitmap(Shrink(image)) : null;
                     var prop = props.Contains(t.Number);
-                    var search = $"{t.Name} {t.ClassName} {t.Number} {group}{(prop ? " model prop 3d" : "")}".ToLowerInvariant();
-                    tiles.Add(new ShelfTile(t.Name, prop ? $"{t.Name}, a 3D model brought into this project (editor number {t.Number}). Drag it onto the map to place it; GZDoom draws the model." : $"{t.Name} ({t.ClassName}, editor number {t.Number}). Drag it onto the map to place it.", prop ? ModelGroup : group, search, picture, new ShelfDrop(null, t.Number, t.Name)));
+                    var mine = decorations.Contains(t.Number);
+                    var search = $"{t.Name} {t.ClassName} {t.Number} {group}{(prop ? " model prop 3d" : mine ? " picture decoration image" : "")}".ToLowerInvariant();
+                    var tip = prop ? $"{t.Name}, a 3D model brought into this project (editor number {t.Number}). Drag it onto the map to place it; GZDoom draws the model."
+                        : mine ? $"{t.Name}, a picture of yours brought into this project as a decoration (editor number {t.Number}). Drag it onto the map to place it; its Inspector sets its height and whether it blocks."
+                        : $"{t.Name} ({t.ClassName}, editor number {t.Number}). Drag it onto the map to place it.";
+                    tiles.Add(new ShelfTile(t.Name, tip, prop ? ModelGroup : mine ? PictureGroup : group, search, picture, new ShelfDrop(null, t.Number, t.Name)));
                 }
             }
 

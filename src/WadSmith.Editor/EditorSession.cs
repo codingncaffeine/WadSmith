@@ -1242,6 +1242,12 @@ public sealed class EditorSession : IDisposable
     /// </summary>
     public void ImportModel(string path, MapPoint? at = null, double? standAt = null)
     {
+        if (Pictures.IsPicture(path) && Core.Models.BlockSet.Of(path) is null)
+        {
+            ImportDecoration(path, at);
+            return;
+        }
+
         var file = Path.GetFileName(path);
         if (Resources is not { } into)
         {
@@ -1278,6 +1284,78 @@ public sealed class EditorSession : IDisposable
                 if (at is { } spot) PlaceThing(made.Actor.Number, spot, standAt);
                 var notes = made.Notes.Count == 0 ? "" : " " + string.Join(" ", made.Notes);
                 Notice?.Invoke($"{made.Actor.Thing.Name} is in this project as a prop, {made.SizeNote}. It is under Objects, Your models; GZDoom draws the model, and pictures made from it show it on the plan.{notes}");
+                PropsChanged?.Invoke();
+            });
+        });
+    }
+
+    /// <summary>
+    /// Brings a picture of the user's own in as a decoration (Phase 7): an object showing it from every side, a moving
+    /// picture playing at its own pace; placed at <paramref name="at"/> when given. The files are written on a worker.
+    /// </summary>
+    public void ImportDecoration(string path, MapPoint? at = null)
+    {
+        var file = Path.GetFileName(path);
+        if (Resources is not { } into)
+        {
+            Notice?.Invoke("Decorations need this map's own game to be found first.");
+            return;
+        }
+
+        if (Project.ClassicFormat)
+        {
+            Notice?.Invoke($"{file} would be a decoration of your own: those play in GZDoom only. Change what the project plays in under Map settings to use it.");
+            return;
+        }
+
+        var engineData = Hooks.EngineData;
+        Notice?.Invoke($"Bringing in {file}…");
+        Task.Run(() =>
+        {
+            ImportedDecoration made;
+            try
+            {
+                made = PictureProps.Import(Project, into, path);
+                ProjectMapInfo.Refresh(Project, into.Game, into.Files, engineData);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Bringing in the decoration {path} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"{file} could not be brought in. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                if (at is { } spot) PlaceThing(made.Actor.Number, spot);
+                var moving = made.Frames > 1 ? $", moving through its {made.Frames} frames as GZDoom plays it" : "";
+                Notice?.Invoke($"{made.Actor.Thing.Name} is a decoration in this project{moving}: under Objects, Your pictures, to drag onto the map." + (made.Notes.Count == 0 ? "" : " " + string.Join(" ", made.Notes)));
+                PropsChanged?.Invoke();
+            });
+        });
+    }
+
+    /// <summary>Gives a picture decoration a new height and blocking, for every one placed (its class written again on a worker).</summary>
+    public void ChangeDecoration(Thing thing, int height, bool solid)
+    {
+        if (Resources is not { } into || PictureProps.Of(Project, thing.Type) is not { } decoration) return;
+        if (decoration.Shape.Height == height && decoration.Shape.Solid == solid) return;
+        Task.Run(() =>
+        {
+            try
+            {
+                PictureProps.Change(Project, into, decoration.ClassName, height, solid);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Changing the decoration {decoration.ClassName} failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"The decoration could not be changed. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                Notice?.Invoke($"Every {decoration.Shape.Title} stands {height} units tall{(solid ? " and blocks the way" : ", and players and monsters pass through it")}, in the editor and in GZDoom.");
                 PropsChanged?.Invoke();
             });
         });

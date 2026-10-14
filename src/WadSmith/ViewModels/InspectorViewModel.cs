@@ -1621,6 +1621,15 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 i => _session.TurnModel(t, turns[i])));
         }
 
+        // A decoration made from a picture (Phase 7): how tall it stands and whether it blocks, for every one placed.
+        if (PictureProps.Of(_session.Project, t.Type) is { } decoration)
+        {
+            Rows.Add(new NumberRow("Stands", "How tall the picture stands in the map, in map units (the player is 56); its width follows. Every one placed changes with it.",
+                () => PictureProps.Of(_session.Project, t.Type)?.Shape.Height ?? decoration.Shape.Height, v => _session.ChangeDecoration(t, (int)v, PictureProps.Of(_session.Project, t.Type)?.Shape.Solid ?? true), 8, 4, 2048, () => "units tall"));
+            Rows.Add(new FlagRow("Blocks the way", "Players and monsters bump into it (SOLID); off, they walk through it, as through blood or grass. Every one placed changes with it.",
+                () => PictureProps.Of(_session.Project, t.Type)?.Shape.Solid ?? true, on => _session.ChangeDecoration(t, PictureProps.Of(_session.Project, t.Type)?.Shape.Height ?? decoration.Shape.Height, on)));
+        }
+
         // A Duke Nukem 3D enemy (D55): which Doom monster's behaviour it has.
         if (DukeBorrowing.Of(_session.Project, t.Type) is { } duke)
         {

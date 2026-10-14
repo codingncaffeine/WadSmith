@@ -8,7 +8,7 @@ using WadSmith.Editor.Editing;
 
 namespace WadSmith.Cli.Commands;
 
-/// <summary>Brings a 3D model into a project as a prop (Phase 11), as the Objects shelf's "Add a 3D model…" does, and can place it.</summary>
+/// <summary>Brings a 3D model into a project as a prop (Phase 11), as the Objects shelf's "Add a 3D model or picture…" does, and can place it.</summary>
 internal sealed class AddModelCommand : ICommand
 {
     public string Name => "add-model";

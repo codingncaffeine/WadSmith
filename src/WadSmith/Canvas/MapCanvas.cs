@@ -374,6 +374,7 @@ internal sealed class MapCanvas : Control
             old.Selection.Changed -= OnSelectionChanged;
             old.MirrorChanged -= InvalidateVisual;
             old.HiddenChanged -= RequestPicture;
+            old.PropsChanged -= RequestPicture;
         }
 
         _snapshot = null;
@@ -391,6 +392,7 @@ internal sealed class MapCanvas : Control
             s.Selection.Changed += OnSelectionChanged;
             s.MirrorChanged += InvalidateVisual;
             s.HiddenChanged += RequestPicture;
+            s.PropsChanged += RequestPicture;
             RequestPicture();
             RequestFit();
             OnSelectionChanged();

@@ -80,9 +80,9 @@ internal sealed partial class EditorViewModel : ObservableObject
         };
         _looks = [.. Look.Available(session.Engine, session.Resources)];
         LookNames = [.. _looks.Select(l => l.Name)];
-        ObjectShelf = ShelfViewModel.Objects(session.Resources, () => WadSmith.Editor.Editing.Prefabs.In(session.Project.Folder), () => services.OtherGameOpeners(session.Resources), ModelNumbers);
-        ObjectShelf.AddLabel = "Add a 3D model…";
-        ObjectShelf.AddTip = "Brings in a 3D model of your own (OBJ with its .mtl and pictures, glTF/GLB, MD3, IQM, Quake's MD2 and MDL, or MagicaVoxel and KVX voxels, or a block from a block texture set) as a prop for this map: it is copied into the project, GZDoom draws it, and it waits under Your models. You can also drop a model file onto the plan.";
+        ObjectShelf = ShelfViewModel.Objects(session.Resources, () => WadSmith.Editor.Editing.Prefabs.In(session.Project.Folder), () => services.OtherGameOpeners(session.Resources), ModelNumbers, DecorationNumbers);
+        ObjectShelf.AddLabel = "Add a 3D model or picture…";
+        ObjectShelf.AddTip = "Brings in a 3D model of your own (OBJ with its .mtl and pictures, glTF/GLB, MD3, IQM, Quake's MD2 and MDL, or MagicaVoxel and KVX voxels, or a block from a block texture set) as a prop for this map: it is copied into the project, GZDoom draws it, and it waits under Your models. You can also drop a model file onto the plan. A picture (PNG, JPEG, or an animated GIF, WebP or PNG) becomes a decoration that shows it from every side, waiting under Your pictures.";
         ObjectShelf.Add = () => _ = AddModelAsync();
         session.PrefabsChanged += ObjectShelf.Refresh;
 
@@ -407,7 +407,11 @@ internal sealed partial class EditorViewModel : ObservableObject
     private IReadOnlyCollection<int> ModelNumbers() =>
         [.. Session.Project.CopiedNow().Where(c => c.Kind == "actor" && c.Game == "model").Select(c => int.Parse(c.Name, System.Globalization.CultureInfo.InvariantCulture))];
 
-    /// <summary>"Add a 3D model…": the file picker, then the model brought in as a prop on a worker.</summary>
+    /// <summary>The numbers of the decorations this project made from pictures (read on the shelf's worker).</summary>
+    private IReadOnlyCollection<int> DecorationNumbers() =>
+        [.. Session.Project.CopiedNow().Where(c => c.Kind == "actor" && c.Game == "picture").Select(c => int.Parse(c.Name, System.Globalization.CultureInfo.InvariantCulture))];
+
+    /// <summary>"Add a 3D model or picture…": the file picker, then the model brought in as a prop (a picture as a decoration) on a worker.</summary>
     private async Task AddModelAsync()
     {
         if (PickModel is null || await PickModel().ConfigureAwait(true) is not { } path) return;

@@ -11,7 +11,7 @@ using WadSmith.Editor.Geometry;
 namespace WadSmith.Tests;
 
 /// <summary>
-/// A 3D model brought in as the user goes (Phase 11): the Objects shelf's "Add a 3D model…" button, the file chosen, and the
+/// A 3D model brought in as the user goes (Phase 11): the Objects shelf's "Add a 3D model or picture…" button, the file chosen, and the
 /// prop waiting under Your models with its baked picture; a model file dropped on the map is brought in and placed there.
 /// </summary>
 [Collection(TimingCollection.Name)]
@@ -51,7 +51,7 @@ public sealed class ModelPropInTheWindowTests
                 };
 
                 var shelf = editor.ObjectShelf;
-                Click(window, window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && AutomationProperties.GetName(b) == "Add a 3D model…"));
+                Click(window, window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && AutomationProperties.GetName(b) == "Add a 3D model or picture…"));
                 for (var i = 0; i < 400 && !shelf.Tiles.Any(t => t.Group == ShelfViewModel.ModelGroup); i++) Ui.Pump(0.05);
 
                 var groups = window.GetVisualDescendants().OfType<ComboBox>().First(c => c.IsEffectivelyVisible && ReferenceEquals(c.ItemsSource, shelf.Groups));

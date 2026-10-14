@@ -278,6 +278,9 @@ public sealed class GameResources
                 // Sounds of the user's own placed in the map (Phase 7): one class plays them all.
                 carried.AddRange(Editing.SoundFiles.Recorded(info));
 
+                // Decorations made from pictures of the user's own (Phase 7).
+                carried.AddRange(Editing.PictureProps.Recorded(info));
+
                 // Other games' objects take their definitions from the engine's data.
                 foreach (var copy in info.Copied.Where(c => c.Kind == "actor" && c.Game != "duke3d" && c.Game != "model"))
                 {
