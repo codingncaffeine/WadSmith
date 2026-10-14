@@ -46,7 +46,7 @@ internal sealed partial class ExportViewModel : ObservableObject
         _show = show;
         _close = close;
         Choices = [.. ProjectExport.ChoicesFor(session.Project.ClassicNamespace).Select(c => new ExportChoice(c.Id, c.Title,
-            c.Id == ProjectExport.GZDoom ? "GZDoom and UZDoom: the project as one .pk3" : ClassicPorts.Get(c.Id)!.Ports, c.Extension))];
+            c.Id == ProjectExport.GZDoom ? "UZDoom and GZDoom: the project as one .pk3" : ClassicPorts.Get(c.Id)!.Ports, c.Extension))];
         _selected = Choices.FirstOrDefault(c => c.Id == session.Project.Info.Target) ?? Choices[0];
         Prepare();
     }

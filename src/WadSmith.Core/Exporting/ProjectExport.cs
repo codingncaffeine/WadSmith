@@ -42,7 +42,7 @@ public static class ProjectExport
 
     /// <summary>What a project can be exported for, as (id, title, file extension): GZDoom, then each port that plays its game family.</summary>
     public static IReadOnlyList<(string Id, string Title, string Extension)> ChoicesFor(string family) =>
-        [(GZDoom, "GZDoom and UZDoom", ".pk3"), .. ClassicPorts.ForFamily(family).Select(p => (p.Id, p.Title, ".wad"))];
+        [(GZDoom, "UZDoom and GZDoom", ".pk3"), .. ClassicPorts.ForFamily(family).Select(p => (p.Id, p.Title, ".wad"))];
 
     /// <summary>
     /// Writes <paramref name="project"/> exported for <paramref name="exportId"/> (<see cref="GZDoom"/> or a classic port's

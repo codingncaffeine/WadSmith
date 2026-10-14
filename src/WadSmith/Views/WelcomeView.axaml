@@ -176,7 +176,7 @@
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="Plays in" VerticalAlignment="Center" Classes="secondary" />
                             <ComboBox ItemsSource="{Binding TargetTitles}" SelectedIndex="{Binding TargetIndex}" MinWidth="200"
-                                      ToolTip.Tip="What a map started from this game plays in. GZDoom: everything WadSmith can make. Vanilla Doom: the 1993 engine's format and limits (Chocolate Doom, the DOS game). Limit-removing: that format without the limits (Crispy Doom). It can be changed later under Map settings." />
+                                      ToolTip.Tip="What a map started from this game plays in. UZDoom and GZDoom: everything WadSmith can make. Vanilla Doom: the 1993 engine's format and limits (Chocolate Doom, the DOS game). Limit-removing: that format without the limits (Crispy Doom). It can be changed later under Map settings." />
                         </StackPanel>
                     </Grid>
                     <UniformGrid Rows="1" ColumnSpacing="12">
@@ -276,7 +276,7 @@
                     <Image Source="/Assets/icon.png" Width="44" Height="44" />
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="WadSmith" FontSize="20" FontWeight="Bold" />
-                        <TextBlock Classes="secondary" FontSize="12.5" Text="Build maps for the games you love, then play them in GZDoom." />
+                        <TextBlock Classes="secondary" FontSize="12.5" Text="Build maps for the games you love, then play them in UZDoom or GZDoom." />
                     </StackPanel>
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">

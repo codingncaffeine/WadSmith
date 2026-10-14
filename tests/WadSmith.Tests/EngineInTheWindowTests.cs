@@ -43,6 +43,14 @@ public sealed class EngineInTheWindowTests
                 Ui.Until(() => prefs.EnginesFound.IsCompleted);
                 Ui.Pump(0.3);
                 var box = window.GetVisualDescendants().OfType<ComboBox>().Single(c => c.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(c) == "Engine");
+                box.BringIntoView();
+                Ui.Pump(0.5);
+                if (Environment.GetEnvironmentVariable("WADSMITH_ENGINE_SHOT") is { Length: > 0 } shots)
+                {
+                    using var frame = HeadlessWindowExtensions.CaptureRenderedFrame(window)!;
+                    frame.Save(Path.Combine(shots, "preferences-engine.png"), Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
+                }
+
                 var chosen = box.SelectedItem as EngineRow;
                 said.Add($"chosen: {chosen?.Name}, {(chosen?.Where == mine ? "the file chosen" : chosen?.Where)}");
                 said.Add($"box says: {box.GetVisualDescendants().OfType<TextBlock>().FirstOrDefault(t => t.IsEffectivelyVisible)?.Text}");

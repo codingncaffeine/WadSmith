@@ -68,7 +68,7 @@ public sealed class ExportInTheWindowTests
             }
         });
         Assert.Equal("Ctrl+E: the Export card", seen[0]);
-        Assert.Equal("GZDoom and UZDoom: Nothing is lost: the maps play in GZDoom and UZDoom as they are.", seen[1]);
+        Assert.Equal("UZDoom and GZDoom: Nothing is lost: the maps play in UZDoom and GZDoom as they are.", seen[1]);
         Assert.Matches("^Vanilla: 1 thing does not survive in Vanilla: \\| (E1M1|MAP01): Coloured light$", seen[2]);
         Assert.Equal("Show: the room", seen[3]);
         Assert.Equal($"Saved as {saveTo}", seen[4]);

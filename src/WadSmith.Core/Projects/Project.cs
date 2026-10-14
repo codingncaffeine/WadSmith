@@ -83,7 +83,7 @@ public static class Targets
     /// <summary>The targets as the user chooses them, in order.</summary>
     public static readonly IReadOnlyList<(string Id, string Title)> All =
     [
-        (GZDoom, "GZDoom"),
+        (GZDoom, "UZDoom and GZDoom"),
         (Vanilla, "Vanilla Doom (Chocolate Doom)"),
         (LimitRemoving, "Limit-removing (Crispy Doom)"),
     ];
