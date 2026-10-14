@@ -107,6 +107,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         _reports = new(session.OnUiThread, ReportArrived, "the map's explanation");
         Inspector.ExplainMap += () => ExplainMapCommand.Execute(null);
         Inspector.ExportMap += () => OpenExportCommand.Execute(null);
+        Inspector.ShowFiles += () => OpenFilesCommand.Execute(null);
         FindPorts();
         _shelfSounds = new LatestOnWorker<byte[]?>(session.OnUiThread, wav =>
         {
@@ -664,6 +665,22 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     [RelayCommand]
     private void CloseReport() => Report = null;
+
+    /// <summary>The text view of the files WadSmith writes (§3.10) while it is open; null when closed.</summary>
+    [ObservableProperty]
+    private GeneratedFilesView? _files;
+
+    /// <summary>Opens the text view of the project's generated files, listed on a worker.</summary>
+    [RelayCommand]
+    private async Task OpenFilesAsync()
+    {
+        var project = Session.Project;
+        var files = await Task.Run(() => GeneratedFiles.List(project)).ConfigureAwait(true);
+        Files = new GeneratedFilesView(project, files);
+    }
+
+    [RelayCommand]
+    private void CloseFiles() => Files = null;
 
     /// <summary>The Export card (Phase 12) while it is open; null when closed.</summary>
     [ObservableProperty]

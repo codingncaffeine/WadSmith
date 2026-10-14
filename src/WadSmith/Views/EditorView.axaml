@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:WadSmith.App.ViewModels"
+             xmlns:views="using:WadSmith.App.Views"
              xmlns:canvas="using:WadSmith.App.Canvas"
              xmlns:threeD="using:WadSmith.App.ThreeD"
              x:Class="WadSmith.App.Views.EditorView"
@@ -338,6 +339,25 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+            <!-- The files WadSmith writes (§3.10): each read as it is, coloured, to select and copy; WadSmith writes them again from the project. -->
+            <Border Grid.ColumnSpan="3" IsVisible="{Binding Files, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="12,56,12,12" Padding="16,12" Width="640" MaxHeight="620" CornerRadius="6" Background="{DynamicResource Brush.Surface1}"
+                    BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1">
+                <Grid DataContext="{Binding Files}" x:DataType="vm:GeneratedFilesView" RowDefinitions="Auto,Auto,*">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="section" Text="FILES WADSMITH WRITES" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Classes="metal" Content="Close" Padding="10,1" Command="{Binding $parent[UserControl].((vm:EditorViewModel)DataContext).CloseFilesCommand}"
+                                ToolTip.Tip="Closes the files. Files WadSmith writes, in the Inspector with nothing selected, opens them again." />
+                    </Grid>
+                    <ComboBox Grid.Row="1" ItemsSource="{Binding Files}" SelectedItem="{Binding Selected}" IsVisible="{Binding !None}" HorizontalAlignment="Stretch" Margin="0,8"
+                              AutomationProperties.Name="Generated file" ToolTip.Tip="Which file to read: WadSmith writes each again whenever what it holds changes, so edits made to it here would not last." />
+                    <TextBlock Grid.Row="1" Text="WadSmith has written no files into this project yet: they come with map settings, pictures, sounds and objects brought in." IsVisible="{Binding None}" TextWrapping="Wrap" Margin="0,8" />
+                    <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Auto">
+                        <views:CodeText Pieces="{Binding Pieces}" FontFamily="Cascadia Mono, Consolas, DejaVu Sans Mono, Liberation Mono, monospace" FontSize="12" Margin="0,4"
+                                        AutomationProperties.Name="File text" ToolTip.Tip="The file as GZDoom reads it: select and copy any of it." />
                     </ScrollViewer>
                 </Grid>
             </Border>
