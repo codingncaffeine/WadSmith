@@ -14,9 +14,9 @@
                          ToolTip.Tip="Shows only what has these letters in its name, such as “door” or “brown”." />
                 <Button Grid.Row="1" Classes="metal" Content="{Binding AddLabel}" Command="{Binding AddFileCommand}" IsVisible="{Binding AddLabel, Converter={x:Static ObjectConverters.IsNotNull}}"
                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,8,0,0" ToolTip.Tip="{Binding AddTip}" AutomationProperties.Name="{Binding AddLabel}" />
-                <Grid Grid.Row="2" ColumnDefinitions="*,8,*" Margin="0,8,0,0">
+                <Grid Grid.Row="2" ColumnDefinitions="3*,8,2*" Margin="0,8,0,0">
                     <ComboBox ItemsSource="{Binding Games}" SelectedIndex="{Binding GameIndex}" HorizontalAlignment="Stretch"
-                              ToolTip.Tip="Which game's things the shelf shows: this map's own, or one of your other games. What you drag in from another game is copied into this project, and the map then plays in GZDoom." />
+                              ToolTip.Tip="Which game's things the shelf shows: this map's own, one of your other games, or a free source — Realm667's monsters, weapons, items and props, the community's texture packs, Freedoom and Blasphemer. What you drag in from elsewhere is copied into this project with its credits, and the map then plays in GZDoom." />
                     <ComboBox Grid.Column="2" ItemsSource="{Binding Groups}" SelectedIndex="{Binding Group}" HorizontalAlignment="Stretch"
                               ToolTip.Tip="Which group the shelf shows. Drag anything shown onto the plan or the 3D view." />
                 </Grid>
@@ -32,10 +32,18 @@
                             <DataTemplate DataType="vm:ShelfTile">
                                 <Border Width="92" Margin="0,0,6,6" Padding="4" CornerRadius="4" Background="{DynamicResource Brush.Surface1}"
                                         BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="1" Cursor="Hand"
-                                        ToolTip.Tip="{Binding Tooltip}" PointerPressed="OnShelfTilePressed" PointerEntered="OnShelfTileEntered">
+                                        ToolTip.Tip="{Binding Tooltip}" PointerPressed="OnShelfTilePressed" PointerEntered="OnShelfTileEntered"
+                                        EffectiveViewportChanged="OnShelfTileSeen" DataContextChanged="OnShelfTileChanged">
                                     <StackPanel Spacing="3">
                                         <Border Height="64" Background="#0A0708" CornerRadius="3" ClipToBounds="True">
-                                            <Image Source="{Binding Picture}" Stretch="None" RenderOptions.BitmapInterpolationMode="None" />
+                                            <Grid>
+                                                <Image Source="{Binding Picture}" Stretch="None" RenderOptions.BitmapInterpolationMode="None" />
+                                                <!-- Still to download (D61): a small word in the corner, as the start screen's featured tile is coloured. -->
+                                                <Border IsVisible="{Binding Badge, Converter={x:Static ObjectConverters.IsNotNull}}" Background="{DynamicResource Brush.Featured}"
+                                                        HorizontalAlignment="Right" VerticalAlignment="Top" Margin="2" Padding="4,0,4,1" CornerRadius="3">
+                                                    <TextBlock Text="{Binding Badge}" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                                                </Border>
+                                            </Grid>
                                         </Border>
                                         <TextBlock Text="{Binding Label}" FontSize="11" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" />
                                     </StackPanel>

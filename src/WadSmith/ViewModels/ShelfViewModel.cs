@@ -9,17 +9,65 @@ namespace WadSmith.App.ViewModels;
 
 /// <summary>
 /// What a shelf tile carries when dragged onto the map: a texture's name, an object's number, or a prefab; a picture from
-/// another game says which (<paramref name="From"/>) and whether it is a floor; a 3D model file dragged in from the file manager is <paramref name="ModelFile"/>; one of Quake's own models is <paramref name="QuakeModel"/> (its path in the PAK).
+/// another game says which (<paramref name="From"/>) and whether it is a floor; a 3D model file dragged in from the file manager is <paramref name="ModelFile"/>; one of Quake's own models is <paramref name="QuakeModel"/> (its path in the PAK); an object from a free source (D61) is <paramref name="Library"/>, downloaded when placed.
 /// </summary>
-internal sealed record ShelfDrop(string? Texture, int Thing, string Label, WadSmith.Editor.Editing.Prefab? Prefab = null, GameResources? From = null, bool Flat = false, string? ModelFile = null, string? QuakeModel = null)
+internal sealed record ShelfDrop(string? Texture, int Thing, string Label, WadSmith.Editor.Editing.Prefab? Prefab = null, GameResources? From = null, bool Flat = false, string? ModelFile = null, string? QuakeModel = null, WadSmith.Core.Library.LibraryItem? Library = null)
 {
     /// <summary>The drag's format: an object handed over within WadSmith.</summary>
     public static readonly Avalonia.Input.DataFormat<ShelfDrop> Format = Avalonia.Input.DataFormat.CreateInProcessFormat<ShelfDrop>("wadsmith-shelf");
 }
 
-/// <summary>One picture on a shelf: what it is, in words, and what dragging it puts on the map.</summary>
-internal sealed class ShelfTile(string label, string tooltip, string group, string search, Bitmap? picture, ShelfDrop drop, string? game = null)
+/// <summary>
+/// One picture on a shelf: what it is, in words, and what dragging it puts on the map. A tile of a free source (D61) may have
+/// its picture still to come (<see cref="LoadPicture"/>, fetched when the tile is first seen), a word in its corner
+/// (<see cref="Badge"/>: "Get") and an action pressing it does instead of a drag (<see cref="Activate"/>: download a pack).
+/// </summary>
+internal sealed partial class ShelfTile(string label, string tooltip, string group, string search, Bitmap? picture, ShelfDrop drop, string? game = null) : ObservableObject
 {
+    [ObservableProperty]
+    private Bitmap? _picture = picture;
+
+    /// <summary>A short word shown in the tile's corner ("Get" for what is still to be downloaded); null for none.</summary>
+    [ObservableProperty]
+    private string? _badge;
+
+    /// <summary>The badge as it is now (a download may have happened since); read on a worker when the shelf is refreshed.</summary>
+    public Func<string?>? BadgeNow { get; init; }
+
+    /// <summary>What pressing the tile does instead of starting a drag; null for a tile that is dragged.</summary>
+    public Action? Activate { get; init; }
+
+    /// <summary>Fetches the tile's picture (its preview on the source's site); called once, when the tile is first seen.</summary>
+    public Func<CancellationToken, Task<Bitmap?>>? LoadPicture { get; init; }
+
+    private int _wanted;
+
+    /// <summary>The tile is on screen: its picture is fetched now if it is still to come (a few at a time, never on the UI thread).</summary>
+    public void WantPicture()
+    {
+        if (LoadPicture is not { } load || Picture is not null || Interlocked.Exchange(ref _wanted, 1) == 1) return;
+        _ = Task.Run(async () =>
+        {
+            await Previews.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var bitmap = await load(CancellationToken.None).ConfigureAwait(false);
+                if (bitmap is not null) MainViewModel.PostToUi(() => Picture = bitmap);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or WadSmith.Core.CorruptDataException or TaskCanceledException or ArgumentException)
+            {
+                WadSmith.Editor.App.Log.Warn($"The picture of {Label} could not be had: {ex.Message}");
+            }
+            finally
+            {
+                Previews.Release();
+            }
+        });
+    }
+
+    /// <summary>How many tile pictures are fetched at once.</summary>
+    private static readonly SemaphoreSlim Previews = new(3, 3);
+
     public string Label { get; } = label;
 
     /// <summary>The game it is from: null for the map's own game.</summary>
@@ -32,9 +80,27 @@ internal sealed class ShelfTile(string label, string tooltip, string group, stri
     /// <summary>Everything a search can match, in lower case.</summary>
     public string Search { get; } = search;
 
-    public Bitmap? Picture { get; } = picture;
-
     public ShelfDrop Drop { get; } = drop;
+}
+
+/// <summary>
+/// A free source on a shelf's chooser (D61): Realm667, the texture packs, a pack fetched, a free game to get. Its tiles are
+/// made only when it is chosen, by <see cref="Load"/> on a worker, which hands them over in batches and says how it is going.
+/// </summary>
+internal sealed class ShelfSource(string name, Func<ShelfSource.Feed, CancellationToken, Task> load)
+{
+    /// <summary>What a source's loading can do on its shelf: add tiles, say how it is going, add another source (a pack just fetched) and choose it.</summary>
+    internal sealed record Feed(Action<IReadOnlyList<ShelfTile>> Add, Action<string> Say, Action<ShelfSource> AddSource, Action<string?> Reload);
+
+    public string Name { get; } = name;
+
+    public Func<Feed, CancellationToken, Task> Load { get; } = load;
+
+    /// <summary>True once the source has nothing left to offer (the free game it gets is now found): it leaves the chooser.</summary>
+    public Func<bool>? Gone { get; init; }
+
+    /// <summary>A tile offered after the others when the search box has words (look for them on idgames); null for none.</summary>
+    public Func<string, ShelfTile?>? Searcher { get; init; }
 }
 
 /// <summary>
@@ -116,7 +182,110 @@ internal sealed partial class ShelfViewModel : ObservableObject
 
     private string? _ownGame;
 
-    partial void OnGameIndexChanged(int value) => Filter();
+    partial void OnGameIndexChanged(int value)
+    {
+        Filter();
+        if (value > 0 && value < Games.Count) Start(Games[value]);
+    }
+
+    private readonly List<ShelfSource> _sources = [];
+    private readonly Dictionary<string, List<ShelfTile>> _sourceTiles = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _sourceNotes = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _begun = new(StringComparer.Ordinal);
+    private string? _choose;
+
+    /// <summary>The free sources the chooser offers after the games (D61), in this order.</summary>
+    public IReadOnlyList<ShelfSource> Sources => _sources;
+
+    /// <summary>Offers <paramref name="sources"/> on the chooser after the games (D61).</summary>
+    public void Offer(IEnumerable<ShelfSource> sources)
+    {
+        _sources.AddRange(sources);
+        if (_started) Names();
+    }
+
+    /// <summary>Adds a source to the chooser (a texture pack just fetched) and chooses it.</summary>
+    public void AddSource(ShelfSource source)
+    {
+        if (_sources.All(x => x.Name != source.Name)) _sources.Add(source);
+        _choose = source.Name;
+        Names();
+    }
+
+    /// <summary>Makes a source's tiles the first time it is chosen, on a worker; what it says shows in the note.</summary>
+    private void Start(string name)
+    {
+        if (_sources.FirstOrDefault(x => x.Name == name) is not { } source || !_begun.Add(name)) return;
+        _sourceNotes[name] = "Getting the list…";
+        Filter();
+        var feed = new ShelfSource.Feed(
+            tiles => MainViewModel.PostToUi(() =>
+            {
+                if (!_sourceTiles.TryGetValue(name, out var list)) _sourceTiles[name] = list = [];
+                list.AddRange(tiles);
+                Filter();
+            }),
+            words => MainViewModel.PostToUi(() =>
+            {
+                _sourceNotes[name] = words;
+                Filter();
+            }),
+            added => MainViewModel.PostToUi(() => AddSource(added)),
+            choose => MainViewModel.PostToUi(() =>
+            {
+                _choose = choose;
+                Refresh();
+                if (!_started) Open();
+            }));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await source.Load(feed, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or WadSmith.Core.CorruptDataException or TaskCanceledException or InvalidDataException or UnauthorizedAccessException)
+            {
+                WadSmith.Editor.App.Log.Warn($"The shelf's {name} could not be read: {ex.Message}");
+                feed.Say($"{name} could not be reached: {ex.Message} Choose it again to try again.");
+                MainViewModel.PostToUi(() => _begun.Remove(name));
+            }
+        });
+    }
+
+    /// <summary>The chooser's names: this game, the user's other games A to Z, then the free sources; the choice kept, or the one asked for.</summary>
+    private void Names()
+    {
+        var chosen = _choose ?? (GameIndex > 0 && GameIndex < Games.Count ? Games[GameIndex] : null);
+        var names = new List<string> { _ownGame ?? "This game" };
+        names.AddRange(_all.Select(t => t.Game).OfType<string>().Where(g => _sources.All(x => x.Name != g)).Distinct(StringComparer.Ordinal).Order(StringComparer.CurrentCulture));
+        names.AddRange(_sources.Where(x => x.Gone?.Invoke() != true).Select(x => x.Name));
+        if (names.SequenceEqual(Games))
+        {
+            if (_choose is not null && names.IndexOf(_choose) is > 0 and var at)
+            {
+                _choose = null;
+                GameIndex = at;
+            }
+
+            return;
+        }
+
+        Games.Clear();
+        foreach (var n in names) Games.Add(n);
+
+        // Clearing the list unselects it in the view, which takes the new items in after this turn: the choice is said
+        // again on the next one, even when its number is the same.
+        var index = chosen is null ? 0 : Math.Max(0, names.IndexOf(chosen));
+        if (_choose is not null && names.Contains(_choose)) _choose = null;
+        GameIndex = index;
+        var opening = _opened;
+        MainViewModel.PostToUi(() =>
+        {
+            if (opening != _opened) return;
+            GameIndex = -1;
+            GameIndex = index;
+        });
+    }
 
     /// <summary>The groups to show: "All" first.</summary>
     public IReadOnlyList<string> Groups { get; }
@@ -145,6 +314,17 @@ internal sealed partial class ShelfViewModel : ObservableObject
     /// <summary>Makes the pictures again (a prefab was saved), at once if the shelf has been shown, else when it is.</summary>
     public void Refresh()
     {
+        // The free sources' badges: what was downloaded since says so (read on a worker: it looks at files).
+        var badged = _sourceTiles.Values.SelectMany(t => t).Where(t => t.BadgeNow is not null).ToList();
+        if (badged.Count > 0)
+        {
+            _ = Task.Run(() =>
+            {
+                var now = badged.Select(t => (Tile: t, Badge: t.BadgeNow!())).Where(x => x.Badge != x.Tile.Badge).ToList();
+                if (now.Count > 0) MainViewModel.PostToUi(() => now.ForEach(x => x.Tile.Badge = x.Badge));
+            });
+        }
+
         if (!_started) return;
         _started = false;
         Open();
@@ -168,26 +348,7 @@ internal sealed partial class ShelfViewModel : ObservableObject
                 {
                     if (opening != _opened) return;
                     _all = replace ? tiles : [.. _all, .. tiles];
-                    var chosen = GameIndex > 0 && GameIndex < Games.Count ? Games[GameIndex] : null;
-                    var names = new List<string> { _ownGame ?? "This game" };
-                    names.AddRange(_all.Select(t => t.Game).OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.CurrentCulture));
-                    if (!names.SequenceEqual(Games))
-                    {
-                        Games.Clear();
-                        foreach (var n in names) Games.Add(n);
-
-                        // Clearing the list unselects it in the view, which takes the new items in after this turn: the choice is said
-                        // again on the next one, even when its number is the same.
-                        var index = chosen is null ? 0 : Math.Max(0, names.IndexOf(chosen));
-                        GameIndex = index;
-                        MainViewModel.PostToUi(() =>
-                        {
-                            if (opening != _opened) return;
-                            GameIndex = -1;
-                            GameIndex = index;
-                        });
-                    }
-
+                    Names();
                     Filter();
                 });
             }
@@ -204,9 +365,20 @@ internal sealed partial class ShelfViewModel : ObservableObject
         var game = GameIndex > 0 && GameIndex < Games.Count ? Games[GameIndex] : null;
         var words = Search.Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         Tiles.Clear();
-        foreach (var t in _all)
+        var source = game is null ? null : _sources.FirstOrDefault(x => x.Name == game);
+        var pool = source is null ? _all : _sourceTiles.GetValueOrDefault(source.Name) ?? [];
+        foreach (var t in pool)
         {
-            if ((group is null || t.Group == group) && t.Game == game && words.All(t.Search.Contains)) Tiles.Add(t);
+            // A source's tiles that are not of the shelf's groups (a texture pack to download) show whatever group is chosen.
+            if ((group is null || t.Group == group || source is not null && !Groups.Contains(t.Group)) && t.Game == game && words.All(t.Search.Contains)) Tiles.Add(t);
+        }
+
+        if (source is not null)
+        {
+            if (source.Searcher?.Invoke(Search.Trim()) is { } more) Tiles.Add(more);
+            var said = _sourceNotes.GetValueOrDefault(source.Name, "");
+            Note = pool.Count == 0 ? said : Tiles.Count == 0 ? $"{said} Nothing matches." : $"{said} {Tiles.Count} of {pool.Count} shown.".Trim();
+            return;
         }
 
         Note = _all.Count == 0 ? "Nothing here: the game's files were not found." : Tiles.Count == 0 ? "Nothing matches." : $"{Tiles.Count} of {_all.Count}. Drag one onto the map.";

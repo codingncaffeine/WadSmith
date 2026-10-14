@@ -67,7 +67,8 @@ internal sealed partial class MainViewModel : ObservableObject
     public static SessionHooks HooksFor(GameResources? resources, string? engineData)
     {
         var look = new Canvas.MapLook(resources);
-        return new SessionHooks(PostToUi, resources, frame => Canvas.MapThumbnail.Render(frame, look, 384, 256), engineData, QuakePalette);
+        var services = WadSmith.App.App.Services;
+        return new SessionHooks(PostToUi, resources, frame => Canvas.MapThumbnail.Render(frame, look, 384, 256), engineData, QuakePalette, services?.Library, family => services?.FamilyPalette(family));
     }
 
     /// <summary>Quake's palette from the user's own Quake (its PAK0), for Quake models; null when no Quake was found. Reads a file: call it on a worker.</summary>

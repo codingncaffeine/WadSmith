@@ -111,6 +111,74 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
         }))];
     }
 
+    /// <summary>What WadSmith keeps of the free sources (D61): Realm667's lists, the texture packs, previews and downloads, under the data folder.</summary>
+    public Core.Library.LibraryStore Library => _library ??= new Core.Library.LibraryStore(Path.Combine(Paths.Data, "library"), Http);
+
+    private Core.Library.LibraryStore? _library;
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Core.Graphics.Palette?>> _palettes = new();
+
+    /// <summary>
+    /// The colours of a game family ("doom", "heretic", "hexen", "strife") from a game of it found here, for downloads drawn in
+    /// that family's colours (D61); null when none of that family was found. Reads a file the first time: call on a worker.
+    /// </summary>
+    public Core.Graphics.Palette? FamilyPalette(string family) => _palettes.GetOrAdd(family, f => new Lazy<Core.Graphics.Palette?>(() =>
+    {
+        foreach (var game in (Games ?? []).Where(g => g.Game.Engine == f && g.Game.Supported && g.Game.IsBaseGame))
+        {
+            try
+            {
+                if (Core.Containers.ResourceContainer.Open(game.Path).Find("PLAYPAL") is { Size: >= 768 } playpal) return new Core.Graphics.Palette(playpal.Read());
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Core.CorruptDataException)
+            {
+                Log.Warn($"{game.Game.Title}'s colours could not be read from {game.Path}: {ex.Message}");
+            }
+        }
+
+        return null;
+    })).Value;
+
+    /// <summary>A texture pack fetched from a free source, opened for its pictures over a game of its family (D61); null when no such game was found. Call on a worker.</summary>
+    public GameResources? OpenPack(Core.Library.LibraryItem item, IReadOnlyList<string> files, string? ownGameId)
+    {
+        try
+        {
+            return GameResources.LoadPack(item, files, ownGameId, Games ?? []);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Core.CorruptDataException)
+        {
+            Log.Warn($"The texture pack {item.Title} could not be read: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Where a free game WadSmith fetches goes: its own folder under WadSmith's games folder.</summary>
+    public string FreeGameFolder(FreeGames.Release release) => Path.Combine(Paths.Data, "games", release.Folder);
+
+    /// <summary>Whether a free game is among the games found (fetched by WadSmith or the user's own copy).</summary>
+    public bool HasFreeGame(FreeGames.Release release) => (Games ?? []).Any(g => release.Files.Any(file => string.Equals(Path.GetFileName(g.Path), file, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>
+    /// Fetches a free game (D61, §3.2): its release pinned by checksum, unpacked into WadSmith's games folder, which joins the
+    /// folders searched; the caller scans again. Call it from the UI thread. Needs the internet (<see cref="Http"/>).
+    /// </summary>
+    public async Task InstallFreeGameAsync(FreeGames.Release release, IProgress<(long Done, long? Total)>? progress, CancellationToken cancel)
+    {
+        var http = Http ?? throw new IOException("WadSmith is set not to use the internet.");
+        var folder = FreeGameFolder(release);
+        // Back on the caller's thread (the UI) before the settings change.
+        await FreeGames.InstallAsync(release, folder, http, progress, cancel).ConfigureAwait(true);
+        var list = Settings.Current.GameFolders;
+        if (!list.Contains(folder, StringComparer.Ordinal))
+        {
+            list.Add(folder);
+            Settings.Save();
+        }
+
+        Log.Info($"{release.Title} {release.Version} unpacked into {folder}");
+    }
+
     /// <summary>The games the last scan found, scanning first when none has finished. Call on a worker.</summary>
     public IReadOnlyList<FoundGame> FoundGames() => Games ?? GameLocator.Scan(GameLocator.StandardFolders(Environment.GetEnvironmentVariable, Settings.Current.EnginePath).Concat(Settings.Current.GameFolders).Distinct(), cancel: ShuttingDown);
 

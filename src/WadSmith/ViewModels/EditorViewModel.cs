@@ -85,6 +85,10 @@ internal sealed partial class EditorViewModel : ObservableObject
         ObjectShelf.AddTip = "Brings in a 3D model of your own (OBJ with its .mtl and pictures, glTF/GLB, MD3, IQM, Quake's MD2 and MDL, or MagicaVoxel and KVX voxels, or a block from a block texture set) as a prop for this map: it is copied into the project, GZDoom draws it, and it waits under Your models. You can also drop a model file onto the plan.";
         ObjectShelf.Add = () => _ = AddModelAsync();
         session.PrefabsChanged += ObjectShelf.Refresh;
+
+        // The free sources (D61) after the games on both choosers; the packs fetched before are found on a worker.
+        TextureShelf.Offer(LibrarySources.ForTextures(services, session.Resources, () => main.Welcome.RescanAsync()));
+        ObjectShelf.Offer(LibrarySources.ForObjects(services, session.Resources, () => main.Welcome.RescanAsync()));
         session.PropsChanged += ObjectShelf.Refresh;
         if (showVersions) Panel = SidePanel.Versions;
         session.History.Moved += OnHistoryMoved;

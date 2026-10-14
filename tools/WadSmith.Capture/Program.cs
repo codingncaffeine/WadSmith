@@ -385,7 +385,7 @@ foreach (var pose in poses)
             vm.Preferences!.CloseCommand.Execute(null);
             Pump(0.2);
             break;
-        case "editor" or "editor-find" or "editor-brightness" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-make-exit" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-model" or "editor-3d-picture" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-climb" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark" or "landmark-sheet" or "editor-explain" or "editor-export" or "editor-play-in" or "editor-tour":
+        case "editor" or "editor-find" or "editor-brightness" or "editor-heights" or "editor-ceilings" or "editor-lines" or "editor-selected" or "editor-zoomed" or "editor-versions" or "editor-3d" or "editor-walk" or "editor-3d-selected" or "editor-face" or "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-door" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-problems" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-make-exit" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab" or "editor-fit" or "editor-borrow" or "editor-arrange" or "editor-guides" or "editor-round" or "editor-mirror" or "editor-door-drag" or "editor-groups" or "editor-flatcal" or "editor-play" or "editor-map-settings" or "editor-3d-drop" or "editor-3d-model" or "editor-3d-picture" or "editor-3d-heights" or "editor-3d-align" or "editor-engine-view" or "editor-fogcal" or "editor-slope" or "editor-climb" or "editor-platform" or "editor-layout" or "editor-palette" or "editor-veteran" or "editor-guide" or "editor-whatisthis" or "sound-check" or "editor-landmark" or "landmark-sheet" or "editor-explain" or "editor-export" or "editor-play-in" or "editor-tour" or "editor-library":
             if (vm.Page is not EditorViewModel)
             {
                 var tile = vm.Welcome.Games.FirstOrDefault(g => map is null || g.Location.EndsWith(map.Split(':')[0], StringComparison.OrdinalIgnoreCase));
@@ -1873,7 +1873,7 @@ foreach (var pose in poses)
                 break;
             }
 
-            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-make-exit" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab")
+            if (pose is "editor-draw" or "editor-move" or "editor-join" or "editor-delete" or "editor-box" or "editor-make-door" or "editor-shelves" or "editor-library" or "editor-make-lift" or "editor-make-teleport" or "editor-draw-shape" or "editor-copy" or "editor-make-stairs" or "editor-turn" or "editor-make-window" or "editor-make-secret" or "editor-make-switch" or "editor-make-exit" or "editor-rooms" or "editor-key" or "editor-make-light" or "editor-measure" or "editor-looks" or "editor-prefab")
             {
                 // Real key and pointer events: R picks the Room tool, a drag beside the starter room draws a
                 // room sharing its east wall (captured mid-drag too), then a drag inside the new room draws
@@ -1908,6 +1908,83 @@ foreach (var pose in poses)
                 }
 
                 Report("before");
+                if (pose == "editor-library")
+                {
+                    // The free sources (D61), live: Realm667 on the Objects chooser with its previews and the Box dragged onto the
+                    // plan; its monsters; the texture packs on the Textures chooser, The Darkening E2 opened and one of its
+                    // textures on the south wall; a free game to get.
+                    void DropAt((double X, double Y) at, WadSmith.App.ViewModels.ShelfDrop drop)
+                    {
+                        var data = new Avalonia.Input.DataTransfer();
+                        data.Add(Avalonia.Input.DataTransferItem.Create(WadSmith.App.ViewModels.ShelfDrop.Format, drop));
+                        foreach (var kind in new[] { Avalonia.Input.Raw.RawDragEventType.DragEnter, Avalonia.Input.Raw.RawDragEventType.DragOver, Avalonia.Input.Raw.RawDragEventType.Drop })
+                        {
+                            window.DragDrop(At(at.X, at.Y), kind, data, Avalonia.Input.DragDropEffects.Copy, Avalonia.Input.RawInputModifiers.None);
+                            Pump(0.1);
+                        }
+
+                        Pump(0.5);
+                    }
+
+                    void Pictures(WadSmith.App.ViewModels.ShelfViewModel shelf)
+                    {
+                        for (var i = 0; i < 300 && shelf.Tiles.Take(12).Any(t => t.Picture is null && t.LoadPicture is not null); i++) Pump(0.05);
+                    }
+
+                    editor.ShowObjects = true;
+                    var objects = editor.ObjectShelf;
+                    for (var i = 0; i < 400 && objects.Tiles.Count == 0; i++) Pump(0.05);
+                    Console.WriteLine($"library chooser: {string.Join(" | ", objects.Games)}");
+                    objects.GameIndex = objects.Games.IndexOf(WadSmith.App.ViewModels.LibrarySources.Realm667Name);
+                    for (var i = 0; i < 2400 && !objects.Note.StartsWith("Realm667:", StringComparison.Ordinal) && !objects.Note.Contains("could not", StringComparison.Ordinal); i++) Pump(0.05);
+                    Console.WriteLine($"library objects: {objects.Note}");
+                    objects.Group = objects.Groups.ToList().IndexOf("Decorations");
+                    objects.Search = "box";
+                    Pump(0.5);
+                    Pictures(objects);
+                    Save("editor-library-objects");
+                    var box = objects.Tiles.First(t => t.Label == "Box");
+                    var things = editor.Session.Map.Things.Count;
+                    DropAt((0, 0), box.Drop);
+                    for (var i = 0; i < 600 && editor.Session.Map.Things.Count == things; i++) Pump(0.05);
+                    Pump(0.5);
+                    Console.WriteLine($"library placed: {string.Join(",", editor.Session.Map.Things.Skip(things).Select(t => $"{editor.Session.Resources?.Things.Find(t.Type)?.ClassName}#{t.Type}"))}; status '{editor.Status}'");
+                    Save("editor-library-placed");
+                    objects.Search = "";
+                    objects.Group = objects.Groups.ToList().IndexOf("Monsters");
+                    Pump(0.5);
+                    Pictures(objects);
+                    Save("editor-library-monsters");
+
+                    editor.ShowTextures = true;
+                    var textures = editor.TextureShelf;
+                    for (var i = 0; i < 400 && textures.Tiles.Count == 0; i++) Pump(0.05);
+                    textures.GameIndex = textures.Games.IndexOf(WadSmith.App.ViewModels.LibrarySources.PacksName);
+                    for (var i = 0; i < 2400 && !textures.Note.StartsWith("Texture packs:", StringComparison.Ordinal) && !textures.Note.Contains("could not", StringComparison.Ordinal); i++) Pump(0.05);
+                    Console.WriteLine($"library packs: {textures.Note}; {string.Join(", ", textures.Tiles.Take(8).Select(t => $"{t.Label}[{t.Badge}]"))}");
+                    Pictures(textures);
+                    Save("editor-library-packs");
+                    var pack = textures.Tiles.First(t => t.Label.StartsWith("The Darkening", StringComparison.Ordinal));
+                    pack.Activate!();
+                    for (var i = 0; i < 2400 && !textures.Tiles.Any(t => t.Game == pack.Label && t.Group == "Walls"); i++) Pump(0.05);
+                    Pump(0.5);
+                    Console.WriteLine($"library pack: shows {textures.Games[Math.Max(0, textures.GameIndex)]}; {textures.Note}");
+                    Save("editor-library-pack");
+                    var wallTile = textures.Tiles.First(t => t.Group == "Walls");
+                    DropAt((0, -250), wallTile.Drop);
+                    var southWall = editor.Session.Map.Lines.Single(l => l.OnMap && l.Start.Y == -256 && l.End.Y == -256);
+                    for (var i = 0; i < 400 && southWall.Front.Middle != wallTile.Drop.Texture; i++) Pump(0.05);
+                    Console.WriteLine($"library wall: {southWall.Front.Middle} (dropped {wallTile.Label}); credits {string.Join(",", Directory.EnumerateFiles(Path.Combine(editor.Session.Project.Folder, "credits")).Select(Path.GetFileName))}");
+                    Save("editor-library-wall");
+                    if (textures.Games.FirstOrDefault(g => g.EndsWith("(free)", StringComparison.Ordinal) && textures.Sources.Any(s => s.Name == g && s.Gone is not null)) is { } free)
+                    {
+                        textures.GameIndex = textures.Games.IndexOf(free);
+                        Pump(0.5);
+                        Console.WriteLine($"library free game: {textures.Note}");
+                        Save("editor-library-free-game");
+                    }
+                }
+
                 if (pose == "editor-shelves")
                 {
                     // The Textures shelf, then a wall texture dropped on the starter room's south wall with real

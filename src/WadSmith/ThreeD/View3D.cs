@@ -291,6 +291,7 @@ internal sealed class View3D : Control
         const double step = 8;
         var at = shift ? new MapPoint(floor.X, floor.Y) : new MapPoint(Math.Round(floor.X / step) * step, Math.Round(floor.Y / step) * step);
         if (drop.ModelFile is { } model) session.ImportModel(model, at, floor.Platform ? floor.Z : null);
+        else if (drop.Library is { } item) session.PlaceLibraryObject(item, at, floor.Platform ? floor.Z : null);
         else if (drop.QuakeModel is { } quakeModel && drop.From is { } quake) session.PlaceQuakeModel(quake, quakeModel, at, floor.Platform ? floor.Z : null);
         else if (drop.From is { } other) session.PlaceBorrowedThing(other, drop.Thing, at, floor.Platform ? floor.Z : null);
         else session.PlaceThing(drop.Thing, at, floor.Platform ? floor.Z : null);

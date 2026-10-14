@@ -1,8 +1,10 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using WadSmith.App.ViewModels;
 using WadSmith.Editor.App;
 
@@ -188,9 +190,34 @@ public partial class EditorView : UserControl
         if ((sender as Control)?.DataContext is ShelfTile tile) (DataContext as EditorViewModel)?.PointedAtShelf(tile);
     }
 
+    /// <summary>A tile moved in its list (scrolled): its picture is fetched once it is in view, if still to come (a free source's preview, D61).</summary>
+    private void OnShelfTileSeen(object? sender, Avalonia.Layout.EffectiveViewportChangedEventArgs e) => WantIfSeen(sender as Control);
+
+    /// <summary>A tile shows another entry (the list was filtered): the same check, once the layout has placed it.</summary>
+    private void OnShelfTileChanged(object? sender, EventArgs e)
+    {
+        if (sender is Control control) Avalonia.Threading.Dispatcher.UIThread.Post(() => WantIfSeen(control), Avalonia.Threading.DispatcherPriority.Background);
+    }
+
+    /// <summary>Asks for a tile's picture when the tile is inside its list's visible part (never the whole list at once: a site is not crowded).</summary>
+    private static void WantIfSeen(Control? control)
+    {
+        if (control?.DataContext is not ShelfTile { LoadPicture: not null, Picture: null } tile || !control.IsEffectivelyVisible) return;
+        if (control.FindAncestorOfType<ScrollViewer>() is not { } list || control.TranslatePoint(default, list) is not { } at) return;
+        if (new Rect(at, control.Bounds.Size).Intersects(new Rect(list.Bounds.Size))) tile.WantPicture();
+    }
+
     private async void OnShelfTilePressed(object? sender, PointerPressedEventArgs e)
     {
         if ((sender as Control)?.DataContext is not ShelfTile tile || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (tile.Activate is { } activate)
+        {
+            // A tile that does something (download a pack, get a free game) instead of being dragged.
+            activate();
+            e.Handled = true;
+            return;
+        }
+
         var data = new DataTransfer();
         data.Add(DataTransferItem.Create(ShelfDrop.Format, tile.Drop));
         await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Copy).ConfigureAwait(true);
