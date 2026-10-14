@@ -16,3 +16,4 @@
 ## What's Fixed
 
 - **Quake monsters in GZDoom** — Quake monsters placed from the Objects shelf now show their model in GZDoom.
+- **Duke Nukem 3D enemies in GZDoom** — A map with Duke Nukem 3D's Lizard Trooper carried in no longer stops GZDoom from loading.

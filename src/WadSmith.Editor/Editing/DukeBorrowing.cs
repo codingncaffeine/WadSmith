@@ -70,9 +70,12 @@ public static partial class DukeBorrowing
             var letter = (char)('A' + byTile.Count);
             byTile[(frame.Tile, frame.Views)] = letter;
             letters[frame] = letter;
+
+            // A view the art lacks takes the nearest view it has: GZDoom stops loading on a frame with some rotations missing.
+            var tiles = Enumerable.Range(0, frame.Views).Select(view => duke.Art.Tile(frame.Tile + view)).ToArray();
             for (var view = 0; view < frame.Views; view++)
             {
-                if (duke.Art.Tile(frame.Tile + view) is not { } tile) continue;
+                if (Enumerable.Range(0, frame.Views).OrderBy(other => Math.Abs(other - view)).Select(other => tiles[other]).FirstOrDefault(t => t is not null) is not { } tile) continue;
                 var rotation = view + 1;
                 var name = frame.Views == 1 ? $"{sprite}{letter}0" : rotation is 1 or 5 ? $"{sprite}{letter}{rotation}" : $"{sprite}{letter}{rotation}{letter}{10 - rotation}";
                 project.WriteFile($"sprites/{Core.Assets.AssetExtractor.SafeName(name)}.png", ImageCodec.EncodePng(duke.Art.Picture(tile)));

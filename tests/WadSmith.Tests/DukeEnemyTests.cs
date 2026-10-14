@@ -92,4 +92,39 @@ public sealed class DukeEnemyTests
         Assert.Equal(2, File.ReadAllText(Path.Combine(project.Folder, DukeBorrowing.ScriptFile)).Split("#include").Length - 1);
         Assert.Null(DukeBorrowing.Of(project, 3001));
     }
+
+    /// <summary>
+    /// GZDoom stops loading a project when a frame has some of its rotations and not all ("Sprite DLIZ frame E is missing
+    /// rotations": the lizard trooper's art lacks two views of one frame). Every enemy is carried in, and each frame it wrote is
+    /// whole: one picture for every angle, or all eight rotations.
+    /// </summary>
+    [Fact]
+    public void EveryEnemysFramesAreWholeForGZDoom()
+    {
+        var engine = GameFiles.Require("gzdoom.pk3");
+        var grp = GameFiles.Require("DUKE3D.GRP");
+        var doom2 = GameFiles.Require("DOOM2.WAD");
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var games = new[] { new FoundGame(GameCatalog.Get("doom2")!, doom2, new FileInfo(doom2).Length) };
+        var doom = GameResources.Load("doom2", project.Folder, games, engine)!;
+        var art = BuildArtContainer.Open(grp);
+        foreach (var enemy in art.Enemies) DukeBorrowing.Carry(project, doom, art, enemy, "ShotgunGuy");
+
+        // Each sprite file names a frame and the rotations it serves (DLIZA1, DLIZA2A8, DLIZF0).
+        var rotations = new Dictionary<string, HashSet<char>>();
+        foreach (var name in Directory.GetFiles(Path.Combine(project.Folder, "sprites")).Select(f => Path.GetFileNameWithoutExtension(f)!))
+        {
+            for (var at = 4; at + 1 < name.Length; at += 2)
+            {
+                var key = name[..4] + name[at];
+                if (!rotations.TryGetValue(key, out var set)) rotations[key] = set = [];
+                set.Add(name[at + 1]);
+            }
+        }
+
+        Assert.True(rotations.Count > 20, $"{rotations.Count} frames written");
+        Assert.Empty(rotations.Where(r => !r.Value.SetEquals("0") && !r.Value.SetEquals("12345678")).Select(r => $"{r.Key}: {string.Concat(r.Value.Order())}"));
+    }
 }
