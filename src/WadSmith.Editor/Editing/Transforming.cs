@@ -88,15 +88,18 @@ public sealed class TransformEdit : IEdit
     private readonly Line[] _whole;
     private readonly (Vertex Start, Vertex End)[] _ends;
     private readonly FlatCarry? _carry;
+    private readonly Func<int, bool>? _keepsAngle;
     private StructureEdit? _then;
 
     /// <summary>
     /// Reads where everything starts from the map: make it on the UI thread. Rooms placed whole carry their floor and ceiling
-    /// textures, turned, sized and mirrored with them (<paramref name="flatSize"/>: a flat's size by name).
+    /// textures, turned, sized and mirrored with them (<paramref name="flatSize"/>: a flat's size by name). Objects whose angle
+    /// is a number, not a way they face (<paramref name="keepsAngle"/>: a polyobject's anchor and spot), keep it.
     /// </summary>
-    public TransformEdit(MoveSet set, Placement placement, Func<string, (int Width, int Height)?>? flatSize = null)
+    public TransformEdit(MoveSet set, Placement placement, Func<string, (int Width, int Height)?>? flatSize = null, Func<int, bool>? keepsAngle = null)
     {
         _carry = FlatCarry.Of(set, flatSize);
+        _keepsAngle = keepsAngle;
         _set = set;
         _vertexStart = [.. set.Vertices.Select(v => (v.X, v.Y))];
         _thingStart = [.. set.Things.Select(t => (t.X, t.Y, t.Angle))];
@@ -114,6 +117,7 @@ public sealed class TransformEdit : IEdit
         _whole = first._whole;
         _ends = first._ends;
         _carry = first._carry;
+        _keepsAngle = first._keepsAngle;
         Placement = placement;
     }
 
@@ -171,7 +175,7 @@ public sealed class TransformEdit : IEdit
             }
 
             var to = p.Apply(x, y);
-            (thing.X, thing.Y, thing.Angle) = (to.X, to.Y, p.Facing(angle));
+            (thing.X, thing.Y, thing.Angle) = (to.X, to.Y, _keepsAngle?.Invoke(thing.Type) == true ? angle : p.Facing(angle));
         }
 
         // Every step of a drag places from the start, so each wall runs as it started or, mirrored, the other way.

@@ -115,8 +115,14 @@ public sealed class EditorSession : IDisposable
 
             if (r.Set.IsEmpty || r.Make(r.Set) is not { } placement || placement.Flattens || placement == Placement.Identity) return;
             var gesture = History.NewGesture();
-            History.Run(new TransformEdit(r.Set, placement, FlatSize), gesture);
+
+            // A polyobject's anchor and spot keep their number (their angle), and a sliding or swinging door turned, mirrored or
+            // resized with its room is made again in its doorway, its way of opening turned with it (D62).
+            var family = Engine;
+            var polyDoors = placement is { A: 1, B: 0, C: 0, D: 1 } ? [] : PolyDoorsIn(r.Set, family);
+            History.Run(new TransformEdit(r.Set, placement, FlatSize, type => Polyobjects.IsAnchor(type, family) || Polyobjects.SpotKind(type, family) is not null), gesture);
             if (r.Set.Count <= MoveSet.LiveLimit) FinishMove(r.Set, gesture);
+            if (polyDoors.Count > 0) RemakePolyDoors(polyDoors, placement, gesture);
         }, "what a turn moves");
         _finds = new(onUiThread, r =>
         {
@@ -2368,6 +2374,56 @@ public sealed class EditorSession : IDisposable
         {
             Notice?.Invoke(ex.Message);
         }
+    }
+
+    /// <summary>The sliding and swinging doors whose start spots move with <paramref name="set"/>, as the map is before it moves.</summary>
+    private List<PolyDoor> PolyDoorsIn(MoveSet set, string family)
+    {
+        var moving = set.Things.ToHashSet(ReferenceEqualityComparer.Instance);
+        var found = new List<PolyDoor>();
+        var f = _geometry.Frame;
+        foreach (var poly in _geometry.Polyobjects(family))
+        {
+            if (f.Things[poly.Spot].Element is not { } spot || !moving.Contains(spot) || f.Lines[poly.Lines[0]].Element is not { } wall) continue;
+            if (PolyDoors.OfWall(_geometry, wall, family) is { } door && !found.Any(d => d.Number == door.Number)) found.Add(door);
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Makes sliding and swinging doors again after their doorways were turned, mirrored or resized (a polyobject only moves,
+    /// it does not turn): each back to a rising door, then the same kind again with its way of opening placed as the room
+    /// was; a door that no longer fits stays rising, and says why. Joins the move's undo step where it can.
+    /// </summary>
+    private void RemakePolyDoors(IReadOnlyList<PolyDoor> doors, Placement placement, long gesture)
+    {
+        var (look, family, resources) = (Look, Engine, Resources);
+        MapPoint? Turned(MapPoint? way)
+        {
+            if (way is not { } w) return null;
+            var (x, y) = ((placement.A * w.X) + (placement.B * w.Y), (placement.C * w.X) + (placement.D * w.Y));
+            var length = Math.Sqrt((x * x) + (y * y));
+            return length <= 0 ? null : new MapPoint(x / length, y / length);
+        }
+
+        var told = new List<string>();
+        History.Record("Turn the doors with their rooms", e =>
+        {
+            foreach (var door in doors)
+            {
+                var layout = new PolyDoors.Layout(door.Double, Turned(door.Kind == DoorKind.Slides ? PolyDoors.SlideDirection(door) : null), Turned(door.Kind == DoorKind.Swings ? PolyDoors.SwingDirection(door) : null));
+                var picture = door.Own.FirstOrDefault()?.Front.Middle;
+                if (PolyDoors.ToRising(e, door, look, t => resources?.Textures.FindWall(t)?.Height) is { } back)
+                {
+                    told.Add(back);
+                    continue;
+                }
+
+                if (PolyDoors.FromRising(e, door.Doorway, door.Kind, look, family, layout, picture is "-" or "" ? null : picture) is { } why) told.Add($"A door now opens upward: {why}");
+            }
+        }, gesture);
+        if (told.Count > 0) Notice?.Invoke(string.Join(" ", told.Distinct()));
     }
 
     /// <summary>Changes how a sliding or swinging door behaves (its speed, wait, lock, monsters), one undo step.</summary>

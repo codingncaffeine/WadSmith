@@ -386,3 +386,47 @@ public sealed class PolyDoorExportTests
         Assert.Equal(2, loss.Count);
     }
 }
+
+/// <summary>A sliding or swinging door turned or mirrored with its rooms stays a door in its doorway (D62): a polyobject only moves.</summary>
+public sealed class PolyDoorTurnTests
+{
+    [Fact]
+    public async Task ADoorTurnedWithItsRoomsStillSlidesAndItsSpotKeepsItsNumber()
+    {
+        using var temp = new TempFolder();
+        var project = WadSmith.Core.Projects.Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        var (map, history, area, _, _) = PolyDoorTests.TwoRoomsAndADoor();
+        history.Record("Make the door slide aside", e => PolyDoors.FromRising(e, area, DoorKind.Slides, Look.For("doom"), "doom", new PolyDoors.Layout(Toward: new MapPoint(0, 1))));
+        project.SaveMap(map.Frame.ToModel());
+        var ui = new System.Collections.Concurrent.ConcurrentQueue<Action>();
+        using var session = EditorSession.Open(project, "MAP01", ui.Enqueue);
+        async Task Settle()
+        {
+            var until = DateTime.UtcNow.AddSeconds(60);
+            do
+            {
+                while (ui.TryDequeue(out var a)) a();
+                await Task.Delay(5, TestContext.Current.CancellationToken);
+            }
+            while ((session.Geometry.Version != session.Map.Version || !ui.IsEmpty) && DateTime.UtcNow < until);
+        }
+
+        await Settle();
+        var doorway = session.Map.Sectors.Single(s => s.OnMap && PolyDoors.Recognise(session.Geometry, s, "doom") is not null);
+        Assert.Equal("north", PolyDoors.Compass(PolyDoors.SlideDirection(PolyDoors.Recognise(session.Geometry, doorway, "doom")!)));
+
+        // The two rooms and the doorway (not the pen) turned a quarter left: the door slides west now, and stands in its doorway.
+        var rooms = session.Map.Sectors.Where(s => s.OnMap && !s.Flag(PolyDoors.PenField)).Cast<Element>().ToList();
+        session.Selection.Set([.. rooms]);
+        session.TurnSelection(90);
+        await Settle();
+        await Task.Delay(300, TestContext.Current.CancellationToken);
+        await Settle();
+        var door = PolyDoors.Recognise(session.Geometry, doorway, "doom");
+        Assert.NotNull(door);
+        Assert.Equal((DoorKind.Slides, "west"), (door!.Kind, PolyDoors.Compass(PolyDoors.SlideDirection(door))));
+        Assert.All(door.Halves, h => Assert.Equal((h.Number, h.Number), (h.Anchor.Angle, h.Spot.Angle)));
+        Assert.Single(session.Geometry.Polyobjects("doom"));
+        Assert.Single(session.Map.Sectors, s => s.OnMap && s.Flag(PolyDoors.PenField));
+    }
+}
