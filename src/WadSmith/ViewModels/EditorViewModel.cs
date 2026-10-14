@@ -510,6 +510,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Turn the selection left", "Edit", "Ctrl+[", "rotate|anticlockwise|counter-clockwise", () => Session.TurnSelection(90), Selected),
             new("Turn the selection right", "Edit", "Ctrl+]", "rotate|clockwise", () => Session.TurnSelection(-90), Selected),
             new("Mirror the selection left–right", "Edit", "Shift+H", "flip horizontally", () => Session.FlipSelection(leftToRight: true), Selected),
+            new("Disconnect the rooms at a corner", "Edit", "", "disconnect|separate|split corner|unjoin|bowtie|vertex", Session.DisconnectCorner, () => Session.Selection.Items is [Vertex]),
             new("Mirror the selection top–bottom", "Edit", "Shift+V", "flip vertically", () => Session.FlipSelection(leftToRight: false), Selected),
             new("Select nothing", "Edit", K("Esc", "C"), "deselect|clear selection", () => Session.Selection.Clear(), Selected),
             new("Select everything", "Edit", "Ctrl+A", "select all|all of it|whole map", () => Session.SelectAll(PicksNow)),

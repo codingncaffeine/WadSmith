@@ -2477,6 +2477,23 @@ public sealed class EditorSession : IDisposable
     /// Deletes the selection so the map stays whole (see <see cref="Deleting"/>), as one undo step, and
     /// says what stayed and why. Waits for the map's shapes like <see cref="DrawRoom"/>.
     /// </summary>
+    /// <summary>
+    /// Disconnects the rooms that touch only at the selected corner (6c, Eureka's Disconnect), one undo step: each gets a corner of
+    /// its own, pulled a few units into it. Says what happened, or why nothing could (a corner inside one area stays whole).
+    /// </summary>
+    public void DisconnectCorner()
+    {
+        if (Selection.Items is not [Vertex corner])
+        {
+            Tell("Select the corner where the rooms touch, then Disconnect.");
+            return;
+        }
+
+        (int Made, string? WhyNot) result = default;
+        History.Record("Disconnect", e => result = Disconnecting.Corner(e, corner));
+        Tell(result.WhyNot ?? (result.Made == 1 ? "The rooms that touched here each have a corner of their own now." : $"The {result.Made + 1} groups of rooms that touched here each have a corner of their own now."));
+    }
+
     public void DeleteSelection()
     {
         if (Selection.IsEmpty) return;

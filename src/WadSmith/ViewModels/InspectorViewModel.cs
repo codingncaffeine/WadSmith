@@ -848,6 +848,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Rows.Add(new NumberRow("X", "Position east–west, in map units.", () => (decimal)v.X, x => Set(v, "Move corner", e => e.X, (e, val) => e.X = val, (double)x), 8));
                 Rows.Add(new NumberRow("Y", "Position north–south, in map units.", () => (decimal)v.Y, y => Set(v, "Move corner", e => e.Y, (e, val) => e.Y = val, (double)y), 8));
                 if (Rounding.WallsAt(_session.Geometry, v).Count == 2) AddRounding(v);
+                Rows.Add(new ActionRow("Disconnect the rooms that touch here", "Rooms that meet only at this corner each get a corner of their own, a few units apart, so they no longer touch. A corner inside one area stays whole.", _session.DisconnectCorner));
                 break;
         }
 
