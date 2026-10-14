@@ -34,9 +34,44 @@ public sealed class MediaProofProjectTests
     {
         var folder = Environment.GetEnvironmentVariable("WADSMITH_PROOF_PROJECT");
         if (string.IsNullOrEmpty(folder) || Directory.Exists(folder)) Assert.Skip("Set WADSMITH_PROOF_PROJECT to a new folder to write the media proof project.");
+        Write(folder!);
+    }
+
+    /// <summary>
+    /// ZScript keeps words such as play, ui, action and state for itself, in any case: a method of that name stops GZDoom
+    /// loading the whole project ("Unexpected 'play'" — the sounds' class once named its method Play). Every script the
+    /// project writes is read for the methods it declares; the names seen must include the sounds' own, so the reading works.
+    /// </summary>
+    [Fact]
+    public void NoGeneratedScriptNamesAMethodWithAWordZScriptKeeps()
+    {
+        using var temp = new TempFolder();
+        var folder = Path.Combine(temp.Path, "proof");
+        Write(folder);
+        var declared = new System.Text.RegularExpressions.Regex(@"^\s*(?:(?:static|override|virtual|action|clearscope|play|ui|private|protected|final|native|const)\s+)*[\w.<>]+\s+(\w+)\s*\(", System.Text.RegularExpressions.RegexOptions.Multiline);
+        var names = Directory.EnumerateFiles(Path.Combine(folder, "zscript"), "*.zs", SearchOption.AllDirectories)
+            .SelectMany(f => declared.Matches(File.ReadAllText(f)).Select(m => (File: Path.GetFileName(f), Name: m.Groups[1].Value)))
+            .ToList();
+        Assert.Contains(names, n => n.Name == "SoundOf");
+        Assert.Empty(names.Where(n => Kept.Contains(n.Name)).Select(n => $"{n.File}: {n.Name}"));
+    }
+
+    /// <summary>Words ZScript keeps (its scanner's keywords and type names), which a script may not use as a method's name.</summary>
+    private static readonly HashSet<string> Kept = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "play", "ui", "clearscope", "virtualscope", "action", "latent", "meta", "native", "static", "final", "abstract", "override",
+        "virtual", "readonly", "transient", "property", "flagdef", "states", "default", "version", "out", "in", "sound", "state",
+        "name", "color", "string", "map", "array", "let", "wait", "stop", "loop", "fail", "goto", "is", "vector2", "vector3",
+        "class", "struct", "enum", "extend", "mixin", "const", "private", "protected", "deprecated", "internal", "replaces",
+        "self", "super", "sizeof", "alignof", "null", "true", "false", "foreach", "function", "void", "int", "uint", "bool",
+        "float", "double", "char", "byte", "short", "long",
+    };
+
+    private static void Write(string folder)
+    {
         var wad = GameFiles.Require("freedoom2.wad");
         var engineData = GameFiles.Require("gzdoom.pk3");
-        var project = Project.Create(folder!, "Media proof", "doom2");
+        var project = Project.Create(folder, "Media proof", "doom2");
         var game = GameResources.Load("freedoom2", project.Folder, [new FoundGame(GameCatalog.Get("freedoom2")!, wad, new FileInfo(wad).Length)], engineData)!;
         var map = EditorMap.FromModel(new MapModel { Name = "MAP01", Namespace = "zdoom" });
         Assert.All(EditScript.Run(map, "room -512 -256 512 256\nstart -448 0 0", Look.For("doom"), "doom"), s => Assert.True(s.Done, s.Said));

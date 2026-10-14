@@ -164,14 +164,14 @@ public static class SoundFiles
         foreach (var (sound, title, name) in sounds) text.Append(CultureInfo.InvariantCulture, $"\t\t\tcase {sound}: return \"{name}\"; // {title.Replace("\n", " ", StringComparison.Ordinal)}\n");
         text.Append("\t\t}\n\t\treturn \"\";\n\t}\n\n");
         text.Append("\tint Plays() { return args[2] & 3; }\n\n");
-        text.Append("\tvoid Play(int channel, int flags)\n\t{\n\t\tstring name = SoundOf(args[0]);\n\t\tif (name == \"\") return;\n");
+        text.Append("\tvoid Emit(int channel, int flags)\n\t{\n\t\tstring name = SoundOf(args[0]);\n\t\tif (name == \"\") return;\n");
         text.Append("\t\tA_StartSound(name, channel, flags, args[1] > 0 ? args[1] / 100.0 : 1.0, (args[2] & 4) != 0 ? ATTN_NONE : ATTN_NORM);\n\t}\n\n");
         text.Append("\tint NextWait()\n\t{\n\t\tint shortest = max(1, args[3]);\n\t\treturn (Plays() == 1 ? random(shortest, max(shortest, args[4])) : shortest) * TICRATE;\n\t}\n\n");
-        text.Append("\toverride void PostBeginPlay()\n\t{\n\t\tSuper.PostBeginPlay();\n\t\tif (Plays() == 0) Play(CHAN_BODY, CHANF_LOOPING);\n\t\telse if (Plays() != 3) wait = NextWait();\n\t}\n\n");
+        text.Append("\toverride void PostBeginPlay()\n\t{\n\t\tSuper.PostBeginPlay();\n\t\tif (Plays() == 0) Emit(CHAN_BODY, CHANF_LOOPING);\n\t\telse if (Plays() != 3) wait = NextWait();\n\t}\n\n");
         text.Append("\toverride void Tick()\n\t{\n\t\tif (isFrozen() || done) return;\n\t\tint plays = Plays();\n");
-        text.Append("\t\tif (plays == 1 || plays == 2)\n\t\t{\n\t\t\tif (--wait <= 0)\n\t\t\t{\n\t\t\t\tPlay(CHAN_AUTO, CHANF_DEFAULT);\n\t\t\t\twait = NextWait();\n\t\t\t}\n\t\t}\n");
+        text.Append("\t\tif (plays == 1 || plays == 2)\n\t\t{\n\t\t\tif (--wait <= 0)\n\t\t\t{\n\t\t\t\tEmit(CHAN_AUTO, CHANF_DEFAULT);\n\t\t\t\twait = NextWait();\n\t\t\t}\n\t\t}\n");
         text.Append("\t\telse if (plays == 3)\n\t\t{\n\t\t\tSector here = Level.PointInSector(pos.xy);\n\t\t\tfor (int i = 0; i < MAXPLAYERS; i++)\n\t\t\t{\n");
-        text.Append("\t\t\t\tif (playeringame[i] && players[i].mo && players[i].mo.CurSector == here)\n\t\t\t\t{\n\t\t\t\t\tPlay(CHAN_AUTO, CHANF_DEFAULT);\n\t\t\t\t\tdone = true;\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\n");
+        text.Append("\t\t\t\tif (playeringame[i] && players[i].mo && players[i].mo.CurSector == here)\n\t\t\t\t{\n\t\t\t\t\tEmit(CHAN_AUTO, CHANF_DEFAULT);\n\t\t\t\t\tdone = true;\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\n");
         text.Append("\tStates\n\t{\n\tSpawn:\n\t\tTNT1 A -1;\n\t\tStop;\n\t}\n}\n");
         return text.ToString();
     }
