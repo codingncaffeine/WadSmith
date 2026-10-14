@@ -40,9 +40,22 @@ public sealed record MapDefinition(string Slot, string Header, IReadOnlyList<str
 /// <param name="Maps">By slot (MAP01, E1M1 …): the last definition read wins, as in the engine.</param>
 /// <param name="OldFormat">The game defines maps in MAPINFO's old format (Hexen's, without braces): read too, each written in the braces format (D62/Phase 9).</param>
 /// <param name="Strings">The engine's language table (English), which a value starting with "$" names into.</param>
-public sealed record MapDefinitions(IReadOnlyDictionary<string, MapDefinition> Maps, bool OldFormat, IReadOnlyDictionary<string, string> Strings)
+/// <param name="Clusters">
+/// The clusters the game defines, each with whether it is a hub (<c>cluster N { hub }</c>, and in Hexen's own format every
+/// cluster a map names first): the maps of a hub keep their state, and the player their keys, while the player goes between them.
+/// </param>
+public sealed record MapDefinitions(IReadOnlyDictionary<string, MapDefinition> Maps, bool OldFormat, IReadOnlyDictionary<string, string> Strings, IReadOnlyDictionary<int, bool>? Clusters = null)
 {
     public static readonly MapDefinitions None = new(new Dictionary<string, MapDefinition>(LumpName.Comparer), false, new Dictionary<string, string>());
+
+    /// <summary>The clusters the game makes hubs (none known when not read).</summary>
+    public IReadOnlySet<int> HubClusters => (Clusters ?? new Dictionary<int, bool>()).Where(c => c.Value).Select(c => c.Key).ToHashSet();
+
+    /// <summary>The cluster the game puts a slot in (null when it names none).</summary>
+    public int? ClusterOf(string slot) => int.TryParse(For(slot)?.Text("cluster"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var c) ? c : null;
+
+    /// <summary>The game's maps in a cluster, in the game's order.</summary>
+    public IReadOnlyList<string> MapsIn(int cluster) => [.. Slots.Where(s => ClusterOf(s) == cluster)];
 
     public MapDefinition? For(string slot) => Maps.GetValueOrDefault(slot);
 
@@ -120,14 +133,15 @@ public static class MapInfo
         string? FromEngine(string path) => engine.FindPath(path) is { } e ? Encoding.Latin1.GetString(e.Read()) : null;
         var old = false;
         var file = MapTitles.MapInfoFile(game.AddOnFor ?? game.Id);
-        if (FromEngine(file) is { } text) old |= Parse(text, file, FromEngine, maps, []);
+        var clusters = new Dictionary<int, bool>();
+        if (FromEngine(file) is { } text) old |= Parse(text, file, FromEngine, maps, [], clusters);
 
         // GZDoom reads one of a file's own: ZMAPINFO when it has both.
         foreach (var container in files)
         {
             if ((container.Find("ZMAPINFO") ?? container.Find("MAPINFO")) is { } own)
             {
-                old |= Parse(Encoding.Latin1.GetString(own.Read()), own.Name, name => container.Find(name) is { } e ? Encoding.Latin1.GetString(e.Read()) : FromEngine(name), maps, []);
+                old |= Parse(Encoding.Latin1.GetString(own.Read()), own.Name, name => container.Find(name) is { } e ? Encoding.Latin1.GetString(e.Read()) : FromEngine(name), maps, [], clusters);
             }
         }
 
@@ -136,7 +150,7 @@ public static class MapInfo
         var support = Path.Combine(Path.GetDirectoryName(engineDataPath)!, "game_support.pk3");
         if (File.Exists(support) && ResourceContainer.Open(support).FindPath("language.csv") is { } lang) MapTitles.ReadLanguageCsv(lang.Read(), strings);
         if (engine.FindPath("language.def") is { } def) ReadLanguageDef(Encoding.Latin1.GetString(def.Read()), strings);
-        return new MapDefinitions(maps, old, strings);
+        return new MapDefinitions(maps, old, strings, clusters);
     }
 
     /// <summary>
@@ -161,19 +175,31 @@ public static class MapInfo
 
     /// <summary>
     /// Reads the map definitions in one MAPINFO text into <paramref name="into"/>, following its includes through
-    /// <paramref name="include"/> with the same <c>defaultmap</c>. Returns whether it found a map in the old format.
+    /// <paramref name="include"/> with the same <c>defaultmap</c>; the clusters it defines go into <paramref name="clusters"/> with
+    /// whether each is a hub, as GZDoom keeps them: a cluster block defines its cluster afresh, and a map naming a cluster not
+    /// defined yet defines it, a hub when the map is in Hexen's own format (named by its number). Returns whether it found a map
+    /// in the old format.
     /// </summary>
-    public static bool Parse(string text, string source, Func<string, string?> include, Dictionary<string, MapDefinition> into, List<string> defaults)
+    public static bool Parse(string text, string source, Func<string, string?> include, Dictionary<string, MapDefinition> into, List<string> defaults, Dictionary<int, bool>? clusters = null)
     {
-        var s = new Scanner(text, source);
+        var s = new Scanner(text, source) { SemicolonComments = true };
         var old = false;
+        var hexen = false;
+
+        // A map's cluster comes into being with it when nothing has defined it (GZDoom's "HexenHack" makes it a hub).
+        MapDefinition Clustered(MapDefinition map)
+        {
+            if (clusters is not null && int.TryParse(map.Text("cluster"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var c)) clusters.TryAdd(c, hexen);
+            return map;
+        }
+
         while (!s.AtEnd)
         {
             var t = s.Next();
             if (t.Is("include"))
             {
                 var name = s.ExpectName();
-                if (include(name) is { } inner) old |= Parse(inner, name, include, into, defaults);
+                if (include(name) is { } inner) old |= Parse(inner, name, include, into, defaults, clusters);
                 continue;
             }
 
@@ -196,17 +222,29 @@ public static class MapInfo
                 if (!s.Accept("{"))
                 {
                     old = true;
+                    hexen |= slotToken.Kind == TokenKind.Integer;
                     var number = int.TryParse(slot, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 0;
                     var name = number > 0 ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"MAP{number:00}") : slot;
-                    into[name] = OldMap(s, name, number, Render(header));
+                    into[name] = Clustered(OldMap(s, name, number, Render(header)));
                     continue;
                 }
 
-                into[slot] = new MapDefinition(slot, Render(header), [.. defaults, .. Body(s)]);
+                into[slot] = Clustered(new MapDefinition(slot, Render(header), [.. defaults, .. Body(s)]));
                 continue;
             }
 
-            // Anything else (gameinfo, episode, cluster, skill …): its head, then its block when it has one.
+            // A cluster (in the old format a clusterdef, its lines up to the next head): whether it is a hub.
+            if ((t.Is("cluster") || t.Is("clusterdef")) && s.Peek().Kind == TokenKind.Integer)
+            {
+                var number = int.Parse(s.Next().Text, System.Globalization.CultureInfo.InvariantCulture);
+                var lines = new List<string>();
+                if (s.Accept("{")) lines.AddRange(Body(s));
+                else while (!s.AtEnd && !TopLevel(s.Peek())) lines.Add(s.Next().Text);
+                if (clusters is not null) clusters[number] = lines.Any(line => string.Equals(MapDefinition.KeyOf(line.Trim()), "hub", StringComparison.OrdinalIgnoreCase));
+                continue;
+            }
+
+            // Anything else (gameinfo, episode, skill …): its head, then its block when it has one.
             while (!s.AtEnd && !s.Peek().Is("{") && !TopLevel(s.Peek())) s.Next();
             if (s.Accept("{")) s.SkipBlock();
         }

@@ -20,9 +20,12 @@ public static class ProjectMapInfo
     /// <summary>The value of <see cref="ProjectMap.Next"/> that ends the game after the map and goes back to the title screen.</summary>
     public const string EndToTitle = "EndTitle";
 
+    /// <summary>The project's own hubs are clusters from this number up, clear of every game's own (Hexen's are 1 to 5).</summary>
+    public const int FirstOwnHub = 100;
+
     /// <summary>Whether the map needs a block: a setting of its own, or switches its original ran with.</summary>
     public static bool Needed(ProjectMap map, IReadOnlyList<string> switches) =>
-        map.Title.Length > 0 || map.Music is not null || map.Sky is not null || map.Next is not null || switches.Count > 0;
+        map.Title.Length > 0 || map.Music is not null || map.Sky is not null || map.Next is not null || map.Hub is not null || switches.Count > 0;
 
     /// <summary>One map's block: the base definition (when the slot has one) with the map's settings and switches over it.</summary>
     public static string Block(ProjectMap map, MapDefinition? definition, IReadOnlyList<string> switches)
@@ -32,6 +35,7 @@ public static class ProjectMapInfo
         if (map.Music is not null) replaced.Add("music");
         if (map.Sky is not null) replaced.Add("sky1");
         if (map.Next is not null) replaced.Add("next");
+        if (map.Hub is not null) replaced.Add("cluster");
         replaced.UnionWith(switches.Select(s => "compat_" + s));
 
         var header = map.Title.Length > 0 ? MapInfo.Quote(map.Title) : definition?.Header is { Length: > 0 } h ? h : MapInfo.Quote(map.Slot);
@@ -44,6 +48,7 @@ public static class ProjectMapInfo
         if (map.Music is { } music) b.Append("\tmusic = ").Append(MapInfo.Quote(music)).Append('\n');
         if (map.Sky is { } sky) b.Append("\tsky1 = ").Append(MapInfo.Quote(sky)).Append('\n');
         if (map.Next is { } next) b.Append("\tnext = ").Append(MapInfo.Quote(next)).Append('\n');
+        if (map.Hub is { } hub) b.Append("\tcluster = ").Append(hub.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append('\n');
         foreach (var s in switches) b.Append("\tcompat_").Append(s).Append(" = 1\n");
         return b.Append("}\n").ToString();
     }
@@ -52,6 +57,12 @@ public static class ProjectMapInfo
     public static string? Text(IEnumerable<ProjectMap> maps, MapDefinitions definitions, Func<ProjectMap, IReadOnlyList<string>> switches, IEnumerable<CopiedAsset>? copies = null)
     {
         var blocks = maps.Select(m => (Map: m, Switches: switches(m))).Where(x => Needed(x.Map, x.Switches)).Select(x => Block(x.Map, definitions.For(x.Map.Slot), x.Switches)).ToList();
+
+        // The project's own hubs (a number below them is the game's cluster, which a block here would define afresh).
+        foreach (var hub in maps.Select(m => m.Hub).OfType<int>().Where(h => h >= FirstOwnHub && !definitions.HubClusters.Contains(h)).Distinct().Order())
+        {
+            blocks.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"cluster {hub}\n{{\n\thub\n}}\n"));
+        }
 
         // Objects carried in from other games (D55): the numbers the map places them by.
         var actors = (copies ?? []).Where(c => c.Kind == "actor").ToList();

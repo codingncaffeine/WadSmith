@@ -1410,7 +1410,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
     private string _mapSettingsKey = "";
 
     /// <summary>What the Map settings rows' choices are built from: the game's defaults and the values set, which can add a choice.</summary>
-    private string MapSettingsKey() => $"{_session.Target}|{_session.Defaults?.Title}|{_session.Defaults?.Music}|{_session.Defaults?.Sky}|{_session.Defaults?.Next}|{_session.Defaults?.Slots.Count}|{_session.Defaults?.Switches.Count}|{_session.Defaults?.Foreign}|{_session.MapEntry.Music}|{_session.MapEntry.Sky}|{_session.MapEntry.Next}";
+    private string MapSettingsKey() => $"{_session.Target}|{_session.Defaults?.Title}|{_session.Defaults?.Music}|{_session.Defaults?.Sky}|{_session.Defaults?.Next}|{_session.Defaults?.Slots.Count}|{_session.Defaults?.Switches.Count}|{_session.Defaults?.Foreign}|{_session.MapEntry.Music}|{_session.MapEntry.Sky}|{_session.MapEntry.Next}|{_session.Defaults?.Cluster}|{_session.MapEntry.Hub}";
 
     /// <summary>
     /// The map's own settings, with nothing selected: its name, music, sky and what follows its exit, each the game's own
@@ -1471,6 +1471,33 @@ internal sealed partial class InspectorViewModel : ObservableObject
         var slots = Choices([.. defaults?.Slots ?? [], .. _session.Project.Maps().Select(m => m.Slot)], Entry().Next is { } n && n != ends ? n : null, sorted: false);
         Rows.Add(new ChoiceRow("After the exit", "Where the exit leads (next): the game's next map for this slot, another map, or the end of the game and the title screen.", [TheGames(defaults?.Next, "next map"), .. slots, "The game ends"],
             () => Entry().Next == ends ? slots.Count + 1 : Index(slots, Entry().Next), i => _session.ChangeMapSettings(m => m with { Next = i == 0 ? null : i == slots.Count + 1 ? ends : slots[i - 1] })));
+
+        // The hub (Phase 9): the maps of one keep their state, and the player their keys, while the player goes between them, as
+        // Hexen's do. The game's own for the slot, none, another of the game's, the project's own (clusters from 100 up) or a new one.
+        var gameHubs = defaults?.Hubs ?? new Dictionary<int, IReadOnlyList<string>>();
+        // This map as it is now (the project's record of it is written a moment later, on a worker).
+        var projectMaps = _session.Project.Maps().Select(m => m.Slot.Equals(Entry().Slot, StringComparison.OrdinalIgnoreCase) ? Entry() : m);
+        var ownHubs = projectMaps.Where(m => m.Hub >= ProjectMapInfo.FirstOwnHub && !gameHubs.ContainsKey(m.Hub.Value)).GroupBy(m => m.Hub!.Value).OrderBy(g => g.Key).ToList();
+        var inHub = defaults?.Cluster is { } cluster && gameHubs.ContainsKey(cluster) ? cluster : (int?)null;
+        string Span(IReadOnlyList<string> maps)
+        {
+            // A hub's maps: "MAP08–MAP13" when they follow one another in the game's order, else by name.
+            var order = (defaults?.Slots ?? []).ToList();
+            var at = maps.Select(m => order.FindIndex(s => s.Equals(m, StringComparison.OrdinalIgnoreCase))).ToList();
+            if (maps.Count > 2 && at.All(i => i >= 0) && at.Max() - at.Min() == maps.Count - 1) return $"{order[at.Min()]}–{order[at.Max()]}";
+            return maps.Count <= 4 ? string.Join(", ", maps) : string.Create(CultureInfo.InvariantCulture, $"{string.Join(", ", maps.Take(3))} and {maps.Count - 3} more");
+        }
+
+        string Hub(int number, IReadOnlyList<string> maps) => string.Create(CultureInfo.InvariantCulture, $"hub {number} ({Span(maps)})");
+        var hubChoices = new List<(int? Hub, string Name)> { (null, inHub is { } own ? $"The game's {Hub(own, gameHubs[own])}" : "No hub (the game's)") };
+        if (inHub is not null) hubChoices.Add((0, "No hub"));
+        hubChoices.AddRange(gameHubs.Where(g => g.Key != inHub).OrderBy(g => g.Key).Select(g => ((int?)g.Key, $"The game's {Hub(g.Key, g.Value)}")));
+        hubChoices.AddRange(ownHubs.Select(g => ((int?)g.Key, $"This project's {Hub(g.Key, [.. g.Select(m => m.Slot)])}")));
+        hubChoices.Add((ownHubs.Count > 0 ? ownHubs[^1].Key + 1 : ProjectMapInfo.FirstOwnHub, "A new hub of this project's"));
+        GZDoomOnly("the classic ports keep no hubs: each map starts afresh.", () => Rows.Add(new ChoiceRow("Hub", "A hub is a set of maps the player goes back and forth between, as Hexen's are: each keeps its state (what was opened, killed and picked up) and the player keeps their keys while they stay in it. Put the maps of one hub in the same one; their exits and teleporters lead between them (cluster, hub).",
+            [.. hubChoices.Select(h => h.Name)],
+            () => Math.Max(0, hubChoices.FindIndex(h => h.Hub == Entry().Hub)),
+            i => _session.ChangeMapSettings(m => m with { Hub = hubChoices[i].Hub }))));
 
         if (defaults is { Switches.Count: > 0 }) Rows.Add(new InfoRow("Plays like the original", "GZDoom turns a few behaviour switches on for the original map (compat_ settings); the remix asks for the same ones in its zmapinfo.txt, so it plays the same.", () => string.Join(", ", defaults.Switches)));
     }

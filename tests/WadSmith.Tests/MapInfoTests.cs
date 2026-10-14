@@ -191,6 +191,69 @@ public sealed class MapInfoTests
         Assert.Empty(RemixCompat.Switches(table, "00000000000000000000000000000000"));
     }
 
+    [Fact]
+    public void ClustersSayWhetherTheyAreHubsAsTheEngineReadsThem()
+    {
+        // A cluster block says whether it is a hub ("hub" as a word, not as a value); a map naming a cluster nothing has defined
+        // defines it, a hub only when the map is in Hexen's own format (GZDoom's rule, which makes Hexen's fifth hub one); in
+        // the old format a clusterdef's lines run to the next head, and a ";" starts a comment (Hexen's own file opens with
+        // "; --- Cluster 1 ---"); a block read again defines its cluster afresh.
+        var maps = new Dictionary<string, MapDefinition>(LumpName.Comparer);
+        var clusters = new Dictionary<int, bool>();
+        MapInfo.Parse("cluster 1 { hub exittext = \"x\" }\ncluster 2\n{\n\tmusic = \"hub\"\n}\nmap MAP03 \"Third\" { cluster = 6 }\n", "ZMAPINFO", _ => null, maps, [], clusters);
+        MapInfo.Parse("; --- Cluster 9 ---\n\nmap 4 \"FOURTH\"\ncluster 5 ; the fourth\nmap 7 \"SEVENTH\"\ncluster 6\nclusterdef 7\nhub\nmap 8 \"EIGHTH\"\ncluster 1\n", "MAPINFO", _ => null, maps, [], clusters);
+        Assert.Equal([(1, true), (2, false), (5, true), (6, false), (7, true)], clusters.OrderBy(c => c.Key).Select(c => (c.Key, c.Value)));
+        Assert.Equal(["MAP04", "MAP07", "MAP08"], maps.Keys.Where(k => k != "MAP03").Order(StringComparer.Ordinal));
+        MapInfo.Parse("cluster 5 { exittext = \"y\" }\n", "ZMAPINFO", _ => null, maps, [], clusters);
+        Assert.False(clusters[5]);
+        var definitions = new MapDefinitions(maps, true, new Dictionary<string, string>(), clusters);
+        Assert.Equal([1, 7], definitions.HubClusters.Order());
+        Assert.Equal(["MAP03", "MAP07"], definitions.MapsIn(6));
+        Assert.Equal(1, definitions.ClusterOf("MAP08"));
+    }
+
+    [Fact]
+    public void TheGamesOwnHubsAreRead()
+    {
+        // Hexen's five hubs (the fifth made one by its own MAPINFO's format), Strife's two, none in Doom II.
+        var engine = GameFiles.Require("gzdoom.pk3");
+        var hexen = MapInfo.For(GameCatalog.Get("hexen")!, [ResourceContainer.Open(GameFiles.Require("HEXEN.WAD"))], engine);
+        Assert.Equal([1, 2, 3, 4, 5], hexen.HubClusters.Order());
+        Assert.Equal(["MAP08", "MAP09", "MAP10", "MAP11", "MAP12", "MAP13"], hexen.MapsIn(2));
+        Assert.Equal(2, hexen.ClusterOf("MAP13"));
+        var doom2 = MapInfo.For(GameCatalog.Get("doom2")!, [ResourceContainer.Open(GameFiles.Require("DOOM2.WAD"))], engine);
+        Assert.Empty(doom2.HubClusters);
+        Assert.Equal(5, doom2.ClusterOf("MAP01"));
+    }
+
+    [Fact]
+    public void AMapInAHubSaysItsClusterAndTheProjectsOwnHubsAreHubs()
+    {
+        var game = GameCatalog.Get("hexen")!;
+        var hexen = MapInfo.For(game, [ResourceContainer.Open(GameFiles.Require("HEXEN.WAD"))], GameFiles.Require("gzdoom.pk3"));
+
+        // Hexen's MAP02 moved to the second hub, MAP03 out of any, MAP40 and MAP41 into a hub of the project's own: each block's
+        // cluster is the one asked for, in place of the game's; the project's hub is defined once, the game's never.
+        var maps = new[]
+        {
+            new ProjectMap { Slot = "MAP02", File = "maps/MAP02.wad", Hub = 2 },
+            new ProjectMap { Slot = "MAP03", File = "maps/MAP03.wad", Hub = 0 },
+            new ProjectMap { Slot = "MAP40", File = "maps/MAP40.wad", Hub = 100 },
+            new ProjectMap { Slot = "MAP41", File = "maps/MAP41.wad", Hub = 100 },
+        };
+        var text = ProjectMapInfo.Text(maps, hexen, _ => [])!;
+        string BlockOf(string slot) => text[text.IndexOf($"map {slot} ", StringComparison.Ordinal)..][..(text[text.IndexOf($"map {slot} ", StringComparison.Ordinal)..].IndexOf("}\n", StringComparison.Ordinal) + 2)];
+        Assert.Equal(["cluster = 2"], BlockOf("MAP02").Split('\n').Select(l => l.Trim()).Where(l => l.StartsWith("cluster", StringComparison.Ordinal)));
+        Assert.Equal(["cluster = 0"], BlockOf("MAP03").Split('\n').Select(l => l.Trim()).Where(l => l.StartsWith("cluster", StringComparison.Ordinal)));
+        Assert.Contains("\tcluster = 100\n", BlockOf("MAP41"), StringComparison.Ordinal);
+        Assert.Contains("levelnum = 2", BlockOf("MAP02"), StringComparison.Ordinal);
+        Assert.Equal(1, text.Split("cluster 100\n{\n\thub\n}\n").Length - 1);
+        Assert.DoesNotContain("cluster 2\n", text, StringComparison.Ordinal);
+
+        // A number below the project's own is never defined here (it would redefine the game's cluster).
+        Assert.DoesNotContain("cluster 7\n", ProjectMapInfo.Text([maps[0] with { Hub = 7 }], hexen, _ => [])!, StringComparison.Ordinal);
+    }
+
     /// <summary>The engine's real tables: every Doom II map runs with shorttex and light; MAP14 also pointonline (its checksum is in compatibility.txt).</summary>
     [Fact]
     public void ADoomIIRemixAsksForTheSwitchesTheEngineGivesTheOriginal()

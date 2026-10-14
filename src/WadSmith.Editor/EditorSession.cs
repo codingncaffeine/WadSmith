@@ -50,7 +50,9 @@ public sealed record SessionHooks(Action<Action> OnUiThread, GameResources? Reso
 /// <param name="Slots">Every slot the game defines, in its order.</param>
 /// <param name="Switches">The behaviour switches a remix keeps from its original (shorttex, light …); none for a new map.</param>
 /// <param name="Foreign">The project holds a zmapinfo.txt WadSmith did not write, which it leaves alone: the settings are set there.</param>
-public sealed record MapDefaults(string? Title, string? Music, string? Sky, string? Next, IReadOnlyList<string> Slots, IReadOnlyList<string> Switches, bool Foreign);
+/// <param name="Cluster">The game's cluster for the slot (null when it gives none).</param>
+/// <param name="Hubs">The clusters the game makes hubs, each with its maps in the game's order.</param>
+public sealed record MapDefaults(string? Title, string? Music, string? Sky, string? Next, IReadOnlyList<string> Slots, IReadOnlyList<string> Switches, bool Foreign, int? Cluster = null, IReadOnlyDictionary<int, IReadOnlyList<string>>? Hubs = null);
 
 public sealed class EditorSession : IDisposable
 {
@@ -249,7 +251,8 @@ public sealed class EditorSession : IDisposable
                     var switches = ProjectMapInfo.SwitchesFor(MapEntry, containers[0], engine, []);
                     var music = definitions.Resolve(d?.Text("music"));
                     if (music is not null && Resources.Music.FirstOrDefault(m => m.Equals(music, StringComparison.OrdinalIgnoreCase) || m.Equals("D_" + music, StringComparison.OrdinalIgnoreCase)) is { } lump) music = lump;
-                    defaults = new MapDefaults(titles.GetValueOrDefault(Slot), music, d?.Text("sky1"), d?.Text("next"), definitions.Slots, switches, foreign);
+                    var hubs = definitions.HubClusters.ToDictionary(h => h, definitions.MapsIn);
+                    defaults = new MapDefaults(titles.GetValueOrDefault(Slot), music, d?.Text("sky1"), d?.Text("next"), definitions.Slots, switches, foreign, definitions.ClusterOf(Slot), hubs);
                 }
 
                 if (!foreign) WriteMapInfo();

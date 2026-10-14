@@ -66,6 +66,9 @@ public sealed class Scanner
     /// <summary>Reads 'single-quoted' text as a string token too (ZScript's name literals).</summary>
     public bool AllowNameLiterals { get; init; }
 
+    /// <summary>A <c>;</c> starts a comment to the end of its line, as in the engine's classic Hexen scanner (MAPINFO's).</summary>
+    public bool SemicolonComments { get; init; }
+
     public int Line => _peeked?.Line ?? _line;
 
     public Token Peek() => _peeked ??= Read();
@@ -231,7 +234,7 @@ public sealed class Scanner
             {
                 _pos++;
             }
-            else if (c == '/' && _pos + 1 < _s.Length && _s[_pos + 1] == '/')
+            else if ((c == '/' && _pos + 1 < _s.Length && _s[_pos + 1] == '/') || (c == ';' && SemicolonComments))
             {
                 while (_pos < _s.Length && _s[_pos] != '\n') _pos++;
             }

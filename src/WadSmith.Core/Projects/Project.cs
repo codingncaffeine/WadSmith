@@ -38,6 +38,12 @@ public sealed record ProjectMap
     /// <summary>The map the exit leads to (null: the base game's next map), or <see cref="ProjectMapInfo.EndToTitle"/>.</summary>
     public string? Next { get; init; }
 
+    /// <summary>
+    /// The cluster the map is in (null: the base game's), its hub when the game or the project makes that cluster one; 0 for
+    /// none (Phase 9: maps of a hub keep their state, and the player their keys, while the player goes between them).
+    /// </summary>
+    public int? Hub { get; init; }
+
     /// <summary>The map file, relative to the project folder.</summary>
     public required string File { get; init; }
 
