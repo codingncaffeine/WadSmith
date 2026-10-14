@@ -150,43 +150,6 @@
             <Panel x:Name="PlanPane">
                 <canvas:MapCanvas x:Name="Canvas" Session="{Binding Session}" Mode="{Binding ViewMode}" Tool="{Binding Tool}" ShowFit="{Binding ShowFit}" Picks="{Binding Picks}" GridSize="{Binding GridSize}" ContextMenuFor="{Binding ContextMenuFor}" />
 
-                <!-- Tools: what a left drag on the plan does, in a column down the plan's left edge (§3.3). -->
-                <StackPanel Orientation="Vertical" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
-                    <ToggleButton Classes="segment tool first" Content="{Binding SelectLabel}" IsChecked="{Binding IsSelectTool}"
-                                  ToolTip.Tip="{Binding Faces.Select.Tip}" />
-                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Room.Label}" Classes.guide="{Binding Marks.Room}" IsChecked="{Binding IsRoomTool}"
-                                  ToolTip.Tip="{Binding Faces.Room.Tip}" />
-                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Door.Label}" Classes.guide="{Binding Marks.Door}" IsChecked="{Binding IsDoorTool}"
-                                  ToolTip.Tip="{Binding Faces.Door.Tip}" />
-                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Window.Label}" IsChecked="{Binding IsWindowTool}"
-                                  ToolTip.Tip="{Binding Faces.Window.Tip}" />
-                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Teleport.Label}" IsChecked="{Binding IsTeleportTool}"
-                                  ToolTip.Tip="{Binding Faces.Teleport.Tip}" />
-                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Light.Label}" Classes.guide="{Binding Marks.Light}" IsChecked="{Binding IsLightTool}"
-                                  ToolTip.Tip="{Binding Faces.Light.Tip}" />
-                    <ToggleButton Classes="segment tool" Content="{Binding Faces.Stairs.Label}" Classes.guide="{Binding Marks.Stairs}" IsChecked="{Binding IsStairsTool}"
-                                  ToolTip.Tip="{Binding Faces.Stairs.Tip}" />
-                    <ToggleButton Classes="segment tool last" Content="{Binding Faces.Measure.Label}" IsChecked="{Binding IsMeasureTool}"
-                                  ToolTip.Tip="{Binding Faces.Measure.Tip}" />
-                    <Button Classes="segment tool first last" Content="{Binding MirrorButton}" Margin="0,10,0,0" HorizontalAlignment="Stretch"
-                            ToolTip.Tip="Symmetry: rooms you draw and things you place are repeated about the middle, mirrored or turned, as deathmatch maps are built. The middle is the selection's, or the map's when nothing is selected.">
-                        <Button.Flyout>
-                            <MenuFlyout Placement="RightEdgeAlignedTop">
-                                <MenuItem Header="No mirror" Command="{Binding ChooseMirrorCommand}" CommandParameter="0" />
-                                <MenuItem Header="Mirror left–right" Command="{Binding ChooseMirrorCommand}" CommandParameter="1" />
-                                <MenuItem Header="Mirror top–bottom" Command="{Binding ChooseMirrorCommand}" CommandParameter="2" />
-                                <MenuItem Header="Mirror four ways" Command="{Binding ChooseMirrorCommand}" CommandParameter="3" />
-                                <MenuItem Header="Half turn" Command="{Binding ChooseMirrorCommand}" CommandParameter="4" />
-                                <MenuItem Header="Quarter turns" Command="{Binding ChooseMirrorCommand}" CommandParameter="5" />
-                            </MenuFlyout>
-                        </Button.Flyout>
-                    </Button>
-                    <!-- See it in a real map (D28): what the open tool makes, in a game's own map. -->
-                    <!-- On a canvas, so its width never widens the tool column. -->
-                    <Canvas Height="34" Margin="0,10,0,0" IsVisible="{Binding SeeOne, Converter={x:Static ObjectConverters.IsNotNull}}">
-                        <Button Classes="metal" Content="{Binding SeeOne.Title}" Command="{Binding SeeOne.Open}" ToolTip.Tip="{Binding SeeOne.Tip}" />
-                    </Canvas>
-                </StackPanel>
 
                 <!-- Heights legend: the colour ramp with the lowest and highest floor. -->
                 <Border IsVisible="{Binding ShowHeights}" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12" Padding="12,9,12,10"
@@ -207,7 +170,7 @@
             </Panel>
             <GridSplitter Grid.Column="1" x:Name="Split3D" Background="{DynamicResource Brush.Border.Subtle}" ResizeDirection="Columns" />
             <Panel Grid.Column="2" x:Name="Pane3D">
-                <threeD:View3D x:Name="View3D" Session="{Binding Session}" Mode="{Binding CameraMode}" ClassicKeys="{Binding ClassicKeys}"
+                <threeD:View3D x:Name="View3D" Session="{Binding Session}" Mode="{Binding CameraMode}" ClassicKeys="{Binding ClassicKeys}" Tool="{Binding Tool}" GridSize="{Binding GridSize}"
                                ToolTip.Tip="The map in 3D. Orbit: drag to turn, right-drag to move, scroll to come closer. Fly and Walk: drag to look, WASD to move. Home shows the whole map." />
                 <Image Source="{Binding EngineViewPicture}" IsVisible="{Binding EngineView}" Stretch="Uniform" />
                 <Border IsVisible="{Binding EngineView}" VerticalAlignment="Bottom" Background="#C0120C0E" Padding="12,8">
@@ -215,7 +178,7 @@
                 </Border>
                 <ToggleButton Classes="segment first last" Content="Game's view" IsChecked="{Binding EngineView}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10"
                               ToolTip.Tip="GZDoom's own picture from where the 3D view stands (G), drawn on a private screen so nothing opens on your desktop. Takes a few seconds; move the camera for another." />
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
+                <StackPanel x:Name="CameraModes" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
                     <ToggleButton Classes="segment first" Content="Orbit" IsChecked="{Binding IsOrbit}"
                                   ToolTip.Tip="Turn around the map like a model on a table." />
                     <ToggleButton Classes="segment" Content="Fly" IsChecked="{Binding IsFly}"
@@ -224,6 +187,43 @@
                                   ToolTip.Tip="Walk as the player does: eye height, up steps, stopped by walls. Drag to look, WASD to move, Shift to run." />
                 </StackPanel>
             </Panel>
+            <!-- Tools: what a left press does where the pointer is, on the plan or in the 3D view (D49), in a column down the map area's left edge (§3.3). -->
+            <StackPanel x:Name="ToolColumn" Grid.ColumnSpan="3" Orientation="Vertical" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10">
+                <ToggleButton Classes="segment tool first" Content="{Binding SelectLabel}" IsChecked="{Binding IsSelectTool}"
+                              ToolTip.Tip="{Binding Faces.Select.Tip}" />
+                <ToggleButton Classes="segment tool" Content="{Binding Faces.Room.Label}" Classes.guide="{Binding Marks.Room}" IsChecked="{Binding IsRoomTool}"
+                              ToolTip.Tip="{Binding Faces.Room.Tip}" />
+                <ToggleButton Classes="segment tool" Content="{Binding Faces.Door.Label}" Classes.guide="{Binding Marks.Door}" IsChecked="{Binding IsDoorTool}"
+                              ToolTip.Tip="{Binding Faces.Door.Tip}" />
+                <ToggleButton Classes="segment tool" Content="{Binding Faces.Window.Label}" IsChecked="{Binding IsWindowTool}"
+                              ToolTip.Tip="{Binding Faces.Window.Tip}" />
+                <ToggleButton Classes="segment tool" Content="{Binding Faces.Teleport.Label}" IsChecked="{Binding IsTeleportTool}"
+                              ToolTip.Tip="{Binding Faces.Teleport.Tip}" />
+                <ToggleButton Classes="segment tool" Content="{Binding Faces.Light.Label}" Classes.guide="{Binding Marks.Light}" IsChecked="{Binding IsLightTool}"
+                              ToolTip.Tip="{Binding Faces.Light.Tip}" />
+                <ToggleButton Classes="segment tool" Content="{Binding Faces.Stairs.Label}" Classes.guide="{Binding Marks.Stairs}" IsChecked="{Binding IsStairsTool}"
+                              ToolTip.Tip="{Binding Faces.Stairs.Tip}" />
+                <ToggleButton Classes="segment tool last" Content="{Binding Faces.Measure.Label}" IsChecked="{Binding IsMeasureTool}"
+                              ToolTip.Tip="{Binding Faces.Measure.Tip}" />
+                <Button Classes="segment tool first last" Content="{Binding MirrorButton}" Margin="0,10,0,0" HorizontalAlignment="Stretch"
+                        ToolTip.Tip="Symmetry: rooms you draw and things you place are repeated about the middle, mirrored or turned, as deathmatch maps are built. The middle is the selection's, or the map's when nothing is selected.">
+                    <Button.Flyout>
+                        <MenuFlyout Placement="RightEdgeAlignedTop">
+                            <MenuItem Header="No mirror" Command="{Binding ChooseMirrorCommand}" CommandParameter="0" />
+                            <MenuItem Header="Mirror left–right" Command="{Binding ChooseMirrorCommand}" CommandParameter="1" />
+                            <MenuItem Header="Mirror top–bottom" Command="{Binding ChooseMirrorCommand}" CommandParameter="2" />
+                            <MenuItem Header="Mirror four ways" Command="{Binding ChooseMirrorCommand}" CommandParameter="3" />
+                            <MenuItem Header="Half turn" Command="{Binding ChooseMirrorCommand}" CommandParameter="4" />
+                            <MenuItem Header="Quarter turns" Command="{Binding ChooseMirrorCommand}" CommandParameter="5" />
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
+                <!-- See it in a real map (D28): what the open tool makes, in a game's own map. -->
+                <!-- On a canvas, so its width never widens the tool column. -->
+                <Canvas Height="34" Margin="0,10,0,0" IsVisible="{Binding SeeOne, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <Button Classes="metal" Content="{Binding SeeOne.Title}" Command="{Binding SeeOne.Open}" ToolTip.Tip="{Binding SeeOne.Tip}" />
+                </Canvas>
+            </StackPanel>
             <!-- What is this? (D33): what the pointer is over, explained; at the other corner from the Guide. -->
             <Border Grid.ColumnSpan="3" IsVisible="{Binding Explained, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Left" VerticalAlignment="Bottom"
                     Margin="12" Padding="14,10" MaxWidth="380" CornerRadius="6" Background="{DynamicResource Brush.Surface1}" IsHitTestVisible="False"

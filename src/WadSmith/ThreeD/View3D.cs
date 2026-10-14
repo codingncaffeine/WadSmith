@@ -32,7 +32,7 @@ internal enum CameraMode
 /// worker from the session's shapes and drawn on its own render thread; this control only shows
 /// finished pictures and turns input into a camera.
 /// </summary>
-internal sealed class View3D : Control
+internal sealed partial class View3D : Control
 {
     public static readonly StyledProperty<EditorSession?> SessionProperty = AvaloniaProperty.Register<View3D, EditorSession?>(nameof(Session));
     public static readonly StyledProperty<CameraMode> ModeProperty = AvaloniaProperty.Register<View3D, CameraMode>(nameof(Mode), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
@@ -368,6 +368,13 @@ internal sealed class View3D : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == ToolProperty && _gesture is not null)
+        {
+            // Another tool chosen mid-gesture: the gesture is dropped, as on the plan.
+            _gesture = null;
+            InvalidateVisual();
+        }
+
         if (change.Property == SessionProperty)
         {
             if (change.OldValue is EditorSession old)
@@ -647,6 +654,7 @@ internal sealed class View3D : Control
     {
         context.FillRectangle(new SolidColorBrush(Color.FromRgb(0x0A, 0x07, 0x08)), new Rect(Bounds.Size));
         if (_shown is { } bitmap) context.DrawImage(bitmap, new Rect(Bounds.Size));
+        DrawGesture(context);
         if (_message is null) return;
         var text = new FormattedText(_message, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 14, new SolidColorBrush(Color.FromRgb(0xB3, 0xA9, 0xA6)))
         {
@@ -668,6 +676,7 @@ internal sealed class View3D : Control
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         Focus();
+        if (PressTool(e)) return;
         var pressed = e.GetCurrentPoint(this).Properties;
         if ((e.KeyModifiers & KeyModifiers.Control) != 0 && pressed.IsLeftButtonPressed && Session is not null && _hover is { Kind: HitKind.Floor or HitKind.Ceiling } surface)
         {
@@ -704,6 +713,7 @@ internal sealed class View3D : Control
     {
         var at = e.GetPosition(this);
         _lastPointer = at;
+        if (MoveTool(e)) return;
         if (_heightDrag is { } drag)
         {
             // The surface follows the pointer up and down, on the 8 grid (Shift: by 1), every step joining one undo step.
@@ -772,6 +782,7 @@ internal sealed class View3D : Control
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        if (ReleaseTool(e)) return;
         if (_heightDrag is { } drag)
         {
             _heightDrag = null;

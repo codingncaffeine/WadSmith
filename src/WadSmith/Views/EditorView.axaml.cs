@@ -22,6 +22,12 @@ public partial class EditorView : UserControl
         {
             if (DataContext is EditorViewModel vm) vm.EngineView = !vm.EngineView;
         };
+
+        // The camera buttons step aside by the tool column's width once it is measured.
+        ToolColumn.SizeChanged += (_, _) =>
+        {
+            if (DataContext is EditorViewModel vm) ApplyLayout(vm.Layout, focus: false);
+        };
         DataContextChanged += (_, _) =>
         {
             if (DataContext is not EditorViewModel vm) return;
@@ -80,6 +86,7 @@ public partial class EditorView : UserControl
         Canvas.Moving += move => (DataContext as EditorViewModel)?.Moving(move);
         Canvas.Placing += text => (DataContext as EditorViewModel)?.Hint(text);
         Canvas.Measured += (from, to) => (DataContext as EditorViewModel)?.Measured(from, to);
+        View3D.Measured += (from, to) => (DataContext as EditorViewModel)?.Measured(from, to);
         Canvas.DropHint += hint => (DataContext as EditorViewModel)?.Hint(hint);
         View3D.DropHint += hint => (DataContext as EditorViewModel)?.Hint(hint);
         Canvas.CornersChanged += c => (DataContext as EditorViewModel)?.Corners(c);
@@ -105,6 +112,9 @@ public partial class EditorView : UserControl
         PlanPane.IsVisible = plan;
         Split3D.IsVisible = plan && threeD;
         Pane3D.IsVisible = threeD;
+
+        // The tools stand at the map area's left edge in every layout; with the 3D view alone, its camera buttons step aside for them.
+        CameraModes.Margin = plan ? new Thickness(10) : new Thickness(ToolColumn.Bounds.Width > 0 ? ToolColumn.Bounds.Width + 24 : 120, 10, 10, 10);
         View3D.IsVisible = threeD;
         if (focus && layout != MapLayout.Split) (plan ? (Control)Canvas : View3D).Focus();
     }
