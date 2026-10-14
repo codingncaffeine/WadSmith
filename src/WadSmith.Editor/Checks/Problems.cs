@@ -73,9 +73,9 @@ public static class Problems
         Unclosed(f, found);
         MissingTextures(f, look, found);
         if (resources is not null) UnknownTextures(f, resources, found);
-        if (resources is not null) CannotShow(f, resources, found);
+        if (resources is not null) CannotShow(f, resources, engine, found);
         TwoSidedFlag(f, found);
-        if (resources is not null) StillSwitches(geometry, resources, found);
+        if (resources is not null) StillSwitches(geometry, resources, engine, found);
         ThingsOutside(geometry, resources, found);
         Slivers(geometry, found);
         StuckInWalls(geometry, resources, found);
@@ -331,9 +331,11 @@ public static class Problems
     /// Objects the game's own data cannot show: another game's (Doom II's super shotgun in Doom), or none the game knows.
     /// The game shows an error for each; the fix takes them out.
     /// </summary>
-    private static void CannotShow(MapFrame f, GameResources resources, List<Problem> found)
+    private static void CannotShow(MapFrame f, GameResources resources, string engine, List<Problem> found)
     {
-        foreach (var group in f.Things.Where(t => t.Element is not null && !resources.CanShow(t.Type)).GroupBy(t => t.Type).OrderBy(g => g.Key))
+        // A polyobject's anchor and start spot are not objects the game shows: it reads them as the map starts (D62).
+        static bool Placer(int type, string family) => Polyobjects.IsAnchor(type, family) || Polyobjects.SpotKind(type, family) is not null;
+        foreach (var group in f.Things.Where(t => t.Element is not null && !Placer(t.Type, engine) && !resources.CanShow(t.Type)).GroupBy(t => t.Type).OrderBy(g => g.Key))
         {
             var things = group.Select(t => t.Element!).ToList();
             var known = resources.Things.Find(group.Key);
@@ -456,15 +458,19 @@ public static class Problems
     /// map. A door's or lift's own walls are not switches: an action on the area beside the wall itself (tag 0, or the
     /// tag of a room on either side), as id's maps open doors and lower lifts from their own edges.
     /// </summary>
-    private static void StillSwitches(MapGeometry g, GameResources resources, List<Problem> found)
+    private static void StillSwitches(MapGeometry g, GameResources resources, string engine, List<Problem> found)
     {
         var f = g.Frame;
         var pictures = resources.SwitchPictures;
         if (pictures.Count == 0) return;
         var still = new List<Element>();
-        foreach (var l in f.Lines)
+
+        // A sliding or swinging door's own walls are its faces, used to open it, not switches (D62).
+        var polyWalls = g.Polyobjects(engine).SelectMany(p => p.Lines).ToHashSet();
+        for (var i = 0; i < f.Lines.Count; i++)
         {
-            if (l.Element is null || l.Front < 0 || l.Special == 0 || !Flag(l.Extra, "playeruse")) continue;
+            var l = f.Lines[i];
+            if (l.Element is null || l.Front < 0 || l.Special == 0 || !Flag(l.Extra, "playeruse") || polyWalls.Contains(i)) continue;
             if (Switches.NamesAreas(l.Special) && (l.Args[0] == 0 || g.SectorsTagged(l.Args[0]).Any(s => s == f.Sides[l.Front].Sector || (l.Back >= 0 && s == f.Sides[l.Back].Sector)))) continue;
             var face = f.Sides[l.Front];
             // An unseen wall (nothing drawn on its face) has no picture to change.

@@ -62,7 +62,7 @@ internal sealed partial class GuideViewModel : ObservableObject
 
     /// <summary>The open step's number, from 0.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StepLabel), nameof(Target), nameof(CanGoBack))]
+    [NotifyPropertyChangedFor(nameof(StepLabel), nameof(Target), nameof(CanGoBack), nameof(ShowsDoorKinds))]
     private int _index;
 
     [ObservableProperty]
@@ -81,8 +81,11 @@ internal sealed partial class GuideViewModel : ObservableObject
 
     /// <summary>Whether every step is done: the card says so and offers what to try next.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Target), nameof(StepLabel), nameof(CanGoBack))]
+    [NotifyPropertyChangedFor(nameof(Target), nameof(StepLabel), nameof(CanGoBack), nameof(ShowsDoorKinds))]
     private bool _finished;
+
+    /// <summary>Whether the open step shows the picture of the kinds of door (rising, sliding aside, swinging).</summary>
+    public bool ShowsDoorKinds => !Finished && Chapter.Steps[Index].Picture == "door-kinds";
 
     /// <summary>Whether there is a step before this one to go back to.</summary>
     public bool CanGoBack => Index > 0 && !Finished;

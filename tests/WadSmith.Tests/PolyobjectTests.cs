@@ -140,4 +140,16 @@ public sealed class PolyobjectTests
         Assert.Equal(spots, found);
         Assert.Equal(12, counts["MAP01"]);
     }
+
+    [Fact]
+    public void HexensOwnSlidingDoorsAreFoundAsDoorsWithTheHalfTheirActionsName()
+    {
+        // MAP05's two double sliding doors: each half names the other as its mirror; the faces name 19 and 14.
+        var lumps = MapLocator.Find(ResourceContainer.Open(GameFiles.Require("HEXEN.WAD"))).Single(m => m.Name == "MAP05");
+        var map = EditorMap.FromModel(MapTranslation.ToZDoom(MapConversion.Read(lumps, "hexen"), null, []));
+        var g = MapGeometry.Build(map.Frame);
+        var doors = map.Sectors.Where(s => s.OnMap).Select(s => WadSmith.Editor.Smart.PolyDoors.Recognise(g, s, "hexen")).OfType<WadSmith.Editor.Smart.PolyDoor>().DistinctBy(d => d.Number).OrderBy(d => d.Number).ToList();
+        Assert.Equal([(14, 15), (19, 20)], doors.Select(d => (d.Halves[0].Number, d.Halves[1].Number)));
+        Assert.All(doors, d => Assert.Equal(WadSmith.Editor.Smart.DoorKind.Slides, d.Kind));
+    }
 }

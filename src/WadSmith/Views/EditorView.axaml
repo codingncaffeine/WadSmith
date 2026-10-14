@@ -273,6 +273,7 @@
                     <TextBlock Classes="section" Text="{Binding StepLabel}" />
                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                    <views:DoorKindsDiagram IsVisible="{Binding ShowsDoorKinds}" Margin="0,4,0,0" />
                     <!-- What WadSmith just refused, said here too: the status bar is far from where the user is looking. -->
                     <TextBlock Text="{Binding Said}" IsVisible="{Binding Said.Length}" Foreground="{DynamicResource Brush.Accent}" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding How}" IsVisible="{Binding How.Length}" Classes="secondary" FontSize="12" TextWrapping="Wrap" />

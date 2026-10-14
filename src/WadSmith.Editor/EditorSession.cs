@@ -1997,7 +1997,7 @@ public sealed class EditorSession : IDisposable
 
         (Line? Switch, string? Why) made = (null, null);
         var (geometry, look, resources) = (_geometry, Look, Resources);
-        History.Record("Make a switch", e => made = Switches.Make(e, geometry, wall, at, target, look, t => SizeOf(resources, t)));
+        History.Record("Make a switch", e => made = Switches.Make(e, geometry, wall, at, target, look, t => SizeOf(resources, t), Engine));
         if (made.Switch is { } done) Selection.Set(done);
         else if (made.Why is { } why) Notice?.Invoke(why);
     }
@@ -2272,6 +2272,113 @@ public sealed class EditorSession : IDisposable
     }
 
     /// <summary>
+    /// Makes the door in <paramref name="area"/> (its area, or the doorway of a sliding or swinging door) open another way
+    /// (D54, D62), one undo step: upward; like Strife's doors, with one of the game's sliding door pictures; or as a polyobject
+    /// that slides aside or swings, laid out as <paramref name="layout"/> says (one door or two halves, which way it goes; the
+    /// door's own layout when none is given). Keeps its speed, wait, lock and monsters; says why when it cannot.
+    /// </summary>
+    public void SetDoorKind(Sector area, DoorKind kind, PolyDoors.Layout? layout = null)
+    {
+        if (!area.OnMap) return;
+        if (_geometry.Version != Map.Version)
+        {
+            _whenCaughtUp = () => SetDoorKind(area, kind, layout);
+            return;
+        }
+
+        var geometry = _geometry;
+        var family = Engine;
+        var rising = Doors.Recognise(geometry, area);
+        var poly = rising is null ? PolyDoors.Recognise(geometry, area, family) : null;
+        if (rising is null && poly is null) return;
+        var now = rising?.Kind ?? poly!.Kind;
+        if (now == kind && layout is null) return;
+        var look = Look;
+        var resources = Resources;
+        int? HeightOf(string texture) => resources?.Textures.FindWall(texture)?.Height;
+
+        // A Strife door shows one of the game's sliding pictures, the one nearest the door's width (DORQTR01, Strife's most used, first).
+        var width = rising?.Own.FirstOrDefault()?.Length ?? Doors.StandardWidth;
+        var sliding = kind == DoorKind.Animated && resources is not null ? Doors.SlidingLooks(resources.AnimatedDoors, resources.Textures.Walls) : [];
+        if (kind == DoorKind.Animated && sliding.Count == 0) return;
+        var shown = rising?.Own.FirstOrDefault()?.Front.Top ?? "";
+        var picture = kind == DoorKind.Animated && !sliding.Any(t => t.Name.Equals(shown, StringComparison.OrdinalIgnoreCase))
+            ? sliding.OrderBy(t => Math.Abs(t.Width - width)).ThenBy(t => t.Name.Equals("DORQTR01", StringComparison.OrdinalIgnoreCase) ? 0 : 1).First()
+            : null;
+        // A swinging door is as tall as the room it swings into (GZDoom draws it that tall there): a door picture as wide and
+        // as tall, when the one it shows is shorter, so the picture does not repeat up it.
+        string? swingPicture = null;
+        var doorFace = rising?.Own.FirstOrDefault() ?? poly?.Own.FirstOrDefault();
+        if (kind == DoorKind.Swings && doorFace is not null && resources is not null)
+        {
+            // The rooms either side of the doorway: beyond its frames (areas no deeper than a frame) when it has them.
+            IEnumerable<Sector> Beside(Sector a) => geometry.WallBoundsAt(a.Slot) is { } b
+                ? geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY).Where(l => l.OnMap && l.Back is not null && (ReferenceEquals(l.Front.Sector, a) || ReferenceEquals(l.Back.Sector, a)))
+                    .Select(l => ReferenceEquals(l.Front.Sector, a) ? l.Back!.Sector : l.Front.Sector).Where(x => !ReferenceEquals(x, a) && x.CeilingHeight > x.FloorHeight).Distinct()
+                : [];
+            bool Shallow(Sector a) => geometry.WallBoundsAt(a.Slot) is { } b && Math.Min(b.MaxX - b.MinX, b.MaxY - b.MinY) <= Doors.FrameDepth + 0.5;
+            var rooms = Beside(area).SelectMany(n => Shallow(n) ? Beside(n).Where(x => !ReferenceEquals(x, area)) : [n]).ToList();
+            var tall = rooms.Count > 0 ? rooms.Max(r => r.CeilingHeight - r.FloorHeight) : 0;
+            var shownHeight = resources.Textures.FindWall(rising is not null ? doorFace.Front.Top : doorFace.Front.Middle)?.Height ?? 0;
+            var doorWidth = rising is not null ? doorFace.Length : poly!.Halves.Sum(h => h.Lines.Where(l => PolyDoors.IsDoorAction(l.Special)).Select(l => l.Length).DefaultIfEmpty(0).Max());
+            if (shownHeight < tall)
+            {
+                swingPicture = Doors.Looks(family, resources.Textures.Walls).Where(t => Math.Abs(t.Width - doorWidth) < 0.5 && t.Height > shownHeight)
+                    .OrderBy(t => t.Height >= tall ? t.Height - tall : 10000 - t.Height).ThenBy(t => t.Name, StringComparer.Ordinal).FirstOrDefault()?.Name;
+            }
+        }
+
+        var shape = layout ?? (poly is null ? new PolyDoors.Layout() : new PolyDoors.Layout(poly.Double, poly.Kind == DoorKind.Slides ? PolyDoors.SlideDirection(poly) : null, poly.Kind == DoorKind.Swings ? PolyDoors.SwingDirection(poly) : null));
+        var label = kind switch
+        {
+            DoorKind.Slides => now == kind ? "Change how the door slides" : "Make the door slide aside",
+            DoorKind.Swings => now == kind ? "Change how the door swings" : "Make the door swing",
+            DoorKind.Animated => "Make the door slide open like Strife's",
+            _ => "Make the door open upward",
+        };
+
+        string? told = null;
+        try
+        {
+            History.Record(label, e =>
+            {
+                // A polyobject door becomes a rising door first (its frames the height of what it becomes), a Strife door one that
+                // rises when it is to be a polyobject; then the door it is to be.
+                if (poly is not null && PolyDoors.ToRising(e, poly, look, t => picture is not null ? picture.Height : HeightOf(t)) is { } back) throw new InvalidOperationException(back);
+                if (rising is { Kind: DoorKind.Animated } && kind is not DoorKind.Animated) Doors.SetKind(e, geometry, rising, DoorKind.Rises);
+                switch (kind)
+                {
+                    case DoorKind.Slides or DoorKind.Swings:
+                        if (PolyDoors.FromRising(e, area, kind, look, family, shape, swingPicture) is { } why) throw new InvalidOperationException(why);
+                        break;
+                    case DoorKind.Animated when rising is not null:
+                        told = Doors.SetKind(e, geometry, rising, DoorKind.Animated, picture?.Name, picture is null ? null : (picture.Width, picture.Height));
+                        break;
+                    case DoorKind.Animated:
+                        // From a polyobject door: the walls either side of the doorway, as they are now.
+                        var faces = e.Map.Lines.Where(l => l.OnMap && ReferenceEquals(l.Back?.Sector, area) && l.Args[0] == 0 && Doors.IsDoorAction(l.Special)).ToList();
+                        Doors.SetKind(e, geometry, new Door(area, faces, poly!.Settings, poly.Monsters, area.FloorHeight), DoorKind.Animated, picture?.Name);
+                        break;
+                }
+            });
+            Selection.Set(area);
+            if (told is not null) Notice?.Invoke(told);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Notice?.Invoke(ex.Message);
+        }
+    }
+
+    /// <summary>Changes how a sliding or swinging door behaves (its speed, wait, lock, monsters), one undo step.</summary>
+    public void ChangePolyDoor(PolyDoor door, DoorSettings settings, bool monsters, string label) =>
+        History.Record(label, e => PolyDoors.Change(e, door, settings, monsters));
+
+    /// <summary>Gives a sliding or swinging door another picture, one undo step; a sliding door's doorway takes its height.</summary>
+    public void DressPolyDoor(PolyDoor door, string texture) =>
+        History.Record("Change the door's look", e => PolyDoors.Dress(e, door, texture, Resources?.Textures.FindWall(texture)?.Height));
+
+    /// <summary>
     /// Makes a window in a wall from <paramref name="from"/> to <paramref name="to"/> along it (equal: a window of
     /// the usual width round that point), as one undo step, and selects it; says why when it cannot be made.
     /// </summary>
@@ -2509,7 +2616,16 @@ public sealed class EditorSession : IDisposable
         {
             var geometry = _geometry;
             var look = Look;
-            History.Record("Delete", e => said = Deleting.Delete(e, geometry, items, look));
+
+            // A sliding or swinging door goes with its doorway, and with its pen: its polyobjects, anchors and spots too, so
+            // the game never finds a spot without its polyobject.
+            var family = Engine;
+            var polyDoors = items.OfType<Sector>().SelectMany(s => PolyDoors.Recognise(geometry, s, family) is { } d ? [d] : PolyDoors.InPen(geometry, s, family)).DistinctBy(d => d.Number).ToList();
+            History.Record("Delete", e =>
+            {
+                said = Deleting.Delete(e, geometry, items, look);
+                foreach (var door in polyDoors) PolyDoors.Remove(e, door);
+            });
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {

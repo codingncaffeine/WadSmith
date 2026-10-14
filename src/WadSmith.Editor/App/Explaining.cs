@@ -41,6 +41,7 @@ public static class Explaining
         }
 
         if (Doors.Recognise(g, s) is { } door) return new("Door", Describe(door, family) + " Click it to change its key, its speed or how long it stays open.");
+        if (PolyDoors.Recognise(g, s, family) is { } polyDoor) return new("Door", Describe(polyDoor, family) + " Click it to change how it opens, its key, its speed or how long it stays open.");
         if (Lifts.Recognise(g, s) is { } lift) return new("Lift", Describe(lift) + " Click it to change its speed or how long it waits.");
         if (WallWindows.Recognise(g, s) is { } window) return new("Window", Describe(window));
         if (StairsFinder.Recognise(g, s) is { } stairs) return new("Stairs", Describe(stairs, s) + " Click it to change how much each step rises.");
@@ -66,6 +67,9 @@ public static class Explaining
             return new(l.Flag("playeruse") ? "Exit switch" : l.Flag("playercross") ? "Exit line" : "Exit",
                 $"Ends the map when the player {Exits.How(l)}, going on to {(l.Special == Exits.Secret ? "the secret map" : "the next map")}.");
         }
+
+        // A sliding or swinging door's wall (or a switch for one): what the door does.
+        if (PolyDoors.OfWall(g, l, family) is { } polyDoor) return new("Door", Describe(polyDoor, family));
 
         // A door's own face: what the door it opens does.
         foreach (var side in (Sector?[])[l.Back?.Sector, l.Front.Sector])
@@ -203,6 +207,21 @@ public static class Explaining
         var sliding = d.Kind == DoorKind.Animated;
         var after = d.Settings.StaysOpen ? "stays open" : string.Create(CultureInfo.InvariantCulture, $"{(sliding ? "slides shut" : "closes")} again after {d.Settings.Delay / 35.0:0.#} s");
         return $"{(sliding ? "Slides open, like Strife's doors," : "Opens")} {who}{key}; {after}.";
+    }
+
+    /// <summary>A sliding or swinging door in a sentence: which way it goes, who opens it, with which key, what it does after.</summary>
+    public static string Describe(PolyDoor d, string family = "doom")
+    {
+        var remote = d.Remote.Count();
+        var own = d.Own.Any() ? d.Monsters ? "when the player or a monster uses it" : "when the player uses it" : "";
+        var from = remote == 0 ? "" : remote == 1 ? "a switch" : $"{remote} switches";
+        var who = from.Length == 0 ? own : own.Length == 0 ? $"from {from}" : $"{own}, or from {from}";
+        var key = Keys.NameOfLock(d.Settings.Lock, family) is { } name ? $", with the {InSentence(name)}" : d.Settings.Lock != 0 ? $", with lock {d.Settings.Lock}" : "";
+        var (how, shut) = d.Kind == DoorKind.Slides
+            ? (d.Double ? "Its two halves slide apart into the walls" : $"Slides {PolyDoors.Compass(PolyDoors.SlideDirection(d))} into the wall", "slides shut")
+            : (d.Double ? $"Its two halves swing open to the {PolyDoors.Compass(PolyDoors.SwingDirection(d))}" : $"Swings open to the {PolyDoors.Compass(PolyDoors.SwingDirection(d))}", "swings shut");
+        var after = d.Settings.StaysOpen ? "stays open" : string.Create(CultureInfo.InvariantCulture, $"{shut} again after {d.Settings.Delay / 35.0:0.#} s");
+        return $"{how} {who}{key}; {after}.";
     }
 
     /// <summary>A name as it reads inside a sentence: "Red key" becomes "red key", "ID badge" stays.</summary>

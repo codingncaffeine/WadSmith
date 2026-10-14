@@ -148,10 +148,10 @@ public sealed class StrifeSlidingDoorTests
         session.Selection.Set(area);
         await Settle();
         var opens = inspector.Rows.OfType<ChoiceRow>().Single(r => r.Label == "Opens");
-        Assert.Equal(["Upward", "Like Strife's doors"], opens.Options);
+        Assert.Equal(["Upward", "Slides aside", "Swings", "Like Strife's doors"], opens.Options);
         Assert.Contains("DORML01", inspector.Rows.OfType<PictureChoiceRow>().Single(r => r.Label == "Looks like").Choices.Select(c => c.Name));
 
-        opens.Value = 1;
+        opens.Value = 3;
         await Settle();
         var door = Doors.Recognise(session.Geometry, area)!;
         Assert.Equal(DoorKind.Animated, door.Kind);

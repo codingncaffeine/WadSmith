@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Asks the installed GZDoom whether a map's doors open and its lifts go down: every wall with a door
 # action (its own walls, or a switch naming its tag), and every wall with a lift action, is used (or crossed) as the player would,
-# and the door's ceiling or the lift's floor read 2 seconds later. Runs headless in a private nested
-# session (tools/engine/nested.sh).
+# and the door's ceiling or the lift's floor read 2 seconds later; a sliding or swinging door (a polyobject) by how far its
+# walls' corners moved, and whether they came back. Runs headless in a private nested session (tools/engine/nested.sh).
 #
 #   tools/engine/door-check.sh WORK_DIR IWAD MAP FILE_OR_FOLDER...
 #
@@ -38,5 +38,12 @@ while read -r _ wall x0 y0 x1 y1 used; do
   if awk -v a="$x0" -v b="$y0" -v c="$x1" -v d="$y1" 'BEGIN { exit !((c-a)*(c-a) + (d-b)*(d-b) > 256) }'; then verdict="sent the player to ($x1, $y1)"; else verdict="DID NOT SEND THE PLAYER ANYWHERE"; fi
   echo "door-check: wall $wall, teleporter: used $used: $verdict"
 done < <(command grep '^WSTELE [0-9]' "$LOG")
-if ! command grep -qE '^WS(DOOR|LIFT|TELE) [0-9]' "$LOG"; then echo "door-check: no wall opens a door, lowers a lift or teleports, so nothing was checked"; BAD=1; fi
+# Sliding and swinging doors (polyobjects): how far their walls moved 2 seconds after the use, and whether they came back.
+while read -r _ wall moved used wx wy; do
+  if awk -v m="$moved" 'BEGIN { exit !(m > 16) }'; then verdict="opened (its polyobject moved $moved, on average by $wx, $wy)"; else verdict="DID NOT OPEN (moved $moved)"; BAD=1; fi
+  shut=$(command grep "^WSPOLYSHUT $wall " "$LOG" | awk '{ print ($3 < 0.5) ? "shut again after " $4 " tics" : "DID NOT SHUT (still " $3 " off)" }')
+  case "$shut" in *"DID NOT"*) BAD=1;; esac
+  echo "door-check: wall $wall, sliding or swinging door: used $used: $verdict${shut:+, $shut}"
+done < <(command grep '^WSPOLY [0-9]' "$LOG")
+if ! command grep -qE '^WS(DOOR|LIFT|TELE|POLY) [0-9]' "$LOG"; then echo "door-check: no wall opens a door, lowers a lift or teleports, so nothing was checked"; BAD=1; fi
 exit $BAD

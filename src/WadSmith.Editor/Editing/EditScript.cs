@@ -188,7 +188,7 @@ public static class EditScript
             case "switch":
                 var target = Room(1);
                 var switchWall = Wall(3);
-                Record("Make a switch", e => why = Switches.Make(e, g, switchWall, P(3), target, l).Why);
+                Record("Make a switch", e => why = Switches.Make(e, g, switchWall, P(3), target, l, family: engine).Why);
                 made = "a switch";
                 break;
             case "exit":

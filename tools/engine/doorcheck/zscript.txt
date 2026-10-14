@@ -17,6 +17,56 @@ class WadSmithDoorCheck : StaticEventHandler
 	Vector3 home;
 	double homeAngle;
 
+	// Sliding and swinging doors (polyobjects): their walls' corners as the wall was used, and how far any has moved since.
+	Array<int> polyLines;
+	Array<double> corners;
+
+	static bool IsPolyDoor(Line l) { return l.special == 7 || l.special == 8; }
+
+	// How long a polyobject door waits open: a negative wait keeps it open.
+	static int PolyWait(Line l) { return l.special == 8 ? l.args[4] : l.args[3]; }
+
+	void Snapshot()
+	{
+		corners.Clear();
+		for (int i = 0; i < polyLines.Size(); i++)
+		{
+			Line p = level.Lines[polyLines[i]];
+			corners.Push(p.v1.p.x);
+			corners.Push(p.v1.p.y);
+		}
+	}
+
+	// The farthest any polyobject wall's first corner now lies from where it was at the snapshot.
+	double Moved()
+	{
+		double most = 0;
+		for (int i = 0; i < polyLines.Size(); i++)
+		{
+			Line p = level.Lines[polyLines[i]];
+			most = max(most, (p.v1.p - (corners[i * 2], corners[i * 2 + 1])).Length());
+		}
+
+		return most;
+	}
+
+	// Which way the walls that moved went, on average (a slide's direction, the side a swing went to).
+	Vector2 Went()
+	{
+		Vector2 sum = (0, 0);
+		int count = 0;
+		for (int i = 0; i < polyLines.Size(); i++)
+		{
+			Line p = level.Lines[polyLines[i]];
+			Vector2 d = p.v1.p - (corners[i * 2], corners[i * 2 + 1]);
+			if (d.Length() < 0.5) continue;
+			sum += d;
+			count++;
+		}
+
+		return count > 0 ? sum / count : (0, 0);
+	}
+
 	static bool IsTeleport(Line l) { return l.special == 70 || l.special == 71; }
 
 	static bool IsLift(Line l) { return l.special == 62 || l.special == 206; }
@@ -40,6 +90,8 @@ class WadSmithDoorCheck : StaticEventHandler
 			if ((l.special == 11 || l.special == 12 || l.special == 13 || l.special == 14) && (l.args[0] != 0 || l.backsector)) openers.Push(i);
 			else if (IsLift(l) && TargetOf(l)) openers.Push(i);
 			else if (IsTeleport(l) && (l.activation & SPAC_Cross)) openers.Push(i);
+			else if (IsPolyDoor(l)) openers.Push(i);
+			if (l.sidedef[0] && (l.sidedef[0].Flags & Side.WALLF_POLYOBJ)) polyLines.Push(i);
 		}
 
 		Console.Printf("WSDOOR BEGIN %s %d", level.MapName, openers.Size());
@@ -92,6 +144,32 @@ class WadSmithDoorCheck : StaticEventHandler
 
 			return;
 		}
+		// A sliding or swinging door: used from the front, the polyobjects' corners read 2 seconds later, then back where they were.
+		if (IsPolyDoor(l))
+		{
+			if (phase == 0)
+			{
+				Snapshot();
+				used = l.Activate(players[consoleplayer].mo, Line.front, (l.activation & SPAC_Use) ? SPAC_Use : SPAC_Cross);
+				phase = 1;
+				since = 0;
+			}
+			else if (phase == 1 && since >= 70)
+			{
+				Vector2 went = Went();
+				Console.Printf("WSPOLY %d %.1f %d %.1f %.1f", openers[next], Moved(), used, went.x, went.y);
+				phase = 2;
+			}
+			else if (phase == 2 && (PolyWait(l) < 0 || Moved() < 0.5 || since > 700))
+			{
+				if (PolyWait(l) >= 0) Console.Printf("WSPOLYSHUT %d %.1f %d", openers[next], Moved(), since);
+				next++;
+				phase = 0;
+			}
+
+			return;
+		}
+
 		if (phase == 0)
 		{
 			// Walked-across lift lines are set off by crossing, switches and doors by use.

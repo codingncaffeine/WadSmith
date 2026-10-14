@@ -153,7 +153,7 @@ public static class Switches
     /// round the point (see <see cref="Place"/>), and the wall carrying it gets the action by the target's tag, used by
     /// the player again and again. Returns the switch, or null and why.
     /// </summary>
-    public static (Line? Switch, string? Why) Make(StructureEdit edit, MapGeometry before, Line wall, MapPoint at, Sector target, Look look, Func<string, (int Width, int Height)?>? sizeOf = null)
+    public static (Line? Switch, string? Why) Make(StructureEdit edit, MapGeometry before, Line wall, MapPoint at, Sector target, Look look, Func<string, (int Width, int Height)?>? sizeOf = null, string family = "doom")
     {
         if (!wall.OnMap || !target.OnMap) return (null, null);
         if (wall.Back is not null) return (null, "A switch goes on a solid wall: click a wall with a room on one side only.");
@@ -163,13 +163,23 @@ public static class Switches
         // What the switch does: what the target's own walls do, by its tag.
         var tag = target.Tag != 0 ? target.Tag : before.HighestTag + 1;
         (int Special, int[] Args) action;
+        PolyDoor? polyDoor = null;
         if (Doors.Recognise(before, target) is { } door) action = Doors.Encode(door.Settings, 0, door.Openers.FirstOrDefault()?.Args[1], tag, door.Kind);
+        else if ((polyDoor = PolyDoors.Recognise(before, target, family)) is { } sliding && sliding.Openers.FirstOrDefault() is { } face) action = (face.Special, [.. face.Args]);
         else if (Lifts.Recognise(before, target) is { } lift) action = (Lifts.DownWaitUpStayLip, [tag, lift.Settings.Fast ? Lifts.FastSpeed : Lifts.NormalSpeed, lift.Settings.Delay, 0, 0]);
         else return (null, "A switch opens a door or lowers a lift: select a door or a lift first.");
 
         var piece = Place(edit, before, wall, at, look, look.Switch, sizeOf);
 
-        if (target.Tag != tag) edit.Set(target, s => s.Tag, (s, v) => s.Tag = v, tag);
+        // A sliding or swinging door is moved by its number, with its lock on the switch too; any other target by its tag.
+        if (polyDoor is not null)
+        {
+            if (polyDoor.Settings.Lock != 0) edit.Field(piece, PolyDoors.LockField, Core.Maps.Udmf.UdmfValue.Int(polyDoor.Settings.Lock));
+        }
+        else if (target.Tag != tag)
+        {
+            edit.Set(target, s => s.Tag, (s, v) => s.Tag = v, tag);
+        }
         edit.Set(piece, x => x.Special, (x, v) => x.Special = v, action.Special);
         for (var i = 0; i < 5; i++)
         {

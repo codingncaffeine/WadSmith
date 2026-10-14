@@ -119,6 +119,33 @@ public sealed class GuideBookTests
     }
 
     [Fact]
+    public void ADoorMadeToSlideSwingOrSlideLikeStrifesFinishesTheKindStep()
+    {
+        // The step is done by a door that opens another way: sliding aside (a polyobject), or like Strife's; a lock is not it.
+        var map = EditorMap.FromModel(new MapModel { Name = "MAP01", Namespace = "zdoom" });
+        var withDoor = Then(map, TwoRooms + "\ndoor 256 128");
+        var history = new History(map);
+        var area = map.Sectors.Single(s => s.OnMap && Doors.Recognise(MapGeometry.Build(map.Frame), s) is not null);
+        history.Record("Lock it", e => Doors.Change(e, Doors.Recognise(MapGeometry.Build(map.Frame), area)!, new DoorSettings(false, false, 129), true, false));
+        Assert.False(Done("doors", "doorkind", map.Frame, withDoor));
+        history.Record("Make the door slide aside", e => PolyDoors.FromRising(e, area, DoorKind.Slides, Look.For("doom"), "doom", new PolyDoors.Layout()));
+        Assert.True(Done("doors", "doorkind", map.Frame, withDoor));
+        history.Undo();
+        history.Record("Make the door slide open like Strife's", e => Doors.SetKind(e, MapGeometry.Build(map.Frame), Doors.Recognise(MapGeometry.Build(map.Frame), area)!, DoorKind.Animated));
+        Assert.True(Done("doors", "doorkind", map.Frame, withDoor));
+
+        // A sliding door locked by its walls' lock number finishes the lock step.
+        history.Undo();
+        history.Undo();
+        history.Record("Make the door slide aside", e => PolyDoors.FromRising(e, area, DoorKind.Slides, Look.For("doom"), "doom", new PolyDoors.Layout()));
+        var sliding = PolyDoors.Recognise(MapGeometry.Build(map.Frame), area, "doom")!;
+        var slid = map.Frame;
+        Assert.False(Done("doors", "lock", map.Frame, slid));
+        history.Record("Lock it", e => PolyDoors.Change(e, sliding, sliding.Settings with { Lock = 130 }, false));
+        Assert.True(Done("doors", "lock", map.Frame, slid));
+    }
+
+    [Fact]
     public void AnExitFinishesTheExitStepAndADoorDoesNot()
     {
         var map = Built(TwoRooms);
@@ -267,7 +294,7 @@ public sealed class GuideBookTests
         // Every step is one these tests finish against its near miss; a new step needs its own test before it is listed here.
         string[] tested =
         [
-            "room", "look", "door", "texture", "things", "exit", "play", "floor", "ceiling", "heights", "doorlook", "lock", "key", "switch", "lift", "stairs", "walk",
+            "room", "look", "door", "texture", "things", "exit", "play", "floor", "ceiling", "heights", "doorlook", "doorkind", "lock", "key", "switch", "lift", "stairs", "walk",
             "section", "flat", "align", "monster", "pickup", "skill", "difficulty", "brightness", "light", "colour", "secret", "hide", "name", "music", "names", "keys", "palette",
         ];
         Assert.Empty(GuideBook.Chapters.SelectMany(c => c.Steps).Select(s => s.Id).Except(tested));

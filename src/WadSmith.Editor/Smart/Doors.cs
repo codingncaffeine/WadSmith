@@ -15,6 +15,12 @@ public enum DoorKind
 
     /// <summary>Its picture slides open, as Strife's sliding doors do (Door_Animated): the frames of an ANIMDEFS <c>animateddoor</c>.</summary>
     Animated,
+
+    /// <summary>It slides aside into the wall beside it: a polyobject, as Hexen's sliding doors are (Polyobj_DoorSlide).</summary>
+    Slides,
+
+    /// <summary>It swings on a hinge at its side into a room: a polyobject, as Hexen's swinging doors are (Polyobj_DoorSwing).</summary>
+    Swings,
 }
 
 /// <summary>How a door behaves, in the words its Inspector uses.</summary>

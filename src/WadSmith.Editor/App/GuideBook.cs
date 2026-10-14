@@ -24,9 +24,9 @@ public enum GuideTarget
 
 /// <summary>
 /// One step of a Guide chapter: a title, what to do (with {key:…}, {or:…}, {label:…} and {move} filled in by the editor,
-/// and {monster}/{weapon} by the game), and the control it points at.
+/// and {monster}/{weapon} by the game), the control it points at, and a picture the card shows with it ("door-kinds").
 /// </summary>
-public sealed record GuideStep(string Id, string Title, string Text, GuideTarget Target);
+public sealed record GuideStep(string Id, string Title, string Text, GuideTarget Target, string? Picture = null);
 
 /// <summary>
 /// A chapter of the Guide (§3.9): a few hands-on steps on the user's own map, then what to try next on it, and the kind of
@@ -89,6 +89,7 @@ public static class GuideBook
         [
             new("door", "Make a door", "Pick {label:Door}{or:Door tool} and click the dashed line where two rooms meet. A door is built into that opening, in a doorway as tall as the door; it opens when the player uses it.", GuideTarget.DoorTool),
             new("doorlook", "Choose how it looks", "Click the door and pick a picture under Looks like in the Inspector, or right-click the door on the plan: the game's own doors, wooden, big, the exit door. The doorway takes the picture's height, with wall above a short door.", GuideTarget.Inspector),
+            new("doorkind", "Make it slide or swing", "Doors do not only rise. Click the door and choose how it opens under {label:Opens} in the Inspector: Slides aside, into the wall beside it, or Swings on a hinge into the room you pick, as Hexen's doors do; tick Two halves that part for a double door. In Strife, Like Strife's doors makes its picture slide open. Doors that slide aside or swing are GZDoom's: in the classic ports doors only rise.", GuideTarget.Inspector, "door-kinds"),
             new("lock", "Lock it", "Drag a key from {label:Objects} onto the door, or right-click the door and pick Lock with the red key; the Inspector's {label:Locked with} does the same. The game tells the player which key it needs.", GuideTarget.Inspector),
             new("key", "Leave the key somewhere", "Open {label:Objects}, find the key of that colour and drag it into a room the player reaches without going through the door.", GuideTarget.Objects),
             new("switch", "Open a door from a switch", "Click a door, press “Add a switch that opens it” in the Inspector, then click a solid wall: part of it becomes the switch.", GuideTarget.Inspector),
@@ -199,7 +200,8 @@ public static class GuideBook
             "ceiling" => Changed(atStart.Sectors, now.Sectors, s => s.Element, s => s.CeilingHeight),
             "heights" => happened.Contains(GuideEvents.Heights),
             "doorlook" => Changed(DoorFaces(atStart), DoorFaces(now), x => x.Element, x => x.Top),
-            "lock" => Up(f => Lines(f, l => Smart.Doors.LockOf(l.Special, l.Args) != 0)) > 0,
+            "doorkind" => Up(f => Lines(f, l => l.Special is Smart.PolyDoors.DoorSlide or Smart.PolyDoors.DoorSwing or Smart.Doors.DoorAnimated)) > 0,
+            "lock" => Up(f => Lines(f, l => Smart.Doors.LockOf(l.Special, l.Args) != 0 || (Smart.PolyDoors.IsDoorAction(l.Special) && Field(l.Extra, Smart.PolyDoors.LockField) is { Kind: UdmfValueKind.Integer } v && v.AsInt() != 0))) > 0,
             "key" => Up(f => Things(f, (c, _) => c == ThingCategory.Key)) > 0,
             "switch" => Up(f => Lines(f, l => IsDoor(l.Special) && l.Args[0] != 0)) > 0,
             "lift" => Up(f => Lines(f, l => l.Special is Smart.Lifts.DownWaitUpStay or Smart.Lifts.DownWaitUpStayLip)) > 0,

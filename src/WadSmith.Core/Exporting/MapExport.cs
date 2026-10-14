@@ -185,6 +185,7 @@ public static class MapExport
     private static void Respell(MapModel m, string map, string family, XlatTranslator? xlat, PortRules rules, ClassicPort port, ExportReport report, string? next)
     {
         Exits(m, map, family, report, next);
+        if (family == "hexen") HexenPolyobjects(m, map, report);
         if (family == "hexen" || xlat is null) return;
 
         // Strife's see-through walls: the engine reads its two flags as alpha (0.25 transparent, 0.75 translucent), and
@@ -392,6 +393,7 @@ public static class MapExport
             var title = kind.Key switch
             {
                 "lights" => "GZDoom's dynamic lights",
+                "polyobjects" => "Sliding and swinging doors (polyobjects): their anchors and spots",
                 "brought" => "Objects brought in from other games or made from 3D models",
                 _ => $"Objects {port.Title} does not know",
             };
@@ -433,9 +435,36 @@ public static class MapExport
     }
 
     /// <summary>What kind of object a number the port does not know is, for the report: GZDoom's lights, the project's own (20000 on), or other.</summary>
+    /// <summary>
+    /// Sliding and swinging doors in Hexen's own format (D62): their anchor and spots take Hexen's numbers (3000–3002); the
+    /// format keeps no lock on a wall of its own and no wait that keeps a door open, so those are said.
+    /// </summary>
+    private static void HexenPolyobjects(MapModel m, string map, ExportReport report)
+    {
+        foreach (var t in m.Things) t.Type = t.Type switch { 9300 => 3000, 9301 => 3001, 9302 => 3002, _ => t.Type };
+        var locked = new List<(string, int)>();
+        var staying = new List<(string, int)>();
+        for (var i = 0; i < m.Lines.Count; i++)
+        {
+            var l = m.Lines[i];
+            if (l.Special is not (7 or 8)) continue;
+            if (l.Extra.TryGet("locknumber", out _)) locked.Add(("polyobject-lock", i));
+            var wait = l.Special == 8 ? 4 : 3;
+            if (l.Args[wait] < 0)
+            {
+                staying.Add(("polyobject-wait", i));
+                l.Args[wait] = 255;
+            }
+        }
+
+        report.AddGrouped(map, "wall", locked, _ => ("Sliding and swinging doors locked with a key", false, "they open without it: Hexen's format has no lock of its own on a wall"));
+        report.AddGrouped(map, "wall", staying, _ => ("Sliding and swinging doors that stay open", false, "they close again after 7 seconds, Hexen's longest wait"));
+    }
+
     private static string KindOf(int type) => type switch
     {
         >= 9800 and <= 9899 or 1502 or 1503 => "lights",
+        >= 9300 and <= 9303 => "polyobjects",
         >= 20000 => "brought",
         _ => "other",
     };

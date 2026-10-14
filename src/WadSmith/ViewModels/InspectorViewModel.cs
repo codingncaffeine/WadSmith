@@ -414,6 +414,101 @@ internal sealed partial class InspectorViewModel : ObservableObject
     public event Action<Sector>? LookLike;
 
     /// <summary>The door a wall is a face of (one of the door's own walls, used to open it), or null: a click on the plan lands on a door's face, and the door is what the user means.</summary>
+    /// <summary>The sliding or swinging door standing in an area, or null.</summary>
+    private PolyDoor? PolyDoorIn(Sector area) => PolyDoors.Recognise(_session.Geometry, area, _session.Engine);
+
+    /// <summary>The doorway of the sliding or swinging door a wall (or one of its faces) belongs to or opens, or null.</summary>
+    private Sector? PolyDoorOfWall(Element element) => (element switch { Line l => l, Side { Line: { } w } => w, _ => null }) is { } wall && PolyDoors.OfWall(_session.Geometry, wall, _session.Engine) is { } door ? door.Doorway : null;
+
+    /// <summary>
+    /// A sliding or swinging door's rows (D62): how it opens, one door or two halves, which way it goes, its speed and wait,
+    /// its look, lock and monsters, and what opens it.
+    /// </summary>
+    private void AddPolyDoor(Sector area)
+    {
+        PolyDoor? Now() => PolyDoorIn(area);
+        if (Now() is not { } door) return;
+        void Change(Func<PolyDoor, (DoorSettings Settings, bool Monsters)> to, string label)
+        {
+            if (Now() is not { } d) return;
+            var (settings, monsters) = to(d);
+            _session.ChangePolyDoor(d, settings, monsters, label);
+        }
+
+        // The doorway's two ways along it and across it, the same each time (eastward or northward first).
+        var face = door.Own.FirstOrDefault() ?? door.Halves[0].Lines[0];
+        var (ux, uy) = ((face.End.X - face.Start.X) / face.Length, (face.End.Y - face.Start.Y) / face.Length);
+        if (ux < -1e-6 || (Math.Abs(ux) <= 1e-6 && uy < 0)) (ux, uy) = (-ux, -uy);
+        WadSmith.Editor.Geometry.MapPoint[] along = [new(ux, uy), new(-ux, -uy)];
+        WadSmith.Editor.Geometry.MapPoint[] across = [new(-uy, ux), new(uy, -ux)];
+        static int Nearest(WadSmith.Editor.Geometry.MapPoint[] ways, WadSmith.Editor.Geometry.MapPoint d) => (ways[0].X * d.X) + (ways[0].Y * d.Y) >= 0 ? 0 : 1;
+
+        AddDoorKind(area);
+        Rows.Add(new FlagRow("Two halves that part", "A double door: two halves, each half as wide, that slide apart into the walls either side or swing open together (a polyobject and its mirror).", () => Now()?.Double == true,
+            on =>
+            {
+                if (Now() is { } d) _session.SetDoorKind(area, d.Kind, new PolyDoors.Layout(on, null, d.Kind == DoorKind.Swings ? PolyDoors.SwingDirection(d) : null));
+            }));
+        if (door.Kind == DoorKind.Slides && !door.Double)
+        {
+            Rows.Add(new ChoiceRow("Slides toward", "Which end of the doorway it slides into the wall at, as the plan has north up. There must be wall there, as wide as the door.", [.. along.Select(PolyDoors.Compass)],
+                () => Now() is { } d ? Nearest(along, PolyDoors.SlideDirection(d)) : 0,
+                v =>
+                {
+                    if (Now() is { } d && Nearest(along, PolyDoors.SlideDirection(d)) != v) _session.SetDoorKind(area, DoorKind.Slides, new PolyDoors.Layout(false, along[v]));
+                }));
+        }
+        else if (door.Kind == DoorKind.Swings)
+        {
+            Rows.Add(new ChoiceRow("Swings into", "Which side of the doorway it swings open into, as the plan has north up. GZDoom shows a swinging door as tall as the room it is in, so its doorway is that room's height.", [.. across.Select(PolyDoors.Compass)],
+                () => Now() is { } d ? Nearest(across, PolyDoors.SwingDirection(d)) : 0,
+                v =>
+                {
+                    if (Now() is { } d && Nearest(across, PolyDoors.SwingDirection(d)) != v) _session.SetDoorKind(area, DoorKind.Swings, new PolyDoors.Layout(d.Double, null, across[v]));
+                }));
+        }
+
+        Rows.Add(new ChoiceRow("Speed", door.Kind == DoorKind.Slides ? "How fast it slides: as fast as Doom's normal doors rise, or four times that (Polyobj_DoorSlide's speed)." : "How fast it swings: a quarter turn in about a second, or four times as fast (Polyobj_DoorSwing's speed).", ["Normal", "Fast"],
+            () => Now()?.Settings.Fast == true ? 1 : 0,
+            v => Change(d => (d.Settings with { Fast = v == 1 }, d.Monsters), "Change door speed")));
+        Rows.Add(new ChoiceRow("After opening", "Whether it closes by itself after a few seconds or stays open (its wait; none keeps it open).", ["Closes again", "Stays open"],
+            () => Now()?.Settings.StaysOpen == true ? 1 : 0,
+            v => Change(d => (d.Settings with { StaysOpen = v == 1 }, d.Monsters), "Change what the door does after opening")));
+
+        // Its pictures: the game's own doors as wide as it is (its halves together), since its walls keep their width.
+        var doorWidth = door.Halves.Sum(h => h.Lines.Where(l => PolyDoors.IsDoorAction(l.Special)).Select(l => l.Length).DefaultIfEmpty(0).Max());
+        if (_session.Resources is { } resources && Doors.Looks(resources.Game.Engine, resources.Textures.Walls) is { Count: > 0 } all
+            && (all.Where(t => Math.Abs(t.Width - doorWidth) < 0.5).ToList() is { Count: > 0 } fitting ? fitting : all) is var looks)
+        {
+            string Current() => Now()?.Own.FirstOrDefault()?.Front.Middle ?? "";
+            var choices = looks.Select(t => new PictureChoice(t.Name, door.Kind == DoorKind.Slides
+                    ? $"{t.Name}, {t.Width} × {t.Height}: the door shows this picture, and its doorway becomes {t.Height} tall to fit it."
+                    : $"{t.Name}, {t.Width} × {t.Height}: the door shows this picture, as tall as the room it swings into (a shorter one repeats up it).",
+                () => string.Equals(Current(), t.Name, StringComparison.OrdinalIgnoreCase),
+                () =>
+                {
+                    if (Now() is { } d) _session.DressPolyDoor(d, t.Name);
+                },
+                () => resources.Textures.GetWall(t.Name), _session.OnUiThread)).ToList();
+            Rows.Add(new PictureChoiceRow("Looks like", "The door's picture, one of the game's own doors, on both its faces.", choices));
+        }
+
+        IReadOnlyList<(int Lock, string Name)> locks = Keys.Locks(_session.Engine);
+        if (door.Settings.Lock is var held and not 0 && !locks.Any(k => k.Lock == held)) locks = [.. locks, (held, string.Create(CultureInfo.InvariantCulture, $"Lock {held}"))];
+        Rows.Add(new ChoiceRow("Locked with", "The key the player needs to open it (the lock number on its walls, which GZDoom reads on any action). Locked doors never open for monsters.", [.. locks.Select(k => k.Name)],
+            () => Now() is { } d ? Math.Max(0, locks.ToList().FindIndex(k => k.Lock == d.Settings.Lock)) : 0,
+            v => Change(d => (d.Settings with { Lock = locks[v].Lock }, d.Monsters), "Change the door's lock")));
+        Rows.Add(new FlagRow("Monsters open it too", "Monsters chasing the player can open it (monsteruse). Locked doors never open for monsters.", () => Now()?.Monsters == true,
+            on => Change(d => (d.Settings, on), on ? "Let monsters open the door" : "Keep monsters from opening the door")));
+        Rows.Add(new InfoRow("Opened from", "Its own faces, used from the rooms either side, and walls elsewhere naming it (a switch).", () =>
+        {
+            if (Now() is not { } d) return "—";
+            var own = d.Own.Count();
+            var remote = d.Remote.Count();
+            return string.Join(", ", new[] { own == 0 ? null : $"{own} of its faces", remote == 0 ? null : remote == 1 ? "a switch" : $"{remote} switches" }.OfType<string>());
+        }));
+    }
+
     private Sector? DoorOf(Line l)
     {
         foreach (var side in new[] { l.Back, l.Front })
@@ -452,7 +547,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
     private string KindOf() => _session.Selection.Items switch
     {
         [Sector s] when Platforms.ControlOf(_session.Geometry, s) is not null => "platform control",
-        [Sector s] => (Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Kind} {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room") + $" {Platforms.Of(_session.Geometry, s).Count}" + ClimbKind(s),
+        [Sector s] => (PolyDoorIn(s) is { } pd ? $"polydoor {pd.Kind} {pd.Double} {pd.Settings.Lock}" : Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Kind} {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room") + $" {Platforms.Of(_session.Geometry, s).Count}" + ClimbKind(s),
+        [Line or Side] when PolyDoorOfWall(_session.Selection.Items[0]) is { } wallDoorway && PolyDoorIn(wallDoorway) is { } wallDoor => $"polydoor wall {wallDoor.Kind} {wallDoor.Double} {wallDoor.Settings.Lock}",
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : LiftOf(l) is not null ? "lift face" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : DoorOf(l) is { } doorArea ? $"door {Doors.Recognise(_session.Geometry, doorArea)?.Kind} {Doors.Recognise(_session.Geometry, doorArea)?.Settings.Lock} face" : WindowOf(l) is not null ? "window face" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : $"thing {t.Type}",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
@@ -629,6 +725,15 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = "This little room outside the map is where the game reads a platform from: its floor is the platform's bottom, its ceiling the top. Change the platform here or in the room it stands in.";
                 AddPlatform(held, control: true);
                 break;
+            case Sector s when PolyDoorIn(s) is not null:
+                Heading = "Door";
+                _summaryOf = () => PolyDoorIn(s) is { } pd ? Explaining.Describe(pd, _session.Engine) : "No longer a door.";
+                Summary = _summaryOf();
+                AddPolyDoor(s);
+                Rows.Add(new ActionRow("Add a switch that opens it", "Click a solid wall next: a piece of it becomes a switch the player uses to open this door from there (it names the door's polyobject; its own faces still open it).", () => SwitchFor?.Invoke(s)));
+                Rows.Add(new HeadingRow("ITS DOORWAY"));
+                AddSector(s);
+                break;
             case Sector s when Doors.Recognise(_session.Geometry, s) is not null:
                 Heading = "Door";
                 _summaryOf = () => Doors.Recognise(_session.Geometry, s) is { } d ? Explaining.Describe(d, _session.Engine) : "No longer a door.";
@@ -692,6 +797,14 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 }
                 Rows.Add(new ActionRow("Make it a lift", "Its floor goes down to the lowest floor beside it when the player uses a wall from below or walks onto it, waits 3 seconds and comes back up (Plat_DownWaitUpStayLip).", () => _session.MakeLift(s)));
                 Rows.Add(new ActionRow("Make it a teleport pad", "Stepping onto this room sends the player to a spot you click next (Teleport, with an arrival spot).", () => TeleportFrom?.Invoke(s)));
+                break;
+            case Line or Side when PolyDoorOfWall(items[0]) is { } polyDoorway:
+                // A wall of a sliding or swinging door (picked in the 3D view, or in its pen): the door is what was meant.
+                Heading = "Door";
+                _summaryOf = () => PolyDoorIn(polyDoorway) is { } pd ? Explaining.Describe(pd, _session.Engine) : "No longer a door.";
+                Summary = _summaryOf();
+                AddPolyDoor(polyDoorway);
+                Rows.Add(new ActionRow("Select the doorway", "Selects the doorway the door stands in, with its area's settings.", () => _session.Selection.Set(polyDoorway)));
                 break;
             case Line l when LiftOf(l) is { } liftArea:
                 // A wall of a lift: the lift is what was meant, with the wall's own details below it.
@@ -1229,27 +1342,21 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// </summary>
     private void AddDoorKind(Sector area)
     {
-        if (_session.Resources is not { } resources) return;
-        var sliding = Doors.SlidingLooks(resources.AnimatedDoors, resources.Textures.Walls);
-        if (sliding.Count == 0) return;
-        Door? Now() => Doors.Recognise(_session.Geometry, area);
-        Rows.Add(new ChoiceRow("Opens", "How the door opens: upward, its ceiling rising as most doors do, or like Strife's doors, whose picture slides open (Door_Animated: only the game's sliding door pictures slide).", ["Upward", "Like Strife's doors"],
-            () => Now()?.Kind == DoorKind.Animated ? 1 : 0,
-            v =>
-            {
-                if (Now() is not { } d) return;
-                var kind = v == 1 ? DoorKind.Animated : DoorKind.Rises;
-                if (d.Kind == kind) return;
-                var top = d.Own.FirstOrDefault()?.Front.Top ?? "";
-                var width = d.Own.FirstOrDefault()?.Length ?? Doors.StandardWidth;
-                var picture = kind == DoorKind.Animated && !sliding.Any(t => t.Name.Equals(top, StringComparison.OrdinalIgnoreCase))
-                    ? sliding.OrderBy(t => Math.Abs(t.Width - width)).ThenBy(t => t.Name.Equals("DORQTR01", StringComparison.OrdinalIgnoreCase) ? 0 : 1).First()
-                    : null;
-                string? why = null;
-                _session.History.Record(kind == DoorKind.Animated ? "Make the door slide open like Strife's" : "Make the door open upward",
-                    e => why = Doors.SetKind(e, _session.Geometry, d, kind, picture?.Name, picture is null ? null : (picture.Width, picture.Height)));
-                if (why is not null) _session.Tell(why);
-            }));
+        DoorKind? Now() => Doors.Recognise(_session.Geometry, area)?.Kind ?? PolyDoorIn(area)?.Kind;
+        var kinds = new List<(DoorKind Kind, string Name)> { (DoorKind.Rises, "Upward") };
+        if (!_session.Project.ClassicFormat)
+        {
+            kinds.Add((DoorKind.Slides, "Slides aside"));
+            kinds.Add((DoorKind.Swings, "Swings"));
+        }
+
+        if (_session.Resources is { } resources && Doors.SlidingLooks(resources.AnimatedDoors, resources.Textures.Walls).Count > 0) kinds.Add((DoorKind.Animated, "Like Strife's doors"));
+        if (kinds.Count == 1) return;
+        var classic = _session.Project.ClassicFormat ? " The classic ports have no doors that slide aside or swing: they are GZDoom's." : "";
+        Rows.Add(new ChoiceRow("Opens", "How the door opens: upward, its ceiling rising as Doom's doors do; sliding aside into the wall beside it or swinging on a hinge, as Hexen's doors do (polyobjects, drawn in a pen below the map and carried onto the doorway as the map starts); or like Strife's doors, whose picture slides open (only the game's sliding door pictures slide)." + classic,
+            [.. kinds.Select(k => k.Name)],
+            () => Now() is { } kind ? Math.Max(0, kinds.FindIndex(k => k.Kind == kind)) : 0,
+            v => _session.SetDoorKind(area, kinds[v].Kind)));
     }
 
     private void AddDoorKey(Sector area)
