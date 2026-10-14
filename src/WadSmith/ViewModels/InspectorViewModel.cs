@@ -889,6 +889,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             presets: PresetChoice.For(Presets.Brightness, () => s.Light, l => Set(s, "Make the room " + Presets.Named(Presets.Brightness, l)!.Name.ToLowerInvariant(), e => e.Light, (e, x) => e.Light = x, (int)l), LightTip, swatches: true)));
         Rows.Add(new TextRow("Light colour", "Tints everything in the room (lightcolor), as #RRGGBB in a paint program's words; #FFFFFF is plain white light. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "lightcolor", 0xFFFFFF)), text => SetRoomColour(s, "lightcolor", text, 0xFFFFFF, "Change the light colour"), texture: false));
         Rows.Add(new TextRow("Fog colour", "Fog that thickens with distance in the room, thicker the darker the room (fadecolor), as #RRGGBB; #000000 is none. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "fadecolor", 0)), text => SetRoomColour(s, "fadecolor", text, 0, "Change the fog colour"), texture: false));
+        AddAtmosphere([s]);
         AddMatchNeighbour(s);
         AddSlope(s, ceiling: false);
         AddSlope(s, ceiling: true);
@@ -1252,6 +1253,23 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// Heights of several rooms at once: each value as theirs when they share it (the lowest otherwise, with their range
     /// shown), set for all; and raising them all together by an amount (one undo step either way).
     /// </summary>
+    /// <summary>The rooms' atmosphere by name: brightness, light colour and fog set together, one undo step (shown as Custom when they match none).</summary>
+    private void AddAtmosphere(List<Sector> rooms)
+    {
+        var all = Atmospheres.All;
+        Rows.Add(new ChoiceRow("Atmosphere", "Sets brightness, light colour and fog together: " + string.Join("; ", all.Select(a => $"{a.Name}: {a.Tip}")) + " Custom: what the rows above say.",
+            [.. all.Select(a => a.Name), "Custom"],
+            () => rooms.Select(Atmospheres.Of).Distinct().ToList() is [{ } one] ? all.ToList().IndexOf(one) : all.Count,
+            v =>
+            {
+                if (v >= all.Count) return;
+                _session.History.Record($"Give {(rooms.Count == 1 ? "the room" : "the rooms")} a {all[v].Name.ToLowerInvariant()} atmosphere", e =>
+                {
+                    foreach (var r in rooms.Where(r => r.OnMap)) Atmospheres.Apply(e, r, all[v]);
+                });
+            }));
+    }
+
     private void AddHeights(List<Sector> rooms)
     {
         Rows.Add(new HeadingRow("HEIGHTS"));
@@ -1273,6 +1291,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             e.Set(r, x => x.FloorHeight, (x, h) => x.FloorHeight = h, r.FloorHeight + (double)v);
             e.Set(r, x => x.CeilingHeight, (x, h) => x.CeilingHeight = h, r.CeilingHeight + (double)v);
         }), 8));
+        AddAtmosphere(rooms);
     }
 
     /// <summary>A room joining two floors too far apart to step between (D27): steps or a ramp from the low one to the high one.</summary>
