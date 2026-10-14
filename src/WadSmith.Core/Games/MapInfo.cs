@@ -38,7 +38,7 @@ public sealed record MapDefinition(string Slot, string Header, IReadOnlyList<str
 
 /// <summary>The base game's map definitions as the engine reads them.</summary>
 /// <param name="Maps">By slot (MAP01, E1M1 …): the last definition read wins, as in the engine.</param>
-/// <param name="OldFormat">The game defines maps in MAPINFO's old format (Hexen's, without braces): those are not read here.</param>
+/// <param name="OldFormat">The game defines maps in MAPINFO's old format (Hexen's, without braces): read too, each written in the braces format (D62/Phase 9).</param>
 /// <param name="Strings">The engine's language table (English), which a value starting with "$" names into.</param>
 public sealed record MapDefinitions(IReadOnlyDictionary<string, MapDefinition> Maps, bool OldFormat, IReadOnlyDictionary<string, string> Strings)
 {
@@ -131,6 +131,7 @@ public static class MapInfo
             }
         }
 
+        if (old) ResolveWarps(maps);
         var strings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var support = Path.Combine(Path.GetDirectoryName(engineDataPath)!, "game_support.pk3");
         if (File.Exists(support) && ResourceContainer.Open(support).FindPath("language.csv") is { } lang) MapTitles.ReadLanguageCsv(lang.Read(), strings);
@@ -186,12 +187,18 @@ public static class MapInfo
 
             if (t.Is("map"))
             {
-                var slot = s.Next().Text.ToUpperInvariant();
+                var slotToken = s.Next();
+                var slot = slotToken.Text.ToUpperInvariant();
+
+                // The header is what follows the slot on its own line (the old format's properties start on the lines after it).
                 var header = new List<Token>();
-                while (!s.AtEnd && !s.Peek().Is("{") && !TopLevel(s.Peek())) header.Add(s.Next());
+                while (!s.AtEnd && !s.Peek().Is("{") && !TopLevel(s.Peek()) && s.Peek().Line == slotToken.Line) header.Add(s.Next());
                 if (!s.Accept("{"))
                 {
                     old = true;
+                    var number = int.TryParse(slot, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 0;
+                    var name = number > 0 ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"MAP{number:00}") : slot;
+                    into[name] = OldMap(s, name, number, Render(header));
                     continue;
                 }
 
@@ -207,7 +214,64 @@ public static class MapInfo
         return old;
     }
 
-    private static bool TopLevel(Token t) => t.Kind == TokenKind.Identifier && (t.Is("map") || t.Is("include") || t.Is("defaultmap") || t.Is("adddefaultmap") || t.Is("gamedefaults") || t.Is("clearepisodes") || t.Is("clearskills") || t.Is("episode") || t.Is("cluster") || t.Is("gameinfo"));
+    /// <summary>
+    /// A map in MAPINFO's old format (Hexen's: <c>map 1 "WINNOWING HALL"</c>, then a property a line until the next map or
+    /// cluster), written in the braces format GZDoom reads in a project's ZMAPINFO: its number as <c>levelnum</c> (which
+    /// Hexen's exits, its SNDINFO music and its scripts name it by), and the properties it gives, a <c>next</c> by warp number
+    /// kept as GZDoom keeps it (<c>&amp;wt@02</c>) until <see cref="ResolveWarps"/> names the map.
+    /// </summary>
+    private static MapDefinition OldMap(Scanner s, string slot, int number, string header)
+    {
+        var properties = new List<string>();
+        if (number > 0) properties.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"levelnum = {number}"));
+        // "cluster" is a map's own line in this format (its clusters are "clusterdef"), so only the other heads end the map.
+        static bool Ends(Token t) => TopLevel(t) && !t.Is("cluster");
+        while (!s.AtEnd && !Ends(s.Peek()))
+        {
+            var key = s.Next();
+            var values = new List<Token>();
+            while (!s.AtEnd && s.Peek().Line == key.Line && !Ends(s.Peek())) values.Add(s.Next());
+            string Value(int i) => i < values.Count ? values[i].Kind == TokenKind.String ? Quote(values[i].Text) : values[i].Text : "";
+            string Named(int i) => i < values.Count ? Quote(values[i].Text) : "\"\"";
+            var line = key.Text.ToLowerInvariant() switch
+            {
+                "warptrans" or "cluster" or "cdtrack" or "par" when values.Count > 0 => $"{key.Text.ToLowerInvariant()} = {Value(0)}",
+                "next" or "secretnext" when values.Count > 0 => values[0].Kind == TokenKind.Integer ? $"{key.Text.ToLowerInvariant()} = \"&wt@{int.Parse(values[0].Text, System.Globalization.CultureInfo.InvariantCulture):00}\"" : $"{key.Text.ToLowerInvariant()} = {Named(0)}",
+                "sky1" or "sky2" when values.Count > 0 => $"{key.Text.ToLowerInvariant()} = {Named(0)}{(values.Count > 1 ? ", " + Value(1) : "")}",
+                "fadetable" or "music" or "titlepatch" when values.Count > 0 => $"{key.Text.ToLowerInvariant()} = {Named(0)}",
+                "lightning" or "doublesky" or "nointermission" or "evenlighting" or "smoothlighting" or "nosoundclipping" => key.Text.ToLowerInvariant(),
+                _ => null,
+            };
+            if (line is not null) properties.Add(line);
+        }
+
+        return new MapDefinition(slot, header, properties);
+    }
+
+    /// <summary>
+    /// The old format's <c>next</c> by warp number named as the map with that <c>warptrans</c> (GZDoom resolves it as the
+    /// game starts), so a project block can say it; a warp no map has is left as it is.
+    /// </summary>
+    public static void ResolveWarps(Dictionary<string, MapDefinition> maps)
+    {
+        var byWarp = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (slot, map) in maps)
+        {
+            if (map.Text("warptrans") is { } warp && int.TryParse(warp, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var w)) byWarp.TryAdd(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"&wt@{w:00}"), slot);
+        }
+
+        foreach (var slot in maps.Keys.ToList())
+        {
+            var map = maps[slot];
+            if (!map.Properties.Any(p => p.Contains("&wt@", StringComparison.Ordinal))) continue;
+            maps[slot] = map with
+            {
+                Properties = [.. map.Properties.Select(p => byWarp.FirstOrDefault(w => p.Contains(w.Key, StringComparison.Ordinal)) is { Key: { } key } found ? p.Replace(key, found.Value, StringComparison.Ordinal) : p)],
+            };
+        }
+    }
+
+    private static bool TopLevel(Token t) => t.Kind == TokenKind.Identifier && (t.Is("map") || t.Is("clusterdef") || t.Is("include") || t.Is("defaultmap") || t.Is("adddefaultmap") || t.Is("gamedefaults") || t.Is("clearepisodes") || t.Is("clearskills") || t.Is("episode") || t.Is("cluster") || t.Is("gameinfo"));
 
     /// <summary>The lines of a block whose opening brace has been read, each as written (tokens on one line make one property).</summary>
     private static List<string> Body(Scanner s)

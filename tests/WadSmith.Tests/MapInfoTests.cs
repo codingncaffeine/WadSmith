@@ -57,13 +57,34 @@ public sealed class MapInfoTests
     }
 
     [Fact]
-    public void TheOldFormatIsFlaggedAndTheRestStillRead()
+    public void TheOldFormatIsReadAsTheBracesFormatSaysIt()
     {
+        // Hexen's MAPINFO (Phase 9): maps by number, a property a line, next by warp number; braces maps beside them as ever.
         var maps = new Dictionary<string, MapDefinition>(LumpName.Comparer);
-        var old = MapInfo.Parse("map MAP01 \"Winnowing Hall\"\nwarptrans 1\nnext 2\nsky1 SKY2 2\nmap MAP02 \"Seven Portals\" { next = \"MAP03\" }\n", "MAPINFO", _ => null, maps, []);
+        var old = MapInfo.Parse("map 1 \"WINNOWING HALL\"\nwarptrans 1\nnext 2\ncluster 1\nsky1 SKY2 0\nsky2 SKY3 0\nlightning\ncdtrack 13\n\nmap 2 \"SEVEN PORTALS\"\nwarptrans 2\nnext 9\ncluster 1\nsky1 SKY4 0\nmap MAP03 \"Third\" { next = \"MAP04\" }\n", "MAPINFO", _ => null, maps, []);
         Assert.True(old);
-        Assert.Equal(["MAP02"], maps.Keys);
-        Assert.Equal("MAP03", maps["MAP02"].Text("next"));
+        MapInfo.ResolveWarps(maps);
+        Assert.Equal(["MAP01", "MAP02", "MAP03"], maps.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal("\"WINNOWING HALL\"", maps["MAP01"].Header);
+        Assert.Equal(["levelnum = 1", "warptrans = 1", "next = \"MAP02\"", "cluster = 1", "sky1 = \"SKY2\", 0", "sky2 = \"SKY3\", 0", "lightning", "cdtrack = 13"], maps["MAP01"].Properties);
+        Assert.Equal("&wt@09", maps["MAP02"].Text("next"));
+        Assert.Equal("MAP04", maps["MAP03"].Text("next"));
+    }
+
+    [Fact]
+    public void AHexenMapsSettingsKeepItsHubSkyAndNumber()
+    {
+        // A project block for Hexen's first map with a title of its own: the rest of HEXEN.WAD's definition stays, its number
+        // (which Hexen's exits, scripts and music go by), its hub, its skies and lightning.
+        var game = GameCatalog.Get("hexen")!;
+        var definitions = MapInfo.For(game, [ResourceContainer.Open(GameFiles.Require("HEXEN.WAD"))], GameFiles.Require("gzdoom.pk3"));
+        Assert.True(definitions.OldFormat);
+        var block = ProjectMapInfo.Block(new ProjectMap { Slot = "MAP01", File = "maps/MAP01.wad", Title = "My hall" }, definitions.For("MAP01"), []);
+        foreach (var line in new[] { "map MAP01 \"My hall\"", "levelnum = 1", "cluster = 1", "next = \"MAP02\"", "sky1 = \"SKY2\", 0", "lightning" }) Assert.Contains(line, block, StringComparison.Ordinal);
+        // Every one of its maps read, each next named by its map (no warp number left), the second hub's first map in hub 2.
+        Assert.True(definitions.Maps.Count(m => m.Value.Text("levelnum") is not null) >= 49);
+        Assert.DoesNotContain(definitions.Maps.Values.SelectMany(m => m.Properties), p => p.Contains("&wt@", StringComparison.Ordinal));
+        Assert.Equal(("2", "\"SHADOW WOOD\""), (definitions.For("MAP13")!.Text("cluster"), definitions.For("MAP13")!.Header));
     }
 
     [Fact]
