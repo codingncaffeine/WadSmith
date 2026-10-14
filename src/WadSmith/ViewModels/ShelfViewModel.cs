@@ -37,6 +37,17 @@ internal sealed partial class ShelfTile(string label, string tooltip, string gro
     /// <summary>What pressing the tile does instead of starting a drag; null for a tile that is dragged.</summary>
     public Action? Activate { get; init; }
 
+    /// <summary>Why the project cannot use the tile (6b.3: GZDoom's alone, in a project for a classic port); null when it can.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShownTip), nameof(Dimmed))]
+    private string? _unusable;
+
+    /// <summary>The tooltip, saying first why the tile cannot be used when it cannot.</summary>
+    public string ShownTip => Unusable is { } why ? $"GZDoom only: {why} {Tooltip}" : Tooltip;
+
+    /// <summary>How opaque the tile is drawn: faint when it cannot be used.</summary>
+    public double Dimmed => Unusable is null ? 1 : 0.4;
+
     /// <summary>Fetches the tile's picture (its preview on the source's site); called once, when the tile is first seen.</summary>
     public Func<CancellationToken, Task<Bitmap?>>? LoadPicture { get; init; }
 

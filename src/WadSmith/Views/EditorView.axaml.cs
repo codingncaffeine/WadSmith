@@ -223,6 +223,14 @@ public partial class EditorView : UserControl
     private async void OnShelfTilePressed(object? sender, PointerPressedEventArgs e)
     {
         if ((sender as Control)?.DataContext is not ShelfTile tile || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (tile.Unusable is { } why)
+        {
+            // GZDoom's alone, in a project for a classic port (6b.3): said, not dragged.
+            (DataContext as EditorViewModel)?.Session.Tell($"{tile.Label} plays in GZDoom only: {why} Change what the project plays in under Map settings to use it.");
+            e.Handled = true;
+            return;
+        }
+
         if (tile.Activate is { } activate)
         {
             // A tile that does something (download a pack, get a free game) instead of being dragged.

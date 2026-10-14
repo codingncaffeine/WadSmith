@@ -66,3 +66,45 @@ public sealed class GZDoomOnlyInTheWindowTests
             said);
     }
 }
+
+/// <summary>The Objects shelf in a project for a classic port (6b.3): a picture decoration of the project's is faint and says why; back for GZDoom.</summary>
+[Collection(TimingCollection.Name)]
+public sealed class GZDoomOnlyShelfTests
+{
+    [Fact]
+    public async Task AClassicProjectDimsItsOwnDecorationOnTheShelf()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        GameFiles.Require("gzdoom.pk3");
+        using var temp = new TempFolder();
+        var png = Path.Combine(temp.Path, "tall lamp.png");
+        File.WriteAllBytes(png, WadSmith.Core.Graphics.ImageCodec.EncodePng(new WadSmith.Core.Graphics.RgbaImage(40, 128)));
+        var said = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(Path.Combine(temp.Path, "profile"), Path.GetDirectoryName(wad)!);
+            try
+            {
+                var editor = Ui.NewMap(vm);
+                var session = editor.Session!;
+                editor.ShowObjects = true;
+                session.ImportDecoration(png);
+                for (var i = 0; i < 400 && !editor.ObjectShelf.Tiles.Any(t => t.Group == ShelfViewModel.PictureGroup); i++) Ui.Pump(0.05);
+                ShelfTile Tile() => editor.ObjectShelf.Tiles.First(t => t.Group == ShelfViewModel.PictureGroup);
+                string Seen() => $"{(Tile().Unusable is null ? "usable" : "faint")}{(Tile().ShownTip.StartsWith("GZDoom only:", StringComparison.Ordinal) ? ", says why" : "")}";
+                var before = Seen();
+                session.SetTarget(Targets.Vanilla);
+                Ui.Pump(0.5);
+                var classic = Seen();
+                session.SetTarget(Targets.GZDoom);
+                Ui.Pump(0.5);
+                return $"{before} | vanilla: {classic} | gzdoom: {Seen()}";
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.Equal("usable | vanilla: faint, says why | gzdoom: usable", said);
+    }
+}

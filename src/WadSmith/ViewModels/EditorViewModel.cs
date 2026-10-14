@@ -126,8 +126,10 @@ internal sealed partial class EditorViewModel : ObservableObject
         };
         session.TeleportPadChanged += UpdateStatus;
         session.SwitchTargetChanged += UpdateStatus;
+        ObjectShelf.Tiles.CollectionChanged += (_, _) => MarkUnusable();
         session.TargetChanged += () =>
         {
+            MarkUnusable();
             if (!LightAllowed && Tool == Canvas.EditorTool.Light) Tool = Canvas.EditorTool.Select;
             OnPropertyChanged(nameof(LightAllowed));
             OnPropertyChanged(nameof(LightTip));
@@ -1000,6 +1002,30 @@ internal sealed partial class EditorViewModel : ObservableObject
     {
         _measure = null;
         Profile = null;
+    }
+
+    /// <summary>
+    /// Marks the Objects shelf's tiles a project for a classic port cannot use (6b.3): other games' objects, free downloads,
+    /// Quake's models and the project's own models and picture decorations, all GZDoom's alone; clears the marks for GZDoom.
+    /// </summary>
+    private void MarkUnusable()
+    {
+        var classic = Session.Project.ClassicFormat;
+        HashSet<int>? own = null;
+        foreach (var tile in ObjectShelf.Tiles)
+        {
+            string? why = null;
+            if (classic)
+            {
+                own ??= [.. ModelNumbers(), .. DecorationNumbers()];
+                why = tile.Drop.Library is not null ? "downloaded objects are defined in GZDoom's language."
+                    : tile.Drop.QuakeModel is not null || own.Contains(tile.Drop.Thing) ? "models and decorations of your own are drawn by GZDoom."
+                    : tile.Drop.From is not null && tile.Drop.Texture is null ? "objects from other games are carried in as GZDoom actors."
+                    : null;
+            }
+
+            if (tile.Unusable != why) tile.Unusable = why;
+        }
     }
 
     /// <summary>Whether the Light tool can be used: its lights are GZDoom's, so not in a project for a classic port (6b.3).</summary>
