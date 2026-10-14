@@ -60,6 +60,9 @@ public sealed class TextureLibrary
     /// </summary>
     public void Add(ResourceEntry entry)
     {
+        // A picture written again under its name (edited in another program): the one read before is forgotten.
+        _cache.TryRemove((false, entry.Name), out _);
+        _cache.TryRemove((true, entry.Name), out _);
         if (entry.Namespace == ResourceNamespace.Textures) _walls[entry.Name] = SingleInfo(entry, TextureKind.Single);
         else if (entry.Namespace == ResourceNamespace.Flats) _flats[entry.Name] = SingleInfo(entry, TextureKind.Flat);
         else throw new ArgumentException($"{entry.FullPath} is not in a textures or flats folder.", nameof(entry));

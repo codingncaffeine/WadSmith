@@ -669,8 +669,23 @@ internal sealed unsafe class SceneRenderer : IDisposable
         _gl.BindFramebuffer(Gl.Framebuffer, 0);
     }
 
+    private int _texturesVersion;
+
     private (int Id, int Width, int Height) TextureFor(string name, SurfaceKind kind)
     {
+        // A texture written again under its name (edited in another program): every texture made before is made again.
+        if (_resources is { } edited && edited.TexturesVersion != _texturesVersion)
+        {
+            foreach (var (old, _, _) in _textures.Values)
+            {
+                var gone = old;
+                _gl.DeleteTextures(1, &gone);
+            }
+
+            _textures.Clear();
+            _texturesVersion = edited.TexturesVersion;
+        }
+
         var key = (name, kind is SurfaceKind.Wall or SurfaceKind.Sky or SurfaceKind.Model ? kind : SurfaceKind.Floor);
         if (_textures.TryGetValue(key, out var t)) return t;
         RgbaImage? image = null;

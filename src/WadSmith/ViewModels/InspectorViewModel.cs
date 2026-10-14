@@ -374,6 +374,16 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>Raised when the user asks for a switch that works a door or a lift: the editor then waits for the wall.</summary>
     public event Action<Sector>? SwitchFor;
 
+    /// <summary>Raised when the user asks to edit a picture of theirs in another program (its texture name): the editor opens it and watches it.</summary>
+    public event Action<string>? EditPicture;
+
+    /// <summary>"Edit the picture in another program", for a texture that is a picture of the user's own.</summary>
+    private void AddEditPicture(string texture, string what)
+    {
+        if (_session.PictureFileOf(texture) is null) return;
+        Rows.Add(new ActionRow($"Edit {what} in another program", $"Opens {texture}'s picture in your computer's program for pictures (GIMP, Krita…); each time you save it there, WadSmith shows the new picture here, in the 3D view and in the game.", () => EditPicture?.Invoke(texture)));
+    }
+
     /// <summary>Raised when the user asks for a wall face to be a camera screen: the editor then waits for the camera's spot.</summary>
     public event Action<Side>? CameraFor;
 
@@ -893,6 +903,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new TextRow("Light colour", "Tints everything in the room (lightcolor), as #RRGGBB in a paint program's words; #FFFFFF is plain white light. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "lightcolor", 0xFFFFFF)), text => SetRoomColour(s, "lightcolor", text, 0xFFFFFF, "Change the light colour"), texture: false));
         Rows.Add(new TextRow("Fog colour", "Fog that thickens with distance in the room, thicker the darker the room (fadecolor), as #RRGGBB; #000000 is none. The 3D view shows it as the game does.", () => Lights.Hex(RoomColour(s, "fadecolor", 0)), text => SetRoomColour(s, "fadecolor", text, 0, "Change the fog colour"), texture: false));
         AddAtmosphere([s]);
+        AddEditPicture(s.FloorTexture, "the floor's picture");
+        if (!string.Equals(s.CeilingTexture, s.FloorTexture, StringComparison.OrdinalIgnoreCase)) AddEditPicture(s.CeilingTexture, "the ceiling's picture");
         AddMatchNeighbour(s);
         AddSlope(s, ceiling: false);
         AddSlope(s, ceiling: true);
@@ -1595,6 +1607,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         {
             Rows.Add(new TextRow("Texture", "The picture on this wall (texturemiddle).", () => side.Middle, v => Set(side, "Change wall texture", e => e.Middle, (e, x) => e.Middle = x, v)));
             AddSign(side);
+            AddEditPicture(side.Middle, "the wall's picture");
             if (!_session.Project.ClassicFormat && Cameras.Screens(_session.Project.CopiedNow()).All(s => !string.Equals(s.Texture, side.Middle, StringComparison.OrdinalIgnoreCase)))
             {
                 Rows.Add(new ActionRow("Make it a camera screen…", "The wall shows, in the game, what a camera sees: click where the camera stands next (anywhere in the map). The editor shows a stand-in screen; G shows GZDoom's own view.", () => CameraFor?.Invoke(side)));

@@ -131,6 +131,19 @@ public sealed class GameResources
     /// <summary>Counts changes to the project's own object pictures (a model turned and baked again); caches of sprite pictures compare it.</summary>
     public int PicturesVersion { get; private set; }
 
+    /// <summary>Counts the times a texture of the project was written again under its name, so the views forget the pictures they made of it.</summary>
+    public int TexturesVersion { get; private set; }
+
+    /// <summary>A texture of the project was written again under its name (edited in another program): read it again (any thread).</summary>
+    public void Retextured(Core.Containers.ResourceEntry entry)
+    {
+        lock (_carried)
+        {
+            Textures.Add(entry);
+            TexturesVersion++;
+        }
+    }
+
     /// <summary>The project's object pictures were written again under the same names: forget the ones read (any thread).</summary>
     public void PicturesChanged()
     {

@@ -134,6 +134,10 @@ internal sealed partial class EditorViewModel : ObservableObject
             Tool = Canvas.EditorTool.Key;
             Session.KeyToPlace = colour;
         };
+        Inspector.EditPicture += texture =>
+        {
+            if (Session.WatchPicture(texture) is { } path) _ = OpenInOtherProgram?.Invoke(path);
+        };
         Inspector.CameraFor += face =>
         {
             Tool = Canvas.EditorTool.Camera;
@@ -1365,6 +1369,9 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     [RelayCommand]
     private void Cut() => Session.Cut();
+
+    /// <summary>Opens a file in the computer's own program for it (set by the view); true when it was handed over.</summary>
+    public Func<string, Task<bool>>? OpenInOtherProgram { get; set; }
 
     /// <summary>Reads a picture from the system clipboard (set by the view): a picture copied, or a picture file copied in the file manager; null when it holds none.</summary>
     public Func<Task<(string Name, byte[] Bytes)?>>? ReadClipboardPicture { get; set; }

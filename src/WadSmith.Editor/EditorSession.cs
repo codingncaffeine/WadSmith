@@ -2998,9 +2998,64 @@ public sealed class EditorSession : IDisposable
     /// <summary>Whether the session was closed: its map is no longer being edited.</summary>
     public bool IsDisposed => _disposed;
 
+    /// <summary>The project's own picture file a texture is (a picture brought in, a sign, a screen), or null for any other texture.</summary>
+    public string? PictureFileOf(string texture) =>
+        Project.CopiedNow().FirstOrDefault(c => c.Kind == "wall" && c.Game == "picture" && string.Equals(c.Name, texture, StringComparison.OrdinalIgnoreCase)) is { } own
+            && Path.Combine(Project.Folder, own.File) is var path && File.Exists(path) ? path : null;
+
+    private readonly Dictionary<string, FileSystemWatcher> _watched = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Watches the picture file of <paramref name="texture"/> (opened in another program by the view): each time it is saved
+    /// the texture is read again under its name and every view draws it anew (D22's "Edit in external app"). Returns its path.
+    /// </summary>
+    public string? WatchPicture(string texture)
+    {
+        if (PictureFileOf(texture) is not { } path || Resources is not { } into) return null;
+        if (_watched.ContainsKey(path)) return path;
+        var relative = Path.GetRelativePath(Project.Folder, path).Replace('\\', '/');
+        var watcher = new FileSystemWatcher(Path.GetDirectoryName(path)!, Path.GetFileName(path)) { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName | NotifyFilters.CreationTime };
+        var due = 0L;
+        void Saved(object? sender, FileSystemEventArgs e)
+        {
+            // Paint programs write in bursts (or to a temporary file renamed over this one): read once it has been quiet a moment.
+            var mine = Interlocked.Increment(ref due);
+            Task.Delay(400).ContinueWith(_ =>
+            {
+                if (Interlocked.Read(ref due) != mine || _disposed) return;
+                try
+                {
+                    if (ResourceContainer.Open(Project.Folder).FindPath(relative) is not { } entry) return;
+                    entry.Read();
+                    into.Retextured(entry);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+                {
+                    Log.Warn($"{path} changed but could not be read yet: {ex.Message}");
+                    return;
+                }
+
+                _onUiThread(() =>
+                {
+                    Notice?.Invoke($"{Path.GetFileName(path)} was saved: {texture} shows the new picture.");
+                    TexturesChanged?.Invoke();
+                });
+            }, TaskScheduler.Default);
+        }
+
+        watcher.Changed += Saved;
+        watcher.Created += Saved;
+        watcher.Renamed += (s, e) => Saved(s, e);
+        watcher.EnableRaisingEvents = true;
+        _watched[path] = watcher;
+        return path;
+    }
+
     public void Dispose()
     {
         _disposed = true;
         _timer.Dispose();
+        foreach (var watcher in _watched.Values) watcher.Dispose();
+        _watched.Clear();
     }
 }

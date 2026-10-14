@@ -75,9 +75,19 @@ internal sealed class MapLook(GameResources? resources)
 
     public GameResources? Resources => resources;
 
+    private int _texturesVersion;
+
     public FlatPicture? Flat(string name)
     {
         if (resources is null || name is "" or "-") return null;
+
+        // A texture written again under its name (edited in another program): the pictures made before are made again.
+        if (resources.TexturesVersion != _texturesVersion)
+        {
+            _flats.Clear();
+            _texturesVersion = resources.TexturesVersion;
+        }
+
         return _flats.GetOrAdd(name, n =>
         {
             // The sky's floor picture is only a marker; show the sky itself so outdoor areas read as outdoors.

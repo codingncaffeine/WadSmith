@@ -39,6 +39,7 @@ public partial class EditorView : UserControl
             vm.PickModel = PickModelAsync;
             vm.PickMaterial = PickMaterialAsync;
             vm.ReadClipboardPicture = ReadClipboardPictureAsync;
+            vm.OpenInOtherProgram = async path => TopLevel.GetTopLevel(this)?.Launcher is { } launcher && await launcher.LaunchFileInfoAsync(new System.IO.FileInfo(path)).ConfigureAwait(true);
             vm.PickExportFile = PickExportFileAsync;
             vm.Inspector.PickPanorama = PickPanoramaAsync;
             vm.Inspector.PickGrid = PickGridAsync;
