@@ -83,6 +83,7 @@ public static class Problems
         TagsNowhere(geometry, found);
         LowDoors(geometry, found);
         DoorTracks(geometry, found);
+        if (classic is null) BrokenPolyobjects(geometry, engine, found);
         if (fit?.IsPending != true)
         {
             NarrowPassages(geometry, fit ?? FitBaseline.None, found);
@@ -349,6 +350,41 @@ public static class Problems
                     foreach (var t in things) e.Remove(t);
                 }));
         }
+    }
+
+    /// <summary>
+    /// Polyobjects the game cannot place (D62): a start spot whose number has no anchor or no walls, a number with two start
+    /// spots (the game places one), an anchor with no start spot. GZDoom prints an error for each and shows nothing there.
+    /// </summary>
+    private static void BrokenPolyobjects(MapGeometry g, string engine, List<Problem> found)
+    {
+        var f = g.Frame;
+        var spots = new List<(int Number, Thing Thing)>();
+        var anchors = new List<(int Number, Thing Thing)>();
+        foreach (var t in f.Things)
+        {
+            if (t.Element is not { } thing) continue;
+            if (Polyobjects.SpotKind(t.Type, engine) is not null) spots.Add((t.Angle, thing));
+            else if (Polyobjects.IsAnchor(t.Type, engine)) anchors.Add((t.Angle, thing));
+        }
+
+        if (spots.Count == 0 && anchors.Count == 0) return;
+        var placed = g.Polyobjects(engine).Select(p => p.Number).ToHashSet();
+        var walls = new HashSet<int>();
+        foreach (var l in f.Lines)
+        {
+            if (l.Element is not null && l.Special is Polyobjects.StartLine or Polyobjects.ExplicitLine) walls.Add(l.Args[0]);
+        }
+
+        var lost = spots.Where(s => !placed.Contains(s.Number) || !walls.Contains(s.Number)).Select(s => s.Thing)
+            .Concat(spots.GroupBy(s => s.Number).Where(gr => gr.Count() > 1).SelectMany(gr => gr.Skip(1)).Select(s => s.Thing))
+            .Concat(anchors.Where(a => !spots.Any(s => s.Number == a.Number)).Select(a => a.Thing)).Distinct().ToList();
+        if (lost.Count == 0) return;
+        found.Add(new Problem("polyobject", Severity.Error, $"{Count(lost.Count, "A polyobject's spot or anchor names", "polyobjects' spots or anchors name")} a polyobject the game cannot place (it has no anchor, no walls or two start spots, or the anchor no spot): the game shows nothing there and prints an error.",
+            [.. lost], lost.Count == 1 ? "Take it out" : "Take them out", e =>
+            {
+                foreach (var t in lost) e.Remove(t);
+            }));
     }
 
     private static void Unclosed(MapFrame f, List<Problem> found)

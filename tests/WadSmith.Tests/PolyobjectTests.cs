@@ -123,6 +123,27 @@ public sealed class PolyobjectTests
     }
 
     [Fact]
+    public void AnUnplaceablePolyobjectIsAProblemWithAFix()
+    {
+        IReadOnlyList<WadSmith.Editor.Checks.Problem> Problems(MapModel m) => WadSmith.Editor.Checks.Problems.Check(MapGeometry.Build(EditorMap.FromModel(m).Frame), null, WadSmith.Editor.Look.For("doom"), "doom");
+        Assert.DoesNotContain(Problems(RoomWithPolyobject((128, 128))), p => p.Rule == "polyobject");
+
+        // No anchor: the spot names nothing the game can place. Two spots: the game places one.
+        var lost = RoomWithPolyobject((128, 128));
+        lost.Things.RemoveAt(0);
+        Assert.Single(Assert.Single(Problems(lost), p => p.Rule == "polyobject").Show);
+        var twice = RoomWithPolyobject((128, 128));
+        twice.Things.Add(new MapThing { X = 64, Y = 64, Type = Polyobjects.Spot, Angle = 1 });
+        var problem = Assert.Single(Problems(twice), p => p.Rule == "polyobject");
+        var map = EditorMap.FromModel(twice);
+        var found = Assert.Single(WadSmith.Editor.Checks.Problems.Check(MapGeometry.Build(map.Frame), null, WadSmith.Editor.Look.For("doom"), "doom"), p => p.Rule == "polyobject");
+        new WadSmith.Editor.Editing.History(map).Record("Fix", found.Fix!);
+        Assert.DoesNotContain(WadSmith.Editor.Checks.Problems.Check(MapGeometry.Build(map.Frame), null, WadSmith.Editor.Look.For("doom"), "doom"), p => p.Rule == "polyobject");
+        Assert.Single(MapGeometry.Build(map.Frame).Polyobjects("doom"));
+        Assert.NotNull(problem.Fix);
+    }
+
+    [Fact]
     public void APieceInsideAWallIsNotSeen()
     {
         // Its spot at the room's east wall: the half beyond it stands in no area, as a door slid into a wall does.
