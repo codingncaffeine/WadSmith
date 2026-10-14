@@ -491,6 +491,21 @@ public static class MapExport
         Check("subsectors", stats.Subsectors, short.MaxValue);
         Check("nodes", stats.Nodes, short.MaxValue);
         if (port.VanillaLimits && stats.BlockmapBytes > 0x10000) report.Add(new ExportLoss(map, "limit:blockmap", $"The map is too wide for vanilla's blockmap ({stats.BlockmapBytes / 1024:N0} KB, at most 64 KB)", "map", [], true, "objects pass through walls or the game stops"));
+        if (!port.VanillaLimits) return;
+
+        // The views a player has that overflow the renderer's tables (6b.4), from the starts and across every room.
+        foreach (var table in VanillaLimits.Find(c).GroupBy(o => o.Table))
+        {
+            var (worst, spots) = (table.Max(o => o.Count), table.Count());
+            var (key, title, breaks, detail) = table.Key switch
+            {
+                VanillaTable.Visplanes => ("visplanes", $"From {spots:N0} spots a player sees more floors and ceilings than {port.Title} can draw (up to {worst} of 128)", true, "the game stops with \"no more visplanes\" when a player looks that way"),
+                VanillaTable.WallPieces => ("drawsegs", $"From {spots:N0} spots a player sees more pieces of wall than {port.Title} draws (up to {worst} of 256)", false, "the furthest walls go missing there"),
+                VanillaTable.Sprites => ("vissprites", $"From {spots:N0} spots a player sees more objects than {port.Title} draws (up to {worst} of 128)", false, "the furthest objects vanish there"),
+                _ => ("openings", $"From {spots:N0} spots a player sees more walls with objects before them than {port.Title} keeps room for (up to {worst:N0} of 20,480 openings)", true, "the game can crash there"),
+            };
+            report.Add(new ExportLoss(map, "limit:" + key, title, "map", [], breaks, detail));
+        }
     }
 
     /// <summary>

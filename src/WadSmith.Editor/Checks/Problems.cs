@@ -58,6 +58,7 @@ public static class Problems
         {
             NotClassic(f, classic, found);
             FormatLimits(f, classic, found);
+            if (Core.Exporting.ClassicPorts.Get(classic.Target)?.VanillaLimits == true) VanillaViews.Check(f, found);
         }
         NoStart(geometry, engine, found);
         ManyStarts(f, found);
