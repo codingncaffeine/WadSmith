@@ -11,7 +11,7 @@ plain words instead of jargon, drag and drop for everything, doors and lifts the
 and one key to play what you just built. Experienced mappers get the same tools with the teaching
 switched off.
 
-> **Status:** 0.0.10, for Linux and Windows. It is early: expect rough edges, and say what you find in [Issues](https://github.com/codingncaffeine/WadSmith/issues).
+> **Status:** 0.1.0, for Linux and Windows. It is early: expect rough edges, and say what you find in [Issues](https://github.com/codingncaffeine/WadSmith/issues).
 
 ![WadSmith's start screen with Freedoom: your games on the left, and for the chosen one the ways to start a map and your maps](assets/screenshots/start.png)
 
@@ -21,6 +21,7 @@ switched off.
 - **Draw rooms, not lines.** Rooms of any shape, with symmetry, rounded corners and smart guides; drag a room and its walls, textures and monsters move with it, and the rooms beside it stay sealed.
 - **Plan and 3D side by side.** A 3D view matched to GZDoom's own picture, where you can drop textures and objects and move floors and ceilings; Tab swaps to it alone.
 - **Smart doors, lifts, stairs, windows, switches, secrets, keys, teleporters, exits, lights, platforms and water** made with a click, still editable afterwards, and recognised in maps made elsewhere.
+- **Every game in its own terms.** Doors that slide aside or swing as Hexen's do, Strife's sliding doors, each game's own door pictures and keys, Hexen's heroes, and hubs whose maps keep their state.
 - **Play in one key**, or from wherever the 3D view stands, after a check that offers to fix what would break the game.
 - **Plain-language problems** with a fix button, the way from start to exit step by step, and a meter that says whether the ammunition is enough for the monsters.
 - **Learn as you go:** a guided first map, hands-on Guide chapters, "What is this?" for anything you point at, examples from the games' own maps, and presets such as Low, Normal, Tall and Huge in place of numbers. Veterans switch the teaching off and get classic names and Doom Builder keys.
@@ -28,7 +29,7 @@ switched off.
 - **Export for any port.** One file for GZDoom, or a WAD for vanilla, limit-removing, Boom or MBF21 ports with a list of exactly what the map loses, and Play in Chocolate, Crispy or dsda-doom.
 - **Never lose work.** Every change is kept as you go, with versions to go back to.
 
-Coming next: a share bundle and drawing in the 3D view.
+Coming next: travel back and forth between the maps of a hub, ambushes and sequences without scripting, and a share bundle.
 
 ## Install
 
@@ -65,6 +66,27 @@ cd WadSmith
 dotnet build WadSmith.slnx -c Release
 dotnet test tests/WadSmith.Tests -c Release
 ```
+
+## Credits
+
+The free community assets on the shelves are the work of the people and sites that share them. WadSmith downloads one only
+when you ask for it, and keeps its authors' credits, its page and its permissions in your project's `credits` folder; the
+Share check on Export lists them.
+
+- [Realm667](https://www.realm667.com) - the community's repository of monsters, weapons, items, props and textures, each
+  by its own authors.
+- [The idgames archive](https://www.doomworld.com/idgames/), reached through [Doomworld](https://www.doomworld.com)'s public
+  API and downloaded from its mirrors at [Michigan Tech's Linux Users Group](https://mirrors.lug.mtu.edu/idgames/),
+  [youfailit.net](https://youfailit.net/pub/idgames/) and [infania.net](https://ftpmirror1.infania.net/pub/idgames/) - the
+  home of the texture packs.
+- [The Doom Wiki](https://doomwiki.org) - its list of the community's texture packs, such as OTEX, cc4-tex and GothicTX,
+  each by its own authors.
+- [Freedoom](https://freedoom.github.io) and [Blasphemer](https://github.com/Blasphemer/blasphemer) - free games under the
+  BSD licence, which WadSmith can fetch for you.
+
+WadSmith is built with [.NET](https://dotnet.microsoft.com), [Avalonia](https://avaloniaui.net),
+[SkiaSharp](https://github.com/mono/SkiaSharp) and the [MVVM Toolkit](https://github.com/CommunityToolkit/dotnet), plays
+sounds through [SDL2](https://www.libsdl.org), and plays maps in [GZDoom](https://zdoom.org).
 
 ## License
 
