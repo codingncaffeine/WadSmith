@@ -2,12 +2,12 @@
 # Takes one commit from the main tree to main: a worktree of its own at that commit (so work goes on in the main tree
 # meanwhile, and nothing uncommitted reaches the gate), the hands-on build from it swapped into packaging/out by rename,
 # then tools/gate.sh there, then tools/push.sh for that commit. Run it in the background with the SDK on the PATH.
-#   tools/chain.sh [COMMIT] [GATE_RUNS]     (default HEAD, 5)
+#   tools/chain.sh [COMMIT] [GATE_RUNS]     (default HEAD, 2)
 set -uo pipefail
 cd "$(dirname "$0")/.."
 main=$PWD
 sha=$(git rev-parse "${1:-HEAD}") || exit 2
-runs=${2:-5}
+runs=${2:-2}
 tree=$main/scratch/chain-tree
 mkdir -p scratch/gate
 

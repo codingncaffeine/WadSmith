@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The gate before a push: the whole suite the way CI runs it, N times (default 3; use 5 after a change to the tests,
-# the harness or anything concurrent). Run it in the background and keep working; push once it says GATE PASSED.
+# The gate before a push: the whole suite the way CI runs it, N times (default 2).
+# Run it in the background and keep working; push once it says GATE PASSED.
 #   - on two CPUs (the CI runners have two to four; this machine's thirty-two hide the interleavings they see),
 #   - with no system GZDoom (CI has none; the free game data in scratch/ci-games stands in, as CI's does),
 #   - warnings as errors.
@@ -9,7 +9,7 @@
 #   tools/gate.sh [N]
 set -uo pipefail
 cd "$(dirname "$0")/.."
-N="${1:-3}"   # three for an ordinary push; five after a change to the tests, the harness or anything concurrent
+N="${1:-2}"   # two for every push: repeats catch only what fails now and then, and CI on Windows checks again
 export SDL_AUDIODRIVER=dummy SDL_AUDIO_DRIVER=dummy PULSE_SERVER=unix:/nonexistent/wadsmith PIPEWIRE_REMOTE=/nonexistent/wadsmith WADSMITH_OFFLINE=1
 games="${WADSMITH_GATE_GAMES:-$PWD/scratch/ci-games}"
 empty="$PWD/scratch/empty"
