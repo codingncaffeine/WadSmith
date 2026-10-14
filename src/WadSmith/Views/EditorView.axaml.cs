@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using Avalonia.Interactivity;
@@ -193,6 +194,20 @@ public partial class EditorView : UserControl
     }
 
     // A click outside the palette closes it; one inside it stays there.
+    /// <summary>
+    /// A choice in the maps list (a map, New, Copy, Move, Delete) closes the list, as a menu does: after its command has run,
+    /// since the click comes first and a list closed then would leave the button with no command to run.
+    /// </summary>
+    private void OnMapsChoice(object? sender, RoutedEventArgs e) => Dispatcher.UIThread.Post(() => FlyoutBase.GetAttachedFlyout(MapsButton)?.Hide());
+
+    /// <summary>The map's slot button opens the list of the project's maps, or closes it when it is open.</summary>
+    private void OnMapsButton(object? sender, RoutedEventArgs e)
+    {
+        if (FlyoutBase.GetAttachedFlyout(MapsButton) is not { } list) return;
+        if (list.IsOpen) list.Hide();
+        else FlyoutBase.ShowAttachedFlyout(MapsButton);
+    }
+
     private void OnPaletteBackdropPressed(object? sender, PointerPressedEventArgs e) => (DataContext as EditorViewModel)?.Palette?.CloseCommand.Execute(null);
 
     private void OnPalettePressed(object? sender, PointerPressedEventArgs e) => e.Handled = true;

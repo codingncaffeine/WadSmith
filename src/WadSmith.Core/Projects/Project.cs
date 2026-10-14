@@ -289,6 +289,89 @@ public sealed class Project
         }
     }
 
+    /// <summary>The slots a game plays, in order: E1M1 to E9M9 for a game of episodes, MAP01 to MAP99 otherwise.</summary>
+    public static IEnumerable<string> Slots(bool episodes) => episodes
+        ? Enumerable.Range(1, 9).SelectMany(e => Enumerable.Range(1, 9).Select(m => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"E{e}M{m}")))
+        : Enumerable.Range(1, 99).Select(n => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"MAP{n:00}"));
+
+    /// <summary>The slots of the project's game that hold no map yet, in order (any thread).</summary>
+    public IReadOnlyList<string> FreeSlots()
+    {
+        var episodes = Games.GameCatalog.Get(Info.Game)?.MapNames == "ExMy";
+        lock (_gate) return [.. Slots(episodes).Where(slot => !Info.Maps.Any(m => LumpName.Comparer.Equals(m.Slot, slot)))];
+    }
+
+    /// <summary>Copies the map in <paramref name="from"/> into the empty slot <paramref name="to"/> with its title, music, sky and next map; returns the copy's entry.</summary>
+    public ProjectMap CopyMap(string from, string to)
+    {
+        var source = Map(from) ?? throw new KeyNotFoundException($"The project has no map {from}.");
+        if (Map(to) is not null) throw new InvalidOperationException($"The project already has a map {to}.");
+        var map = LoadMap(from);
+        map.Name = to.ToUpperInvariant();
+        SaveMap(map, source.Title, source.Origin);
+        return UpdateMap(to, e => e with { Music = source.Music, Sky = source.Sky, Next = source.Next });
+    }
+
+    /// <summary>
+    /// Moves the map in <paramref name="from"/> to the empty slot <paramref name="to"/>: its file and its entry, which keeps its place
+    /// in the list, and every exit that led to it. Returns the moved entry.
+    /// </summary>
+    public ProjectMap MoveMap(string from, string to)
+    {
+        var moved = CopyMap(from, to);
+        string old;
+        lock (_gate)
+        {
+            var at = Info.Maps.FindIndex(m => LumpName.Comparer.Equals(m.Slot, from));
+            old = Info.Maps[at].File;
+            Info.Maps.RemoveAll(m => LumpName.Comparer.Equals(m.Slot, moved.Slot));
+            Info.Maps[at] = moved;
+            for (var i = 0; i < Info.Maps.Count; i++)
+            {
+                if (Info.Maps[i].Next is { } next && LumpName.Comparer.Equals(next, from)) Info.Maps[i] = Info.Maps[i] with { Next = moved.Slot };
+            }
+
+            WriteAtomically(Path.Combine(Folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(Info, Json));
+        }
+
+        Discard(old, from);
+        return moved;
+    }
+
+    /// <summary>
+    /// Takes the map in <paramref name="slot"/> out of the project: its file goes to the project's .wadsmith/deleted folder, and
+    /// exits that led to it lead to the base game's next map again. A project keeps at least one map.
+    /// </summary>
+    public void DeleteMap(string slot)
+    {
+        string file;
+        lock (_gate)
+        {
+            if (Info.Maps.Count < 2) throw new InvalidOperationException("A project keeps at least one map.");
+            var at = Info.Maps.FindIndex(m => LumpName.Comparer.Equals(m.Slot, slot));
+            if (at < 0) throw new KeyNotFoundException($"The project has no map {slot}.");
+            file = Info.Maps[at].File;
+            Info.Maps.RemoveAt(at);
+            for (var i = 0; i < Info.Maps.Count; i++)
+            {
+                if (Info.Maps[i].Next is { } next && LumpName.Comparer.Equals(next, slot)) Info.Maps[i] = Info.Maps[i] with { Next = null };
+            }
+
+            WriteAtomically(Path.Combine(Folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(Info, Json));
+        }
+
+        Discard(file, slot);
+    }
+
+    /// <summary>Moves a map file the project no longer lists into .wadsmith/deleted, stamped with the time, so nothing is lost.</summary>
+    private void Discard(string file, string slot)
+    {
+        var path = Path.Combine(Folder, file);
+        if (!File.Exists(path)) return;
+        var deleted = Directory.CreateDirectory(Path.Combine(Folder, ".wadsmith", "deleted")).FullName;
+        File.Move(path, Path.Combine(deleted, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{slot.ToUpperInvariant()} {DateTime.Now:yyyy-MM-dd HH.mm.ss.fff}.wad")));
+    }
+
     public void SaveInfo()
     {
         lock (_gate) WriteAtomically(Path.Combine(Folder, SidecarName), JsonSerializer.SerializeToUtf8Bytes(Info, Json));

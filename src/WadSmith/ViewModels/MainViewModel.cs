@@ -279,6 +279,35 @@ internal sealed partial class MainViewModel : ObservableObject
         await OpenEditorAsync(project, slot).ConfigureAwait(true);
     }
 
+    /// <summary>
+    /// Changes the project's maps (a slot added, copied, moved or deleted) with the map being edited closed first, its changes
+    /// kept: a slot changed under an open map would be written back by that map's next save. <paramref name="change"/> runs on a
+    /// worker and gives the slot to open and what to say; when it fails, the map that was open opens again saying why.
+    /// </summary>
+    public async Task ChangeMapsAsync(Project project, string current, Func<(string Slot, string Said)> change)
+    {
+        if (Page is EditorViewModel { } editor)
+        {
+            await editor.Session.FlushAsync().ConfigureAwait(true);
+            editor.Session.Dispose();
+        }
+
+        var (slot, said) = await Task.Run(() =>
+        {
+            try
+            {
+                return change();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or KeyNotFoundException or CorruptDataException)
+            {
+                Log.Warn($"Changing the maps of {project.Info.Name} failed: {ex.Message}");
+                return (current, $"The project's maps could not be changed: {ex.Message}");
+            }
+        }).ConfigureAwait(true);
+        var session = await Task.Run(() => EditorSession.Open(project, slot, HooksFor(Services.ResourcesFor(project), Services.EngineData))).ConfigureAwait(true);
+        OpenEditor(session, said);
+    }
+
     /// <summary>Back to the start screen from a page that is not the editor (Make me a map).</summary>
     public void ShowWelcome()
     {

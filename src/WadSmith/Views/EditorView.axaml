@@ -65,21 +65,39 @@
                 <!-- The project and the map: the one part of the bar that gives way, trimmed, so the controls always fit. -->
                 <Grid Grid.Column="1" ColumnDefinitions="Auto,Auto,*" Margin="16,0" VerticalAlignment="Center">
                     <Image Source="/Assets/icon.png" Width="24" Height="24" Margin="0,0,6,0" />
-                    <!-- A project of several maps (an episode): the map's slot opens the list of its maps. -->
-                    <Button Grid.Column="1" Classes="metal" Content="{Binding MapChooserLabel}" Padding="8,2" Margin="0,0,8,0" IsVisible="{Binding ProjectMaps.Count}"
-                            ToolTip.Tip="This project has more than one map: pick another to edit it. This one's changes are already kept.">
-                        <Button.Flyout>
-                            <Flyout Placement="BottomEdgeAlignedLeft">
-                                <ItemsControl ItemsSource="{Binding ProjectMaps}" MinWidth="240">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:ProjectMapChoice">
-                                            <Button Content="{Binding Label}" Command="{Binding Open}" IsEnabled="{Binding !Current}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent"
-                                                    ToolTip.Tip="Opens this map of the project in the editor." />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                    <!-- The map's slot opens the list of the project's maps, and adds, copies, moves or deletes one (6c). -->
+                    <Button x:Name="MapsButton" Grid.Column="1" Classes="metal" Content="{Binding MapChooserLabel}" Padding="8,2" Margin="0,0,8,0" AutomationProperties.Name="Maps" Click="OnMapsButton"
+                            ToolTip.Tip="The project's maps: open another, or add, copy, move or delete one. This one's changes are already kept.">
+                        <FlyoutBase.AttachedFlyout>
+                            <!-- Opened and closed by the view (a Button's own flyout kept a closed list as open after a choice closed it).
+                                 A click outside closes the list and still reaches what it was on, as a menu does. -->
+                            <Flyout Placement="BottomEdgeAlignedLeft" OverlayDismissEventPassThrough="True">
+                                <StackPanel MinWidth="260" Spacing="2">
+                                    <ItemsControl ItemsSource="{Binding ProjectMaps}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ProjectMapChoice">
+                                                <Button Content="{Binding Label}" Command="{Binding Open}" IsEnabled="{Binding !Current}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent" Click="OnMapsChoice"
+                                                        ToolTip.Tip="Opens this map of the project in the editor." />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <Separator Margin="0,4" />
+                                    <Button Content="New map" Command="{Binding NewMapCommand}" Click="OnMapsChoice" AutomationProperties.Name="New map" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent"
+                                            ToolTip.Tip="Makes a new map in this project's first empty slot, one room to start from, and opens it." />
+                                    <Button Content="Copy this map" Command="{Binding CopyMapCommand}" Click="OnMapsChoice" AutomationProperties.Name="Copy this map" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent"
+                                            ToolTip.Tip="Copies this map into the project's first empty slot and opens the copy; this one stays as it is." />
+                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="8,2,0,2">
+                                        <TextBlock Text="Move this map to" VerticalAlignment="Center" />
+                                        <ComboBox ItemsSource="{Binding FreeSlots}" SelectedItem="{Binding MoveTo}" MinWidth="90" AutomationProperties.Name="Slot to move to"
+                                                  ToolTip.Tip="An empty slot of the game for this map: where it plays in the episode or the game's order of maps." />
+                                        <Button Content="Move" Command="{Binding MoveMapCommand}" Click="OnMapsChoice" AutomationProperties.Name="Move"
+                                                ToolTip.Tip="Moves this map to the slot chosen, with its kept versions; exits that led here lead there." />
+                                    </StackPanel>
+                                    <Button Content="Delete this map" Command="{Binding DeleteMapCommand}" Click="OnMapsChoice" IsEnabled="{Binding CanDeleteMap}" AutomationProperties.Name="Delete this map" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent"
+                                            ToolTip.Tip="Takes this map out of the project and opens another; its file is kept in the project's .wadsmith/deleted folder. A project keeps at least one map." />
+                                </StackPanel>
                             </Flyout>
-                        </Button.Flyout>
+                        </FlyoutBase.AttachedFlyout>
                     </Button>
                     <TextBlock Grid.Column="2" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ProjectName}">
                         <Run Text="{Binding ProjectName}" FontWeight="SemiBold" />

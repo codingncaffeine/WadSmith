@@ -1237,8 +1237,77 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     public string MapName => Session.Slot;
 
-    /// <summary>The project's maps, when it has more than one (an episode): each opens in the editor in place of this one.</summary>
-    public IReadOnlyList<ProjectMapChoice> ProjectMaps => _projectMaps ??= Session.Project.Info.Maps.Count < 2 ? [] : [.. Session.Project.Info.Maps.Select(m => new ProjectMapChoice(m.Slot, m.Title, m.Slot == Session.Slot, new AsyncRelayCommand(() => _main.SwitchMapAsync(Session.Project, m.Slot))))];
+    /// <summary>The project's maps: each opens in the editor in place of this one.</summary>
+    public IReadOnlyList<ProjectMapChoice> ProjectMaps => _projectMaps ??= [.. Session.Project.Info.Maps.Select(m => new ProjectMapChoice(m.Slot, m.Title, m.Slot == Session.Slot, new AsyncRelayCommand(() => _main.SwitchMapAsync(Session.Project, m.Slot))))];
+
+    /// <summary>The slots of the game that hold no map of this project yet, for "Move this map to".</summary>
+    public IReadOnlyList<string> FreeSlots => _freeSlots ??= Session.Project.FreeSlots();
+
+    private IReadOnlyList<string>? _freeSlots;
+
+    /// <summary>The slot this map moves to when Move is pressed.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(MoveMapCommand))]
+    private string? _moveTo;
+
+    /// <summary>Whether this map can be deleted: a project keeps at least one.</summary>
+    public bool CanDeleteMap => Session.Project.Info.Maps.Count > 1;
+
+    /// <summary>A new map in the project's first empty slot, one room as a new project starts with, opened in the editor.</summary>
+    [RelayCommand]
+    private Task NewMapAsync()
+    {
+        var (project, current, engine, data) = (Session.Project, Session.Slot, Session.Engine, _services.EngineData);
+        return _main.ChangeMapsAsync(project, current, () =>
+        {
+            var slot = project.FreeSlots().FirstOrDefault() ?? throw new InvalidOperationException("every slot of the game already holds a map");
+            project.SaveMap(Core.Translation.ClassicTranslation.ForProject(project, StarterRoom.Create(slot, engine), data), origin: new Core.Projects.MapOrigin { Kind = "new" });
+            return (slot, $"{slot} is a new map of this project, one room to start from; the {slot} ▾ button lists the project's maps.");
+        });
+    }
+
+    /// <summary>This map copied into the project's first empty slot, and the copy opened.</summary>
+    [RelayCommand]
+    private Task CopyMapAsync()
+    {
+        var (project, current) = (Session.Project, Session.Slot);
+        return _main.ChangeMapsAsync(project, current, () =>
+        {
+            var slot = project.FreeSlots().FirstOrDefault() ?? throw new InvalidOperationException("every slot of the game already holds a map");
+            project.CopyMap(current, slot);
+            return (slot, $"{slot} is a copy of {current}: what you change here leaves {current} as it was.");
+        });
+    }
+
+    private bool CanMoveMap() => MoveTo is not null;
+
+    /// <summary>This map moved to the slot chosen, with its kept versions and every exit that led to it.</summary>
+    [RelayCommand(CanExecute = nameof(CanMoveMap))]
+    private Task MoveMapAsync()
+    {
+        if (MoveTo is not { } slot) return Task.CompletedTask;
+        var (project, current) = (Session.Project, Session.Slot);
+        return _main.ChangeMapsAsync(project, current, () =>
+        {
+            project.MoveMap(current, slot);
+            var (from, to) = (MapVersions.Folder(project, current), MapVersions.Folder(project, slot));
+            if (Directory.Exists(from) && !Directory.Exists(to)) Directory.Move(from, to);
+            return (slot, $"{current} is now {slot}: its kept versions and every exit that led to it moved with it.");
+        });
+    }
+
+    /// <summary>This map taken out of the project (its file kept in .wadsmith/deleted), and the project's first other map opened.</summary>
+    [RelayCommand]
+    private Task DeleteMapAsync()
+    {
+        var (project, current) = (Session.Project, Session.Slot);
+        return _main.ChangeMapsAsync(project, current, () =>
+        {
+            var next = project.Maps().FirstOrDefault(m => !string.Equals(m.Slot, current, StringComparison.OrdinalIgnoreCase))?.Slot ?? throw new InvalidOperationException("a project keeps at least one map");
+            project.DeleteMap(current);
+            return (next, $"{current} is out of the project; its file is kept in the project's .wadsmith/deleted folder.");
+        });
+    }
 
     private IReadOnlyList<ProjectMapChoice>? _projectMaps;
 
