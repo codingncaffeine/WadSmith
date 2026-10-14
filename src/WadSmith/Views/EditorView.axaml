@@ -190,7 +190,7 @@
             <GridSplitter Grid.Column="1" x:Name="Split3D" Background="{DynamicResource Brush.Border.Subtle}" ResizeDirection="Columns" />
             <Panel Grid.Column="2" x:Name="Pane3D">
                 <threeD:View3D x:Name="View3D" Session="{Binding Session}" Mode="{Binding CameraMode}" ClassicKeys="{Binding ClassicKeys}" Tool="{Binding Tool}" GridSize="{Binding GridSize}"
-                               ToolTip.Tip="The map in 3D. Orbit: drag to turn, right-drag to move, scroll to come closer. Fly and Walk: drag to look, WASD to move. Home shows the whole map." />
+                               ToolTip.Tip="The map in 3D, from the player start. Fly and Walk: drag to look, WASD to move. Orbit: drag to turn, right-drag to move, scroll to come closer. Home shows the whole map." />
                 <Image Source="{Binding EngineViewPicture}" IsVisible="{Binding EngineView}" Stretch="Uniform" />
                 <Border IsVisible="{Binding EngineView}" VerticalAlignment="Bottom" Background="#C0120C0E" Padding="12,8">
                     <TextBlock Text="{Binding EngineViewNote}" Classes="secondary" TextWrapping="Wrap" />

@@ -39,7 +39,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         ("door", "Tip: choose Door{or:Door tool} and click the wall between two rooms to put a door there. Draw a short corridor between rooms first for a classic doorway."),
         ("undo", "Tip: Ctrl+Z takes back the last change and Ctrl+Y brings it back. Nothing needs saving; WadSmith keeps every change."),
         ("heights", "Tip: the view buttons at the top show floors, ceilings, heights as colours, or just the walls."),
-        ("orbit", "Tip: in the 3D view, drag to turn around the map, right-drag to move it, and scroll to come closer."),
+        ("fly", "Tip: the 3D view starts where the player does: drag to look around and use {move} to fly, through walls and floors. Orbit at the top of the view turns round the whole map instead."),
         ("walk", "Tip: choose Walk at the top of the 3D view, click it, and use {move} to walk through the map as the player would."),
         ("tab", "Tip: press {key:Show the 3D view alone} to fill the window with the 3D view, and {key:Show the 3D view alone} again to come back."),
         ("palette", "Tip: press Ctrl+K and type a few letters to find anything WadSmith can do, with its shortcut."),
@@ -976,10 +976,10 @@ internal sealed partial class EditorViewModel : ObservableObject
         UpdateStatus();
     }
 
-    /// <summary>How the 3D camera moves: orbit, fly or walk.</summary>
+    /// <summary>How the 3D camera moves: fly (the default, from the player start), orbit or walk.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsOrbit), nameof(IsFly), nameof(IsWalk))]
-    private ThreeD.CameraMode _cameraMode;
+    private ThreeD.CameraMode _cameraMode = ThreeD.CameraMode.Fly;
 
     public bool IsOrbit
     {

@@ -108,6 +108,7 @@ internal sealed partial class View3D : Control
         {
             if (!ReferenceEquals(r.Session, Session) || !ReferenceEquals(r.Scene, _scene)) return;
             (_yaw, _pitch) = (r.Yaw, r.Pitch);
+            if (Mode == CameraMode.Fly) Place(CameraMode.Fly, atStart: false);
             SendCamera();
         }, "a clear view of a landmark");
         _hovers = new(ViewModels.MainViewModel.PostToUi, r =>
@@ -410,7 +411,9 @@ internal sealed partial class View3D : Control
         }
         else if (change.Property == ModeProperty)
         {
-            Enter(change.GetNewValue<CameraMode>());
+            // Before the first picture (the editor opening in Fly, the default) the first framing places the camera, and
+            // the view takes no keyboard focus.
+            if (_framed) Enter(change.GetNewValue<CameraMode>());
         }
     }
 
@@ -488,6 +491,7 @@ internal sealed partial class View3D : Control
         _distance = Camera3D.FitDistance(span, Bounds.Width / Math.Max(Bounds.Height, 1));
         (_yaw, _pitch) = (50, -30);
         _framed = true;
+        if (Mode == CameraMode.Fly) Place(CameraMode.Fly, atStart: false);
         SendCamera();
     }
 
@@ -559,6 +563,7 @@ internal sealed partial class View3D : Control
         _distance = Camera3D.FitDistance(Math.Max(x1 - x0, y1 - y0), Bounds.Width / Math.Max(Bounds.Height, 1));
         (_yaw, _pitch) = (50, -48);
         _framed = true;
+        if (Mode != CameraMode.Orbit) Place(Mode, atStart: true);
         SendCamera();
     }
 
@@ -570,32 +575,50 @@ internal sealed partial class View3D : Control
     {
         _keys.Clear();
         _mover.Stop();
-        var orbit = Camera3D.Orbit(_tx, _ty, _tz, _yaw, _pitch, _distance);
+        Place(mode, atStart: false);
+        SendCamera();
+        Focus();
+    }
+
+    /// <summary>
+    /// Sets the Fly or Walk camera for <paramref name="mode"/>. Fly stands where the orbit camera stands, looking the same
+    /// way; Walk lands on the floor under the point the orbit turns round, or at the player start when that is over the
+    /// void. <paramref name="atStart"/> (the view opening on a map in Fly, the default, or Walk): both stand at the player
+    /// start's eyes facing its way, as the game starts; Fly as the orbit camera stands when the map has no start.
+    /// </summary>
+    private void Place(CameraMode mode, bool atStart)
+    {
+        var geometry = Session?.Geometry;
+        var start = _scene?.Things.Where(t => t.Type == 1 && t.Element is not null && geometry?.AreaAt(new MapPoint(t.X, t.Y)) is not null).Select(t => (SceneThing?)t).FirstOrDefault();
+        if (atStart && start is { } player)
+        {
+            var floor = geometry?.AreaAt(new MapPoint(player.X, player.Y))?.FloorHeight ?? _tz;
+            (_x, _y, _z, _lookYaw, _lookPitch) = (player.X, player.Y, floor + Walker.EyeHeight, player.Angle, 0);
+            return;
+        }
+
         switch (mode)
         {
             case CameraMode.Fly:
+                var orbit = Camera3D.Orbit(_tx, _ty, _tz, _yaw, _pitch, _distance);
                 (_x, _y, _z, _lookYaw, _lookPitch) = (orbit.X, orbit.Y, orbit.Z, orbit.Yaw, orbit.Pitch);
                 break;
             case CameraMode.Walk:
-                var geometry = Session?.Geometry;
                 var spot = new MapPoint(_tx, _ty);
-                if (geometry?.AreaAt(spot) is null && _scene?.Things.FirstOrDefault(t => t.Type == 1) is { Element: not null } start)
+                if (geometry?.AreaAt(spot) is null && start is { } standing)
                 {
-                    spot = new MapPoint(start.X, start.Y);
-                    _lookYaw = start.Angle;
+                    spot = new MapPoint(standing.X, standing.Y);
+                    _lookYaw = standing.Angle;
                 }
                 else
                 {
                     _lookYaw = _yaw;
                 }
 
-                var floor = geometry?.AreaAt(spot)?.FloorHeight ?? _tz;
-                (_x, _y, _z, _lookPitch) = (spot.X, spot.Y, floor + Walker.EyeHeight, 0);
+                var under = geometry?.AreaAt(spot)?.FloorHeight ?? _tz;
+                (_x, _y, _z, _lookPitch) = (spot.X, spot.Y, under + Walker.EyeHeight, 0);
                 break;
         }
-
-        SendCamera();
-        Focus();
     }
 
     private Camera3D Current => Mode == CameraMode.Orbit ? Camera3D.Orbit(_tx, _ty, _tz, _yaw, _pitch, _distance) : new Camera3D(_x, _y, _z, _lookYaw, _lookPitch);

@@ -29,6 +29,8 @@ public sealed class ToolsIn3DTests
                 var editor = Ui.NewMap(vm);
                 var session = editor.Session!;
                 editor.Layout = MapLayout.ThreeD;
+                // The handles and tools are aimed from the orbit camera's view of the whole room (the view opens flying at the start).
+                editor.CameraMode = CameraMode.Orbit;
                 Ui.Pump(1.5);
                 var view = window.GetVisualDescendants().OfType<View3D>().First(v => v.IsEffectivelyVisible);
                 var room = session.Map.Sectors.First(s => s.OnMap);
