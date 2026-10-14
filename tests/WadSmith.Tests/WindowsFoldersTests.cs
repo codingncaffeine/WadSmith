@@ -121,7 +121,8 @@ public sealed class WindowsFoldersTests
         string? Env(string name) => name switch { "LOCALAPPDATA" => local, "USERPROFILE" => profile, "SCOOP" => Path.Combine(temp.Path, "Scoop"), _ => null };
 
         var found = EngineLocator.Find(null, Env);
-        Assert.Equal([winget, scoop, unzipped, chocolatey], found.Select(e => e.Program));
+        // Windows names a folder in any case: Chocolatey's "gzdoom" folder is found as Programs\GZDoom.
+        Assert.Equal([winget, scoop, unzipped, chocolatey], found.Select(e => e.Program), StringComparer.OrdinalIgnoreCase);
         Assert.Equal(["UZDoom", "UZDoom", "UZDoom", "GZDoom"], found.Select(e => e.Name));
 
         // The data file beside the engine that plays first, and WadSmith's settings for it are UZDoom's own.

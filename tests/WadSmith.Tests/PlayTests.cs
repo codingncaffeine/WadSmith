@@ -124,7 +124,7 @@ public sealed class PlayTests
         Assert.Equal("[GlobalSettings]\n# GZDoom's\n", File.ReadAllText(EngineConfig.Prepare(other, WithConfig, gzdoom)));
 
         // The UZDoom Flatpak's settings are in its own config folder; an engine whose file names UZDoom is UZDoom's kind.
-        Assert.Contains((Path.Combine(home, ".var/app/org.zdoom.UZDoom/config/uzdoom/uzdoom.ini"), "uzdoom"), EngineConfig.UserSettings(Env, []));
+        Assert.Contains((Path.Combine(home, ".var/app", EngineLocator.UZDoomApp, "config/uzdoom/uzdoom.ini"), "uzdoom"), EngineConfig.UserSettings(Env, []));
         Assert.Equal("uzdoom", new EngineInstall("Your engine", "/opt/Linux-UZDoom-Release-x86_64.AppImage", "custom").Family);
         Assert.Equal("gzdoom", new EngineInstall("Your engine", "/opt/doom-engine", "custom").Family);
     }
