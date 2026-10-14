@@ -70,8 +70,10 @@ for i in $(seq 1 60); do
 done
 gh run download "$WIN" -n windows-zip -D packaging/out
 [ -f "$ZIP" ] || { echo "no $ZIP in the run's artifact"; exit 1; }
+# Listed once: grep -q stops at its match, and under pipefail the listing it cut off would count as a failure.
+listing=$(unzip -l "$ZIP")
 for f in wadsmith.exe wadsmith-cli.exe SDL2.dll README-SDL.txt LICENSE.txt; do
-    unzip -l "$ZIP" | grep -q " $f$" || { echo "$ZIP has no $f"; exit 1; }
+    grep -q " $f$" <<< "$listing" || { echo "$ZIP has no $f"; exit 1; }
 done
 echo "ok: $(du -h "$ZIP" | cut -f1)"
 
