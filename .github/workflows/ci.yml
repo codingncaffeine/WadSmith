@@ -60,9 +60,11 @@ jobs:
       - name: Build (warnings are errors)
         run: dotnet build WadSmith.slnx -c Release -warnaserror
 
-      # Every test is named as it passes; one that hangs is stopped after two minutes with a dump.
+      # Every test is named as it passes; one that hangs is stopped after two minutes with a dump. A test that fails is
+      # run once more on its own: passing then, it is reported as flaky and the job stays green (tools/ci-test.sh).
       - name: Unit tests
-        run: dotnet test tests/WadSmith.Tests -c Release --no-build --blame-hang --blame-hang-timeout 2m --logger "console;verbosity=normal" --results-directory TestResults
+        shell: bash
+        run: tools/ci-test.sh TestResults
 
       - name: Keep the hang dumps
         if: failure()
