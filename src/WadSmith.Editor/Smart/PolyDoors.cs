@@ -214,6 +214,41 @@ public static class PolyDoors
         }
     }
 
+    /// <summary>Where a door stands as the map starts: the middle of its polyobjects' walls, carried.</summary>
+    public static MapPoint StandsAt(PolyDoor door)
+    {
+        var points = door.Halves.SelectMany(h => h.Lines.Select(l => new MapPoint(((l.Start.X + l.End.X) / 2) + h.Spot.X - h.Anchor.X, ((l.Start.Y + l.End.Y) / 2) + h.Spot.Y - h.Anchor.Y))).ToList();
+        return points.Count == 0 ? default : new MapPoint(points.Average(p => p.X), points.Average(p => p.Y));
+    }
+
+    /// <summary>
+    /// After a paste (D62): a polyobject's anchor, spot or start line copied would name the same polyobject twice, which the
+    /// game cannot place, so they go; a door whose doorway was copied with its spot is made again in the copy, its own
+    /// polyobjects in a pen of their own, as the door it was copied from (<paramref name="originals"/>, by number) opens.
+    /// <paramref name="moved"/> is how far the copy was placed from where it was copied.
+    /// </summary>
+    public static void AfterPaste(StructureEdit edit, IReadOnlyList<Element> pasted, IReadOnlyDictionary<int, PolyDoor> originals, MapPoint moved, Look look, string family, Func<string, int?> heightOf)
+    {
+        var doors = new List<PolyDoor>();
+        foreach (var t in pasted.OfType<Thing>().Where(t => t.OnMap).ToList())
+        {
+            if (Polyobjects.SpotKind(t.Type, family) is not null && originals.TryGetValue(t.Angle, out var door) && !doors.Contains(door)) doors.Add(door);
+            if (Polyobjects.SpotKind(t.Type, family) is not null || Polyobjects.IsAnchor(t.Type, family)) edit.Remove(t);
+        }
+
+        foreach (var l in pasted.OfType<Line>().Where(l => l.OnMap && l.Special is Polyobjects.StartLine or Polyobjects.ExplicitLine)) SetAction(edit, l, 0, []);
+        foreach (var door in doors)
+        {
+            var at = StandsAt(door);
+            if (LiveSectorAt(edit.Map, new MapPoint(at.X + moved.X, at.Y + moved.Y)) is not { } doorway || ReferenceEquals(doorway, door.Doorway)) continue;
+            var picture = door.Own.FirstOrDefault()?.Front.Middle;
+            var copy = new PolyDoor(doorway, [], door.Kind, [], door.Settings, door.Monsters);
+            if (ToRising(edit, copy, look, heightOf, picture is "-" or "" ? null : picture) is not null) continue;
+            var layout = new Layout(door.Double, door.Kind == DoorKind.Slides ? SlideDirection(door) : null, door.Kind == DoorKind.Swings ? SwingDirection(door) : null);
+            FromRising(edit, doorway, door.Kind, look, family, layout, picture is "-" or "" ? null : picture);
+        }
+    }
+
     /// <summary>Which way a sliding door slides open: its action's angle, as a unit direction on the map.</summary>
     public static MapPoint SlideDirection(PolyDoor door)
     {
@@ -473,7 +508,7 @@ public static class PolyDoors
     /// picture's height again, from <paramref name="heightOf"/>); switches that opened it open the rising door by the doorway's
     /// tag. Works on the map as it is. Returns why it cannot, or null.
     /// </summary>
-    public static string? ToRising(StructureEdit edit, PolyDoor door, Look look, Func<string, int?>? heightOf = null)
+    public static string? ToRising(StructureEdit edit, PolyDoor door, Look look, Func<string, int?>? heightOf = null, string? shows = null)
     {
         var map = edit.Map;
         var doorway = door.Doorway;
@@ -481,7 +516,7 @@ public static class PolyDoors
         var faces = map.Lines.Where(l => l.OnMap && l.Back is not null && (ReferenceEquals(l.Front.Sector, doorway) || ReferenceEquals(l.Back.Sector, doorway)) && !ReferenceEquals(l.Front.Sector, l.Back.Sector)
             && (ReferenceEquals(l.Front.Sector, doorway) ? l.Back.Sector : l.Front.Sector) is { } other && other.CeilingHeight > other.FloorHeight).ToList();
         if (faces.Count != 2 || !Doors.Parallel(faces[0], faces[1])) return "Only a door standing in a doorway with an opening on each side can open upward.";
-        var picture = door.Own.FirstOrDefault()?.Front.Middle is { } shown and not ("-" or "") ? shown : look.Door;
+        var picture = shows ?? (door.Own.FirstOrDefault()?.Front.Middle is { } shown and not ("-" or "") ? shown : look.Door);
 
         Remove(edit, door, clearSwitches: false);
 

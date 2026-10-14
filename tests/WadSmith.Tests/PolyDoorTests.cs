@@ -428,5 +428,16 @@ public sealed class PolyDoorTurnTests
         Assert.All(door.Halves, h => Assert.Equal((h.Number, h.Number), (h.Anchor.Angle, h.Spot.Angle)));
         Assert.Single(session.Geometry.Polyobjects("doom"));
         Assert.Single(session.Map.Sectors, s => s.OnMap && s.Flag(PolyDoors.PenField));
+
+        // Duplicated, the rooms come with a door of their own: polyobjects of new numbers in a pen of their own, sliding the same way.
+        session.Selection.Set([.. session.Map.Sectors.Where(s => s.OnMap && !s.Flag(PolyDoors.PenField))]);
+        session.Duplicate();
+        await Settle();
+        var doors = session.Map.Sectors.Where(s => s.OnMap).Select(s => PolyDoors.Recognise(session.Geometry, s, "doom")).OfType<PolyDoor>().ToList();
+        Assert.Equal(2, doors.Count);
+        Assert.Equal(2, doors.Select(d => d.Number).Distinct().Count());
+        Assert.All(doors, d => Assert.Equal("west", PolyDoors.Compass(PolyDoors.SlideDirection(d))));
+        Assert.Equal(2, session.Geometry.Polyobjects("doom").Count);
+        Assert.Equal(2, session.Map.Things.Count(t => t.OnMap && t.Type == Polyobjects.Spot));
     }
 }

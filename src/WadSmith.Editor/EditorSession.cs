@@ -2589,7 +2589,31 @@ public sealed class EditorSession : IDisposable
         var geometry = _geometry;
         var look = Look;
         var centre = Copying.PlaceNear(clip, at);
-        History.Record("Paste", e => result = Copying.Paste(e, geometry, clip, centre, look, rename, keep));
+
+        // Sliding and swinging doors copied with their doorways are made again in the copy (their polyobjects are not copied).
+        var family = Engine;
+        var resources = Resources;
+        var originals = new Dictionary<int, PolyDoor>();
+        if (clip.Things.Any(t => Polyobjects.SpotKind(t.Type, family) is not null || Polyobjects.IsAnchor(t.Type, family)))
+        {
+            foreach (var poly in geometry.Polyobjects(family))
+            {
+                if (geometry.Frame.Lines[poly.Lines[0]].Element is { } wall && PolyDoors.OfWall(geometry, wall, family) is { } door) originals.TryAdd(poly.Number, door);
+            }
+        }
+
+        History.Record("Paste", e =>
+        {
+            result = Copying.Paste(e, geometry, clip, centre, look, rename, keep);
+            if (originals.Count > 0 || clip.Things.Any(t => Polyobjects.SpotKind(t.Type, family) is not null || Polyobjects.IsAnchor(t.Type, family)))
+            {
+                var pasted = e.Touched.ToList();
+                var spotCopy = pasted.OfType<Thing>().FirstOrDefault(t => Polyobjects.SpotKind(t.Type, family) is not null);
+                var original = spotCopy is null ? null : originals.GetValueOrDefault(spotCopy.Angle)?.Halves.FirstOrDefault(h => h.Number == spotCopy.Angle)?.Spot;
+                var moved = original is null ? default : new MapPoint(spotCopy!.X - original.X, spotCopy.Y - original.Y);
+                PolyDoors.AfterPaste(e, pasted, originals, moved, look, family, t => resources?.Textures.FindWall(t)?.Height);
+            }
+        });
         if (result.Pasted.Count > 0) Selection.Set([.. result.Pasted]);
         if (result.Crossings > 0) Notice?.Invoke($"The copy's walls cross {result.Crossings} wall{(result.Crossings == 1 ? "" : "s")} already there, which the game draws wrongly. Drag it clear, or press Ctrl+Z.");
     }
