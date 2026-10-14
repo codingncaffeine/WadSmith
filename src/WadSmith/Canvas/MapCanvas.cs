@@ -75,8 +75,11 @@ internal sealed class MapCanvas : Control
     /// <summary>The time moving pictures play to (the 3D view keeps its own, as GZDoom starts each level's at zero).</summary>
     private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
 
-    /// <summary>Ticks once a game tic while the picture holds a moving floor, and asks for a frame only when one of them changes.</summary>
-    private readonly Avalonia.Threading.DispatcherTimer _tics;
+    /// <summary>
+    /// Whether an animation frame is asked for: while the picture holds a moving floor, each of the display's frames checks
+    /// the moving floors and asks for a drawing only when one of them changes.
+    /// </summary>
+    private bool _framesAsked;
     private long _shownFrames;
 
     /// <summary>Where the player cannot pass (from a worker), the player's box at the pointer, and the pointer it follows.</summary>
@@ -212,10 +215,6 @@ internal sealed class MapCanvas : Control
             PlayFrames();
             InvalidateVisual();
         }, "the map picture");
-        _tics = new Avalonia.Threading.DispatcherTimer(TimeSpan.FromSeconds(1 / 35.0), Avalonia.Threading.DispatcherPriority.Render, (_, _) =>
-        {
-            if (_snapshot is { Animated: true } shown && shown.FramesAt(_clock.Elapsed.TotalSeconds) != _shownFrames) InvalidateVisual();
-        });
         _outlines = new(ViewModels.MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, Session) || r.Generation != _outlineGeneration) return;
@@ -408,12 +407,18 @@ internal sealed class MapCanvas : Control
         InvalidateVisual();
     }
 
-    /// <summary>Runs the tic timer while the shown picture has a moving floor and the plan is on screen, and stops it otherwise.</summary>
+    /// <summary>Asks for the display's next frame while the shown picture has a moving floor and the plan is on screen.</summary>
     private void PlayFrames()
     {
-        var play = _snapshot is { Animated: true } && VisualRoot is not null;
-        if (play && !_tics.IsEnabled) _tics.Start();
-        else if (!play && _tics.IsEnabled) _tics.Stop();
+        if (_framesAsked || _snapshot is not { Animated: true } || TopLevel.GetTopLevel(this) is not { } top) return;
+        _framesAsked = true;
+        top.RequestAnimationFrame(_ =>
+        {
+            _framesAsked = false;
+            if (_snapshot is not { Animated: true } shown || VisualRoot is null) return;
+            if (shown.FramesAt(_clock.Elapsed.TotalSeconds) != _shownFrames) InvalidateVisual();
+            PlayFrames();
+        });
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -424,8 +429,8 @@ internal sealed class MapCanvas : Control
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        // Off screen, the next animation frame finds no visual root and asks for no more.
         base.OnDetachedFromVisualTree(e);
-        _tics.Stop();
     }
 
     /// <summary>The map changed and its new shapes are ready: rebuild the picture and outlines from them.</summary>
