@@ -110,6 +110,19 @@ public sealed class PolyobjectTests
     }
 
     [Fact]
+    public void APenAndAPolyobjectThatIsNoDoorSayWhatTheyAre()
+    {
+        var map = EditorMap.FromModel(RoomWithPolyobject((128, 128)));
+        var g = MapGeometry.Build(map.Frame);
+        var pen = map.Sectors[1];
+        var said = WadSmith.Editor.App.Explaining.Explain(pen, g, null)!;
+        Assert.Equal("Polyobjects' pen", said.Heading);
+        var wall = map.Lines[9];
+        Assert.Equal(("Polyobject", true), (WadSmith.Editor.App.Explaining.Explain(wall, g, null)!.Heading, WadSmith.Editor.App.Explaining.Explain(wall, g, null)!.Text.StartsWith("Polyobject 1: ", StringComparison.Ordinal)));
+        Assert.Equal("Room", WadSmith.Editor.App.Explaining.Explain(map.Sectors[0], g, null)!.Heading);
+    }
+
+    [Fact]
     public void APieceInsideAWallIsNotSeen()
     {
         // Its spot at the room's east wall: the half beyond it stands in no area, as a door slid into a wall does.

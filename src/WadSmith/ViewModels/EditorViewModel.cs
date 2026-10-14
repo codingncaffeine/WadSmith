@@ -523,6 +523,9 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Space the corners round a circle", "Edit", "", "shape circle|round|arc|make round|circular", () => Session.ShapeCorners(circle: true), Selected),
             new("Swap floor and ceiling pictures", "Edit", "", "swap flats|flip floor and ceiling|swap textures", Session.SwapFlats, () => Session.Selection.OfType<Sector>().Any()),
             new("Split the wall in half", "Edit", "", "split linedef|split line|halve|add a corner|insert vertex", Session.SplitWalls, () => Session.Selection.Items.Any(e => e is Line or Side)),
+            new("Make the door open upward", "Edit", "", "rising door|door rises|raise door", () => SetSelectedDoorKind(DoorKind.Rises), () => SelectedDoorKind() is { } k && k != DoorKind.Rises),
+            new("Make the door slide aside", "Edit", "", "sliding door|slide door|polyobject door|hexen door|horizontal door", () => SetSelectedDoorKind(DoorKind.Slides), () => SelectedDoorKind() is { } k && k != DoorKind.Slides && !Session.Project.ClassicFormat),
+            new("Make the door swing", "Edit", "", "swinging door|swing door|hinge|polyobject door|hexen door", () => SetSelectedDoorKind(DoorKind.Swings), () => SelectedDoorKind() is { } k && k != DoorKind.Swings && !Session.Project.ClassicFormat),
 
             new("Show the plan alone", "View", "", "2d|top down|map only", () => Layout = MapLayout.Plan),
             new("Show the plan and the 3D view", "View", "", "split|side by side|both", () => Layout = MapLayout.Split),
@@ -838,6 +841,28 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>Which control the Guide's open step outlines.</summary>
     public GuideMarks Marks => GuideMarks.For(Guide?.Target ?? GuideTarget.None);
+
+    /// <summary>The door the selection is (a door's area or face, a sliding or swinging door's doorway or wall), with its area, or null.</summary>
+    private (Sector Area, DoorKind Kind)? SelectedDoor()
+    {
+        var g = Session.Geometry;
+        var family = Session.Engine;
+        return Session.Selection.Items switch
+        {
+            [Sector s] when Doors.Recognise(g, s) is { } d => (s, d.Kind),
+            [Sector s] when PolyDoors.Recognise(g, s, family) is { } p => (s, p.Kind),
+            [Line l] when (Doors.Recognise(g, l.Front.Sector) ?? (l.Back is { } b ? Doors.Recognise(g, b.Sector) : null)) is { } d && d.Own.Contains(l) => (d.Area, d.Kind),
+            [Line or Side] when (Session.Selection.Items[0] switch { Line w => w, Side { Line: { } w } => w, _ => null }) is { } wall && PolyDoors.OfWall(g, wall, family) is { } p => (p.Doorway, p.Kind),
+            _ => null,
+        };
+    }
+
+    private DoorKind? SelectedDoorKind() => SelectedDoor()?.Kind;
+
+    private void SetSelectedDoorKind(DoorKind kind)
+    {
+        if (SelectedDoor() is { } door) Session.SetDoorKind(door.Area, kind);
+    }
 
     /// <summary>The Guide's chapters, for the Guide menu.</summary>
     /// <summary>

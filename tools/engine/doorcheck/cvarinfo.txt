@@ -1,0 +1,2 @@
+// The door check's own setting: with ws_nokeys on, the player gets no keys, so locked doors must stay shut (the lock's control).
+server bool ws_nokeys = false;

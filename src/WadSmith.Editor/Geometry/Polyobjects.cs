@@ -49,6 +49,17 @@ public static class Polyobjects
         _ => null,
     };
 
+    /// <summary>The polyobject a wall is one of, or null.</summary>
+    public static PolyobjectFrame? OfWall(MapGeometry geometry, Line wall, string family) =>
+        wall.OnMap ? geometry.Polyobjects(family).FirstOrDefault(p => p.Lines.Any(slot => ReferenceEquals(geometry.Frame.Lines[slot].Element, wall))) : null;
+
+    /// <summary>The polyobjects drawn in an area (their pen: the area their walls face), none for any other area.</summary>
+    public static IReadOnlyList<PolyobjectFrame> InPen(MapGeometry geometry, Sector area, string family)
+    {
+        var f = geometry.Frame;
+        return [.. geometry.Polyobjects(family).Where(p => p.Lines.Any(slot => f.Lines[slot].Front >= 0 && ReferenceEquals(f.Sectors[f.Sides[f.Lines[slot].Front].Sector].Element, area)))];
+    }
+
     /// <summary>The map's polyobjects in <paramref name="family"/>'s game, those with walls, a spot and an anchor, by number.</summary>
     public static IReadOnlyList<PolyobjectFrame> Find(MapFrame f, string family)
     {

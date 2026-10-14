@@ -104,7 +104,9 @@ class WadSmithDoorCheck : StaticEventHandler
 		{
 			home = players[consoleplayer].mo.pos;
 			homeAngle = players[consoleplayer].mo.angle;
-			for (int i = 0; i < AllActorClasses.Size(); i++)
+			// With ws_nokeys on (the lock's control), no keys: a locked door must then stay shut.
+			let none = CVar.FindCVar("ws_nokeys");
+			for (int i = 0; i < AllActorClasses.Size() && !(none && none.GetBool()); i++)
 			{
 				let k = (class<Key>)(AllActorClasses[i]);
 				if (k && k != "Key") players[consoleplayer].mo.GiveInventory(k, 1);

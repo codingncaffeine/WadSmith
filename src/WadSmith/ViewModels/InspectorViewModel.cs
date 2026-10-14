@@ -725,6 +725,17 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = "This little room outside the map is where the game reads a platform from: its floor is the platform's bottom, its ceiling the top. Change the platform here or in the room it stands in.";
                 AddPlatform(held, control: true);
                 break;
+            case Sector s when WadSmith.Editor.Geometry.Polyobjects.InPen(_session.Geometry, s, _session.Engine) is { Count: > 0 } penned:
+                Heading = "Polyobjects' pen";
+                Summary = Explaining.PenWords;
+                foreach (var door in penned.Select(p => PolyDoors.OfWall(_session.Geometry, _session.Geometry.Frame.Lines[p.Lines[0]].Element!, _session.Engine)).OfType<PolyDoor>().DistinctBy(d => d.Number))
+                {
+                    var doorway = door.Doorway;
+                    Rows.Add(new ActionRow(string.Create(CultureInfo.InvariantCulture, $"Select the doorway of door {door.Number}"), "Selects the doorway this door stands in, where it is changed.", () => _session.Selection.Set(doorway)));
+                }
+
+                AddSector(s);
+                break;
             case Sector s when PolyDoorIn(s) is not null:
                 Heading = "Door";
                 _summaryOf = () => PolyDoorIn(s) is { } pd ? Explaining.Describe(pd, _session.Engine) : "No longer a door.";
@@ -805,6 +816,13 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = _summaryOf();
                 AddPolyDoor(polyDoorway);
                 Rows.Add(new ActionRow("Select the doorway", "Selects the doorway the door stands in, with its area's settings.", () => _session.Selection.Set(polyDoorway)));
+                break;
+            case Line or Side when (items[0] switch { Line pl => pl, Side { Line: { } sl } => sl, _ => null }) is { } polyWall && WadSmith.Editor.Geometry.Polyobjects.OfWall(_session.Geometry, polyWall, _session.Engine) is { } poly:
+                // A polyobject that is no door of WadSmith's (Hexen's scripted ones): what it is, with its wall's rows.
+                Heading = "Polyobject";
+                Summary = Explaining.PolyobjectWords(poly.Number);
+                AddLine(polyWall);
+                AddSide("Front", polyWall.Front);
                 break;
             case Line l when LiftOf(l) is { } liftArea:
                 // A wall of a lift: the lift is what was meant, with the wall's own details below it.

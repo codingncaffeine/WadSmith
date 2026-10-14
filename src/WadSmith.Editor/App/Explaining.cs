@@ -40,6 +40,8 @@ public static class Explaining
                 "A little room outside the map that the game reads a platform from: its floor is the platform's underside and its ceiling the top. The player never sees it.");
         }
 
+        if (Polyobjects.InPen(g, s, family).Count > 0) return new("Polyobjects' pen", PenWords);
+
         if (Doors.Recognise(g, s) is { } door) return new("Door", Describe(door, family) + " Click it to change its key, its speed or how long it stays open.");
         if (PolyDoors.Recognise(g, s, family) is { } polyDoor) return new("Door", Describe(polyDoor, family) + " Click it to change how it opens, its key, its speed or how long it stays open.");
         if (Lifts.Recognise(g, s) is { } lift) return new("Lift", Describe(lift) + " Click it to change its speed or how long it waits.");
@@ -68,8 +70,9 @@ public static class Explaining
                 $"Ends the map when the player {Exits.How(l)}, going on to {(l.Special == Exits.Secret ? "the secret map" : "the next map")}.");
         }
 
-        // A sliding or swinging door's wall (or a switch for one): what the door does.
+        // A sliding or swinging door's wall (or a switch for one): what the door does; any other polyobject's, what it is.
         if (PolyDoors.OfWall(g, l, family) is { } polyDoor) return new("Door", Describe(polyDoor, family));
+        if (Polyobjects.OfWall(g, l, family) is { } poly) return new("Polyobject", PolyobjectWords(poly.Number));
 
         // A door's own face: what the door it opens does.
         foreach (var side in (Sector?[])[l.Back?.Sector, l.Front.Sector])
@@ -223,6 +226,13 @@ public static class Explaining
         var after = d.Settings.StaysOpen ? "stays open" : string.Create(CultureInfo.InvariantCulture, $"{shut} again after {d.Settings.Delay / 35.0:0.#} s");
         return $"{how} {who}{key}; {after}.";
     }
+
+    /// <summary>What a polyobjects' pen is, in words.</summary>
+    public const string PenWords = "A little room outside the map where polyobjects are drawn: as the map starts, the game carries the walls drawn here onto their start spots, so the player never sees it. Change its doors in their doorways.";
+
+    /// <summary>What a polyobject that is no door of WadSmith's is, in words.</summary>
+    public static string PolyobjectWords(int number) => string.Create(CultureInfo.InvariantCulture,
+        $"Polyobject {number}: walls the game moves, drawn in a pen outside the map and carried onto their start spot as the map starts; the map's scripts or switches move it. WadSmith shows it where it stands as the map starts.");
 
     /// <summary>A name as it reads inside a sentence: "Red key" becomes "red key", "ID badge" stays.</summary>
     private static string InSentence(string name) => name.Length > 1 && char.IsUpper(name[1]) ? name : char.ToLowerInvariant(name[0]) + name[1..];

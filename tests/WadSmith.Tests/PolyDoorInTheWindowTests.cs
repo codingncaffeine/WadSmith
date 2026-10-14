@@ -63,6 +63,14 @@ public sealed class PolyDoorInTheWindowTests
                 session.History.Undo();
                 Ui.Pump(1.0);
                 said.Add($"undone twice: {Doors.Recognise(session.Geometry, area)?.Kind}, {session.Geometry.Polyobjects(session.Engine).Count} polyobjects");
+
+                // Ctrl+K has the same: on the selected door, the kinds it can become.
+                session.Selection.Set(area);
+                Ui.Pump(0.3);
+                var kinds = editor.Commands().Where(c => c.Name.StartsWith("Make the door ", StringComparison.Ordinal) && c.Available).Select(c => c.Name).ToList();
+                editor.Commands().Single(c => c.Name == "Make the door swing").Run();
+                Ui.Pump(1.0);
+                said.Add($"palette offers {string.Join(", ", kinds)}; after its swing: {PolyDoors.Recognise(session.Geometry, area, session.Engine)?.Kind}");
                 return said;
             }
             finally
@@ -77,6 +85,7 @@ public sealed class PolyDoorInTheWindowTests
             "slides: Slides, 1 polyobject, standing in the doorway: True; Inspector Door: Slides, rows Opens, Two halves that part, Slides toward, Locked with",
             "swings: Swings, a door picture 64 × 128",
             "undone twice: Rises, 0 polyobjects",
+            "palette offers Make the door slide aside, Make the door swing; after its swing: Swings",
         ], seen);
     }
 
