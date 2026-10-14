@@ -116,6 +116,7 @@ internal sealed partial class View3D : Control
             if (r.Drop is null && !ReferenceEquals(_hover?.Element, r.Hit?.Element)) HoverChanged?.Invoke(r.Hit?.Element);
             _hover = r.Hit;
             _renderer?.Hover(r.Hit is { } hit ? r.Scene.Surface(hit) : ([], []));
+            if (r.Drop is null && Tool != Canvas.EditorTool.Select && _gesture is null) DropHint?.Invoke(ToolWords(r.Session, r.Hit));
             if (r.Drop is not { } drop) return;
             if (!r.Apply)
             {
@@ -368,6 +369,7 @@ internal sealed partial class View3D : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == ToolProperty && change.GetNewValue<Canvas.EditorTool>() == Canvas.EditorTool.Select) DropHint?.Invoke(null);
         if (change.Property == ToolProperty && _gesture is not null)
         {
             // Another tool chosen mid-gesture: the gesture is dropped, as on the plan.

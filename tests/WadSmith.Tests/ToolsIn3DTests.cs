@@ -78,6 +78,11 @@ public sealed class ToolsIn3DTests
                 Gesture("Light", (cx + 32, cy + 32, floor));
                 editor.Tool = EditorTool.Room;
                 Gesture("Room on the floor", (cx - 48, cy - 48, floor), (cx + 16, cy + 16, floor));
+
+                // The same room the plan draws from those corners: a box from (cx − 48, cy − 48) to (cx + 16, cy + 16).
+                var drawn = session.Map.Sectors.Last(s => s.OnMap);
+                var dc = session.Geometry.LoopsAt(drawn.Slot).SelectMany(l => l).ToArray();
+                lines.Add($"its corners {dc.Min(p => p.X) - cx:0},{dc.Min(p => p.Y) - cy:0} to {dc.Max(p => p.X) - cx:0},{dc.Max(p => p.Y) - cy:0} from the middle, {dc.Length} of them");
                 var wall = Facing();
                 var (mx, my) = Out(wall, 0);
                 Gesture("Room out of a wall", (mx, my, floor + 32), (Out(wall, 128).X, Out(wall, 128).Y, floor + 32));
@@ -92,6 +97,9 @@ public sealed class ToolsIn3DTests
                 var doorway = session.Map.Lines.First(l => l.OnMap && l.Back is not null && Math.Abs((l.Start.X + l.End.X) / 2 - sx) < 1 && Math.Abs((l.Start.Y + l.End.Y) / 2 - sy) < 1);
                 var (dx, dy) = Out(doorway, -12);
                 editor.Tool = EditorTool.Door;
+                Hover(dx, dy, floor);
+                for (var i = 0; i < 50 && !editor.Status.StartsWith("Click: a door", StringComparison.Ordinal); i++) Ui.Pump(0.02);
+                lines.Add($"over the opening: '{editor.Status}'");
                 Gesture("Door", (dx, dy, floor));
                 editor.Tool = EditorTool.Stairs;
                 Gesture("Stairs", (x0 + 24, y1 - 80, floor), (x0 + 88, y1 - 24, floor));
@@ -128,8 +136,8 @@ public sealed class ToolsIn3DTests
         });
 
         Assert.Equal(
-            "Light: Place a light\nRoom on the floor: Draw a room\nRoom out of a wall: Draw a room\nWindow: Make a window\nRoom out of another wall: Draw a room\n"
-            + "Door: Make a door\nStairs: Make stairs\nTeleport pad (the small room): nothing\nTeleport arrival: Make a teleporter\n"
+            "Light: Place a light\nRoom on the floor: Draw a room\nits corners -48,-48 to 16,16 from the middle, 4 of them\nRoom out of a wall: Draw a room\nWindow: Make a window\nRoom out of another wall: Draw a room\n"
+            + "over the opening: 'Click: a door goes in this opening (drag along it for its width).'\nDoor: Make a door\nStairs: Make stairs\nTeleport pad (the small room): nothing\nTeleport arrival: Make a teleporter\n"
             + "Switch: the door: nothing\nSwitch: a solid wall: Make a switch\nMeasure: nothing\nprofile shown True; tool Measure\n"
             + "tools shown in the split: True\nLight in the split: Place a light",
             said);

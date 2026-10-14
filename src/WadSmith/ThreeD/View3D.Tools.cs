@@ -192,6 +192,29 @@ internal sealed partial class View3D
         return true;
     }
 
+    /// <summary>What the chosen tool would do over what the pointer is on, in a sentence for the status line.</summary>
+    private string ToolWords(Editor.EditorSession session, SceneHit? hit)
+    {
+        var floor = hit is { Kind: HitKind.Floor };
+        var near = hit is { } h && session.Geometry.LineNear(new MapPoint(h.X, h.Y), Reach) is { Back: not null };
+        return Tool switch
+        {
+            EditorTool.Room => floor ? "Drag on this floor to draw a room (Shift square, Ctrl round)."
+                : hit is { Kind: HitKind.Wall, Element: Side { Line.Back: null } } ? "Drag away from this wall to pull a room out of it, sharing the wall."
+                : "Point at a floor to draw a room, or at a solid wall to pull one out of it.",
+            EditorTool.Door => near ? "Click: a door goes in this opening (drag along it for its width)." : "Point near the opening between two rooms: a door goes in the wall they share.",
+            EditorTool.Window => near ? "Click: a window goes in this opening (drag along it for its width)." : "Point near the opening between two rooms: a window goes in the wall they share.",
+            EditorTool.Stairs => floor ? "Drag across this floor, from the bottom of the stairs to the top." : "Point at a floor: stairs are dragged across one.",
+            EditorTool.Measure => floor ? "Drag across the floor to measure it and see the floors and ceilings along the way." : "Point at a floor to measure from.",
+            EditorTool.Teleport => session.TeleportPad is null ? "Click the room to step on: it becomes the teleport pad." : "Click where the player arrives.",
+            EditorTool.Switch => session.SwitchTarget is null ? "Click the door or lift the switch works." : "Click the solid wall where the switch goes.",
+            EditorTool.Light => "Click: a light goes here, 48 above the floor.",
+            EditorTool.Key => "Click where the key goes, somewhere the player reaches before the door.",
+            EditorTool.Camera => "Click where the camera stands.",
+            _ => "",
+        };
+    }
+
     /// <summary>The door or lift a click landed on: the one whose face or floor it hit; null for anything else.</summary>
     private static Sector? Worked(Editor.EditorSession session, SceneHit hit)
     {
