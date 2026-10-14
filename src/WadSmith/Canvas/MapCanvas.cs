@@ -39,6 +39,9 @@ internal enum EditorTool
     /// <summary>Click where the key for a locked door goes.</summary>
     Key,
 
+    /// <summary>Click where the camera stands whose view a wall chosen in the Inspector shows (armed from there, not the tool column).</summary>
+    Camera,
+
     /// <summary>Click in a room for a light.</summary>
     Light,
 
@@ -361,6 +364,7 @@ internal sealed class MapCanvas : Control
             _windowWall = null;
             if (change.GetNewValue<EditorTool>() != EditorTool.Switch && Session is { } unswitching) unswitching.SwitchTarget = null;
             if (change.GetNewValue<EditorTool>() != EditorTool.Key && Session is { } unkeyed) unkeyed.KeyToPlace = null;
+            if (change.GetNewValue<EditorTool>() != EditorTool.Camera && Session is { } unscreened) unscreened.ScreenToFill = null;
             if (change.GetNewValue<EditorTool>() != EditorTool.Measure) (_measureFrom, _measureTo, _measuring) = (null, null, false);
             _snap = null;
             InvalidateVisual();
@@ -1240,6 +1244,14 @@ internal sealed class MapCanvas : Control
         if (props.IsLeftButtonPressed && Session is { } lighting && Tool == EditorTool.Light)
         {
             lighting.PlaceLight(Snap(e.GetPosition(this)));
+            e.Handled = true;
+            return;
+        }
+
+        if (props.IsLeftButtonPressed && Session is { } filming && Tool == EditorTool.Camera)
+        {
+            filming.PlaceCamera(Snap(e.GetPosition(this)));
+            Tool = EditorTool.Select;
             e.Handled = true;
             return;
         }

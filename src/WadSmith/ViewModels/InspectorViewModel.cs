@@ -374,6 +374,9 @@ internal sealed partial class InspectorViewModel : ObservableObject
     /// <summary>Raised when the user asks for a switch that works a door or a lift: the editor then waits for the wall.</summary>
     public event Action<Sector>? SwitchFor;
 
+    /// <summary>Raised when the user asks for a wall face to be a camera screen: the editor then waits for the camera's spot.</summary>
+    public event Action<Side>? CameraFor;
+
     /// <summary>Raised by "Explain this map" (D32), shown with nothing selected.</summary>
     public event Action? ExplainMap;
 
@@ -1592,6 +1595,10 @@ internal sealed partial class InspectorViewModel : ObservableObject
         {
             Rows.Add(new TextRow("Texture", "The picture on this wall (texturemiddle).", () => side.Middle, v => Set(side, "Change wall texture", e => e.Middle, (e, x) => e.Middle = x, v)));
             AddSign(side);
+            if (!_session.Project.ClassicFormat && Cameras.Screens(_session.Project.CopiedNow()).All(s => !string.Equals(s.Texture, side.Middle, StringComparison.OrdinalIgnoreCase)))
+            {
+                Rows.Add(new ActionRow("Make it a camera screen…", "The wall shows, in the game, what a camera sees: click where the camera stands next (anywhere in the map). The editor shows a stand-in screen; G shows GZDoom's own view.", () => CameraFor?.Invoke(side)));
+            }
         }
         else
         {

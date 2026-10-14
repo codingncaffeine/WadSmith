@@ -134,6 +134,12 @@ internal sealed partial class EditorViewModel : ObservableObject
             Tool = Canvas.EditorTool.Key;
             Session.KeyToPlace = colour;
         };
+        Inspector.CameraFor += face =>
+        {
+            Tool = Canvas.EditorTool.Camera;
+            Session.ScreenToFill = face;
+            UpdateStatus();
+        };
         Inspector.SwitchFor += target =>
         {
             Tool = Canvas.EditorTool.Switch;
@@ -2011,6 +2017,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         Canvas.EditorTool.Stairs => "Drag from the bottom of the stairs to the top: the steps climb from the floor where you start to the floor where you end, 16 a step where nothing else decides. Esc goes back to Select.",
         Canvas.EditorTool.Measure => "Drag a line across the map: its length, and below the map the floors and ceilings along it, with what stops the player. Esc goes back to Select.",
         Canvas.EditorTool.Light => "Click in a room for a light: warm, 128 across, 48 above the floor; its colour and reach are in the Inspector. Esc goes back to Select.",
+        Canvas.EditorTool.Camera => "Click where the camera stands: it looks away from the screen to begin with; turn it with its knob or its Inspector's Facing. The screen shows its view in the game. Esc goes back to Select.",
         Canvas.EditorTool.Key => Session.KeyToPlace is { } colour ? $"Click where the {colour} key goes, somewhere the player reaches before the door. Esc goes back to Select." : "",
         Canvas.EditorTool.Switch => Session.SwitchTarget is null
             ? "Click the door or lift the switch works. Esc goes back to Select."

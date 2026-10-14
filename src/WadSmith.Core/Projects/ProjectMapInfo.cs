@@ -56,6 +56,10 @@ public static class ProjectMapInfo
         // Objects carried in from other games (D55): the numbers the map places them by.
         var actors = (copies ?? []).Where(c => c.Kind == "actor").ToList();
         if (actors.Count > 0) blocks.Add("DoomEdNums\n{\n" + string.Concat(actors.Select(a => $"    {a.Name} = {a.Original}\n")) + "}\n");
+
+        // Event handlers WadSmith wrote (camera screens): registered for every map.
+        var handlers = (copies ?? []).Where(c => c.Kind == "eventhandler").Select(c => MapInfo.Quote(c.Original)).Distinct(StringComparer.Ordinal).ToList();
+        if (handlers.Count > 0) blocks.Add("GameInfo\n{\n    AddEventHandlers = " + string.Join(", ", handlers) + "\n}\n");
         return blocks.Count == 0 ? null : Mark + "\n\n" + string.Join("\n", blocks);
     }
 

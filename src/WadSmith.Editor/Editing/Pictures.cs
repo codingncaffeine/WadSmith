@@ -146,6 +146,9 @@ public static class Pictures
             text.Append('\n');
         }
 
+        // Camera screens (Phase 7): a texture the game draws from a camera, replacing the stand-in picture of the same name.
+        foreach (var screen in WadSmith.Editor.Smart.Cameras.Screens(project.CopiedNow())) text.Append(CultureInfo.InvariantCulture, $"cameratexture {screen.Texture} {screen.Width} {screen.Height}\n");
+
         project.WriteFile(AnimationFile, Encoding.UTF8.GetBytes(text.ToString()));
     }
 }

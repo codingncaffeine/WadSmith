@@ -1851,6 +1851,57 @@ public sealed class EditorSession : IDisposable
         Selection.Set(light);
     }
 
+    /// <summary>The wall face waiting for its camera (the click on the map that comes next places it), or null.</summary>
+    public Side? ScreenToFill { get; set; }
+
+    /// <summary>
+    /// Puts up a camera at <paramref name="spot"/> and makes <see cref="ScreenToFill"/> its screen (§3.5, Phase 7): a
+    /// SecurityCamera held still, 40 above the floor, looking away from the screen, with an id of its own; the screen's picture
+    /// and the game's files are written on a worker, then the camera is placed and the screen goes on the wall.
+    /// </summary>
+    public void PlaceCamera(MapPoint spot)
+    {
+        if (ScreenToFill is not { OnMap: true, Line: { } line, Sector: { } room } face || Resources is not { } into) return;
+        ScreenToFill = null;
+        if (Project.ClassicFormat)
+        {
+            Notice?.Invoke("Camera screens play in GZDoom only. Change what the project plays in under Map settings to use one.");
+            return;
+        }
+
+        var tall = Math.Max(16, room.CeilingHeight - room.FloorHeight);
+        var (width, slot) = (Math.Min(line.Length, 2 * tall), Slot);
+        var tid = Math.Max(Map.Things.Where(t => t.OnMap).Select(t => t.Tid).DefaultIfEmpty(0).Max(), Smart.Cameras.Screens(Project.CopiedNow()).Where(s => s.Slot == slot).Select(s => s.Tid).DefaultIfEmpty(0).Max()) + 1;
+        var middle = Middle(face);
+        var angle = ((int)Math.Round(Math.Atan2(spot.Y - middle.Y, spot.X - middle.X) * 180 / Math.PI) + 360) % 360;
+        var engineData = Hooks.EngineData;
+        Task.Run(() =>
+        {
+            Smart.CameraScreen screen;
+            try
+            {
+                screen = Smart.Cameras.Make(Project, into, slot, tid, width, tall);
+                ProjectMapInfo.Refresh(Project, into.Game, into.Files, engineData);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+            {
+                Log.Warn($"Making a camera screen failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"The camera screen could not be made. {ex.Message}"));
+                return;
+            }
+
+            _onUiThread(() =>
+            {
+                TexturesChanged?.Invoke();
+                var camera = new Thing { X = spot.X, Y = spot.Y, Type = Smart.Cameras.SecurityCamera, Angle = angle, Height = 40, Tid = tid };
+                foreach (var f in Smart.Things.Everywhere(Engine)) camera.SetFlag(f, true);
+                History.Record("Put up a camera", e => e.Add(camera));
+                if (face.OnMap && PaintSurface(new SurfaceTarget(face, WallPart.Middle, false), screen.Texture) is { } why) Tell(why);
+                else Notice?.Invoke("The screen shows this camera's view in the game. Turn the camera to aim it; G shows GZDoom's own view.");
+            });
+        });
+    }
+
     /// <summary>The colour of the key waiting to be placed (the click on the map that comes next), or null.</summary>
     public string? KeyToPlace
     {
