@@ -655,6 +655,7 @@ internal sealed partial class View3D : Control
         context.FillRectangle(new SolidColorBrush(Color.FromRgb(0x0A, 0x07, 0x08)), new Rect(Bounds.Size));
         if (_shown is { } bitmap) context.DrawImage(bitmap, new Rect(Bounds.Size));
         DrawGesture(context);
+        DrawHandles(context);
         if (_message is null) return;
         var text = new FormattedText(_message, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 14, new SolidColorBrush(Color.FromRgb(0xB3, 0xA9, 0xA6)))
         {
@@ -676,7 +677,7 @@ internal sealed partial class View3D : Control
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         Focus();
-        if (PressTool(e)) return;
+        if (PressTool(e) || ((e.KeyModifiers & KeyModifiers.Control) == 0 && PressHandle(e))) return;
         var pressed = e.GetCurrentPoint(this).Properties;
         if ((e.KeyModifiers & KeyModifiers.Control) != 0 && pressed.IsLeftButtonPressed && Session is not null && _hover is { Kind: HitKind.Floor or HitKind.Ceiling } surface)
         {
@@ -713,7 +714,7 @@ internal sealed partial class View3D : Control
     {
         var at = e.GetPosition(this);
         _lastPointer = at;
-        if (MoveTool(e)) return;
+        if (MoveTool(e) || MoveHandle(e)) return;
         if (_heightDrag is { } drag)
         {
             // The surface follows the pointer up and down, on the 8 grid (Shift: by 1), every step joining one undo step.
@@ -782,7 +783,7 @@ internal sealed partial class View3D : Control
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
-        if (ReleaseTool(e)) return;
+        if (ReleaseTool(e) || ReleaseHandle(e)) return;
         if (_heightDrag is { } drag)
         {
             _heightDrag = null;
