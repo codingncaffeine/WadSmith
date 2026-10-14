@@ -79,7 +79,7 @@ public static class Progression
             if (l.Back >= 0 && !Problems.Flag(l.Extra, "blocking") && !Problems.Flag(l.Extra, "blockplayers") && !Problems.Flag(l.Extra, "blockeverything"))
             {
                 // A door's face: used from its front, it opens the door behind it, locked or not.
-                var locked = l.Special == Doors.DoorLockedRaise && l.Args[0] == 0 && Keys.Opening(l.Args[3], family).Count > 0 ? l.Args[3] : 0;
+                var locked = l.Args[0] == 0 && Doors.LockOf(l.Special, l.Args) is > 0 and var doorLock && Keys.Opening(doorLock, family).Count > 0 ? doorLock : 0;
                 if (hub && locked != 0 && !Keys.Opening(locked, family).Any(onMap.Contains)) locked = 0;
                 Way(f.Sides[l.Front].Sector, f.Sides[l.Back].Sector, locked, i);
             }

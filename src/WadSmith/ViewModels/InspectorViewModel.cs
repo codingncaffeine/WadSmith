@@ -452,8 +452,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
     private string KindOf() => _session.Selection.Items switch
     {
         [Sector s] when Platforms.ControlOf(_session.Geometry, s) is not null => "platform control",
-        [Sector s] => (Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room") + $" {Platforms.Of(_session.Geometry, s).Count}" + ClimbKind(s),
-        [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : LiftOf(l) is not null ? "lift face" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : DoorOf(l) is { } doorArea ? $"door {Doors.Recognise(_session.Geometry, doorArea)?.Settings.Lock} face" : WindowOf(l) is not null ? "window face" : l.Special == 0 ? "wall" : "wall with an action",
+        [Sector s] => (Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Kind} {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room") + $" {Platforms.Of(_session.Geometry, s).Count}" + ClimbKind(s),
+        [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : LiftOf(l) is not null ? "lift face" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : DoorOf(l) is { } doorArea ? $"door {Doors.Recognise(_session.Geometry, doorArea)?.Kind} {Doors.Recognise(_session.Geometry, doorArea)?.Settings.Lock} face" : WindowOf(l) is not null ? "window face" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : $"thing {t.Type}",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
         [var one] => one.GetType().Name,
@@ -631,7 +631,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 break;
             case Sector s when Doors.Recognise(_session.Geometry, s) is not null:
                 Heading = "Door";
-                _summaryOf = () => Doors.Recognise(_session.Geometry, s) is { } d ? Explaining.Describe(d) : "No longer a door.";
+                _summaryOf = () => Doors.Recognise(_session.Geometry, s) is { } d ? Explaining.Describe(d, _session.Engine) : "No longer a door.";
                 Summary = _summaryOf();
                 AddDoor(s);
                 AddDoorKey(s);
@@ -755,7 +755,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             case Line l when DoorOf(l) is { } doorArea:
                 // A face of a door: the door is what was meant, with the face's own details below it.
                 Heading = "Door";
-                _summaryOf = () => Doors.Recognise(_session.Geometry, doorArea) is { } d ? Explaining.Describe(d) : "No longer a door.";
+                _summaryOf = () => Doors.Recognise(_session.Geometry, doorArea) is { } d ? Explaining.Describe(d, _session.Engine) : "No longer a door.";
                 Summary = _summaryOf();
                 AddDoor(doorArea);
                 AddDoorKey(doorArea);
@@ -1203,9 +1203,10 @@ internal sealed partial class InspectorViewModel : ObservableObject
     private void AddDoorLooks(Sector area)
     {
         if (_session.Resources is not { } resources) return;
-        var looks = Doors.Looks(resources.Game.Engine, resources.Textures.Walls);
-        if (looks.Count == 0) return;
         Door? Now() => Doors.Recognise(_session.Geometry, area);
+        var sliding = Now()?.Kind == DoorKind.Animated;
+        var looks = sliding ? Doors.SlidingLooks(resources.AnimatedDoors, resources.Textures.Walls) : Doors.Looks(resources.Game.Engine, resources.Textures.Walls);
+        if (looks.Count == 0) return;
         string Current() => Now()?.Own.FirstOrDefault()?.Front.Top ?? "";
         var choices = looks.Select(t => new PictureChoice(t.Name, $"{t.Name}, {t.Width} × {t.Height}: the door shows this picture, and its doorway becomes {t.Width} wide and {t.Height} tall to fit it.",
             () => string.Equals(Current(), t.Name, StringComparison.OrdinalIgnoreCase),
@@ -1217,7 +1218,38 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 if (why is not null) _session.Tell(why);
             },
             () => resources.Textures.GetWall(t.Name), _session.OnUiThread)).ToList();
-        Rows.Add(new PictureChoiceRow("Looks like", "The door's picture, one of the game's own doors. The doorway takes the picture's height: the wall shows above a short door, and a tall one fills the doorway. Right-click the door on the plan for the same choice.", choices));
+        Rows.Add(new PictureChoiceRow("Looks like", sliding
+            ? "The door's picture, one of the game's sliding doors: only these slide open. The doorway takes the picture's size. Right-click the door on the plan for the same choice."
+            : "The door's picture, one of the game's own doors. The doorway takes the picture's height: the wall shows above a short door, and a tall one fills the doorway. Right-click the door on the plan for the same choice.", choices));
+    }
+
+    /// <summary>
+    /// How the door opens (D54, D62): upward, its ceiling rising, or — in a game with sliding door pictures (Strife) — like Strife's
+    /// doors, its picture sliding open; a door made to slide gets one of those pictures when it shows another.
+    /// </summary>
+    private void AddDoorKind(Sector area)
+    {
+        if (_session.Resources is not { } resources) return;
+        var sliding = Doors.SlidingLooks(resources.AnimatedDoors, resources.Textures.Walls);
+        if (sliding.Count == 0) return;
+        Door? Now() => Doors.Recognise(_session.Geometry, area);
+        Rows.Add(new ChoiceRow("Opens", "How the door opens: upward, its ceiling rising as most doors do, or like Strife's doors, whose picture slides open (Door_Animated: only the game's sliding door pictures slide).", ["Upward", "Like Strife's doors"],
+            () => Now()?.Kind == DoorKind.Animated ? 1 : 0,
+            v =>
+            {
+                if (Now() is not { } d) return;
+                var kind = v == 1 ? DoorKind.Animated : DoorKind.Rises;
+                if (d.Kind == kind) return;
+                var top = d.Own.FirstOrDefault()?.Front.Top ?? "";
+                var width = d.Own.FirstOrDefault()?.Length ?? Doors.StandardWidth;
+                var picture = kind == DoorKind.Animated && !sliding.Any(t => t.Name.Equals(top, StringComparison.OrdinalIgnoreCase))
+                    ? sliding.OrderBy(t => Math.Abs(t.Width - width)).ThenBy(t => t.Name.Equals("DORQTR01", StringComparison.OrdinalIgnoreCase) ? 0 : 1).First()
+                    : null;
+                string? why = null;
+                _session.History.Record(kind == DoorKind.Animated ? "Make the door slide open like Strife's" : "Make the door open upward",
+                    e => why = Doors.SetKind(e, _session.Geometry, d, kind, picture?.Name, picture is null ? null : (picture.Width, picture.Height)));
+                if (why is not null) _session.Tell(why);
+            }));
     }
 
     private void AddDoorKey(Sector area)
@@ -1689,25 +1721,49 @@ internal sealed partial class InspectorViewModel : ObservableObject
             _session.History.Record(label, e => Doors.Change(e, d, settings, monsters, startsOpen));
         }
 
-        Rows.Add(new ChoiceRow("Speed", "How fast it opens and closes: Doom's normal doors or its fast ones (door speed).", ["Normal", "Fast"],
+        var kind = Now()?.Kind ?? DoorKind.Rises;
+        AddDoorKind(area);
+        Rows.Add(new ChoiceRow("Speed", kind == DoorKind.Animated
+                ? "How fast its picture plays as it slides open: Strife's own pace, or twice as fast (tics a frame)."
+                : "How fast it opens and closes: Doom's normal doors or its fast ones (door speed).", ["Normal", "Fast"],
             () => Now()?.Settings.Fast == true ? 1 : 0,
             v => Change(d => (d.Settings with { Fast = v == 1 }, d.Monsters, d.StartsOpen), "Change door speed")));
-        Rows.Add(new ChoiceRow("After opening", "Whether it closes by itself after a few seconds or stays open (Door_Raise or Door_Open).", ["Closes again", "Stays open"],
+        Rows.Add(new ChoiceRow("After opening", kind == DoorKind.Animated
+                ? "Whether it slides shut by itself after a few seconds or stays open (Door_Animated's wait, none to stay open)."
+                : "Whether it closes by itself after a few seconds or stays open (Door_Raise or Door_Open).", ["Closes again", "Stays open"],
             () => Now()?.Settings.StaysOpen == true ? 1 : 0,
             v => Change(d => (d.Settings with { StaysOpen = v == 1 }, d.Monsters, d.StartsOpen), "Change what the door does after opening")));
-        if (_session.Look == Look.For("doom"))
+        AddDoorLooks(area);
+        // The game's locks, and a lock the door already has that is not one of them (a single card of Boom's, a quest lock) by its number.
+        IReadOnlyList<(int Lock, string Name)> locks = Keys.Locks(_session.Engine);
+        if (Now() is { Settings.Lock: var held and not 0 } && !locks.Any(k => k.Lock == held)) locks = [.. locks, (held, string.Create(CultureInfo.InvariantCulture, $"Lock {held}"))];
+        var which = _session.Engine switch
         {
-            AddDoorLooks(area);
-            Rows.Add(new ChoiceRow("Locked with", "The key the player needs to open it; the card or the skull of that colour both work, as in Doom (lock). Dragging a key from Objects onto the door, or right-clicking the door, locks it too.", [.. Doors.DoomLocks.Select(k => k.Name)],
-                () => Now() is { } d ? Math.Max(0, Doors.DoomLocks.ToList().FindIndex(k => k.Lock == d.Settings.Lock)) : 0,
-                v => Change(d => (d.Settings with { Lock = Doors.DoomLocks[v].Lock }, d.Monsters, d.StartsOpen), "Change the door's lock")));
-        }
+            "doom" or "chex" => "the card or the skull of that colour both work, as in Doom (lock)",
+            "strife" => "Strife's keys and passes, as its own doors take them (lock)",
+            _ => "as the game's own doors take them (lock)",
+        };
+        Rows.Add(new ChoiceRow("Locked with", $"The key the player needs to open it; {which}. Dragging a key from Objects onto the door, or right-clicking the door, locks it too.", [.. locks.Select(k => k.Name)],
+            () => Now() is { } d ? Math.Max(0, locks.ToList().FindIndex(k => k.Lock == d.Settings.Lock)) : 0,
+            v => Change(d => (d.Settings with { Lock = locks[v].Lock }, d.Monsters, d.StartsOpen), "Change the door's lock")));
 
         Rows.Add(new FlagRow("Monsters open it too", "Monsters chasing the player can open it (monsteruse). Locked doors never open for monsters.", () => Now()?.Monsters == true,
             on => Change(d => (d.Settings, on, d.StartsOpen), on ? "Let monsters open the door" : "Keep monsters from opening the door")));
-        Rows.Add(new FlagRow("Starts open", "Open when the map starts, its ceiling already raised; it still closes and opens as set.", () => Now()?.StartsOpen == true,
-            on => Change(d => (d.Settings, d.Monsters, on), on ? "Start the door open" : "Start the door closed")));
-        Rows.Add(new InfoRow("Opens to", "How high its ceiling rises: 4 below the lowest ceiling beside it, as the game does it.", () => Now() is { } d ? string.Create(CultureInfo.InvariantCulture, $"{d.OpensTo:0}, {d.OpensTo - area.FloorHeight:0} tall") : "—"));
+        if (kind == DoorKind.Animated)
+        {
+            // GZDoom lifts a sliding door's ceiling by its picture's height at once, then plays the picture's frames on its faces.
+            Rows.Add(new InfoRow("Opens to", "How tall the way through is once it has slid open: as tall as its picture, as the game does it.", () =>
+                Now() is { } d && d.Own.FirstOrDefault()?.Front.Top is { } top && _session.Resources?.Textures.FindWall(top) is { } picture
+                    ? string.Create(CultureInfo.InvariantCulture, $"{area.FloorHeight + picture.Height:0}, {picture.Height} tall")
+                    : "—"));
+        }
+        else
+        {
+            Rows.Add(new FlagRow("Starts open", "Open when the map starts, its ceiling already raised; it still closes and opens as set.", () => Now()?.StartsOpen == true,
+                on => Change(d => (d.Settings, d.Monsters, on), on ? "Start the door open" : "Start the door closed")));
+            Rows.Add(new InfoRow("Opens to", "How high its ceiling rises: 4 below the lowest ceiling beside it, as the game does it.", () => Now() is { } d ? string.Create(CultureInfo.InvariantCulture, $"{d.OpensTo:0}, {d.OpensTo - area.FloorHeight:0} tall") : "—"));
+        }
+
         Rows.Add(new InfoRow("Opened from", "Its own walls, used from the rooms beside it, and walls elsewhere that name its tag (a switch, a line walked over).", () =>
         {
             if (Now() is not { } d) return "—";

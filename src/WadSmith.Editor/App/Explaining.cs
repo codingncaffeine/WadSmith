@@ -25,14 +25,14 @@ public static class Explaining
     {
         null => null,
         Side side => side.Line is { } line ? Explain(line, geometry, resources) : null,
-        Sector s => Room(s, geometry),
-        Line l => Wall(l, geometry),
+        Sector s => Room(s, geometry, resources?.Game.Engine ?? "doom"),
+        Line l => Wall(l, geometry, resources?.Game.Engine ?? "doom"),
         Thing t => Object(t, geometry, resources),
         Vertex => new("Corner", "Where walls meet. Drag it to reshape every wall that ends here; double-click a wall to add another corner on it."),
         _ => null,
     };
 
-    private static Explanation Room(Sector s, MapGeometry g)
+    private static Explanation Room(Sector s, MapGeometry g, string family)
     {
         if (Platforms.ControlOf(g, s) is { } held)
         {
@@ -40,7 +40,7 @@ public static class Explaining
                 "A little room outside the map that the game reads a platform from: its floor is the platform's underside and its ceiling the top. The player never sees it.");
         }
 
-        if (Doors.Recognise(g, s) is { } door) return new("Door", Describe(door) + " Click it to change its key, its speed or how long it stays open.");
+        if (Doors.Recognise(g, s) is { } door) return new("Door", Describe(door, family) + " Click it to change its key, its speed or how long it stays open.");
         if (Lifts.Recognise(g, s) is { } lift) return new("Lift", Describe(lift) + " Click it to change its speed or how long it waits.");
         if (WallWindows.Recognise(g, s) is { } window) return new("Window", Describe(window));
         if (StairsFinder.Recognise(g, s) is { } stairs) return new("Stairs", Describe(stairs, s) + " Click it to change how much each step rises.");
@@ -57,7 +57,7 @@ public static class Explaining
             $"An area of the map with its own floor at {s.FloorHeight:0}, ceiling at {s.CeilingHeight:0} and brightness {s.Light} of 255.{fits} Drag a texture onto it to change its floor; click it to change its heights, light and colour."));
     }
 
-    private static Explanation Wall(Line l, MapGeometry g)
+    private static Explanation Wall(Line l, MapGeometry g, string family)
     {
         if (Switches.Recognise(g, l) is { } sw) return new("Switch", Describe(sw));
         if (Teleports.IsTeleport(l)) return new("Teleporter", Teleports.Recognise(g, l) is { } t ? Describe(t) : "Sends the player somewhere else in the map.");
@@ -70,7 +70,7 @@ public static class Explaining
         // A door's own face: what the door it opens does.
         foreach (var side in (Sector?[])[l.Back?.Sector, l.Front.Sector])
         {
-            if (side is not null && Doors.Recognise(g, side) is { } door && door.Openers.Contains(l)) return new("Door", Describe(door));
+            if (side is not null && Doors.Recognise(g, side) is { } door && door.Openers.Contains(l)) return new("Door", Describe(door, family));
         }
 
         if (l.Back is not { } back)
@@ -193,13 +193,18 @@ public static class Explaining
         return $"Sends {who} who {how} to {where}{(t.Repeats ? "" : ", once")}.";
     }
 
-    public static string Describe(Door d)
+    /// <summary>A door in a sentence: who opens it, from where, with which of the game family's keys, and what it does after.</summary>
+    public static string Describe(Door d, string family = "doom")
     {
         var remote = string.Join(", ", d.RemoteWays());
         var own = d.Own.Any() ? d.Monsters ? "when the player or a monster uses it" : "when the player uses it" : "";
         var who = remote.Length == 0 ? own : own.Length == 0 ? $"from {remote}" : $"{own}, or from {remote}";
-        var key = Doors.DoomLocks.FirstOrDefault(k => k.Lock == d.Settings.Lock && k.Lock != 0).Name is { } name ? $", with the {name.ToLowerInvariant()}" : d.Settings.Lock != 0 ? $", with lock {d.Settings.Lock}" : "";
-        var after = d.Settings.StaysOpen ? "stays open" : string.Create(CultureInfo.InvariantCulture, $"closes again after {d.Settings.Delay / 35.0:0.#} s");
-        return $"Opens {who}{key}; {after}.";
+        var key = Keys.NameOfLock(d.Settings.Lock, family) is { } name ? $", with the {InSentence(name)}" : d.Settings.Lock != 0 ? $", with lock {d.Settings.Lock}" : "";
+        var sliding = d.Kind == DoorKind.Animated;
+        var after = d.Settings.StaysOpen ? "stays open" : string.Create(CultureInfo.InvariantCulture, $"{(sliding ? "slides shut" : "closes")} again after {d.Settings.Delay / 35.0:0.#} s");
+        return $"{(sliding ? "Slides open, like Strife's doors," : "Opens")} {who}{key}; {after}.";
     }
+
+    /// <summary>A name as it reads inside a sentence: "Red key" becomes "red key", "ID badge" stays.</summary>
+    private static string InSentence(string name) => name.Length > 1 && char.IsUpper(name[1]) ? name : char.ToLowerInvariant(name[0]) + name[1..];
 }

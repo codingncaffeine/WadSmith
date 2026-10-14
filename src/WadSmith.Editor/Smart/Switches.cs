@@ -42,7 +42,7 @@ public static class Switches
         var targets = NamesAreas(wall.Special) ? geometry.SectorsTagged(wall.Args[0]).Select(i => f.Sectors[i].Element).OfType<Sector>().Where(s => s.OnMap).ToList() : [];
         var does = wall.Special switch
         {
-            Doors.DoorRaise or Doors.DoorOpen or Doors.DoorLockedRaise => targets.Count > 1 ? "opens doors" : "opens a door",
+            Doors.DoorRaise or Doors.DoorOpen or Doors.DoorLockedRaise or Doors.DoorAnimated => targets.Count > 1 ? "opens doors" : "opens a door",
             Lifts.DownWaitUpStay or Lifts.DownWaitUpStayLip => targets.Count > 1 ? "lowers lifts" : "lowers a lift",
             _ => ActionCatalog.Get(wall.Special)?.Name ?? $"action {wall.Special}",
         };
@@ -163,7 +163,7 @@ public static class Switches
         // What the switch does: what the target's own walls do, by its tag.
         var tag = target.Tag != 0 ? target.Tag : before.HighestTag + 1;
         (int Special, int[] Args) action;
-        if (Doors.Recognise(before, target) is { } door) action = Doors.Encode(door.Settings, 0, door.Openers.FirstOrDefault()?.Args[1], tag);
+        if (Doors.Recognise(before, target) is { } door) action = Doors.Encode(door.Settings, 0, door.Openers.FirstOrDefault()?.Args[1], tag, door.Kind);
         else if (Lifts.Recognise(before, target) is { } lift) action = (Lifts.DownWaitUpStayLip, [tag, lift.Settings.Fast ? Lifts.FastSpeed : Lifts.NormalSpeed, lift.Settings.Delay, 0, 0]);
         else return (null, "A switch opens a door or lowers a lift: select a door or a lift first.");
 

@@ -22,10 +22,12 @@ public sealed class DoorLooksTests
         Assert.Equal(["BIGDOOR2", "DOOR1", "DOOR3", "EXITDOOR", "SPCDOOR1"], Doors.Looks("chex", doom).Select(t => t.Name));
         TextureInfo[] heretic = [Wall("DOORWOOD", 64, 128), Wall("DOORSTON", 64, 128), Wall("GRSTNPB", 64, 128)];
         Assert.Equal(["DOORSTON", "DOORWOOD"], Doors.Looks("heretic", heretic).Select(t => t.Name));
-        TextureInfo[] hexen = [Wall("D_WD01", 64, 128), Wall("D_BRASS1", 64, 128), Wall("FOREST01", 64, 128)];
+        TextureInfo[] hexen = [Wall("D_WD01", 64, 128), Wall("D_BRASS1", 64, 128), Wall("FOREST01", 64, 128), Wall("D_END2", 32, 128), Wall("D_ENDBR", 16, 128)];
         Assert.Equal(["D_BRASS1", "D_WD01"], Doors.Looks("hexen", hexen).Select(t => t.Name));
-        TextureInfo[] strife = [Wall("DORMS01", 64, 128), Wall("DORTRK01", 8, 128), Wall("BRKGRY01", 64, 128)];
-        Assert.Equal(["DORMS01"], Doors.Looks("strife", strife).Select(t => t.Name));
+        // Strife's: not its wide tracks, its door panel, nor the frames after the first of its sliding doors.
+        TextureInfo[] strife = [Wall("DORMS01", 64, 128), Wall("DORTRK01", 8, 128), Wall("DORTRK02", 32, 128), Wall("DORTKL01", 32, 128), Wall("DORTKS01", 64, 72), Wall("BRKGRY01", 64, 128),
+            Wall("DORQTR01", 64, 72), Wall("DORQTR02", 64, 72), Wall("DORQTR08", 64, 72), Wall("SIGLDR01", 128, 128), Wall("SIGLDR02", 128, 128)];
+        Assert.Equal(["DORMS01", "DORQTR01", "SIGLDR01"], Doors.Looks("strife", strife).Select(t => t.Name));
     }
 
     [Fact]

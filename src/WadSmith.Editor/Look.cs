@@ -13,7 +13,7 @@ public sealed record Look(string Floor, string Ceiling, string Wall, double Floo
     /// <summary>Each game family's classic look.</summary>
     public static Look For(string engine) => engine switch
     {
-        "heretic" => new("FLOOR03", "FLAT520", "GRSTNPB", 0, 128, 192, "DOORWOOD", "DOORWOOD", "GRSTNPB", "SW1OFF", "GRSTNPB", "SW2OFF", "FLTWAWA1", Trim: "GRSTNPBV"),
+        "heretic" => new("FLOOR03", "FLAT520", "GRSTNPB", 0, 128, 192, "DOORWOOD", "DOORWOOD", "METL2", "SW1OFF", "GRSTNPB", "SW2OFF", "FLTWAWA1", Trim: "GRSTNPBV"),
         "hexen" => new("F_011", "F_032", "FOREST01", 0, 128, 192, "D_WD01", "D_WD07", "D_ENDBR", "SW_1_UP", "FOREST01", "SW_2_UP", "X_005", Trim: "FOREST02"),
         "strife" => new("F_CONCRP", "F_PAVE01", "BRKGRY01", 0, 128, 192, "DORMS01", "DORWL01", "DORTRK01", "SWEXIT01", "STAIR01", "SWKNOB01", "F_WATR01", Trim: "BRKGRY02"),
         _ => new("FLOOR4_8", "CEIL3_5", "STARTAN3", 0, 128, 192, Trim: "SUPPORT2", LightFlat: "TLITE6_4"),

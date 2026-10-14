@@ -7,6 +7,16 @@ using WadSmith.Editor.Model;
 
 namespace WadSmith.Editor.Smart;
 
+/// <summary>How a door opens (D54, D62).</summary>
+public enum DoorKind
+{
+    /// <summary>Its ceiling rises, as every door of Doom, Heretic and Hexen made of an area does (Door_Raise and the rest).</summary>
+    Rises,
+
+    /// <summary>Its picture slides open, as Strife's sliding doors do (Door_Animated): the frames of an ANIMDEFS <c>animateddoor</c>.</summary>
+    Animated,
+}
+
 /// <summary>How a door behaves, in the words its Inspector uses.</summary>
 /// <param name="Fast">Opens at the fast speed (Doom's "blazing" doors) instead of the normal one.</param>
 /// <param name="StaysOpen">Stays open once opened, instead of closing again after <paramref name="Delay"/>.</param>
@@ -36,6 +46,9 @@ public sealed record Door(Sector Area, IReadOnlyList<Line> Openers, DoorSettings
 
     /// <summary>Whether the door is open as the map starts (its ceiling above its floor).</summary>
     public bool StartsOpen => Area.CeilingHeight > Area.FloorHeight;
+
+    /// <summary>How it opens: a sliding door of Strife's when its walls play a picture's frames, else its ceiling rises.</summary>
+    public DoorKind Kind => Openers.Count > 0 && Openers[0].Special == Doors.DoorAnimated ? DoorKind.Animated : DoorKind.Rises;
 }
 
 /// <summary>
@@ -47,7 +60,8 @@ public static partial class Doors
 {
     /// <summary>
     /// The game's door pictures, for a door's "Looks like": the walls named as the family names its doors, at least 32 wide
-    /// and 64 tall (tracks and key trims are narrow), by name.
+    /// and 64 tall (tracks and key trims are narrow), by name; not the ends of Hexen's doors (D_END*), Strife's tracks and its
+    /// door panel (DORTRK*, DORTKL*, DORTKS01), nor the later frames of Strife's sliding doors (their first frame is the door).
     /// </summary>
     public static IReadOnlyList<TextureInfo> Looks(string engine, IEnumerable<TextureInfo> walls)
     {
@@ -60,6 +74,13 @@ public static partial class Doors
         };
         return [.. walls.Where(w => pattern.IsMatch(w.Name) && w.Width >= 32 && w.Height >= 64).OrderBy(w => w.Name, StringComparer.Ordinal)];
     }
+
+    /// <summary>
+    /// The game's sliding door pictures (Strife's, ANIMDEFS <c>animateddoor</c>) it has as walls, by name: the only pictures a
+    /// door that opens like Strife's can show, since the engine plays their frames and no others.
+    /// </summary>
+    public static IReadOnlyList<TextureInfo> SlidingLooks(IReadOnlyDictionary<string, AnimatedDoor> animated, IEnumerable<TextureInfo> walls) =>
+        [.. walls.Where(w => animated.ContainsKey(w.Name)).OrderBy(w => w.Name, StringComparer.Ordinal)];
 
     /// <summary>
     /// The frames of a doorway (see <see cref="Make"/>): for each of the door's own faces, the area in front of it when it
@@ -226,24 +247,36 @@ public static partial class Doors
     [GeneratedRegex("^DOOR", RegexOptions.IgnoreCase)]
     private static partial Regex HereticDoors();
 
-    [GeneratedRegex("^D_", RegexOptions.IgnoreCase)]
+    [GeneratedRegex("^D_(?!END)", RegexOptions.IgnoreCase)]
     private static partial Regex HexenDoors();
 
-    [GeneratedRegex("^DOR", RegexOptions.IgnoreCase)]
+    [GeneratedRegex("^(SIGLDR01$|DOR(?!TRK|TKL|TKS|(ALN|CHN|CRG|IRS|QTR|STN)0[2-8]))", RegexOptions.IgnoreCase)]
     private static partial Regex StrifeDoors();
 
-    /// <summary>GZDoom's door actions: Door_Open (stays open), Door_Raise (opens, waits, closes), Door_LockedRaise.</summary>
+    /// <summary>GZDoom's door actions: Door_Open (stays open), Door_Raise (opens, waits, closes), Door_LockedRaise, Door_Animated (Strife's sliding doors).</summary>
     public const int DoorOpen = 11;
     public const int DoorRaise = 12;
     public const int DoorLockedRaise = 13;
+    public const int DoorAnimated = 14;
+
+    /// <summary>Whether an action opens a door this model knows: Door_Open, Door_Raise, Door_LockedRaise or Door_Animated.</summary>
+    public static bool IsDoorAction(int special) => special is DoorOpen or DoorRaise or DoorLockedRaise or DoorAnimated;
+
+    /// <summary>The lock a door action carries (Door_LockedRaise and Door_Animated keep it fourth), or 0.</summary>
+    public static int LockOf(int special, IReadOnlyList<int> args) => special is DoorLockedRaise or DoorAnimated ? args[3] : 0;
+
+    /// <summary>
+    /// A sliding door's pace: tics between its frames, Strife's own 4 (its doors take about a second to slide open) and twice
+    /// as fast; and how long Strife's wait open, 3 seconds.
+    /// </summary>
+    public const int AnimatedSpeed = 4;
+    public const int AnimatedFastSpeed = 2;
+    public const int AnimatedWait = 105;
 
     /// <summary>The engine's door speeds (eighths of a unit per tic) and wait (tics): Doom's normal and blazing doors.</summary>
     public const int NormalSpeed = 16;
     public const int FastSpeed = 64;
     public const int Wait = 150;
-
-    /// <summary>Doom's key locks as Doom's own doors use them: the card or the skull of that colour.</summary>
-    public static readonly IReadOnlyList<(int Lock, string Name)> DoomLocks = [(0, "Nothing"), (129, "Red key"), (130, "Blue key"), (131, "Yellow key")];
 
     /// <summary>
     /// The door <paramref name="area"/> is, or null when it is not one. Looks only at the area's walls,
@@ -285,15 +318,23 @@ public static partial class Doors
         DoorRaise => new DoorSettings(args[1] >= FastSpeed, false, 0, args[2]),
         DoorOpen => new DoorSettings(args[1] >= FastSpeed, true, 0),
         DoorLockedRaise => new DoorSettings(args[1] >= FastSpeed, args[2] == 0, args[3], args[2] == 0 ? Wait : args[2]),
+        DoorAnimated => new DoorSettings(args[1] is > 0 and < AnimatedSpeed, args[2] == 0, args[3], args[2] == 0 ? AnimatedWait : args[2]),
         _ => null,
     };
 
     /// <summary>
     /// The door action and arguments for <paramref name="settings"/>, keeping the light tag (a classic
-    /// door's tag that makes lights follow it) and any speed that is neither the normal nor the fast one.
+    /// door's tag that makes lights follow it) and any speed that is neither the normal nor the fast one; a sliding door of
+    /// Strife's (<paramref name="kind"/>) gets Door_Animated, its pace in tics a frame.
     /// </summary>
-    public static (int Special, int[] Args) Encode(DoorSettings settings, int lightTag, int? speed = null, int tag = 0)
+    public static (int Special, int[] Args) Encode(DoorSettings settings, int lightTag, int? speed = null, int tag = 0, DoorKind kind = DoorKind.Rises)
     {
+        if (kind == DoorKind.Animated)
+        {
+            var pace = speed is { } frame && frame is > 0 and not AnimatedSpeed and not AnimatedFastSpeed && (frame < AnimatedSpeed) == settings.Fast ? frame : settings.Fast ? AnimatedFastSpeed : AnimatedSpeed;
+            return (DoorAnimated, [tag, pace, settings.StaysOpen ? 0 : settings.Delay, settings.Lock, 0]);
+        }
+
         var s = speed is { } given && given is not NormalSpeed and not FastSpeed && (given >= FastSpeed) == settings.Fast ? given : settings.Fast ? FastSpeed : NormalSpeed;
         if (settings.Lock != 0) return (DoorLockedRaise, [tag, s, settings.StaysOpen ? 0 : settings.Delay, settings.Lock, lightTag]);
         if (settings.StaysOpen) return (DoorOpen, [tag, s, lightTag, 0, 0]);
@@ -614,7 +655,7 @@ public static partial class Doors
     {
         foreach (var l in door.Openers)
         {
-            var (special, args) = Encode(settings, LightTag(l.Special, l.Args), l.Args[1], l.Args[0]);
+            var (special, args) = Encode(settings, LightTag(l.Special, l.Args), l.Args[1], l.Args[0], door.Kind);
             edit.Set(l, x => x.Special, (x, v) => x.Special = v, special);
             for (var i = 0; i < args.Length; i++)
             {
@@ -625,7 +666,31 @@ public static partial class Doors
             edit.Flag(l, "monsteruse", monsters);
         }
 
-        var ceiling = startsOpen ? Math.Max(door.OpensTo, door.Area.FloorHeight) : door.Area.FloorHeight;
+        // A sliding door of Strife's rises by its picture's height from where it stands: it starts closed.
+        var ceiling = startsOpen && door.Kind == DoorKind.Rises ? Math.Max(door.OpensTo, door.Area.FloorHeight) : door.Area.FloorHeight;
         edit.Set(door.Area, s => s.CeilingHeight, (s, v) => s.CeilingHeight = v, ceiling);
+    }
+
+    /// <summary>
+    /// Makes a door open another way (D62) through <paramref name="edit"/>: every wall that opens it gets the action of
+    /// <paramref name="kind"/> with the same behaviour, its lock kept, and it starts closed. A sliding door of Strife's plays its
+    /// picture's frames, so it gets <paramref name="picture"/> — one of the game's sliding door pictures, its size giving the
+    /// doorway's (see <see cref="Dress"/>). Returns why the doorway is not the picture's width, or null.
+    /// </summary>
+    public static string? SetKind(StructureEdit edit, MapGeometry geometry, Door door, DoorKind kind, string? picture = null, (int Width, int Height)? size = null)
+    {
+        foreach (var l in door.Openers)
+        {
+            var (special, args) = Encode(door.Settings, kind == DoorKind.Rises ? LightTag(l.Special, l.Args) : 0, null, l.Args[0], kind);
+            edit.Set(l, x => x.Special, (x, v) => x.Special = v, special);
+            for (var i = 0; i < args.Length; i++)
+            {
+                var k = i;
+                edit.Set(l, x => x.Args[k], (x, v) => x.Args[k] = v, args[k]);
+            }
+        }
+
+        edit.Set(door.Area, s => s.CeilingHeight, (s, v) => s.CeilingHeight = v, door.Area.FloorHeight);
+        return picture is null ? null : Dress(edit, geometry, door, picture, size);
     }
 }

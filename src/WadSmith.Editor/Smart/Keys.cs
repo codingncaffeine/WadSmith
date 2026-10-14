@@ -36,6 +36,29 @@ public static class Keys
         _ => DoomKeys,
     };
 
+    /// <summary>
+    /// Strife's locks as the engine's LOCKDEFS names them (its keys are mostly given by people, so they are not placed keys here):
+    /// the lock a door takes for each.
+    /// </summary>
+    private static readonly IReadOnlyList<(int Lock, string Name)> StrifeLocks =
+    [
+        (1, "Base key"), (2, "Governor's key"), (3, "Travel passcard"), (4, "ID badge"), (5, "Prison key"), (6, "Severed hand"),
+        (7, "Power key 1"), (8, "Power key 2"), (9, "Power key 3"), (10, "Gold key"), (11, "ID card"), (12, "Silver key"), (13, "Oracle key"),
+        (14, "Military key"), (15, "Order key"), (16, "Warehouse key"), (17, "Brass key"), (18, "Red crystal key"), (19, "Blue crystal key"),
+        (20, "Chapel key"), (21, "Catacomb key"), (22, "Security key"), (23, "Core key"), (24, "Mauler key"), (25, "Factory key"), (26, "Mine key"),
+        (27, "New key 5"), (50, "Prison pass"), (51, "Oracle pass"),
+    ];
+
+    /// <summary>
+    /// The locks a door can take in a game family, "Nothing" first: Doom's and Heretic's colours (locks 129–131, either key of a
+    /// colour in Doom), Hexen's eleven named keys, Strife's keys and passes.
+    /// </summary>
+    public static IReadOnlyList<(int Lock, string Name)> Locks(string family) =>
+        [(0, "Nothing"), .. family == "strife" ? StrifeLocks : Of(family).Select(k => (k.Lock, char.ToUpperInvariant(k.Colour[0]) + k.Colour[1..] + " key"))];
+
+    /// <summary>The name of a lock in a game family ("Red key", "Steel key", "ID badge"), or null for none or one it does not have.</summary>
+    public static string? NameOfLock(int lockNumber, string family = "doom") => lockNumber == 0 ? null : Locks(family).FirstOrDefault(l => l.Lock == lockNumber).Name;
+
     /// <summary>The colour of a key object in a game family, or null.</summary>
     public static string? ColourOf(int type, string family = "doom") => Of(family).FirstOrDefault(k => k.Things.Contains(type))?.Colour;
 
@@ -56,12 +79,12 @@ public static class Keys
     /// <summary>The colour a lock needs in a game family, or null.</summary>
     public static string? ColourOfLock(int lockNumber, string family = "doom") => Opening(lockNumber, family) is [var first, ..] ? ColourOf(first, family) : null;
 
-    /// <summary>The lock a door action carries (Door_LockedRaise keeps it fourth), or 0.</summary>
-    public static int LockOf(Line wall) => wall.Special == Doors.DoorLockedRaise ? wall.Args[3] : 0;
+    /// <summary>The lock a door action carries (Door_LockedRaise and Door_Animated keep it fourth), or 0.</summary>
+    public static int LockOf(Line wall) => Doors.LockOf(wall.Special, wall.Args);
 
     /// <summary>The walls whose door action a key of <paramref name="type"/> opens.</summary>
     public static IReadOnlyList<Line> DoorsOpenedBy(MapGeometry geometry, int type, string family = "doom") =>
-        [.. geometry.Frame.Lines.Where(l => l.Element is { OnMap: true } && l.Special == Doors.DoorLockedRaise && Opening(l.Args[3], family).Contains(type)).Select(l => l.Element!)];
+        [.. geometry.Frame.Lines.Where(l => l.Element is { OnMap: true } && Opening(Doors.LockOf(l.Special, l.Args), family).Contains(type)).Select(l => l.Element!)];
 
     /// <summary>The key objects of a colour on the map.</summary>
     public static IReadOnlyList<Thing> OfColour(MapGeometry geometry, string colour, string family = "doom")

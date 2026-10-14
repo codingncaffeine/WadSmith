@@ -842,7 +842,7 @@ internal sealed partial class EditorViewModel : ObservableObject
     /// <summary>The Guide's chapters, for the Guide menu.</summary>
     /// <summary>
     /// The choices a right-click on the plan offers for an element: a door (its area, or one of its faces) gets its locks
-    /// (Doom's keys) and its looks, the game's own door pictures; anything else gets none, and no menu opens.
+    /// (the game's keys) and its looks, the game's own door pictures; anything else gets none, and no menu opens.
     /// </summary>
     public Func<Element, IReadOnlyList<MenuChoice>> ContextMenuFor => element =>
     {
@@ -856,21 +856,23 @@ internal sealed partial class EditorViewModel : ObservableObject
         if (area is null || Doors.Recognise(Session.Geometry, area) is not { } found) return [];
         var choices = new List<MenuChoice>();
 
-        // Doom's keys: lock the door with one, or unlock it; the key itself then goes somewhere the player reaches first.
-        if (Session.Look == Look.For("doom"))
+        // The game's keys (Doom's and Heretic's colours, Hexen's named keys): lock the door with one, or unlock it; the key itself
+        // then goes somewhere the player reaches first. Strife's keys are mostly given by people: its doors' Inspector lists them.
+        if (Keys.Of(Session.Engine) is { Count: > 0 } keys)
         {
-            var locked = Keys.ColourOfLock(found.Settings.Lock);
-            foreach (var (colour, _, _, _) in Keys.Doom)
+            var locked = Keys.ColourOfLock(found.Settings.Lock, Session.Engine);
+            var doom = Session.Engine is "doom" or "chex";
+            foreach (var key in keys)
             {
-                var c = colour;
-                choices.Add(new MenuChoice($"{(locked == c ? "✓ " : "")}Lock with the {c} key", $"The player needs the {c} key (the card or the skull) to open this door; the game tells them so. Put that key somewhere they reach first.", () => Session.LockDoor(area, c)));
+                var c = key.Colour;
+                choices.Add(new MenuChoice($"{(locked == c ? "✓ " : "")}Lock with the {c} key", $"The player needs the {c} key{(doom ? " (the card or the skull)" : "")} to open this door; the game tells them so. Put that key somewhere they reach first.", () => Session.LockDoor(area, c)));
             }
 
-            if (locked is not null) choices.Add(new MenuChoice("Unlock", "Takes the lock away: the door opens for anyone.", () => Session.LockDoor(area, null)));
+            if (found.Settings.Lock != 0) choices.Add(new MenuChoice("Unlock", "Takes the lock away: the door opens for anyone.", () => Session.LockDoor(area, null)));
             choices.Add(new MenuChoice("-", "", () => { }));
         }
 
-        var looks = Doors.Looks(resources.Game.Engine, resources.Textures.Walls);
+        var looks = found.Kind == DoorKind.Animated ? Doors.SlidingLooks(resources.AnimatedDoors, resources.Textures.Walls) : Doors.Looks(resources.Game.Engine, resources.Textures.Walls);
         choices.AddRange(looks.Select(t => new MenuChoice($"Looks like {t.Name}", $"{t.Name}, {t.Width} × {t.Height}: the door shows this picture, and its doorway becomes {t.Width} wide and {t.Height} tall to fit it.", () =>
         {
             if (Doors.Recognise(Session.Geometry, area) is not { } door) return;

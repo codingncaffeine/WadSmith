@@ -27,9 +27,10 @@ public static class EditScript
         light X Y                   a light
         door X Y [WIDTH]            a door in the wall nearest the point: the whole wall, or WIDTH wide in its middle
                                     (64 there on a wall longer than a door can be)
-        lock X Y COLOUR|NUMBER      the door at the point locked with the red, blue or yellow key, or with a lock by its number
+        lock X Y COLOUR|NUMBER      the door at the point locked with the game's key of that colour (red, blue or yellow in Doom;
+                                    green in Heretic; steel, cave, axe … in Hexen), or with a lock by its number
         oneway X Y SX SY            the door at the point opened from one side only: not from the side of SX SY
-        key COLOUR X Y              a keycard
+        key COLOUR X Y              the game's key of that colour (a keycard in Doom)
         window X Y [WIDTH]          a window in the wall nearest the point
         lift X Y                    the room at the point becomes a lift
         stairs X0 Y0 X1 Y1 [x|y]    stairs from the first point (bottom) to the second (top), running along x or y
@@ -133,7 +134,7 @@ public static class EditScript
                 break;
             case "lock":
                 var colour = w[3].ToLowerInvariant();
-                var lockNumber = int.TryParse(colour, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : Keys.Doom.FirstOrDefault(k => k.Colour == colour).Lock;
+                var lockNumber = int.TryParse(colour, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : Keys.Of(engine).FirstOrDefault(k => k.Colour == colour)?.Lock ?? 0;
                 if (lockNumber <= 0) throw new ArgumentException($"no key is {w[3]}");
                 if (Doors.Recognise(g, Room(1)) is not { } door) throw new ArgumentException("no door there");
                 Record("Change the door's lock", e => Doors.Change(e, door, door.Settings with { Lock = lockNumber }, false, door.StartsOpen));
@@ -147,9 +148,8 @@ public static class EditScript
                 break;
             case "key":
                 var kc = w[1].ToLowerInvariant();
-                var key = Keys.Doom.FirstOrDefault(k => k.Colour == kc);
-                if (key.Colour is null) throw new ArgumentException($"no key is {w[1]}");
-                Record("Place a thing", e => e.Add(Thing(key.Card, P(2), 90, engine)));
+                var key = Keys.Of(engine).FirstOrDefault(k => k.Colour == kc) ?? throw new ArgumentException($"no key is {w[1]}");
+                Record("Place a thing", e => e.Add(Thing(key.Things[0], P(2), 90, engine)));
                 made = $"the {kc} key";
                 break;
             case "window":

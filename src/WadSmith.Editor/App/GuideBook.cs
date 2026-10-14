@@ -199,7 +199,7 @@ public static class GuideBook
             "ceiling" => Changed(atStart.Sectors, now.Sectors, s => s.Element, s => s.CeilingHeight),
             "heights" => happened.Contains(GuideEvents.Heights),
             "doorlook" => Changed(DoorFaces(atStart), DoorFaces(now), x => x.Element, x => x.Top),
-            "lock" => Up(f => Lines(f, l => l.Special == Smart.Doors.DoorLockedRaise && l.Args[3] != 0)) > 0,
+            "lock" => Up(f => Lines(f, l => Smart.Doors.LockOf(l.Special, l.Args) != 0)) > 0,
             "key" => Up(f => Things(f, (c, _) => c == ThingCategory.Key)) > 0,
             "switch" => Up(f => Lines(f, l => IsDoor(l.Special) && l.Args[0] != 0)) > 0,
             "lift" => Up(f => Lines(f, l => l.Special is Smart.Lifts.DownWaitUpStay or Smart.Lifts.DownWaitUpStayLip)) > 0,
@@ -225,7 +225,7 @@ public static class GuideBook
         };
     }
 
-    private static bool IsDoor(int special) => special is Smart.Doors.DoorOpen or Smart.Doors.DoorRaise or Smart.Doors.DoorLockedRaise;
+    private static bool IsDoor(int special) => Smart.Doors.IsDoorAction(special);
 
     private static int Rooms(MapFrame f) => f.Sectors.Count(s => s.Element is not null);
 

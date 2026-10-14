@@ -1,6 +1,7 @@
 version "4.6"
 
-// Uses every wall that opens a door (by tag, a switch, or the area behind with none) or lowers a lift (by tag, or the
+// Uses every wall that opens a door (by tag, a switch, or the area behind with none; Strife's sliding doors too, whose ceiling
+// jumps up by their picture's height as they start to slide) or lowers a lift (by tag, or the
 // area behind with none) as the player would, one at a time: notes the area's ceiling or floor,
 // uses the wall from its front, reads it again 2 seconds later, then waits for the door to close or
 // the lift to come back before the next. WadSmith checks the doors and lifts it makes with this.
@@ -36,7 +37,7 @@ class WadSmithDoorCheck : StaticEventHandler
 		for (int i = 0; i < level.Lines.Size(); i++)
 		{
 			Line l = level.Lines[i];
-			if ((l.special == 11 || l.special == 12 || l.special == 13) && (l.args[0] != 0 || l.backsector)) openers.Push(i);
+			if ((l.special == 11 || l.special == 12 || l.special == 13 || l.special == 14) && (l.args[0] != 0 || l.backsector)) openers.Push(i);
 			else if (IsLift(l) && TargetOf(l)) openers.Push(i);
 			else if (IsTeleport(l) && (l.activation & SPAC_Cross)) openers.Push(i);
 		}
@@ -115,7 +116,7 @@ class WadSmithDoorCheck : StaticEventHandler
 			phase = 2;
 		}
 		// Doors that stay open (Door_Open, or locked with no delay) do not close: on to the next wall at once.
-		else if (phase == 2 && ((!lift && (l.special == 11 || (l.special == 13 && l.args[2] == 0))) || (lift ? target.CenterFloor() >= closed - 0.5 : target.CenterCeiling() <= closed + 0.5) || since > 700))
+		else if (phase == 2 && ((!lift && (l.special == 11 || ((l.special == 13 || l.special == 14) && l.args[2] == 0))) || (lift ? target.CenterFloor() >= closed - 0.5 : target.CenterCeiling() <= closed + 0.5) || since > 700))
 		{
 			next++;
 			phase = 0;

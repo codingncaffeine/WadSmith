@@ -590,7 +590,7 @@ public static class Problems
         var doors = new HashSet<int>();
         foreach (var l in f.Lines)
         {
-            if (l.Element is null || l.Special is not (Doors.DoorOpen or Doors.DoorRaise or Doors.DoorLockedRaise)) continue;
+            if (l.Element is null || !Doors.IsDoorAction(l.Special)) continue;
             if (l.Args[0] == 0 && l.Back >= 0) doors.Add(f.Sides[l.Back].Sector);
         }
 
@@ -690,7 +690,7 @@ public static class Problems
         var doors = new HashSet<int>();
         foreach (var l in f.Lines)
         {
-            if (l.Element is not null && l.Back >= 0 && l.Args[0] == 0 && l.Special is Doors.DoorOpen or Doors.DoorRaise or Doors.DoorLockedRaise) doors.Add(f.Sides[l.Back].Sector);
+            if (l.Element is not null && l.Back >= 0 && l.Args[0] == 0 && Doors.IsDoorAction(l.Special)) doors.Add(f.Sides[l.Back].Sector);
         }
 
         var sliding = f.Lines.Where(l => l.Element is not null && l.Back < 0 && doors.Contains(f.Sides[l.Front].Sector) && f.Sides[l.Front].Middle is not ("-" or "") && !Flag(l.Extra, "dontpegbottom")).Select(l => l.Element!).ToList();
@@ -713,7 +713,7 @@ public static class Problems
     {
         foreach (var (colour, keys) in walk.KeysOutOfReach)
         {
-            var doors = g.Frame.Lines.Where(l => l.Element is not null && l.Special == Doors.DoorLockedRaise && Keys.ColourOfLock(l.Args[3], engine) == colour).Select(l => (Element)l.Element!).ToList();
+            var doors = g.Frame.Lines.Where(l => l.Element is not null && Keys.ColourOfLock(Doors.LockOf(l.Special, l.Args), engine) == colour).Select(l => (Element)l.Element!).ToList();
             found.Add(new Problem("key-out-of-reach-" + colour, Severity.Error, $"The {colour} key can't be reached from the player start: every way to it goes through a locked door the player can't open first.", [.. keys, .. doors]));
         }
     }
@@ -736,13 +736,12 @@ public static class Problems
         var present = f.Things.Where(t => t.Element is not null).Select(t => t.Type).ToHashSet();
         foreach (var l in f.Lines)
         {
-            if (l.Element is null || l.Special != Doors.DoorLockedRaise) continue;
-            var lockNumber = l.Args[3];
+            if (l.Element is null || Doors.LockOf(l.Special, l.Args) is not (> 0 and var lockNumber)) continue;
             var needed = Keys.Opening(lockNumber, engine);
             if (needed.Count == 0 || needed.Any(present.Contains)) continue;
             var colour = Keys.ColourOf(needed[0], engine)!;
             if (found.Any(p => p.Rule == "missing-key-" + colour)) continue;
-            var doorsOfColour = f.Lines.Where(x => x.Element is not null && x.Special == Doors.DoorLockedRaise && x.Args[3] == lockNumber).Select(x => (Element)x.Element!).ToList();
+            var doorsOfColour = f.Lines.Where(x => x.Element is not null && Doors.LockOf(x.Special, x.Args) == lockNumber).Select(x => (Element)x.Element!).ToList();
             found.Add(new Problem("missing-key-" + colour, Severity.Error, $"The {colour} key door can never open: there's no {colour} key in the map.", doorsOfColour));
         }
     }

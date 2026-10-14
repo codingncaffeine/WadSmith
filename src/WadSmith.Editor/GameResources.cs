@@ -37,6 +37,11 @@ public sealed class GameResources
 
     private Lazy<IReadOnlySet<string>>? _switches;
 
+    /// <summary>The pictures that are sliding doors in this game (Strife's, ANIMDEFS <c>animateddoor</c>), by name; read on first use.</summary>
+    public IReadOnlyDictionary<string, Core.Graphics.AnimatedDoor> AnimatedDoors => _animatedDoors?.Value ?? new Dictionary<string, Core.Graphics.AnimatedDoor>();
+
+    private Lazy<IReadOnlyDictionary<string, Core.Graphics.AnimatedDoor>>? _animatedDoors;
+
     /// <summary>The music the game (and the project) has, by name, A to Z: every lump or file holding a MUS or MIDI score, or an Ogg, FLAC or MP3 stream.</summary>
     public IReadOnlyList<string> Music { get; private set; }
 
@@ -313,6 +318,7 @@ public sealed class GameResources
         var made = new GameResources(found.Game, files, stack, new TextureLibrary(stack), new SpriteIndex(stack), things, FindMusic(stack)) { ProjectFiles = projectFiles };
         foreach (var sky in skyboxes) made.AddSky(sky);
         made._switches = new(() => Core.Graphics.SwitchPictures.Read(engineData, found.Game.Engine, stack));
+        made._animatedDoors = new(() => Core.Graphics.AnimatedDoors.Read(engineData, stack));
         return made;
     }
 

@@ -19,6 +19,13 @@ public static class Recognition
     private static readonly HashSet<int> LocalDoors = [1, 26, 27, 28, 31, 32, 33, 34, 117, 118];
     private static readonly HashSet<int> RemoteDoors = [2, 4, 29, 46, 61, 63, 86, 90, 99, 103, 105, 106, 108, 109, 111, 112, 114, 115, 133, 134, 135, 136, 137];
 
+    /// <summary>
+    /// Strife's doors (GZDoom's xlat/strife.txt): Doom's, its locked doors for its many keys, and its sliding doors (144 opened
+    /// from their own walls, 207 by tag).
+    /// </summary>
+    private static readonly HashSet<int> StrifeLocalDoors = [.. LocalDoors, 144, 156, 157, 158, 159, 160, 161, 165, 166, 169, 170, 190, 205, 217, 221, 224, 225];
+    private static readonly HashSet<int> StrifeRemoteDoors = [.. RemoteDoors, 151, 152, 153, 162, 163, 164, 167, 168, 171, 172, 173, 176, 191, 192, 207, 223];
+
     /// <summary>Doom's lift actions (W1, S1, SR, WR, blazing).</summary>
     private static readonly HashSet<int> Lifts = [10, 21, 62, 88, 120, 121, 122, 123];
 
@@ -45,7 +52,7 @@ public static class Recognition
         });
     }
 
-    /// <summary>What a Doom-format map as the game shipped it marks as each kind (windows have no mark, so none are listed).</summary>
+    /// <summary>What a Doom-format map as the game shipped it marks as each kind (windows have no mark, so none are listed); Strife's doors by Strife's own numbers.</summary>
     public static Recognised Expected(MapModel classic)
     {
         var doors = new HashSet<int>();
@@ -60,10 +67,11 @@ public static class Recognition
             }
         }
 
+        var (localDoors, remoteDoors) = classic.Namespace == "strife" ? (StrifeLocalDoors, StrifeRemoteDoors) : (LocalDoors, RemoteDoors);
         foreach (var l in classic.Lines)
         {
-            if (LocalDoors.Contains(l.Special) && l.Back >= 0) doors.Add(classic.Sides[l.Back].Sector);
-            if (RemoteDoors.Contains(l.Special)) Tagged(l, doors);
+            if (localDoors.Contains(l.Special) && l.Back >= 0) doors.Add(classic.Sides[l.Back].Sector);
+            if (remoteDoors.Contains(l.Special)) Tagged(l, doors);
             if (Lifts.Contains(l.Special)) Tagged(l, lifts);
         }
 

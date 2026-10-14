@@ -96,8 +96,8 @@ public static class SwitchPictures
         }
     }
 
-    // Words of the text with // and /* */ comments left out and quotes taken off.
-    private static List<string> Tokens(string text)
+    /// <summary>Words of the text with // and /* */ comments left out and quotes taken off (ANIMDEFS's own way of reading).</summary>
+    internal static List<string> Tokens(string text)
     {
         var sb = new StringBuilder(text.Length);
         for (var i = 0; i < text.Length; i++)

@@ -383,7 +383,7 @@ public static class Fit
         var tags = new HashSet<int>();
         foreach (var l in f.Lines)
         {
-            if (l.Element is null || l.Special is not (Doors.DoorOpen or Doors.DoorRaise or Doors.DoorLockedRaise)) continue;
+            if (l.Element is null || !Doors.IsDoorAction(l.Special)) continue;
             if (l.Args[0] != 0) tags.Add(l.Args[0]);
             else if (l.Back >= 0 && f.Sides[l.Back].Sector >= 0) doors.Add(f.Sides[l.Back].Sector);
         }

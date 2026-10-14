@@ -61,7 +61,7 @@ public static class MapReporting
             keyLines.Add(new($"{Name(group.Key)}{(group.Count() > 1 ? $" (×{group.Count()})" : "")} opens {(opens == 0 ? "no door here" : opens == 1 ? "1 door" : $"{opens} doors")}.", new(first.X, first.Y)));
         }
 
-        foreach (var locked in map.Lines.Where(l => l.OnMap && l.Special == Doors.DoorLockedRaise && l.Args[3] != 0).GroupBy(l => l.Args[3]))
+        foreach (var locked in map.Lines.Where(l => l.OnMap && Doors.LockOf(l.Special, l.Args) != 0).GroupBy(l => Doors.LockOf(l.Special, l.Args)))
         {
             var needs = Keys.Opening(locked.Key, family);
             if (needs.Count == 0 || things.Any(t => needs.Contains(t.Type))) continue;
