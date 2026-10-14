@@ -1513,6 +1513,9 @@ internal sealed partial class InspectorViewModel : ObservableObject
         }));
     }
 
+    /// <summary>GZDoom's Line_Mirror: a one-sided wall that reflects its room.</summary>
+    private const int Mirror = 182;
+
     /// <summary>A wall's rows; <paramref name="sign"/> false when its face's rows (which hold the sign) are shown above.</summary>
     private void AddLine(Line l, bool sign = true)
     {
@@ -1545,6 +1548,12 @@ internal sealed partial class InspectorViewModel : ObservableObject
 
             Rows.Add(new FlagRow("Upper texture hangs from the ceiling", "The upper texture starts at the higher ceiling and runs down, instead of rising from the opening below it (upper unpegged, dontpegtop).", () => l.Flag("dontpegtop"), on => Flag(l, "dontpegtop", on, "Change texture anchoring")));
             Rows.Add(new FlagRow("Lower texture continues the wall above", "The lower texture is placed as if the wall ran down from the ceiling, so it carries on the pattern above it (lower unpegged, dontpegbottom).", () => l.Flag("dontpegbottom"), on => Flag(l, "dontpegbottom", on, "Change texture anchoring")));
+        }
+
+        if (l.Back is null && l.Special is 0 or Mirror && !_session.Project.ClassicFormat)
+        {
+            Rows.Add(new FlagRow("A mirror", "The wall reflects the room in the game (GZDoom's Line_Mirror, special 182); the 3D view shows its picture, G shows GZDoom's own view with the reflection.",
+                () => l.Special == Mirror, on => Set(l, on ? "Make the wall a mirror" : "Make the mirror a plain wall", e => e.Special, (e, x) => e.Special = x, on ? Mirror : 0)));
         }
 
         if (sign && l.Back is null) AddSign(l.Front);
