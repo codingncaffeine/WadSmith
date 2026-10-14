@@ -103,7 +103,8 @@ public sealed class ModelPropInTheWindowTests
                 var box = window.GetVisualDescendants().OfType<ComboBox>().First(c => c.IsEffectivelyVisible && ReferenceEquals(c.DataContext, row));
                 box.SelectedIndex = 1;
                 for (var i = 0; i < 400 && WadSmith.Editor.Editing.ModelProps.TurnOf(session.Project.CopiedNow(), WadSmith.Editor.Editing.ModelProps.Of(session.Project, prop.Type)!) != 90; i++) Ui.Pump(0.05);
-                Ui.Pump(0.5);
+                // The record is written on the worker before the window hears of it: wait for what the window says.
+                Ui.Until(() => editor.Status.StartsWith("The model is turned", StringComparison.Ordinal));
                 return $"{was} → {Front()}; row shows {row.Value}; status '{editor.Status}'";
             }
             finally
@@ -260,8 +261,8 @@ public sealed class ModelPropInTheWindowTests
 
     /// <summary>
     /// A GIF on a room's floor plays on the plan, as the user sees it: brought in by the shelf's button, its tile dropped
-    /// inside the new map's room, then the window's frames over half a second (the GIF loops every six tics, 171 ms) show the
-    /// room's middle in more than one colour. A plan that is not drawn again as time passes shows one.
+    /// inside the new map's room, then the window's pictures show the room's middle changing again and again (the GIF loops
+    /// every six tics, 171 ms). A plan that is not drawn again as time passes, or draws one frame only, changes it at most once.
     /// </summary>
     [Fact]
     public async Task AGifOnARoomsFloorPlaysOnThePlan()
@@ -293,18 +294,37 @@ public sealed class ModelPropInTheWindowTests
                 for (var i = 0; i < 200 && session.Geometry.AreaAt(middle)?.FloorTexture != tile.Drop.Texture; i++) Ui.Pump(0.05);
                 Ui.Pump(0.5);
 
+                // A block of 24 × 24 pixels round the middle, summed: at the zoom of any plan it holds at least one whole tile of
+                // the 4 × 4 picture, so the second frame's corner shows in it wherever the tiles fall on the screen (one pixel can
+                // sit on a texel no frame changes). The plan plays when the block changes again and again: a picture that arrives
+                // late changes it once. Pictures are taken until then, for up to half a minute, not for a fixed while.
                 var at = canvas.TranslatePoint(canvas.ToScreen(middle), window)!.Value;
-                var seen = new HashSet<int>();
-                for (var i = 0; i < 25; i++)
+                long? last = null;
+                var (changes, pictures) = (0, 0);
+                Ui.Until(() =>
                 {
-                    Ui.Pump(0.02);
                     using var frame = window.CaptureRenderedFrame()!;
                     using var pixels = frame.Lock();
                     var scale = frame.PixelSize.Width / window.Bounds.Width;
-                    seen.Add(System.Runtime.InteropServices.Marshal.ReadInt32(pixels.Address + (int)(at.Y * scale) * pixels.RowBytes + (int)(at.X * scale) * 4));
-                }
+                    var (cx, cy) = ((int)(at.X * scale), (int)(at.Y * scale));
+                    long sum = 0;
+                    for (var y = cy - 12; y < cy + 12; y++)
+                    {
+                        for (var x = cx - 12; x < cx + 12; x++)
+                        {
+                            var word = System.Runtime.InteropServices.Marshal.ReadInt32(pixels.Address + y * pixels.RowBytes + x * 4);
+                            sum += (word & 255) + ((word >> 8) & 255) * 1000 + ((word >> 16) & 255) * 1000000L;
+                        }
+                    }
 
-                return $"floor {session.Geometry.AreaAt(middle)?.FloorTexture}; colours seen {(seen.Count > 1 ? "several" : "one")}";
+                    if (last is { } before && before != sum) changes++;
+                    (last, pictures) = (sum, pictures + 1);
+                    return changes >= 3;
+                });
+
+                var zoom = (canvas.ToScreen(new MapPoint(middle.X + 64, middle.Y)).X - canvas.ToScreen(middle).X) / 64;
+                return $"floor {session.Geometry.AreaAt(middle)?.FloorTexture}; "
+                    + (changes >= 3 ? "the plan plays it" : $"the middle changed {changes} times in {pictures} pictures (zoom {zoom:0.###}, moving floors in the picture {canvas.PlaysMovingFloors})");
             }
             finally
             {
@@ -312,7 +332,7 @@ public sealed class ModelPropInTheWindowTests
             }
         });
 
-        Assert.Equal("floor PORTA000; colours seen several", said);
+        Assert.Equal("floor PORTA000; the plan plays it", said);
     }
 
     [Fact]

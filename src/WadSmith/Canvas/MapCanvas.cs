@@ -82,6 +82,9 @@ internal sealed class MapCanvas : Control
     private bool _framesAsked;
     private long _shownFrames;
 
+    /// <summary>Whether the picture on show holds a moving floor (what a test reports when the plan does not play one).</summary>
+    internal bool PlaysMovingFloors => _snapshot is { Animated: true };
+
     /// <summary>Where the player cannot pass (from a worker), the player's box at the pointer, and the pointer it follows.</summary>
     private FitMarks? _fitMarks;
     private (MapPoint At, WadSmith.Editor.Checks.GhostFit Fit)? _ghost;

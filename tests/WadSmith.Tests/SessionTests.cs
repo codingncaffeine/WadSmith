@@ -58,13 +58,13 @@ public sealed class SessionTests
         Assert.Equal(SaveState.Pending, session.State);
 
         // After the save delay, with nobody asking, the change is on disk.
-        await ui.PumpUntil(() => session.State == SaveState.Saved, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.State == SaveState.Saved, TimeSpan.FromSeconds(60));
         Assert.Equal(24, Project.Open(project.Folder).LoadMap("MAP01").Sectors[0].FloorHeight);
 
         // A change still inside the delay reaches the disk when the session is flushed.
         session.History.Run(Floor(session.Map.Sectors[0], 48));
         var flush = session.FlushAsync();
-        await ui.PumpUntil(() => flush.IsCompleted, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => flush.IsCompleted, TimeSpan.FromSeconds(60));
         Assert.Equal(48, Project.Open(project.Folder).LoadMap("MAP01").Sectors[0].FloorHeight);
     }
 
@@ -92,7 +92,7 @@ public sealed class SessionTests
         using var session = EditorSession.Open(project, "MAP01", ui.Post);
         session.DrawRoom([new(512, 0), new(512, 128), new(768, 128), new(768, 0)]);
         var room = Assert.Single(session.Selection.Items.OfType<Sector>());
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         (double, double, double, double) Bounds()
         {
             var points = session.Map.Lines.Where(l => l.OnMap && (l.Front.Sector == room || l.Back?.Sector == room)).SelectMany(l => new[] { l.Start, l.End }).ToList();
@@ -102,15 +102,15 @@ public sealed class SessionTests
         // A change made while what turns is gathered: the turn is gathered again and lands once, after it.
         session.TurnSelection(90);
         session.History.Run(Floor(room, 24));
-        await ui.PumpUntil(() => session.History.UndoLabel == "Turn", TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.History.UndoLabel == "Turn", TimeSpan.FromSeconds(60));
         Assert.Equal((576.0, -64.0, 704.0, 192.0), Bounds());
         Assert.Equal(24, room.FloorHeight);
         DrawingTests.AssertSound(session.Map);
         Assert.Same(room, Assert.Single(session.Selection.Items));
 
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         session.FlipSelection(leftToRight: true);
-        await ui.PumpUntil(() => session.History.UndoLabel == "Mirror", TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.History.UndoLabel == "Mirror", TimeSpan.FromSeconds(60));
         Assert.Equal((576.0, -64.0, 704.0, 192.0), Bounds());
         DrawingTests.AssertSound(session.Map);
 
@@ -135,15 +135,15 @@ public sealed class SessionTests
         var start = session.Map.Things[0];
         var angle = start.Angle;
         session.Selection.Set(session.Map.Sectors[0]);
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Turn left 90°").Command.Execute(null);
-        await ui.PumpUntil(() => session.History.UndoLabel == "Turn", TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.History.UndoLabel == "Turn", TimeSpan.FromSeconds(60));
         Assert.Equal((angle + 90) % 360, start.Angle);
 
         // A typed angle turns it once; the field is ready for the next turn.
         var typed = inspector.Rows.OfType<WadSmith.App.ViewModels.NumberRow>().Single(r => r.Label == "Turn by (°)");
         typed.Value = 90;
-        await ui.PumpUntil(() => start.Angle == (angle + 180) % 360, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => start.Angle == (angle + 180) % 360, TimeSpan.FromSeconds(60));
         Assert.Equal(0, typed.Value);
         DrawingTests.AssertSound(session.Map);
     }
@@ -158,11 +158,11 @@ public sealed class SessionTests
         using var session = EditorSession.Open(project, "MAP01", ui.Post);
         var inspector = new WadSmith.App.ViewModels.InspectorViewModel(session);
         session.DrawRoom([new(320, -128), new(320, 128), new(576, 128), new(576, -128)]);
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         var east = session.Map.Lines.Single(l => l.OnMap && l.Start.X == 256 && l.End.X == 256);
         session.MakeWindow(east, 224, 288);
         var window = Assert.Single(session.Selection.Items.OfType<Sector>());
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         Assert.Equal("Window", inspector.Heading);
         Assert.Contains("64 tall", inspector.Summary);
         Assert.Equal(40, inspector.Rows.OfType<WadSmith.App.ViewModels.NumberRow>().First(r => r.Label == "Sill height").Value);
@@ -175,7 +175,7 @@ public sealed class SessionTests
         // Open again and lowered to a step, it is a way through: the Inspector says what it is now.
         blocks.Value = false;
         inspector.Rows.OfType<WadSmith.App.ViewModels.NumberRow>().First(r => r.Label == "Sill height").Value = 16;
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         Assert.Equal("Room area", inspector.Heading);
         DrawingTests.AssertSound(session.Map);
     }
@@ -191,15 +191,15 @@ public sealed class SessionTests
         var inspector = new WadSmith.App.ViewModels.InspectorViewModel(session);
         session.DrawRoom([new(256, -64), new(256, 64), new(384, 64), new(384, -64)]);
         var room = Assert.Single(session.Selection.Items.OfType<Sector>());
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Make it a secret").Command.Execute(null);
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         Assert.Equal("Secret area", inspector.Heading);
         Assert.Contains("solid wall on the in-game map", inspector.Summary);
         Assert.True(inspector.Rows.OfType<WadSmith.App.ViewModels.FlagRow>().Single(r => r.Label == "Hidden on the in-game map").Value);
 
         inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Not a secret").Command.Execute(null);
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         Assert.Equal("Room area", inspector.Heading);
         Assert.Equal(0, room.Special);
         Assert.DoesNotContain(session.Map.Lines, l => l.OnMap && l.Flag("secret"));
@@ -217,20 +217,20 @@ public sealed class SessionTests
         string? asked = null;
         inspector.KeyFor += colour => asked = colour;
         session.DrawRoom([new(256, -64), new(256, 64), new(384, 64), new(384, -64)]);
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         session.MakeDoor(session.Map.Lines.Single(l => l.OnMap && l.Back is not null));
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version && inspector.Heading == "Door", TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version && inspector.Heading == "Door", TimeSpan.FromSeconds(60));
         Assert.DoesNotContain(inspector.Rows, r => r.Label.StartsWith("Place the", StringComparison.Ordinal));
 
         // Locked with the red key: the Inspector offers to place it, and the key placed opens the door.
         inspector.Rows.OfType<WadSmith.App.ViewModels.ChoiceRow>().Single(r => r.Label == "Locked with").Value = 1;
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Place the red key…").Command.Execute(null);
         Assert.Equal("red", asked);
         session.PlaceKey("red", new Editor.Geometry.MapPoint(-128, 0));
         var key = Assert.Single(session.Selection.Items.OfType<Thing>());
         Assert.Equal(13, key.Type);
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         Assert.Contains("Opens", inspector.Summary);
         inspector.Rows.OfType<WadSmith.App.ViewModels.ActionRow>().Single(r => r.Label == "Select the doors it opens").Command.Execute(null);
         Assert.All(session.Selection.Items, e => Assert.Equal(Editor.Smart.Doors.DoorLockedRaise, Assert.IsType<Line>(e).Special));
@@ -274,14 +274,14 @@ public sealed class SessionTests
         var saved = false;
         session.PrefabsChanged += () => saved = true;
         session.DrawRoom([new(512, 0), new(512, 128), new(768, 128), new(768, 0)]);
-        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Geometry.Version == session.Map.Version, TimeSpan.FromSeconds(60));
         session.SavePrefab();
-        await ui.PumpUntil(() => saved, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => saved, TimeSpan.FromSeconds(60));
         var prefab = Assert.Single(Editor.Editing.Prefabs.In(project.Folder));
 
         var before = session.Map.Sectors.Count(s => s.OnMap);
         session.PlacePrefab(prefab, new Editor.Geometry.MapPoint(640, 1024));
-        await ui.PumpUntil(() => session.Map.Sectors.Count(s => s.OnMap) == before + 1, TimeSpan.FromSeconds(10));
+        await ui.PumpUntil(() => session.Map.Sectors.Count(s => s.OnMap) == before + 1, TimeSpan.FromSeconds(60));
         Assert.Equal("Paste", session.History.UndoLabel);
         DrawingTests.AssertSound(session.Map);
         session.History.Undo();

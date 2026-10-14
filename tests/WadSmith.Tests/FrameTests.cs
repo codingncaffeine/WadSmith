@@ -252,7 +252,7 @@ public sealed class FrameTests
         }
 
         gate.Set();
-        var until = DateTime.UtcNow.AddSeconds(10);
+        var until = DateTime.UtcNow.AddSeconds(60);
         while (published.Count < 2 && DateTime.UtcNow < until)
         {
             while (ui.TryDequeue(out var a)) a();

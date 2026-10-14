@@ -80,6 +80,22 @@ internal static class Ui
         }
     }
 
+    /// <summary>
+    /// Lets the app work until <paramref name="done"/> holds or <paramref name="seconds"/> have passed, and says which. A test
+    /// waits for what it is about to check, never for a fixed while: a slow machine then only makes it wait longer.
+    /// </summary>
+    public static bool Until(Func<bool> done, double seconds = 30)
+    {
+        var until = DateTime.UtcNow.AddSeconds(seconds);
+        while (!done())
+        {
+            if (DateTime.UtcNow > until) return false;
+            Pump(0.02);
+        }
+
+        return true;
+    }
+
     /// <summary>Pumps until the task is done: the app's continuations run on this thread, so it cannot be awaited.</summary>
     public static void Wait(Task task)
     {

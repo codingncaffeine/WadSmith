@@ -192,7 +192,7 @@ public sealed class BorrowingTests
         var wall = session.Map.Lines[0];
         var mid = new MapPoint((wall.Start.X + wall.End.X) / 2, (wall.Start.Y + wall.End.Y) / 2);
         session.PaintBorrowed(heretic, "SKY1", false, mid, 8, false);
-        var until = DateTime.UtcNow.AddSeconds(10);
+        var until = DateTime.UtcNow.AddSeconds(60);
         while (told.Count == 0 && DateTime.UtcNow < until)
         {
             while (ui.TryDequeue(out var a)) a();

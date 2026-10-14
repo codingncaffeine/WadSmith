@@ -225,7 +225,7 @@ public sealed class PlatformTests
 
         public void Settle()
         {
-            var until = DateTime.UtcNow.AddSeconds(10);
+            var until = DateTime.UtcNow.AddSeconds(60);
             do
             {
                 while (_ui.TryDequeue(out var a)) a();

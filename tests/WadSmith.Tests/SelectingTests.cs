@@ -21,7 +21,7 @@ public sealed class SelectingTests
 
         public async Task PumpUntil(Func<bool> done)
         {
-            var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            var until = DateTime.UtcNow + TimeSpan.FromSeconds(60);
             while (!done())
             {
                 while (_queue.TryDequeue(out var a)) a();

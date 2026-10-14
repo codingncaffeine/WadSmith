@@ -69,6 +69,8 @@ public sealed class PicturePropInTheWindowTests
                 lines.Add($"blocks {box.IsChecked}");
                 Click(window, box);
                 for (var i = 0; i < 200 && PictureProps.Of(session.Project, placed.Type)?.Shape.Solid != false; i++) Ui.Pump(0.05);
+                // The class is written on the worker before the window hears of it: wait for what the window says.
+                Ui.Until(() => editor.Status.StartsWith("Every ", StringComparison.Ordinal));
                 lines.Add($"blocks now {PictureProps.Of(session.Project, placed.Type)?.Shape.Solid}; status '{editor.Status}'");
                 return string.Join("\n", lines);
             }
