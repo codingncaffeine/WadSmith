@@ -4,14 +4,14 @@
 
 # WadSmith
 
-A modern, Linux-native map editor for Doom, Doom II, Heretic, Hexen and Strife, built for GZDoom.
+A modern map editor for Doom, Doom II, Heretic, Hexen and Strife, built for GZDoom, on Linux and Windows.
 
 WadSmith is meant to be the editor someone who has only ever *played* these games can open and use:
 plain words instead of jargon, drag and drop for everything, doors and lifts the editor understands,
 and one key to play what you just built. Experienced mappers get the same tools with the teaching
 switched off.
 
-> **Status:** 0.0.5, the first build you can download, for Linux. It is early: expect rough edges, and say what you find in [Issues](https://github.com/codingncaffeine/WadSmith/issues).
+> **Status:** 0.0.10, for Linux and Windows. It is early: expect rough edges, and say what you find in [Issues](https://github.com/codingncaffeine/WadSmith/issues).
 
 ![WadSmith's start screen with Freedoom: your games on the left, and for the chosen one the ways to start a map and your maps](assets/screenshots/start.png)
 
@@ -24,15 +24,18 @@ switched off.
 - **Play in one key**, or from wherever the 3D view stands, after a check that offers to fix what would break the game.
 - **Plain-language problems** with a fix button, the way from start to exit step by step, and a meter that says whether the ammunition is enough for the monsters.
 - **Learn as you go:** a guided first map, hands-on Guide chapters, "What is this?" for anything you point at, examples from the games' own maps, and presets such as Low, Normal, Tall and Huge in place of numbers. Veterans switch the teaching off and get classic names and Doom Builder keys.
+- **Free community assets on the shelves.** Pick Realm667 on the Objects shelf for over a thousand free monsters, weapons, items and props, or the community's texture packs on the Textures shelf; drag one in and it is downloaded and copied into your project with its credits.
+- **Export for any port.** One file for GZDoom, or a WAD for vanilla, limit-removing, Boom or MBF21 ports with a list of exactly what the map loses, and Play in Chocolate, Crispy or dsda-doom.
 - **Never lose work.** Every change is kept as you go, with versions to go back to.
 
-Coming next: images, animated GIFs and video dropped onto walls; a share bundle; maps for vanilla Doom and the Chocolate and Crispy ports; drawing in the 3D view.
+Coming next: a share bundle and drawing in the 3D view.
 
 ## Install
 
 - **Arch Linux:** `wadsmith-bin` from the AUR.
 - **Debian and Ubuntu:** the `.deb` from the [latest release](https://github.com/codingncaffeine/WadSmith/releases/latest), then `sudo apt install ./wadsmith_*_amd64.deb`.
 - **Any Linux:** the tarball from the latest release, unpacked anywhere; run `./wadsmith`.
+- **Windows:** the `win-x64` zip from the latest release, unpacked anywhere; run `wadsmith.exe`.
 
 WadSmith needs [GZDoom](https://zdoom.org) to play maps, and SDL2 (optional) plays an object's sound when you point at it.
 
@@ -47,7 +50,7 @@ The [wiki](https://github.com/codingncaffeine/WadSmith/wiki) covers every tool, 
 
 ## Requirements
 
-- Linux (X11 or Wayland). A Windows build will follow.
+- Linux (X11 or Wayland) or Windows 10/11 (64-bit).
 - [GZDoom](https://zdoom.org) to play maps.
 - The game data from your own copy of Doom, Doom II, Heretic, Hexen or Strife, or the free
   [Freedoom](https://freedoom.github.io). WadSmith ships no game data and never changes your game files.
