@@ -150,6 +150,17 @@ public sealed class MapGeometry
     public static MapGeometry Build(MapFrame frame) => new(frame);
 
     /// <summary>
+    /// The map's polyobjects in a game family's eyes (Hexen's own object numbers count in Hexen alone), found on first use and kept:
+    /// a scan of the walls, quick on a map without any.
+    /// </summary>
+    public IReadOnlyList<PolyobjectFrame> Polyobjects(string family) => family == "hexen"
+        ? _hexenPolyobjects ??= Geometry.Polyobjects.Find(Frame, "hexen")
+        : _polyobjects ??= Geometry.Polyobjects.Find(Frame, family);
+
+    private IReadOnlyList<PolyobjectFrame>? _polyobjects;
+    private IReadOnlyList<PolyobjectFrame>? _hexenPolyobjects;
+
+    /// <summary>
     /// The closed loops around an area: its walls, each turned so the area is on its right, chained
     /// end to start. An area that is not closed gives its open chains as well; the checks report it.
     /// </summary>

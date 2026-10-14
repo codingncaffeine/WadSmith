@@ -297,6 +297,7 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
             (WallStyle.FloorStep, MapPreview.FloorChange, 1.4f),
             (WallStyle.CeilingStep, MapPreview.CeilingChange, 1.4f),
             (WallStyle.Solid, MapPreview.Wall, 1.6f),
+            (WallStyle.Polyobject, PolyobjectColour, 2.2f),
         })
         {
             paint.Color = colour;
@@ -323,6 +324,9 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
     }
 
     private static readonly SKColor MirrorColour = new(0x4F, 0xC3, 0xE0);
+
+    /// <summary>A polyobject's walls where they stand as the map starts (a sliding or swinging door): a warm gold, apart from walls.</summary>
+    private static readonly SKColor PolyobjectColour = new(0xE8, 0xC2, 0x4A);
 
     /// <summary>Symmetry mode's middle: its mirror lines across the view, or a small cross for turns (screen pixels).</summary>
     private void DrawMirror(SKCanvas canvas, WadSmith.Editor.Editing.Mirror m)

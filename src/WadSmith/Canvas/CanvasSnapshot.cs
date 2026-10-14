@@ -13,6 +13,9 @@ internal enum WallStyle
     FloorStep,
     CeilingStep,
     Solid,
+
+    /// <summary>A polyobject's wall where it stands when the map starts (Hexen's sliding and swinging doors), not in its pen.</summary>
+    Polyobject,
 }
 
 /// <summary>How far in the view is, which decides how area pictures are sampled.</summary>
@@ -118,7 +121,19 @@ internal sealed class CanvasSnapshot
             segments.Add(((float)a.X, (float)a.Y, (float)b.X, (float)b.Y, (int)StyleOf(f, l)));
         }
 
-        var walls = CellPaths.Build(4, segments.Count, i => segments[i].Style, i =>
+        // Polyobjects (D62): their walls drawn again where the game puts them as the map starts, carried from the pen by the
+        // spot less the anchor.
+        foreach (var poly in geometry.Polyobjects(look.Family))
+        {
+            if (hidden is { Count: > 0 } && Hidden(f.Things[poly.Spot].Extra)) continue;
+            foreach (var slot in poly.Lines)
+            {
+                var (a, b) = (f.Vertices[f.Lines[slot].V1], f.Vertices[f.Lines[slot].V2]);
+                segments.Add(((float)(a.X + poly.Dx), (float)(a.Y + poly.Dy), (float)(b.X + poly.Dx), (float)(b.Y + poly.Dy), (int)WallStyle.Polyobject));
+            }
+        }
+
+        var walls = CellPaths.Build(5, segments.Count, i => segments[i].Style, i =>
         {
             var s = segments[i];
             return (Math.Min(s.X1, s.X2), Math.Min(s.Y1, s.Y2), Math.Max(s.X1, s.X2), Math.Max(s.Y1, s.Y2));

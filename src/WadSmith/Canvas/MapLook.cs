@@ -75,6 +75,9 @@ internal sealed class MapLook(GameResources? resources)
 
     public GameResources? Resources => resources;
 
+    /// <summary>The game family the map is drawn for (Hexen's own polyobject numbers count in Hexen alone).</summary>
+    public string Family => resources?.Game.Engine ?? "doom";
+
     private int _texturesVersion;
 
     public FlatPicture? Flat(string name)

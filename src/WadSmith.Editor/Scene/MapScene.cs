@@ -406,7 +406,8 @@ public sealed class MapScene
     /// <param name="sprite">An object type's sprite shape, or null when it shows none.</param>
     /// <param name="hidden">Groups hidden for clarity: their rooms, the faces seen from them and their objects are left out.</param>
     /// <param name="model">An object type's 3D model, or null when it shows a sprite.</param>
-    public static MapScene Build(MapGeometry geometry, Func<string, (int Width, int Height)?> wallSize, Func<int, SpriteShape?>? sprite = null, IReadOnlySet<string>? hidden = null, Func<int, PropShape?>? model = null)
+    /// <param name="family">The game family, for which objects place polyobjects (Hexen's own numbers count in Hexen alone).</param>
+    public static MapScene Build(MapGeometry geometry, Func<string, (int Width, int Height)?> wallSize, Func<int, SpriteShape?>? sprite = null, IReadOnlySet<string>? hidden = null, Func<int, PropShape?>? model = null, string family = "doom")
     {
         var f = geometry.Frame;
 
@@ -468,10 +469,15 @@ public sealed class MapScene
             }
         }
 
+        // Polyobjects (D62) stand where the game puts them as the map starts, not in their pens.
+        var polyobjects = geometry.Polyobjects(family);
+        var carried = new HashSet<int>(polyobjects.SelectMany(p => p.Lines));
+
         // Walls: each face of each line, as seen from the area it faces.
-        foreach (var l in f.Lines)
+        for (var li = 0; li < f.Lines.Count; li++)
         {
-            if (l.Element is null) continue;
+            var l = f.Lines[li];
+            if (l.Element is null || (carried.Count > 0 && carried.Contains(li))) continue;
             var a = f.Vertices[l.V1];
             var b = f.Vertices[l.V2];
             var front = f.Sides[l.Front];
@@ -533,6 +539,46 @@ public sealed class MapScene
                     var z0 = Math.Max(bottom, top - h);
                     var z1 = Math.Min(ceiling, top);
                     if (z1 > z0) Quad(side.Middle, from, to, (z0, z0), (z1, z1), anchor, side, length, light, tint, line, WallPart.Middle);
+                }
+            }
+        }
+
+        // A polyobject's walls, carried from the pen by its spot less its anchor: each face as tall as the area in front of it,
+        // floor to ceiling and lit as that area, as GZDoom draws them, in pieces where it crosses from one area to another (every
+        // 8 units, the face's front read a unit out); a piece in no area (inside a wall it slides into) is not seen.
+        foreach (var poly in polyobjects)
+        {
+            if (Hidden(f.Things[poly.Spot].Extra)) continue;
+            foreach (var slot in poly.Lines)
+            {
+                var l = f.Lines[slot];
+                if (l.Element is not { } wall) continue;
+                var side = f.Sides[l.Front];
+                var (a, b) = (f.Vertices[l.V1], f.Vertices[l.V2]);
+                var (from, to) = (new MapPoint(a.X + poly.Dx, a.Y + poly.Dy), new MapPoint(b.X + poly.Dx, b.Y + poly.Dy));
+                var length = from.DistanceTo(to);
+                if (length <= 0) continue;
+                var (ux, uy) = ((to.X - from.X) / length, (to.Y - from.Y) / length);
+                MapPoint At(double along) => new(from.X + ux * along, from.Y + uy * along);
+                int AreaAt(double along) => geometry.SectorAt(new MapPoint(from.X + ux * along + uy, from.Y + uy * along - ux)) is { } s && s.Slot < f.Sectors.Count ? s.Slot : -1;
+                var pieces = Math.Max(1, (int)Math.Ceiling(length / 8));
+                var (runStart, runArea) = (0.0, AreaAt(length / pieces / 2));
+                for (var i = 1; i <= pieces; i++)
+                {
+                    var next = i < pieces ? AreaAt(length * (i + 0.5) / pieces) : int.MinValue;
+                    if (next == runArea) continue;
+                    var runEnd = length * i / pieces;
+                    if (runArea >= 0)
+                    {
+                        var here = f.Sectors[runArea];
+                        var (p0, p1) = (At(runStart), At(runEnd));
+                        var light = Tint.Light(Math.Clamp(here.Light, 0, 255), side.Extra, "light", "lightabsolute");
+                        var h = Height(side.Middle) / WallScale(side, WallPart.Middle).Y;
+                        var top = Flag(l.Extra, "dontpegbottom") ? here.FloorHeight + h : here.CeilingHeight;
+                        Quad(side.Middle, p0, p1, Ends(here, p0, p1, false), Ends(here, p0, p1, true), top, side with { OffsetX = side.OffsetX + runStart }, runEnd - runStart, light, Tint.Of(here.Extra), wall, WallPart.Middle);
+                    }
+
+                    (runStart, runArea) = (runEnd, next);
                 }
             }
         }
