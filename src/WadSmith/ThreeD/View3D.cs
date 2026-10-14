@@ -247,10 +247,12 @@ internal sealed class View3D : Control
     /// <summary>What is dragged over the view: a shelf picture, or a 3D model file from the file manager as a drop of its own.</summary>
     private static ViewModels.ShelfDrop? DropOf(DragEventArgs e) =>
         e.DataTransfer.TryGetValue(ViewModels.ShelfDrop.Format) ?? (Canvas.MapCanvas.ModelFileIn(e) is { } model ? new ViewModels.ShelfDrop(null, 0, System.IO.Path.GetFileName(model), ModelFile: model)
-        : Canvas.MapCanvas.AudioFileIn(e) is { } audio ? new ViewModels.ShelfDrop(null, 0, System.IO.Path.GetFileName(audio), AudioFile: audio) : null);
+        : Canvas.MapCanvas.AudioFileIn(e) is { } audio ? new ViewModels.ShelfDrop(null, 0, System.IO.Path.GetFileName(audio), AudioFile: audio)
+        : Canvas.MapCanvas.PictureFileIn(e) is { } picture ? new ViewModels.ShelfDrop(null, 0, System.IO.Path.GetFileName(picture), PictureFile: picture) : null);
 
     private static string DropWords(ViewModels.ShelfDrop drop, SceneHit? hit)
     {
+        if (drop.PictureFile is not null) return hit is { Kind: not HitKind.Thing } p ? $"Let go to bring in {drop.Label} and put it on {p.Words}." : "Drop the picture on a wall, a floor or a ceiling.";
         if (drop.AudioFile is not null) return hit is { Kind: HitKind.Floor } ? $"Let go to place {drop.Label} here as a sound (music becomes the map's music)." : "Drop the sound on a floor.";
         if (drop.ModelFile is not null) return hit is { Kind: HitKind.Floor } ? $"Let go to bring in {drop.Label} as a prop and place it here." : "Drop the model on a floor.";
         if (drop.Prefab is not null) return "Prefabs go on the plan: drop it there.";
@@ -266,6 +268,22 @@ internal sealed class View3D : Control
         if (drop.Prefab is not null)
         {
             session.Tell("Prefabs go on the plan: drop it there.");
+            return;
+        }
+
+        if (drop.PictureFile is { } picture)
+        {
+            if (hit is not { Kind: not HitKind.Thing } on)
+            {
+                session.Tell("Drop the picture on a wall, a floor or a ceiling.");
+                return;
+            }
+
+            WadSmith.Editor.Geometry.MapPoint? part = shift && on.Kind == HitKind.Wall ? new(on.X, on.Y) : null;
+            session.ImportPicture(picture, texture =>
+            {
+                if (session.PaintSurface(on.Target, texture, part, new WadSmith.Editor.Geometry.MapPoint(on.X, on.Y)) is { } why) session.Tell(why);
+            });
             return;
         }
 

@@ -30,10 +30,12 @@ public static class Pictures
     public static bool IsPicture(string path) => Path.GetExtension(path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".bmp" or ".tga" or ".apng";
 
     /// <summary>Brings the picture at <paramref name="path"/> into <paramref name="project"/> and <paramref name="into"/>'s textures. Reads and writes files: call it on a worker.</summary>
-    public static ImportedPicture Import(Project project, GameResources into, string path)
+    public static ImportedPicture Import(Project project, GameResources into, string path) => Import(project, into, Path.GetFileName(path), File.ReadAllBytes(path));
+
+    /// <summary>Brings a picture held in memory (pasted, named <paramref name="file"/>) in, as <see cref="Import(Project, GameResources, string)"/> does a file.</summary>
+    public static ImportedPicture Import(Project project, GameResources into, string file, byte[] bytes)
     {
-        var file = Path.GetFileName(path);
-        var bytes = File.ReadAllBytes(path);
+        var path = file;
         var notes = new List<string>();
         IReadOnlyList<AnimationFrame> frames = ImageCodec.IsKnownImage(bytes) ? AnimatedPicture.Read(bytes, file) : [new AnimationFrame(Tga.DecodeAny(bytes, file), 0)];
         if (frames.Count > MaxFrames)

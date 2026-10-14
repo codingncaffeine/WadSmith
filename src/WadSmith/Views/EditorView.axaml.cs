@@ -38,6 +38,7 @@ public partial class EditorView : UserControl
             vm.GridNow = () => Canvas.GridStepNow;
             vm.PickModel = PickModelAsync;
             vm.PickMaterial = PickMaterialAsync;
+            vm.ReadClipboardPicture = ReadClipboardPictureAsync;
             vm.PickExportFile = PickExportFileAsync;
             vm.Inspector.PickPanorama = PickPanoramaAsync;
             vm.Inspector.PickGrid = PickGridAsync;
@@ -277,6 +278,22 @@ public partial class EditorView : UserControl
     }
 
     /// <summary>The file picker for "Make a sky from a 360° picture…".</summary>
+    /// <summary>A picture on the system clipboard: a picture file copied in the file manager, else a picture copied (as PNG); null when there is none.</summary>
+    private async Task<(string Name, byte[] Bytes)?> ReadClipboardPictureAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return null;
+        if (await Avalonia.Input.Platform.ClipboardExtensions.TryGetFileAsync(clipboard).ConfigureAwait(true) is { } file && file.TryGetLocalPath() is { } path && WadSmith.Editor.Editing.Pictures.IsPicture(path))
+        {
+            return (System.IO.Path.GetFileName(path), await System.IO.File.ReadAllBytesAsync(path).ConfigureAwait(true));
+        }
+
+        using var bitmap = await Avalonia.Input.Platform.ClipboardExtensions.TryGetBitmapAsync(clipboard).ConfigureAwait(true);
+        if (bitmap is null) return null;
+        using var png = new System.IO.MemoryStream();
+        bitmap.Save(png, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
+        return ("pasted.png", png.ToArray());
+    }
+
     private async Task<string?> PickPanoramaAsync()
     {
         if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage) return null;

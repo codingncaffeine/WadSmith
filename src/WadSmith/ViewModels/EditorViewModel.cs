@@ -480,7 +480,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Redo", "Edit", "Ctrl+Y", "bring back", () => RedoCommand.Execute(null), () => RedoCommand.CanExecute(null), Also: "Ctrl+Shift+Z"),
             new("Copy", "Edit", "Ctrl+C", "", () => CopyCommand.Execute(null), Selected),
             new("Cut", "Edit", "Ctrl+X", "", () => CutCommand.Execute(null), Selected),
-            new("Paste", "Edit", "Ctrl+V", "", () => PasteCommand.Execute(null), () => Editor.Editing.Copying.Clipboard is not null),
+            new("Paste", "Edit", "Ctrl+V", "picture|image|clipboard", () => PasteCommand.Execute(null), () => Editor.Editing.Copying.Clipboard is not null || PictureTarget() is not null),
             new("Duplicate", "Edit", K("Ctrl+D", ""), "copy in place|clone", () => DuplicateCommand.Execute(null), Selected),
             new("Delete", "Edit", "Delete", "remove|erase|delete item", () => DeleteCommand.Execute(null), Selected),
             new("Join the selected rooms", "Edit", "J", "merge|join sectors|merge sectors|combine", Session.JoinRooms, Selected),
@@ -1356,10 +1356,37 @@ internal sealed partial class EditorViewModel : ObservableObject
     [RelayCommand]
     private void Cut() => Session.Cut();
 
-    /// <summary>Pastes where the pointer is on the plan, or beside the original when the pointer has not been over it.</summary>
-    [RelayCommand]
-    private void Paste()
+    /// <summary>Reads a picture from the system clipboard (set by the view): a picture copied, or a picture file copied in the file manager; null when it holds none.</summary>
+    public Func<Task<(string Name, byte[] Bytes)?>>? ReadClipboardPicture { get; set; }
+
+    /// <summary>
+    /// What a pasted picture goes on: the one wall face or one-sided wall selected (as a poster, as a dropped picture goes),
+    /// or the one room selected (its floor, its ceiling in the Ceilings view); null for any other selection.
+    /// </summary>
+    private Editor.Scene.SurfaceTarget? PictureTarget() => Session.Selection.Items is [var one] ? one switch
     {
+        Side { OnMap: true, Line.Back: null } face => new Editor.Scene.SurfaceTarget(face, Editor.Scene.WallPart.Middle, false),
+        Line { OnMap: true, Back: null } wall => new Editor.Scene.SurfaceTarget(wall.Front, Editor.Scene.WallPart.Middle, false),
+        Sector { OnMap: true } room => new Editor.Scene.SurfaceTarget(room, Editor.Scene.WallPart.Middle, IsCeilings),
+        _ => null,
+    } : null;
+
+    /// <summary>
+    /// Pastes: a picture on the system clipboard goes on the selected wall or room (brought in as a texture first); otherwise
+    /// what was copied in the editor goes where the pointer is on the plan, or beside the original when the pointer has not been over it.
+    /// </summary>
+    [RelayCommand]
+    private async Task Paste()
+    {
+        if (PictureTarget() is { } target && ReadClipboardPicture is { } read && await read().ConfigureAwait(true) is { } picture)
+        {
+            Session.ImportPicture(picture.Name, picture.Bytes, texture =>
+            {
+                if (Session.PaintSurface(target, texture) is { } why) Session.Tell(why);
+            });
+            return;
+        }
+
         if (_pointer is { } at) Session.Paste(at);
         else if (Editor.Editing.Copying.Clipboard is { } clip) Session.Paste(new MapPoint(clip.Origin.X + Math.Ceiling(clip.Size.Width / 64) * 64 + 64, clip.Origin.Y));
         else Session.Paste(default);

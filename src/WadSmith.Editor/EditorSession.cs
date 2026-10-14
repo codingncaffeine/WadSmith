@@ -1512,9 +1512,16 @@ public sealed class EditorSession : IDisposable
     /// material (its colour and its maps, Phase 11), an animated GIF, WebP or APNG as frames GZDoom plays (D15), any other
     /// picture as it is. Raises <see cref="TexturesChanged"/>.
     /// </summary>
-    public void ImportPicture(string path)
+    public void ImportPicture(string path, Action<string>? then = null) => ImportPicture(Path.GetFileName(path), () => File.ReadAllBytes(path), path, then);
+
+    /// <summary>
+    /// Brings in a picture held in memory (pasted from the clipboard) named <paramref name="file"/>, as a file is brought in;
+    /// <paramref name="then"/> gets its texture's name on the UI thread.
+    /// </summary>
+    public void ImportPicture(string file, byte[] bytes, Action<string>? then = null) => ImportPicture(file, () => bytes, null, then);
+
+    private void ImportPicture(string file, Func<byte[]> read, string? path, Action<string>? then)
     {
-        var file = Path.GetFileName(path);
         if (Resources is not { } into)
         {
             Notice?.Invoke("Pictures need this map's own game to be found first.");
@@ -1526,17 +1533,20 @@ public sealed class EditorSession : IDisposable
         Task.Run(() =>
         {
             string said;
+            string texture;
             try
             {
-                if (Core.Graphics.PbrSet.Of(path) is not null)
+                if (path is not null && Core.Graphics.PbrSet.Of(path) is not null)
                 {
                     var material = Materials.Import(Project, into, path);
+                    texture = material.Texture;
                     said = $"The material is the texture {material.Texture}, with {Materials.Words(material.Layers)}: under Textures, ready for walls, doors and floors. GZDoom lights it by its maps under dynamic lights."
                         + (classic ? " It plays in GZDoom only; this project plays in a classic port, which shows none of it." : "") + Notes(material.Notes);
                 }
                 else
                 {
-                    var picture = Pictures.Import(Project, into, path);
+                    var picture = Pictures.Import(Project, into, file, read());
+                    texture = picture.Texture;
                     said = (picture.Frames > 1
                         ? $"{file} is the texture {picture.Texture}, {picture.Width}×{picture.Height}, moving through its {picture.Frames} frames as GZDoom plays it (the editor shows its first): under Textures, ready for walls, doors and floors."
                         : $"{file} is the texture {picture.Texture}, {picture.Width}×{picture.Height}: under Textures, ready for walls, doors and floors.")
@@ -1545,7 +1555,7 @@ public sealed class EditorSession : IDisposable
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
             {
-                Log.Warn($"Bringing in {path} failed: {ex.Message}");
+                Log.Warn($"Bringing in {path ?? file} failed: {ex.Message}");
                 _onUiThread(() => Notice?.Invoke($"{file} could not be brought in. {ex.Message}"));
                 return;
             }
@@ -1554,6 +1564,7 @@ public sealed class EditorSession : IDisposable
             {
                 Notice?.Invoke(said);
                 TexturesChanged?.Invoke();
+                then?.Invoke(texture);
             });
         });
 

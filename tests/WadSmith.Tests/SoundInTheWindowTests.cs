@@ -19,7 +19,7 @@ namespace WadSmith.Tests;
 [Collection(TimingCollection.Name)]
 public sealed class SoundInTheWindowTests
 {
-    private static void DropFile(MainWindow window, MapCanvas canvas, MapPoint at, string path)
+    internal static void DropFile(MainWindow window, MapCanvas canvas, MapPoint at, string path)
     {
         var data = new DataTransfer();
         var asked = window.StorageProvider.TryGetFileFromPathAsync(new Uri(path));

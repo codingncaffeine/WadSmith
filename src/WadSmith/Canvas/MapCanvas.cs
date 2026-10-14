@@ -1775,6 +1775,10 @@ internal sealed class MapCanvas : Control
     internal static string? ModelFileIn(DragEventArgs e) =>
         e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p is not null && ModelProps.IsModel(p));
 
+    /// <summary>A picture file dragged in from the file manager, its local path; null for anything else.</summary>
+    internal static string? PictureFileIn(DragEventArgs e) =>
+        e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p is not null && Pictures.IsPicture(p));
+
     /// <summary>A sound or music file dragged in from the file manager, its local path; null for anything else.</summary>
     internal static string? AudioFileIn(DragEventArgs e) =>
         e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p is not null && SoundFiles.IsAudio(p));
@@ -1786,6 +1790,16 @@ internal sealed class MapCanvas : Control
         {
             e.DragEffects = DragDropEffects.Copy;
             DropHint?.Invoke($"Let go to bring in {System.IO.Path.GetFileName(model)} as a prop and place it here.");
+            return;
+        }
+
+        if (Session is not null && PictureFileIn(e) is { } picture)
+        {
+            e.DragEffects = DragDropEffects.Copy;
+            var at = e.GetPosition(this);
+            DropHint?.Invoke(WallAt(at) is not null || Session.Geometry.SectorAt(ToMap(at)) is not null
+                ? $"Let go to bring in {System.IO.Path.GetFileName(picture)} and put it {(WallAt(at) is not null ? "on this wall" : $"on this room's {(Mode == MapViewMode.Ceilings ? "ceiling" : "floor")}")}."
+                : "Drop the picture on a wall or in a room.");
             return;
         }
 
@@ -1841,6 +1855,19 @@ internal sealed class MapCanvas : Control
             var m = ToMap(e.GetPosition(this));
             var step = GridStep();
             importing.ImportModel(model, (e.KeyModifiers & KeyModifiers.Shift) != 0 ? m : new MapPoint(Math.Round(m.X / step) * step, Math.Round(m.Y / step) * step));
+            Focus();
+            e.Handled = true;
+            return;
+        }
+
+        if (Session is { } painting && PictureFileIn(e) is { } picture)
+        {
+            var at = ToMap(e.GetPosition(this));
+            var (reach, ceiling, section) = (7 / _zoom, Mode == MapViewMode.Ceilings, (e.KeyModifiers & KeyModifiers.Shift) != 0);
+            painting.ImportPicture(picture, texture =>
+            {
+                if (painting.Paint(texture, at, reach, ceiling, section) is { } why) painting.Tell(why);
+            });
             Focus();
             e.Handled = true;
             return;
