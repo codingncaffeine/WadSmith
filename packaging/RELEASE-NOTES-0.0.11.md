@@ -12,3 +12,7 @@
 - **Moving floors on the plan** — Animated floors play on the 2D plan at the picture's own pace.
 - **Share check** — Export now says what came from games other players must own.
 - **Classic-port projects** — In a project for a classic port, what only GZDoom has is greyed with the reason, and the Objects shelf shows faint what the port cannot use.
+
+## What's Fixed
+
+- **Quake monsters in GZDoom** — Quake monsters placed from the Objects shelf now show their model in GZDoom.

@@ -225,17 +225,22 @@ public static class Md2
         }
     }
 
-    /// <summary>The model as an MD2 with every frame, its skin named <paramref name="skin"/> (a picture beside it); positions packed to bytes per frame, as MD2 keeps them.</summary>
+    /// <summary>
+    /// The model as an MD2 with every frame, its skin named <paramref name="skin"/> (a picture beside it); positions packed to
+    /// bytes per frame, as MD2 keeps them. Its GL commands draw each triangle as a strip of its three corners: GZDoom refuses an
+    /// MD2 without them ("invalid NumGLCommands") and shows no model.
+    /// </summary>
     public static byte[] Write(AnimatedModel model, string skin)
     {
         var verts = model.Frames[0].Positions.Length;
         var frameSize = 40 + verts * 4;
         const int header = 68;
+        var glCommands = model.Triangles.Count * 10 + 1;
         int ofsSkins = header, ofsSt = ofsSkins + 64, ofsTris = ofsSt + model.Corners.Count * 4, ofsFrames = ofsTris + model.Triangles.Count * 12, ofsGl = ofsFrames + frameSize * model.Frames.Count;
         var body = new MemoryStream();
         var w = new BinaryWriter(body);
         w.Write("IDP2"u8);
-        foreach (var v in new[] { 8, model.SkinWidth, model.SkinHeight, frameSize, 1, verts, model.Corners.Count, model.Triangles.Count, 0, model.Frames.Count, ofsSkins, ofsSt, ofsTris, ofsFrames, ofsGl, ofsGl }) w.Write(v);
+        foreach (var v in new[] { 8, model.SkinWidth, model.SkinHeight, frameSize, 1, verts, model.Corners.Count, model.Triangles.Count, glCommands, model.Frames.Count, ofsSkins, ofsSt, ofsTris, ofsFrames, ofsGl, ofsGl + glCommands * 4 }) w.Write(v);
         var skinName = new byte[64];
         Encoding.ASCII.GetBytes(skin, 0, Math.Min(63, skin.Length), skinName, 0);
         w.Write(skinName);
@@ -268,6 +273,19 @@ public static class Md2
             }
         }
 
+        // The GL commands: a strip of three per triangle (its count, then each corner's skin place in 0–1 and its vertex), then 0.
+        foreach (var (a, b, c, ta, tb, tc) in model.Triangles)
+        {
+            w.Write(3);
+            foreach (var (vertex, corner) in new[] { (a, ta), (b, tb), (c, tc) })
+            {
+                w.Write(model.Corners[corner].S / Math.Max(1, model.SkinWidth));
+                w.Write(model.Corners[corner].T / Math.Max(1, model.SkinHeight));
+                w.Write(vertex);
+            }
+        }
+
+        w.Write(0);
         return body.ToArray();
     }
 }

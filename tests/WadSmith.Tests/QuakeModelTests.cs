@@ -80,6 +80,23 @@ public sealed class QuakeModelTests
         var path = Path.Combine(temp.Path, "m.md2");
         File.WriteAllBytes(path, Md2.Write(model, "skin0.png"));
         var back = Md2.Read(path);
+
+        // What GZDoom checks before it takes an MD2: GL commands there (it refuses a count of 0), ending where the file ends,
+        // each a strip of three corners on the model's own vertices.
+        var md2 = File.ReadAllBytes(path);
+        int Int(int at) => System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(md2.AsSpan(at));
+        var (glCount, glAt) = (Int(36), Int(60));
+        Assert.Equal(model.Triangles.Count * 10 + 1, glCount);
+        Assert.Equal(md2.Length, Int(64));
+        Assert.Equal(md2.Length, glAt + glCount * 4);
+        for (var i = 0; i < model.Triangles.Count; i++)
+        {
+            var at = glAt + i * 40;
+            Assert.Equal(3, Int(at));
+            Assert.Equal([model.Triangles[i].A, model.Triangles[i].B, model.Triangles[i].C], new[] { Int(at + 12), Int(at + 24), Int(at + 36) });
+        }
+
+        Assert.Equal(0, Int(md2.Length - 4));
         Assert.Equal(model.Frames.Select(f => f.Name), back.Frames.Select(f => f.Name));
         Assert.Equal(model.Triangles, back.Triangles);
         for (var f = 0; f < 3; f++)
