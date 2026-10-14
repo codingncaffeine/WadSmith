@@ -2074,6 +2074,15 @@ internal sealed partial class InspectorViewModel : ObservableObject
         Rows.Add(new FlagRow("In single player", "Included when one person plays (single; off = multiplayer only).", () => t.Flag("single"), on => Flags(t, ["single"], on)));
         Rows.Add(new FlagRow("In co-op", "Included when friends play the map together (coop).", () => t.Flag("coop"), on => Flags(t, ["coop"], on)));
         Rows.Add(new FlagRow("In deathmatch", "Included when players fight each other on the map (dm).", () => t.Flag("dm"), on => Flags(t, ["dm"], on)));
+        if (_session.Engine == "hexen")
+        {
+            // Hexen's three heroes: an object is in the map for the classes it is ticked for (Phase 9, class flags).
+            foreach (var (flag, hero) in new[] { ("class1", "Fighter"), ("class2", "Cleric"), ("class3", "Mage") })
+            {
+                Rows.Add(new FlagRow($"For the {hero}", $"Included when the player plays the {hero} ({flag}); Hexen gives each class its own weapons and pieces, so many objects are for one or two of them.", () => t.Flag(flag), on => Flags(t, [flag], on, on ? $"Show for the {hero}" : $"Hide from the {hero}")));
+            }
+        }
+
         GZDoomOnly("the classic ports have no friendly monsters, sleeping objects or object ids.", () =>
         {
         Rows.Add(new FlagRow("Friendly", "A monster that fights for the player instead of against them (friend).", () => t.Flag("friend"), on => Flags(t, ["friend"], on)));
@@ -2084,6 +2093,6 @@ internal sealed partial class InspectorViewModel : ObservableObject
 
     private void Flag(Element e, string name, bool on, string label) => _session.History.Run(new SetProperty<Element, bool>(e, label, x => x.Flag(name), (x, v) => x.SetFlag(name, v), on));
 
-    private void Flags(Thing t, string[] names, bool on) =>
-        _session.History.Run(new Batch(on ? "Show on a difficulty" : "Hide on a difficulty", names.Select(n => (IEdit)new SetProperty<Element, bool>(t, n, x => x.Flag(n), (x, v) => x.SetFlag(n, v), on)).ToList()));
+    private void Flags(Thing t, string[] names, bool on, string? label = null) =>
+        _session.History.Run(new Batch(label ?? (on ? "Show on a difficulty" : "Hide on a difficulty"), names.Select(n => (IEdit)new SetProperty<Element, bool>(t, n, x => x.Flag(n), (x, v) => x.SetFlag(n, v), on)).ToList()));
 }
