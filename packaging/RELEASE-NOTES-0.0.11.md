@@ -9,7 +9,7 @@
 - **Videos** — Put a video on a wall, door or floor (needs ffmpeg).
 - **Mirrors and camera screens** — Make a wall a mirror that reflects its room, or a screen that shows what a camera elsewhere sees.
 - **Edit a picture in another program** — Open one of your own pictures in your image editor and see the map change when you save it.
-- **Moving floors on the plan** — Animated floors play on the 2D plan at the picture's own pace.
+- **Moving floors on the plan** — On Linux, animated floors play on the 2D plan at the picture's own pace.
 - **Share check** — Export now says what came from games other players must own.
 - **Classic-port projects** — In a project for a classic port, what only GZDoom has is greyed with the reason, and the Objects shelf shows faint what the port cannot use.
 
