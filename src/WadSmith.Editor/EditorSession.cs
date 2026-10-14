@@ -35,7 +35,9 @@ public enum SaveState
 /// <param name="Picture">Paints a map as PNG for the versions list (on a worker); null for the automap drawing.</param>
 /// <param name="EngineData">The engine's gzdoom.pk3, whose MAPINFO gives the game's own settings for each map; null when the engine is not installed.</param>
 /// <param name="QuakePalette">Quake's palette (gfx/palette.lmp) from the user's own copy, for Quake models brought in; null when Quake was not found.</param>
-public sealed record SessionHooks(Action<Action> OnUiThread, GameResources? Resources = null, Func<MapFrame, byte[]?>? Picture = null, string? EngineData = null, Func<byte[]?>? QuakePalette = null);
+/// <param name="Library">What WadSmith keeps of the free sources (D61), for downloading what is placed from them; null when there is none (tests).</param>
+/// <param name="FamilyPalette">The colours of a game family ("doom", "heretic"…) from a game of it found here, for downloads drawn in another game's colours; null when none was found.</param>
+public sealed record SessionHooks(Action<Action> OnUiThread, GameResources? Resources = null, Func<MapFrame, byte[]?>? Picture = null, string? EngineData = null, Func<byte[]?>? QuakePalette = null, Core.Library.LibraryStore? Library = null, Func<string, Core.Graphics.Palette?>? FamilyPalette = null);
 
 /// <summary>
 /// The game's own settings for a map's slot, as the engine reads them: shown beside the map's settings, so "the game's"
@@ -658,6 +660,64 @@ public sealed class EditorSession : IDisposable
             {
                 PlaceThing(carried.Number, at, standAt);
                 if (carried.New) Notice?.Invoke($"{thing.Name} was brought in from {from.Game.Title}: its pictures and sounds are copied into this project, so the map plays it in GZDoom.");
+            });
+        });
+    }
+
+    /// <summary>
+    /// Places an object from a free source (D61: a Realm667 monster, weapon, item or prop): downloaded the first time (a few
+    /// KB, kept for every project), brought into the project with its credits, then placed at <paramref name="at"/>. What it is
+    /// doing is said in notices, as the download can take a moment.
+    /// </summary>
+    public void PlaceLibraryObject(Core.Library.LibraryItem item, MapPoint at, double? standAt = null)
+    {
+        if (Resources is not { } into)
+        {
+            Notice?.Invoke("Downloaded objects need this map's own game to be found first.");
+            return;
+        }
+
+        if (Project.ClassicFormat)
+        {
+            Notice?.Invoke($"{item.Title} is from {LibraryObjects.SourceName(item.Source)}: downloaded objects play in GZDoom only. Change what the project plays in under Map settings to use it.");
+            return;
+        }
+
+        if (Hooks.Library is not { } library)
+        {
+            Notice?.Invoke($"{item.Title} cannot be downloaded here.");
+            return;
+        }
+
+        var engineData = Hooks.EngineData;
+        var palettes = Hooks.FamilyPalette ?? (_ => null);
+        var fetched = library.Fetched(item) is not null;
+        if (!fetched) Notice?.Invoke($"Downloading {item.Title} from {LibraryObjects.SourceName(item.Source)}{(item.Size is null ? "" : $" ({item.SizeWords})")}…");
+        Task.Run(async () =>
+        {
+            LibraryObjects.Brought brought;
+            try
+            {
+                var files = await library.FetchAsync(item, null, CancellationToken.None).ConfigureAwait(false);
+                brought = LibraryObjects.Bring(Project, into, item, files, palettes);
+                ProjectMapInfo.Refresh(Project, into.Game, into.Files, engineData);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException or HttpRequestException or InvalidDataException or TaskCanceledException)
+            {
+                Log.Warn($"Bringing in {item.Id} ({item.Title}) failed: {ex.Message}");
+                _onUiThread(() => Notice?.Invoke($"{item.Title} could not be brought in. {ex.Message}"));
+                return;
+            }
+
+            foreach (var note in brought.Notes) Log.Info($"{item.Id}: {note}");
+            _onUiThread(() =>
+            {
+                PlaceThing(brought.Main.Number, at, standAt);
+                if (!brought.New) return;
+                var more = brought.Actors.Count > 1 ? $" It brought {brought.Actors.Count} objects; the others are on the Objects shelf under this game." : "";
+                var notes = brought.Notes.Count == 0 ? "" : " " + string.Join(" ", brought.Notes);
+                Notice?.Invoke($"{item.Title} is in this project, with its credits in credits/{item.Id}.txt; the map plays it in GZDoom.{more}{notes}");
+                PropsChanged?.Invoke();
             });
         });
     }

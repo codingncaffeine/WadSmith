@@ -262,6 +262,9 @@ public sealed class GameResources
                 // Props brought in as 3D models (Phase 11): classes the project declares, shown by their baked sprites.
                 carried.AddRange(Editing.ModelProps.Recorded(info));
 
+                // Objects downloaded from the free sources (D61): classes the project's own definition lumps declare.
+                carried.AddRange(Editing.LibraryObjects.Recorded(info.Copied));
+
                 // Other games' objects take their definitions from the engine's data.
                 foreach (var copy in info.Copied.Where(c => c.Kind == "actor" && c.Game != "duke3d" && c.Game != "model"))
                 {
@@ -283,6 +286,37 @@ public sealed class GameResources
         made._switches = new(() => Core.Graphics.SwitchPictures.Read(engineData, found.Game.Engine, stack));
         return made;
     }
+
+    /// <summary>
+    /// A texture pack fetched from a free source (D61), opened over a game of the family it was drawn for (the project's own
+    /// game when it is of that family, so the colours are the ones the map shows) for its pictures: its files are
+    /// <see cref="Pack"/>, its id and title the pack's, and what is copied from it is recorded as the pack's. Null when no game
+    /// of that family was found. Reads files: call it on a worker.
+    /// </summary>
+    public static GameResources? LoadPack(Core.Library.LibraryItem item, IReadOnlyList<string> packFiles, string? ownGameId, IReadOnlyList<FoundGame> games)
+    {
+        var found = games.FirstOrDefault(g => g.Game.Id == ownGameId && g.Game.Engine == item.Family)
+            ?? games.FirstOrDefault(g => g.Game.Engine == item.Family && g.Game.Supported && g.Game.IsBaseGame);
+        if (found is null) return null;
+        var files = new List<string>();
+        if (found.Game.AddOnFor is { } baseId && games.FirstOrDefault(g => g.Game.Id == baseId) is { } baseGame) files.Add(baseGame.Path);
+        files.Add(found.Path);
+        var under = files.Count;
+        files.AddRange(packFiles.Where(File.Exists));
+        var containers = files.Select(ResourceContainer.Open).ToList();
+        var stack = new ResourceStack(containers);
+        return new GameResources(found.Game with { Id = item.Id, Title = item.Title }, files, stack, new TextureLibrary(stack), new SpriteIndex(stack), ThingCatalog.Empty, [])
+        {
+            Pack = containers.Skip(under).ToHashSet(),
+            Library = item,
+        };
+    }
+
+    /// <summary>For a texture pack (<see cref="LoadPack"/>), the pack's own files: its pictures are the ones whose source is one of these.</summary>
+    public IReadOnlySet<ResourceContainer>? Pack { get; private init; }
+
+    /// <summary>The free source's entry these resources are (a texture pack), for its credits; null for a game.</summary>
+    public Core.Library.LibraryItem? Library { get; private init; }
 
     private static RgbaImage Mirror(RgbaImage image)
     {

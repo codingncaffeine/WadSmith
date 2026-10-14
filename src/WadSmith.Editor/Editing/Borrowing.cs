@@ -29,6 +29,7 @@ public static class Borrowing
         var entry = ResourceContainer.Open(project.Folder).FindPath(file) ?? throw new CorruptDataException($"{file} was written but could not be read back.");
         into.Textures.Add(entry);
         project.Record(new CopiedAsset { Kind = kind, Game = from.Game.Id, Original = name, Name = chosen, File = file });
+        if (from.Library is { } pack) LibraryObjects.CreditPack(project, pack);
         return chosen;
     }
 
