@@ -1679,7 +1679,9 @@ public sealed class EditorSession : IDisposable
                 }
                 else
                 {
-                    var picture = Pictures.Import(Project, into, file, read());
+                    var picture = path is not null && Core.Graphics.VideoFrames.IsVideo(path)
+                        ? Pictures.ImportFrames(Project, into, file, Core.Graphics.VideoFrames.Read(path))
+                        : Pictures.Import(Project, into, file, read());
                     texture = picture.Texture;
                     said = (picture.Frames > 1
                         ? $"{file} is the texture {picture.Texture}, {picture.Width}×{picture.Height}, moving through its {picture.Frames} frames as GZDoom plays it (the editor shows its first): under Textures, ready for walls, doors and floors."

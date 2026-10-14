@@ -33,11 +33,14 @@ public static class Pictures
     public static ImportedPicture Import(Project project, GameResources into, string path) => Import(project, into, Path.GetFileName(path), File.ReadAllBytes(path));
 
     /// <summary>Brings a picture held in memory (pasted, named <paramref name="file"/>) in, as <see cref="Import(Project, GameResources, string)"/> does a file.</summary>
-    public static ImportedPicture Import(Project project, GameResources into, string file, byte[] bytes)
+    public static ImportedPicture Import(Project project, GameResources into, string file, byte[] bytes) =>
+        ImportFrames(project, into, file, ImageCodec.IsKnownImage(bytes) ? AnimatedPicture.Read(bytes, file) : [new AnimationFrame(Tga.DecodeAny(bytes, file), 0)]);
+
+    /// <summary>Brings frames in (a video's, read by <see cref="VideoFrames"/>; a picture's, decoded), named after <paramref name="file"/>, as one texture that moves through them.</summary>
+    public static ImportedPicture ImportFrames(Project project, GameResources into, string file, IReadOnlyList<AnimationFrame> frames)
     {
         var path = file;
         var notes = new List<string>();
-        IReadOnlyList<AnimationFrame> frames = ImageCodec.IsKnownImage(bytes) ? AnimatedPicture.Read(bytes, file) : [new AnimationFrame(Tga.DecodeAny(bytes, file), 0)];
         if (frames.Count > MaxFrames)
         {
             notes.Add($"It has {frames.Count} frames; every {(int)Math.Ceiling(frames.Count / (double)MaxFrames)}th is kept ({MaxFrames} at most), running as long.");

@@ -69,7 +69,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         Problems = new ProblemsViewModel(session);
         TextureShelf = ShelfViewModel.Textures(session.Resources, () => services.OtherGameOpeners(session.Resources), session.Project.CopiedNow);
         TextureShelf.AddLabel = "Add a picture or material…";
-        TextureShelf.AddTip = "Brings in a picture of your own as a texture for walls, doors and floors: a still picture, an animated GIF, WebP or PNG (GZDoom plays it at its own pace), or any picture of a PBR material set (a colour picture with its normal, roughness, metal or occlusion maps, as ambientCG and Poly Haven give them; GZDoom lights it by its maps).";
+        TextureShelf.AddTip = "Brings in a picture of your own as a texture for walls, doors and floors: a still picture, an animated GIF, WebP or PNG (GZDoom plays it at its own pace), a video's first ten seconds (MP4, WebM, MKV or MOV, through your ffmpeg), or any picture of a PBR material set (a colour picture with its normal, roughness, metal or occlusion maps, as ambientCG and Poly Haven give them; GZDoom lights it by its maps).";
         TextureShelf.Add = () => _ = AddMaterialAsync();
         session.TexturesChanged += TextureShelf.Refresh;
         session.MapsAdded += () =>

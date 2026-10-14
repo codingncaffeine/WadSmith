@@ -1777,9 +1777,9 @@ internal sealed class MapCanvas : Control
     internal static string? ModelFileIn(DragEventArgs e) =>
         e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p is not null && ModelProps.IsModel(p));
 
-    /// <summary>A picture file dragged in from the file manager, its local path; null for anything else.</summary>
+    /// <summary>A picture or video file dragged in from the file manager, its local path; null for anything else.</summary>
     internal static string? PictureFileIn(DragEventArgs e) =>
-        e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p is not null && Pictures.IsPicture(p));
+        e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p is not null && (Pictures.IsPicture(p) || WadSmith.Core.Graphics.VideoFrames.IsVideo(p)));
 
     /// <summary>A sound or music file dragged in from the file manager, its local path; null for anything else.</summary>
     internal static string? AudioFileIn(DragEventArgs e) =>

@@ -272,7 +272,7 @@ public partial class EditorView : UserControl
         {
             Title = "Add a picture, an animation, or a material (any picture of its set)",
             AllowMultiple = false,
-            FileTypeFilter = [new("Pictures and animations (PNG, JPG, GIF, WebP, TGA)") { Patterns = ["*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.gif", "*.GIF", "*.webp", "*.WEBP", "*.tga", "*.TGA", "*.bmp", "*.BMP"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
+            FileTypeFilter = [new("Pictures and animations (PNG, JPG, GIF, WebP, TGA)") { Patterns = ["*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.gif", "*.GIF", "*.webp", "*.WEBP", "*.tga", "*.TGA", "*.bmp", "*.BMP"] }, new("Videos, their first 10 seconds (MP4, WebM, MKV, MOV; needs ffmpeg)") { Patterns = ["*.mp4", "*.MP4", "*.webm", "*.WEBM", "*.mkv", "*.MKV", "*.mov", "*.MOV", "*.avi", "*.AVI", "*.m4v", "*.M4V"] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
         }).ConfigureAwait(true);
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }
