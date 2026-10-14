@@ -22,6 +22,7 @@ public partial class MainWindow : Window
             {
                 main.PickFolder = PickFolderAsync;
                 main.PickFile = PickFileAsync;
+                main.PickProgram = PickProgramAsync;
                 main.LargeInterfaceChanged += ApplyScale;
             }
 
@@ -47,6 +48,15 @@ public partial class MainWindow : Window
     {
         if (StorageProvider is not { CanOpen: true } storage) return null;
         var picked = await storage.OpenFilePickerAsync(new FilePickerOpenOptions { Title = title, AllowMultiple = false, FileTypeFilter = GameFileTypes.Filter }).ConfigureAwait(true);
+        return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
+    }
+
+    /// <summary>Asks for a program: on Windows an .exe, elsewhere any file (an engine there has no extension, an AppImage its own).</summary>
+    private async Task<string?> PickProgramAsync(string title)
+    {
+        if (StorageProvider is not { CanOpen: true } storage) return null;
+        IReadOnlyList<FilePickerFileType> types = OperatingSystem.IsWindows() ? [new FilePickerFileType("Programs") { Patterns = ["*.exe"] }, FilePickerFileTypes.All] : [FilePickerFileTypes.All];
+        var picked = await storage.OpenFilePickerAsync(new FilePickerOpenOptions { Title = title, AllowMultiple = false, FileTypeFilter = types }).ConfigureAwait(true);
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }
 

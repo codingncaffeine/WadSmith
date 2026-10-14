@@ -48,6 +48,43 @@ public sealed class PreferencesTests
     }
 
     [Fact]
+    public async Task AnEngineChosenIsKeptAnAppImageChosenBecomesAProgramAndOneGoneIsSaid()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "AppImages are Linux's.");
+        using var temp = new TempFolder();
+        var (services, file) = Services(temp);
+        var image = Path.Combine(temp.Path, "Downloads", "Linux-UZDoom-Release-x86_64.AppImage");
+        EngineLocatorTests.PlantAppImage(image, startable: false);
+        var prefs = new PreferencesViewModel(services, () => { }, _ => { }) { PickProgram = _ => Task.FromResult<string?>(image) };
+        await prefs.EnginesFound;
+        Assert.Null(prefs.ChosenEngine!.Choice);
+        Assert.Equal("The one found first", prefs.Engines[0].Name);
+
+        // Chosen with Choose…: kept, listed as what it is, and made a program so Play can start it.
+        await prefs.ChooseEngineCommand.ExecuteAsync(null);
+        await prefs.EnginesFound;
+        Assert.Equal(image, services.Settings.Current.EnginePath);
+        Assert.Equal(("UZDoom (AppImage)", image), (prefs.ChosenEngine!.Name, prefs.ChosenEngine.Choice));
+        if (!OperatingSystem.IsWindows()) Assert.Equal(UnixFileMode.UserExecute, File.GetUnixFileMode(image) & UnixFileMode.UserExecute);
+        Assert.Contains("marked it", prefs.EngineNote, StringComparison.Ordinal);
+
+        // Back to the one found first, saved.
+        prefs.ChosenEngine = prefs.Engines[0];
+        await prefs.EnginesFound;
+        Assert.Null(services.Settings.Current.EnginePath);
+        Assert.True(services.Settings.Flush(TimeSpan.FromSeconds(5)), $"the settings did not reach the disk in 5 s: writer {services.Settings.WriterState}");
+        Assert.Null(SettingsStore.Load(file).Current.EnginePath);
+
+        // An engine chosen that has gone is said, and stays chosen until another is.
+        var gone = Path.Combine(temp.Path, "gone", "uzdoom");
+        services.Settings.Current.EnginePath = gone;
+        var again = new PreferencesViewModel(services, () => { }, _ => { });
+        await again.EnginesFound;
+        Assert.Equal(gone, again.ChosenEngine!.Choice);
+        Assert.Contains($"not at {gone} any more", again.EngineNote, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ClosingWithoutTouchingTheFoldersDoesNotLookForGamesAgain()
     {
         using var temp = new TempFolder();

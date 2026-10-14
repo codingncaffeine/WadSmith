@@ -11,7 +11,7 @@ export HOME="$WORK/home"; mkdir -p "$HOME"
 rm -rf "$WORK/capture"
 dotnet run --no-build --project "$WS_ROOT/tools/WadSmith.Capture" -c Release -- "$WORK/capture" "--games=$WS_GAMES" editor-engine-view > "$WORK/capture.txt" 2>&1
 # Only an engine this app started: its settings file lies in this work folder.
-for pid in $(pgrep -x gzdoom); do
+for pid in $(pgrep -x 'gzdoom|uzdoom'); do
   if tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | command grep -qF "$WORK/capture/profile/data/engine/"; then kill -TERM "$pid"; fi
 done
 echo "app-view-session: done" > "$WORK/session.txt"

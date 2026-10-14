@@ -124,7 +124,7 @@ public static class EngineView
         var config = Path.Combine(work, "view.ini");
         if (File.Exists(request.Config)) File.Copy(request.Config, config, overwrite: true);
         var log = Path.Combine(work, "engine-view.log");
-        if (File.Exists(log)) File.Delete(log);
+        EngineLogFile.Clear(log);
         var shot = Path.Combine(work, "shot.cfg");
         // Ten seconds of game time before the screenshot: with software drawing the map's first frame can take several (a
         // shot at four seconds came out black, 2026-10-12).
@@ -133,6 +133,8 @@ public static class EngineView
 
         var (program, arguments) = PlayCommand.For(engine, request with { Config = config, Log = log, From = null, FromAddOn = null });
         var args = new List<string>(arguments);
+        // A Flatpak's sandbox is given the add-on's folder too (its view's own folder, where the log goes, it has already).
+        if (engine.Kind == "flatpak") args.Insert(1, $"--filesystem={Path.GetDirectoryName(addOn)}");
         args.AddRange(["-file", addOn, "+set", Setting, spot.Text, "+set", "screenshot_dir", shots, "+set", "screenshot_type", "png", "+set", "crosshair", "0", "+set", "screenblocks", "12", "+exec", shot]);
         args.AddRange(["-width", width.ToString(CultureInfo.InvariantCulture), "-height", height.ToString(CultureInfo.InvariantCulture), "-nosound", "-nomusic", "+vid_fullscreen", "0", "+queryiwad", "0"]);
         args.AddRange(renderer == EngineRenderer.Vulkan ? ["+vid_preferbackend", "1"] : ["+vid_preferbackend", "0", "+vid_rendermode", "0"]);
@@ -188,7 +190,7 @@ public static class EngineView
                     if (process.HasExited) process.WaitForExit();
                     string said;
                     lock (output) said = output.ToString();
-                    var lines = (File.Exists(log) ? File.ReadAllLines(log) : said.Split('\n')).Where(l => l.Length > 0).TakeLast(3);
+                    var lines = (EngineLogFile.Written(log) is { } written ? File.ReadAllLines(written) : said.Split('\n')).Where(l => l.Length > 0).TakeLast(3);
                     throw new EngineViewException(process.HasExited ? $"{engine.Name} stopped before it drew the view. {string.Join(" ", lines)}" : $"{engine.Name} drew nothing in {timeout.TotalSeconds:0} seconds. {string.Join(" ", lines)}");
                 }
 

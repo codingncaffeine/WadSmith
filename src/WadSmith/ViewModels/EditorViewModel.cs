@@ -1724,10 +1724,11 @@ internal sealed partial class EditorViewModel : ObservableObject
             return;
         }
 
-        var engines = WadSmith.Core.Engines.EngineLocator.Find(_services.Settings.Current.EnginePath, Environment.GetEnvironmentVariable);
+        var chosen = _services.Settings.Current.EnginePath;
+        var engines = await Task.Run(() => WadSmith.Core.Engines.EngineLocator.Find(chosen, Environment.GetEnvironmentVariable)).ConfigureAwait(true);
         if (engines.Count == 0)
         {
-            EngineViewNote = "GZDoom is not installed, so there is no game's view to show. Install it (Arch: pacman -S gzdoom; Debian or Ubuntu: apt install gzdoom) and try again.";
+            EngineViewNote = "There is no game's view to show: " + char.ToLowerInvariant(WadSmith.Core.Engines.EngineLocator.NoEngine[0]) + WadSmith.Core.Engines.EngineLocator.NoEngine[1..];
             return;
         }
 
@@ -1757,7 +1758,7 @@ internal sealed partial class EditorViewModel : ObservableObject
 
         var data = _services.Paths.Data;
         var games = await Task.Run(_services.FoundGames).ConfigureAwait(true);
-        var config = WadSmith.Core.Engines.EngineConfig.Prepare(data, Environment.GetEnvironmentVariable, _services.Settings.Current.EnginePath);
+        var config = await Task.Run(() => WadSmith.Core.Engines.EngineConfig.Prepare(data, Environment.GetEnvironmentVariable, engines[0])).ConfigureAwait(true);
         var (request, why) = WadSmith.Core.Engines.PlayRequests.For(Session.Project, Session.Slot, games, config, Path.Combine(data, "engine", "view", "engine-view.log"), 3);
         if (request is null)
         {
@@ -1766,7 +1767,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         }
 
         var run = _engineViewRun = new CancellationTokenSource();
-        EngineViewNote = "Asking GZDoom for its view from here… about fifteen seconds.";
+        EngineViewNote = $"Asking {engines[0].Name} for its view from here… about fifteen seconds.";
         try
         {
             var folder = Path.Combine(data, "engine", "view");
@@ -1887,17 +1888,18 @@ internal sealed partial class EditorViewModel : ObservableObject
     {
         if (Playing) return;
         Preflight = null;
-        var engines = WadSmith.Core.Engines.EngineLocator.Find(_services.Settings.Current.EnginePath, Environment.GetEnvironmentVariable);
+        var chosen = _services.Settings.Current.EnginePath;
+        var engines = await Task.Run(() => WadSmith.Core.Engines.EngineLocator.Find(chosen, Environment.GetEnvironmentVariable)).ConfigureAwait(true);
         var port = PlayingPort;
         if (port is not null && from is not null)
         {
-            Hint($"Play From Here works in GZDoom only; {port.Name} starts the map at the player's start. Choose GZDoom under the Play arrow's Play in.");
+            Hint($"Play From Here works in UZDoom and GZDoom only; {port.Name} starts the map at the player's start. Choose {(engines.Count > 0 ? engines[0].Name : "UZDoom")} under the Play arrow's Play in.");
             return;
         }
 
         if (engines.Count == 0 && port is null)
         {
-            Hint("GZDoom is not installed. Install it from your system's software centre or package manager (Arch: pacman -S gzdoom; Debian or Ubuntu: apt install gzdoom; any: flatpak install flathub org.zdoom.GZDoom), then press Play again. Editing works meanwhile.");
+            Hint(WadSmith.Core.Engines.EngineLocator.NoEngine + " Editing works meanwhile.");
             return;
         }
 
@@ -1920,7 +1922,8 @@ internal sealed partial class EditorViewModel : ObservableObject
 
         var data = _services.Paths.Data;
         var games = await Task.Run(_services.FoundGames).ConfigureAwait(true);
-        var config = WadSmith.Core.Engines.EngineConfig.Prepare(data, Environment.GetEnvironmentVariable, _services.Settings.Current.EnginePath);
+        var playing = engines.FirstOrDefault();
+        var config = await Task.Run(() => WadSmith.Core.Engines.EngineConfig.Prepare(data, Environment.GetEnvironmentVariable, playing)).ConfigureAwait(true);
         var log = Path.Combine(data, "engine", "last-play.log");
         var (request, why) = WadSmith.Core.Engines.PlayRequests.For(Session.Project, Session.Slot, games, config, log, Skill + 1);
         if (request is null)
@@ -1945,8 +1948,8 @@ internal sealed partial class EditorViewModel : ObservableObject
         var (program, arguments) = WadSmith.Core.Engines.PlayCommand.For(engine, request);
         try
         {
-            if (File.Exists(log)) File.Delete(log);
-            var start = new System.Diagnostics.ProcessStartInfo(program) { UseShellExecute = false };
+            WadSmith.Core.Engines.EngineLogFile.Clear(log);
+            var start = new System.Diagnostics.ProcessStartInfo(program) { UseShellExecute = false, WorkingDirectory = WadSmith.Core.Engines.EngineLogFile.Folder(log) };
             foreach (var a in arguments) start.ArgumentList.Add(a);
             using var process = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException("the engine did not start");
             Playing = true;
@@ -1970,7 +1973,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             Playing = false;
         }
 
-        Session.ReadPlayLog(log, played);
+        Session.ReadPlayLog(WadSmith.Core.Engines.EngineLogFile.Written(log) ?? log, played);
         Hint("Back from the game.");
         if (exitCode == 0) await CelebrateFirstPlay(played, engine.Name).ConfigureAwait(true);
     }

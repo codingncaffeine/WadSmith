@@ -30,27 +30,46 @@ internal sealed partial class EditorViewModel
     /// <summary>The classic ports installed for this game family, found on a worker when the editor opens.</summary>
     private IReadOnlyList<PortInstall> _ports = [];
 
-    /// <summary>The "Play in" menu: GZDoom, then each port installed for this game, the chosen one ticked.</summary>
+    /// <summary>The name of the engine Play starts (UZDoom first, D64, or the one chosen in Preferences), found with the ports; null before that or when there is none.</summary>
+    private string? _engineName;
+
+    /// <summary>The "Play in" menu: the engine, then each port installed for this game, the chosen one ticked.</summary>
     public IReadOnlyList<PlayInChoice> PlayInMenu =>
     [
-        new((PlayIn == InGZDoom ? "✓ " : "    ") + "GZDoom", new RelayCommand(() => PlayIn = InGZDoom), "Plays the project as it is, in GZDoom."),
+        new((PlayIn == InGZDoom ? "✓ " : "    ") + (_engineName ?? "UZDoom or GZDoom"), new RelayCommand(() => PlayIn = InGZDoom), $"Plays the project as it is, in {_engineName ?? "UZDoom or GZDoom"}. Preferences choose the engine, under Engine."),
         .. _ports.Select(p => new PlayInChoice((PlayIn == p.Program ? "✓ " : "    ") + p.Name, new RelayCommand(() => PlayIn = p.Program),
             $"Plays the map exported for {ClassicPorts.Get(p.ExportFor(Session.Project.Info.Target))?.Title}, with WadSmith's own copy of {p.Name}'s settings.")),
     ];
 
-    /// <summary>Finds the ports off the UI thread; a project kept for a classic target plays in that target's port first.</summary>
+    /// <summary>Finds the ports and the engine off the UI thread; a project kept for a classic target plays in that target's port first.</summary>
     private void FindPorts()
     {
         var family = Session.Project.ClassicNamespace;
         var target = Session.Project.Info.Target;
-        _ = Task.Run(() => PortLocator.Find(family, Environment.GetEnvironmentVariable)).ContinueWith(t =>
+        var chosen = _services.Settings.Current.EnginePath;
+        _ = Task.Run(() => (PortLocator.Find(family, Environment.GetEnvironmentVariable), EngineLocator.Find(chosen, Environment.GetEnvironmentVariable).FirstOrDefault()?.Name)).ContinueWith(t =>
         {
             if (t.Status != TaskStatus.RanToCompletion) return;
             Session.OnUiThread(() =>
             {
-                _ports = t.Result;
+                (_ports, _engineName) = t.Result;
                 var own = Targets.IsClassic(target) ? _ports.FirstOrDefault(p => p.Exports[0] == target) : null;
                 if (own is not null) PlayIn = own.Program;
+                OnPropertyChanged(nameof(PlayInMenu));
+            });
+        }, TaskScheduler.Default);
+    }
+
+    /// <summary>Preferences changed the engine: the menu names the new one.</summary>
+    public void EngineChanged()
+    {
+        var chosen = _services.Settings.Current.EnginePath;
+        _ = Task.Run(() => EngineLocator.Find(chosen, Environment.GetEnvironmentVariable).FirstOrDefault()?.Name).ContinueWith(t =>
+        {
+            if (t.Status != TaskStatus.RanToCompletion) return;
+            Session.OnUiThread(() =>
+            {
+                _engineName = t.Result;
                 OnPropertyChanged(nameof(PlayInMenu));
             });
         }, TaskScheduler.Default);

@@ -737,7 +737,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         {
             var folder = UniqueFolder($"{gameTitle} {slot} remix");
             var notes = new List<string>();
-            var engine = _services.EngineData ?? throw new CorruptDataException("Remixing a classic map needs GZDoom installed: WadSmith reads the engine's own rules for what each line does.");
+            var engine = _services.EngineData ?? throw new CorruptDataException("Remixing a classic map needs UZDoom or GZDoom installed: WadSmith reads the engine's own rules for what each line does.");
             var project = Remix.Create(folder, found.Path, slot, engine, notes, mapTitle.Length > 0 ? $"{mapTitle} remix" : null, target);
             foreach (var n in notes) Log.Info($"Remix note: {n}");
             return (project, slot);
@@ -750,7 +750,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     {
         await StartAsync(() =>
         {
-            var engine = _services.EngineData ?? throw new CorruptDataException("Editing a map from a pack needs GZDoom installed: WadSmith reads the engine's own rules for what each line does.");
+            var engine = _services.EngineData ?? throw new CorruptDataException("Editing a map from a pack needs UZDoom or GZDoom installed: WadSmith reads the engine's own rules for what each line does.");
             var pack = MapPacks.Materialise(choice.Pack, Path.Combine(_services.Paths.Cache, "packs"));
             var folder = UniqueFolder($"{Path.GetFileNameWithoutExtension(pack)} {choice.Slot}");
             var notes = new List<string>();

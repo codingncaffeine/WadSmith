@@ -3138,7 +3138,7 @@ public sealed class EditorSession : IDisposable
     /// <summary>The engine's translation table for a classic namespace, read once per table; needs the engine's data.</summary>
     public static XlatTranslator XlatFor(string? engineData, string mapNamespace)
     {
-        if (engineData is null || !File.Exists(engineData)) throw new CorruptDataException("A map kept in the classic format needs GZDoom installed: WadSmith reads the engine's own table of what each classic line type does.");
+        if (engineData is null || !File.Exists(engineData)) throw new CorruptDataException("A map kept in the classic format needs UZDoom or GZDoom installed: WadSmith reads the engine's own table of what each classic line type does.");
         var path = XlatTranslator.PathFor(mapNamespace);
         return Xlats.GetOrAdd(engineData + "|" + path, _ => XlatTranslator.Load(new ResourceStack([ResourceContainer.Open(engineData)]), path));
     }

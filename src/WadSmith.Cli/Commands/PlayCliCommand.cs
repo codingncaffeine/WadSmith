@@ -18,7 +18,7 @@ internal sealed class PlayCliCommand : ICommand
 
         Prints the command the editor's Play starts, one argument a line, the program first: the base game,
         the project folder (and an add-on the game needs) on top, the map, the difficulty, and the engine
-        settings and log WadSmith keeps in --data (the settings copied once from the GZDoom settings in the
+        settings and log WadSmith keeps in --data (the settings copied once from the engine's own settings in the
         home folder, which is only read). --home stands in for the home folder. --from plays from a spot (Play
         From Here: WadSmith's small add-on, written into --data, stands the player there). --port plays in a classic
         port on the PATH instead (chocolate-doom, crispy-doom, dsda-doom, woof, nugget-doom …): the project is exported
@@ -40,18 +40,19 @@ internal sealed class PlayCliCommand : ICommand
         if (args.Positional.Count != 1) throw new UsageException("play takes one project folder.");
         if (!print || data is null) throw new UsageException("play prints the command only: pass --print and --data=FOLDER.");
 
-        string? Env(string name) => name == "HOME" && home is not null ? home : Environment.GetEnvironmentVariable(name);
+        // --home stands in for the whole home folder: the folders the XDG variables name are its own then.
+        string? Env(string name) => home is null ? Environment.GetEnvironmentVariable(name) : name switch { "HOME" => home, "XDG_CONFIG_HOME" or "XDG_DATA_HOME" or "FLATPAK_USER_DIR" => null, _ => Environment.GetEnvironmentVariable(name) };
         var project = Project.Open(args.Positional[0]);
         var found = GameLocator.Scan([.. GameLocator.StandardFolders(Env), .. games is null ? Array.Empty<string>() : [games]]);
-        var engine = enginePath is not null ? new EngineInstall("Your engine", enginePath, "custom") : EngineLocator.Find(null, Env).FirstOrDefault();
+        var engine = enginePath is not null ? EngineLocator.Describe(Path.GetFullPath(enginePath), Env) ?? new EngineInstall("Your engine", enginePath, "custom") : EngineLocator.Find(null, Env).FirstOrDefault();
         if (engine is null && portName is null)
         {
-            error.WriteLine("No engine was found: install GZDoom, or pass --engine=PATH.");
+            error.WriteLine("No engine was found: install UZDoom or GZDoom, or pass --engine=PATH.");
             return ExitCode.Failed;
         }
 
         var slot = map ?? project.Info.Maps.FirstOrDefault()?.Slot ?? "MAP01";
-        var config = EngineConfig.Prepare(Path.GetFullPath(data), Env);
+        var config = EngineConfig.Prepare(Path.GetFullPath(data), Env, engine);
         var log = Path.Combine(Path.GetFullPath(data), "engine", "last-play.log");
         var (request, why) = PlayRequests.For(project, slot, found, config, log, skill);
         if (request is null)

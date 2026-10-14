@@ -130,7 +130,7 @@ public static class ProjectExport
         XlatTranslator? xlat = null;
         if (family != "hexen")
         {
-            if (engineData is null || !File.Exists(engineData)) throw new CorruptDataException("Exporting for a classic port needs GZDoom installed: WadSmith reads the engine's own table of what each classic line type does.");
+            if (engineData is null || !File.Exists(engineData)) throw new CorruptDataException("Exporting for a classic port needs UZDoom or GZDoom installed: WadSmith reads the engine's own table of what each classic line type does.");
             xlat = XlatTranslator.Load(new ResourceStack([ResourceContainer.Open(engineData)]), XlatTranslator.PathFor(family));
         }
 

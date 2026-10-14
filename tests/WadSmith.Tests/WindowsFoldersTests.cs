@@ -95,4 +95,37 @@ public sealed class WindowsFoldersTests
         Assert.Contains(targets, t => t.Folder == one);
         Assert.Contains(targets, t => t.Folder == two);
     }
+
+    [Fact]
+    public void UZDoomIsFoundWhereWingetScoopOrAnUnpackedZipPutItBeforeGZDoom()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var temp = new TempFolder();
+        var local = Path.Combine(temp.Path, "Local");
+        var profile = Path.Combine(temp.Path, "Profile");
+        string Exe(string folder, string name)
+        {
+            Directory.CreateDirectory(folder);
+            var path = Path.Combine(folder, name);
+            File.WriteAllText(path, "");
+            return path;
+        }
+
+        // winget's portable install, Scoop's (moved by its variable), Explorer's "Extract all" in Downloads, and Chocolatey's GZDoom.
+        var winget = Exe(Path.Combine(local, "Microsoft", "WinGet", "Packages", "UZDoom.UZDoom_Microsoft.Winget.Source_8wekyb3d8bbwe"), "uzdoom.exe");
+        var pk3 = Path.Combine(Path.GetDirectoryName(winget)!, "uzdoom.pk3");
+        File.WriteAllBytes(pk3, [0x50, 0x4B, 0x05, 0x06]);
+        var scoop = Exe(Path.Combine(temp.Path, "Scoop", "apps", "uzdoom", "current"), "uzdoom.exe");
+        var unzipped = Exe(Path.Combine(profile, "Downloads", "Windows-UZDoom-Release-x86_64"), "uzdoom.exe");
+        var chocolatey = Exe(Path.Combine(local, "Programs", "gzdoom"), "gzdoom.exe");
+        string? Env(string name) => name switch { "LOCALAPPDATA" => local, "USERPROFILE" => profile, "SCOOP" => Path.Combine(temp.Path, "Scoop"), _ => null };
+
+        var found = EngineLocator.Find(null, Env);
+        Assert.Equal([winget, scoop, unzipped, chocolatey], found.Select(e => e.Program));
+        Assert.Equal(["UZDoom", "UZDoom", "UZDoom", "GZDoom"], found.Select(e => e.Name));
+
+        // The data file beside the engine that plays first, and WadSmith's settings for it are UZDoom's own.
+        Assert.Equal(pk3, EngineData.For(found, [], Env, null));
+        Assert.EndsWith("uzdoom.ini", EngineConfig.Prepare(Path.Combine(temp.Path, "data"), Env, found[0]), StringComparison.Ordinal);
+    }
 }

@@ -4,7 +4,7 @@
 
 # WadSmith
 
-A modern map editor for Doom, Doom II, Heretic, Hexen and Strife, built for GZDoom, on Linux and Windows.
+A modern map editor for Doom, Doom II, Heretic, Hexen and Strife, built for UZDoom and GZDoom, on Linux and Windows.
 
 WadSmith is meant to be the editor someone who has only ever *played* these games can open and use:
 plain words instead of jargon, drag and drop for everything, doors and lifts the editor understands,
@@ -38,21 +38,21 @@ Coming next: travel back and forth between the maps of a hub, ambushes and seque
 - **Any Linux:** the tarball from the latest release, unpacked anywhere; run `./wadsmith`.
 - **Windows:** the `win-x64` zip from the latest release, unpacked anywhere; run `wadsmith.exe`.
 
-WadSmith needs [GZDoom](https://zdoom.org) to play maps, and SDL2 (optional) plays an object's sound when you point at it.
+WadSmith needs [UZDoom](https://github.com/UZDoom/UZDoom) (or GZDoom, the engine it continues) to play maps, and SDL2 (optional) plays an object's sound when you point at it. It finds UZDoom however it was installed: the Flatpak (`org.zdoom.UZDoom`), the AppImage, the AUR's `uzdoom-bin`, or on Windows the zip, winget (`UZDoom.UZDoom`) or Scoop; **Preferences → Engine** picks another or points at one anywhere.
 
 ## Getting started
 
 1. Start WadSmith. It finds the games you have installed; with none, it offers to fetch Freedoom.
 2. On a game, choose **Remix a map** to start from one of its maps, **New map** for one lit room, or **Guided first map** for ten minutes of steps beside you.
 3. Draw with the **Room** tool on the plan, drop textures and monsters from the **Textures** and **Objects** shelves, and watch it all in the 3D view.
-4. Press **F9** to play it in GZDoom. Everything is kept as you go.
+4. Press **F9** to play it in UZDoom (or GZDoom). Everything is kept as you go.
 
 The [wiki](https://github.com/codingncaffeine/WadSmith/wiki) covers every tool, shortcut and setting.
 
 ## Requirements
 
 - Linux (X11 or Wayland) or Windows 10/11 (64-bit).
-- [GZDoom](https://zdoom.org) to play maps.
+- [UZDoom](https://github.com/UZDoom/UZDoom) or [GZDoom](https://zdoom.org) to play maps.
 - The game data from your own copy of Doom, Doom II, Heretic, Hexen or Strife, or the free
   [Freedoom](https://freedoom.github.io). WadSmith ships no game data and never changes your game files.
 
@@ -86,7 +86,7 @@ Share check on Export lists them.
 
 WadSmith is built with [.NET](https://dotnet.microsoft.com), [Avalonia](https://avaloniaui.net),
 [SkiaSharp](https://github.com/mono/SkiaSharp) and the [MVVM Toolkit](https://github.com/CommunityToolkit/dotnet), plays
-sounds through [SDL2](https://www.libsdl.org), and plays maps in [GZDoom](https://zdoom.org).
+sounds through [SDL2](https://www.libsdl.org), and plays maps in [UZDoom](https://github.com/UZDoom/UZDoom) and [GZDoom](https://zdoom.org).
 
 ## License
 

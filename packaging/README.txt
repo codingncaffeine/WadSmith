@@ -1,4 +1,4 @@
-WadSmith — a map editor for Doom, Doom II, Heretic, Hexen and Strife, made for GZDoom.
+WadSmith — a map editor for Doom, Doom II, Heretic, Hexen and Strife, made for UZDoom and GZDoom.
 
 Run it
   From the tarball: ./wadsmith
@@ -7,7 +7,7 @@ Run it
 
 What it needs
   Your own copy of a game (or Freedoom, which WadSmith can fetch for you).
-  GZDoom to play your maps: on Linux from your distribution or Flathub (org.zdoom.GZDoom), on Windows from zdoom.org.
+  UZDoom (or GZDoom) to play your maps: on Linux from Flathub (org.zdoom.UZDoom), the AppImage from github.com/UZDoom/UZDoom/releases, or on Arch uzdoom-bin from the AUR; on Windows the zip from the same releases, or winget install UZDoom.UZDoom. Installed somewhere else? Preferences, Engine, Choose.
   SDL2, optional: plays an object's sound when you point at it on the Objects shelf (the Windows zip includes it).
 
 Your game files are only ever read. Your maps live in your own project folders.

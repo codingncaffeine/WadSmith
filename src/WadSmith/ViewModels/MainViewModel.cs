@@ -43,6 +43,9 @@ internal sealed partial class MainViewModel : ObservableObject
     /// <summary>Asks the user for a game file (set by the window).</summary>
     public Func<string, Task<string?>>? PickFile { get; set; }
 
+    /// <summary>Asks the user for a program, the engine to play in (set by the window).</summary>
+    public Func<string, Task<string?>>? PickProgram { get; set; }
+
     /// <summary>Raised when the Large interface preference changes, so the window rescales at once.</summary>
     public event Action<bool>? LargeInterfaceChanged;
 
@@ -54,9 +57,10 @@ internal sealed partial class MainViewModel : ObservableObject
         {
             Preferences = null;
             Welcome.TeachingChanged();
-        }, large => LargeInterfaceChanged?.Invoke(large)) { PickFolder = PickFolder, PickFile = PickFile };
+        }, large => LargeInterfaceChanged?.Invoke(large)) { PickFolder = PickFolder, PickFile = PickFile, PickProgram = PickProgram };
         prefs.FoldersChanged += () => _ = Welcome.RescanAsync();
         prefs.VeteranChanged += () => (Page as EditorViewModel)?.VeteranChanged();
+        prefs.EngineChanged += () => (Page as EditorViewModel)?.EngineChanged();
         Preferences = prefs;
     }
 
@@ -112,7 +116,7 @@ internal sealed partial class MainViewModel : ObservableObject
     {
         if (Services.EngineData is not { } engine)
         {
-            back?.Hint("Opening the game's own maps needs GZDoom installed: WadSmith reads the engine's own rules for what each line does.");
+            back?.Hint("Opening the game's own maps needs UZDoom or GZDoom installed: WadSmith reads the engine's own rules for what each line does.");
             return;
         }
 

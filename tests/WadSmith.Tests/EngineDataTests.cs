@@ -34,4 +34,22 @@ public sealed class EngineDataTests
         string? Env(string name) => name switch { "HOME" => Path.Combine(temp.Path, "home"), "XDG_DATA_HOME" => data, _ => null };
         Assert.Equal(flatpak, Core.Games.EngineData.Find([], Env, []));
     }
+
+    [Fact]
+    public void TheUZDoomFlatpaksDataComesBeforeGZDooms()
+    {
+        using var temp = new TempFolder();
+        var system = Path.Combine(temp.Path, "system");
+        var gzdoom = Planted(Path.Combine(temp.Path, "home", ".local", "share", "flatpak", "app", "org.zdoom.GZDoom", "current", "active", "files", "share", "games", "doom"));
+        var uzdoomFolder = Path.Combine(system, "app", "org.zdoom.UZDoom", "current", "active", "files", "share", "games", "uzdoom");
+        Directory.CreateDirectory(uzdoomFolder);
+        var uzdoom = Path.Combine(uzdoomFolder, "uzdoom.pk3");
+        File.WriteAllBytes(uzdoom, [0x50, 0x4B, 0x05, 0x06]);
+        string? Env(string name) => name switch { "HOME" => Path.Combine(temp.Path, "home"), "FLATPAK_SYSTEM_DIR" => system, _ => null };
+
+        // UZDoom's (a system install, in share/games/uzdoom) before GZDoom's (a user install): UZDoom is the one that plays first.
+        Assert.Equal(uzdoom, Core.Games.EngineData.Find([], Env, []));
+        File.Delete(uzdoom);
+        Assert.Equal(gzdoom, Core.Games.EngineData.Find([], Env, []));
+    }
 }

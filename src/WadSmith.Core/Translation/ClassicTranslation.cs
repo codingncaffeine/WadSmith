@@ -179,7 +179,7 @@ public static class ClassicTranslation
     public static MapModel ForProject(Projects.Project project, MapModel model, string? engineData, List<NotClassic>? report = null)
     {
         if (!project.ClassicFormat) return model;
-        if (engineData is null || !File.Exists(engineData)) throw new CorruptDataException("A map kept in the classic format needs GZDoom installed: WadSmith reads the engine's own table of what each classic line type does.");
+        if (engineData is null || !File.Exists(engineData)) throw new CorruptDataException("A map kept in the classic format needs UZDoom or GZDoom installed: WadSmith reads the engine's own table of what each classic line type does.");
         var ns = project.ClassicNamespace;
         var xlat = XlatTranslator.Load(new Containers.ResourceStack([Containers.ResourceContainer.Open(engineData)]), XlatTranslator.PathFor(ns));
         return MapExport.ForClassicSave(model, xlat, ns, ClassicPorts.Get(project.Info.Target), project.Map(model.Name)?.Next, report ?? []);

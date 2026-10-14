@@ -67,15 +67,15 @@ Architecture: amd64
 Installed-Size: $INSTALLED_KB
 Depends: libc6, libgcc-s1, libstdc++6, libicu76 | libicu74 | libicu72 | libicu70, libfontconfig1, libfreetype6, libx11-6, libx11-xcb1, libxcb1, libxi6, libxcursor1, libxext6, libxrandr2, libxrender1, libice6, libsm6, libegl1, libgl1, libwayland-client0, libxkbcommon0, zlib1g
 Recommends: libsdl2-2.0-0
-Suggests: gzdoom
+Suggests: uzdoom | gzdoom
 Maintainer: WadSmith <codingncaffeine@users.noreply.github.com>
 Homepage: https://github.com/codingncaffeine/WadSmith
-Description: Map editor for Doom, Heretic, Hexen and Strife, made for GZDoom
+Description: Map editor for Doom, Heretic, Hexen and Strife, made for UZDoom and GZDoom
  WadSmith remixes any map of the games you own or starts a new one, with a 3D
  view beside the plan, smart doors, lifts, stairs and windows, a live Problems
- panel, and Play straight into GZDoom. It never changes your game files.
+ panel, and Play straight into UZDoom or GZDoom. It never changes your game files.
  .
- GZDoom is needed to play maps (install it from your distribution or Flatpak);
+ UZDoom (or GZDoom) is needed to play maps: the Flatpak org.zdoom.UZDoom or the AppImage;
  SDL2 plays an object's sound when you point at it on the shelf.
 CTRL
 dpkg-deb --build --root-owner-group "$DEB" "$OUT/wadsmith_${VER}_amd64.deb" > /dev/null

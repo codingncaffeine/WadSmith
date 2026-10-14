@@ -41,6 +41,6 @@ rm -rf "$RT"
 echo "nested: compositor exit $STATUS"
 echo "--- real-config leak check (anything listed is a leak) ---"
 find ~/.config ~/.local/state -maxdepth 2 -newermt "$START" \( -name 'kwin*' -o -name 'kglobal*' -o -name 'kdeglobals' \) 2>/dev/null
-find ~/.config/gzdoom ~/.local/share/gzdoom ~/.cache/gzdoom -newermt "$START" 2>/dev/null
+find ~/.config/gzdoom ~/.local/share/gzdoom ~/.cache/gzdoom ~/.config/uzdoom ~/.local/share/games/uzdoom ~/.cache/uzdoom -newermt "$START" 2>/dev/null
 echo "--- end leak check ---"
 exit $STATUS

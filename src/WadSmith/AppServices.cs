@@ -49,8 +49,27 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
     /// <summary>The web, for what is fetched once (a game's cover picture); null when WADSMITH_OFFLINE is set, as the tests and the gate set it, and nothing is fetched.</summary>
     public HttpClient? Http => Environment.GetEnvironmentVariable("WADSMITH_OFFLINE") is "1" or "true" ? null : _http.Value;
 
-    /// <summary>GZDoom's own data file, needed to remix classic maps; null when GZDoom is not installed.</summary>
-    public string? EngineData { get; } = EngineDataFinder(settings.Current);
+    /// <summary>
+    /// The playing engine's own data file (uzdoom.pk3 or gzdoom.pk3), needed for the Objects shelf and to remix classic maps;
+    /// null when no engine is installed. Found before the window opens, and again when Preferences change the engine.
+    /// </summary>
+    public string? EngineData
+    {
+        get => Volatile.Read(ref _engineData);
+        private set => Volatile.Write(ref _engineData, value);
+    }
+
+    private string? _engineData = EngineDataFinder(paths, settings.Current);
+
+    private int _engineDataAsked;
+
+    /// <summary>Finds the engine data again for the engine now chosen (Preferences changed it); a later change's answer wins. Call on a worker.</summary>
+    public void RefreshEngineData()
+    {
+        var asked = Interlocked.Increment(ref _engineDataAsked);
+        var found = EngineDataFinder(Paths, Settings.Current);
+        if (asked == Volatile.Read(ref _engineDataAsked)) EngineData = found;
+    }
 
     /// <summary>Where "Make me a map" puts the maps it makes: the folder chosen in Preferences, else "Made maps" in the projects folder.</summary>
     public string MadeMapsFolder => Settings.Current.MadeMapsFolder is { Length: > 0 } chosen ? chosen : DefaultMadeMapsFolder;
@@ -188,10 +207,13 @@ internal sealed class AppServices(AppPaths paths, SettingsStore settings, Launch
         Sound.Dispose();
     }
 
-    private static string? EngineDataFinder(AppSettings settings)
+    /// <summary>The engine data of the engine that plays (an AppImage's taken out into the cache once), else the first found.</summary>
+    private static string? EngineDataFinder(AppPaths paths, AppSettings settings)
     {
-        var found = Core.Games.EngineData.Find([.. settings.GameFolders, Path.GetDirectoryName(settings.EnginePath) ?? ""]);
-        Log.Info(found is null ? "GZDoom's data file was not found: the Objects shelf has no monsters or items, and remixing classic maps needs it." : $"GZDoom data: {found}");
+        var env = (Func<string, string?>)Environment.GetEnvironmentVariable;
+        var engines = Core.Engines.EngineLocator.Find(settings.EnginePath, env);
+        var found = Core.Games.EngineData.For(engines, [.. settings.GameFolders, Path.GetDirectoryName(settings.EnginePath) ?? ""], env, Path.Combine(paths.Cache, "engine-data"));
+        Log.Info(found is null ? "No engine data file (uzdoom.pk3 or gzdoom.pk3) was found: the Objects shelf has no monsters or items, and remixing classic maps needs it." : $"Engine data: {found} (plays in {(engines.Count > 0 ? engines[0].Name + " at " + engines[0].Choice : "no engine found")})");
         return found;
     }
 }

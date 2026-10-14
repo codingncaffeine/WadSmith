@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using WadSmith.Core.Engines;
 using WadSmith.Editor.App;
 
 namespace WadSmith.App.ViewModels;
@@ -8,9 +9,12 @@ namespace WadSmith.App.ViewModels;
 /// <summary>A game folder the user added, in the Preferences list.</summary>
 internal sealed record GameFolderRow(string Folder);
 
+/// <summary>An engine in Preferences' list: its name, where it is, and the path choosing it keeps (null: whichever is found first).</summary>
+internal sealed record EngineRow(string Name, string Where, string? Choice);
+
 /// <summary>
 /// Preferences: only the settings something in WadSmith reads today (larger interface, tips, the
-/// desktop's title bar, game folders). Every change is saved at once; there is no Apply step.
+/// desktop's title bar, game folders, the engine). Every change is saved at once; there is no Apply step.
 /// </summary>
 internal sealed partial class PreferencesViewModel : ObservableObject
 {
@@ -19,12 +23,16 @@ internal sealed partial class PreferencesViewModel : ObservableObject
     private readonly Action<bool> _largeInterfaceChanged;
     private bool _foldersChanged;
 
+    /// <summary>Set while the engine list is filled, so selecting the row already chosen changes nothing.</summary>
+    private bool _fillingEngines;
+
     public PreferencesViewModel(AppServices services, Action close, Action<bool> largeInterfaceChanged)
     {
         _services = services;
         _close = close;
         _largeInterfaceChanged = largeInterfaceChanged;
         foreach (var f in services.Settings.Current.GameFolders) GameFolders.Add(new GameFolderRow(f));
+        EnginesFound = FindEnginesAsync(null);
     }
 
     /// <summary>Asks the user for a folder (set by the window); null result when they cancel.</summary>
@@ -32,6 +40,110 @@ internal sealed partial class PreferencesViewModel : ObservableObject
 
     /// <summary>Asks the user for a game file (set by the window); null result when they cancel.</summary>
     public Func<string, Task<string?>>? PickFile { get; set; }
+
+    /// <summary>Asks the user for a program (set by the window); null result when they cancel.</summary>
+    public Func<string, Task<string?>>? PickProgram { get; set; }
+
+    /// <summary>Raised when another engine was chosen and its data file found again, so an open map's menu names it.</summary>
+    public event Action? EngineChanged;
+
+    /// <summary>The engines Play can start: whichever is found first, each one found, and the one chosen; found on a worker as Preferences open.</summary>
+    public ObservableCollection<EngineRow> Engines { get; } = [];
+
+    /// <summary>The engine list's last filling (a test waits for it).</summary>
+    public Task EnginesFound { get; private set; }
+
+    /// <summary>The row chosen: the engine Play starts.</summary>
+    [ObservableProperty]
+    private EngineRow? _chosenEngine;
+
+    /// <summary>What the Engine section has to say: that none was found, that the one chosen has gone, or what choosing did.</summary>
+    [ObservableProperty]
+    private string _engineNote = "";
+
+    /// <summary>Finds the engines (on a worker) and fills the list, the chosen one selected.</summary>
+    private async Task FindEnginesAsync(string? note)
+    {
+        var chosen = _services.Settings.Current.EnginePath;
+        Func<string, string?> env = Environment.GetEnvironmentVariable;
+        var (found, mine) = await Task.Run(() =>
+        {
+            var all = EngineLocator.Find(null, env);
+            return (all, string.IsNullOrWhiteSpace(chosen) ? null : EngineLocator.Chosen(chosen, all, env));
+        }).ConfigureAwait(true);
+
+        _fillingEngines = true;
+        try
+        {
+            Engines.Clear();
+            var automatic = new EngineRow("The one found first", found.Count > 0 ? $"now {found[0].Name}, {Row(found[0]).Where}" : "none is installed yet", null);
+            Engines.Add(automatic);
+            foreach (var engine in found) Engines.Add(Row(engine));
+            var selected = automatic;
+            if (!string.IsNullOrWhiteSpace(chosen))
+            {
+                selected = Engines.FirstOrDefault(r => r.Choice is not null && mine is not null && r.Choice == mine.Choice) ?? (mine is null ? new EngineRow("The engine chosen", $"{chosen}: not there any more", chosen) : Row(mine));
+                if (!Engines.Contains(selected)) Engines.Insert(1, selected);
+            }
+
+            ChosenEngine = selected;
+        }
+        finally
+        {
+            _fillingEngines = false;
+        }
+
+        EngineNote = note ?? (!string.IsNullOrWhiteSpace(chosen) && mine is null ? $"The engine chosen is not at {chosen} any more: Play starts {(found.Count > 0 ? found[0].Name : "nothing")} until another is chosen."
+            : found.Count == 0 && mine is null ? EngineLocator.NoEngine : "");
+    }
+
+    private static EngineRow Row(EngineInstall engine) => new(engine.Name, engine.Kind == "flatpak" ? $"Flatpak {engine.App}" : engine.Program, engine.Choice);
+
+    partial void OnChosenEngineChanged(EngineRow? value)
+    {
+        if (_fillingEngines || value is null || value.Choice == _services.Settings.Current.EnginePath) return;
+        Choose(value.Choice, null);
+    }
+
+    /// <summary>The user points WadSmith at an engine: a program, an AppImage (made a program if it is not yet one), a Flatpak's command.</summary>
+    [RelayCommand]
+    private async Task ChooseEngineAsync()
+    {
+        if (PickProgram is null) return;
+        var file = await PickProgram(OperatingSystem.IsWindows() ? "Choose the engine to play in: uzdoom.exe or gzdoom.exe" : "Choose the engine to play in: uzdoom or gzdoom, or an AppImage of either").ConfigureAwait(true);
+        if (file is null) return;
+        var note = await Task.Run(() => MakeStartable(file)).ConfigureAwait(true);
+        Choose(file, note);
+    }
+
+    /// <summary>Keeps the choice, fills the list again, and finds the engine's data file again on a worker.</summary>
+    private void Choose(string? choice, string? note)
+    {
+        _services.Settings.Current.EnginePath = choice;
+        _services.Settings.Save();
+        EnginesFound = FindEnginesAsync(note);
+        _ = Task.Run(_services.RefreshEngineData).ContinueWith(_ => MainViewModel.PostToUi(() => EngineChanged?.Invoke()), TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// An AppImage never started is not yet a program (a browser saves it without the permission to run): choosing it
+    /// gives it that permission, as the file manager would ask to, so Play can start it. Says what was done, or null.
+    /// </summary>
+    private static string? MakeStartable(string file)
+    {
+        if (OperatingSystem.IsWindows() || !AppImage.IsAppImage(file)) return null;
+        try
+        {
+            var mode = File.GetUnixFileMode(file);
+            if ((mode & UnixFileMode.UserExecute) != 0) return null;
+            File.SetUnixFileMode(file, mode | UnixFileMode.UserExecute);
+            return "The AppImage was not marked as a program yet: WadSmith marked it, so Play can start it.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return $"The AppImage is not marked as a program, and WadSmith could not mark it ({ex.Message}): mark it in its properties to play in it.";
+        }
+    }
 
     /// <summary>Raised when Preferences close after the game folders changed, so the games are looked for again.</summary>
     public event Action? FoldersChanged;

@@ -66,14 +66,26 @@ public static partial class GameLocator
     {
         var windows = OperatingSystem.IsWindows();
         var home = environment("HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile, Environment.SpecialFolderOption.DoNotVerify);
+        // UZDoom's own search folders too: games/uzdoom in its data folder, and its Flatpak's data and config folders.
+        var dataHome = environment("XDG_DATA_HOME") is { Length: > 0 } d && Path.IsPathRooted(d) ? d : Path.Combine(home, ".local/share");
+        var configHome = environment("XDG_CONFIG_HOME") is { Length: > 0 } c && Path.IsPathRooted(c) ? c : Path.Combine(home, ".config");
+        var uzdoomFlatpak = Path.Combine(home, ".var/app", Engines.EngineLocator.UZDoomApp);
         var folders = new List<string>
         {
             "/usr/share/games/doom", "/usr/share/doom", "/usr/local/share/games/doom", "/usr/local/share/doom",
+            "/usr/share/games/uzdoom", "/usr/local/share/games/uzdoom",
             "/usr/share/games/freedoom", "/usr/share/freedoom",
             Path.Combine(home, ".local/share/games/doom"),
+            Path.Combine(dataHome, "games/doom"),
+            Path.Combine(dataHome, "games/uzdoom"),
             Path.Combine(home, ".config/gzdoom"),
             Path.Combine(home, ".var/app/org.zdoom.GZDoom/.config/gzdoom"),
             Path.Combine(home, ".config/uzdoom"),
+            Path.Combine(configHome, "uzdoom"),
+            Path.Combine(uzdoomFlatpak, "data/games/uzdoom"),
+            Path.Combine(uzdoomFlatpak, "data/games/doom"),
+            Path.Combine(uzdoomFlatpak, "data/doom"),
+            Path.Combine(uzdoomFlatpak, "config/uzdoom"),
         };
 
         // On Windows GZDoom is a folder unpacked anywhere, and its own folder ($PROGDIR) is where it looks for games first.
@@ -191,11 +203,14 @@ public static partial class GameLocator
     /// </summary>
     public static IEnumerable<string> EngineSearchFolders(string home, Func<string, string?> environment, IReadOnlyList<string>? engineFolders = null)
     {
+        var configHome = environment("XDG_CONFIG_HOME") is { Length: > 0 } c && Path.IsPathRooted(c) ? c : Path.Combine(home, ".config");
         var inis = new List<(string File, string? ProgDir)>
         {
             (Path.Combine(home, ".config/gzdoom/gzdoom.ini"), null),
             (Path.Combine(home, ".var/app/org.zdoom.GZDoom/.config/gzdoom/gzdoom.ini"), null),
             (Path.Combine(home, ".config/uzdoom/uzdoom.ini"), null),
+            (Path.Combine(configHome, "uzdoom/uzdoom.ini"), null),
+            (Path.Combine(home, ".var/app", Engines.EngineLocator.UZDoomApp, "config/uzdoom/uzdoom.ini"), null),
         };
         if (OperatingSystem.IsWindows()) inis.AddRange(WindowsEngineSettings(environment, engineFolders ?? []));
         foreach (var (ini, progDir) in inis)

@@ -40,7 +40,7 @@ internal sealed class TranslateCommand : ICommand
         if (args.Positional.Count != 1) throw new UsageException("translate takes one file.");
         if (enginePath is null)
         {
-            error.WriteLine("GZDoom's data file (gzdoom.pk3) was not found; install GZDoom or pass --engine-data=PATH.");
+            error.WriteLine("No engine data file (uzdoom.pk3 or gzdoom.pk3) was found; install UZDoom or GZDoom, or pass --engine-data=PATH.");
             return ExitCode.Failed;
         }
 

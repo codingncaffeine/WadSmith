@@ -89,6 +89,27 @@
                             ToolTip.Tip="Tell WadSmith about a folder that holds your games." />
                     </StackPanel>
 
+                    <TextBlock Classes="section" Text="ENGINE" Margin="0,12,0,0" />
+                    <TextBlock Classes="secondary" TextWrapping="Wrap"
+                               Text="The game Play and the game's view start your map in. WadSmith looks for UZDoom first, then GZDoom, wherever their packages put them. Choose another here, or point WadSmith at one it did not find." />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <ComboBox x:Name="EngineChoice" ItemsSource="{Binding Engines}" SelectedItem="{Binding ChosenEngine}" HorizontalAlignment="Stretch"
+                                  AutomationProperties.Name="Engine"
+                                  ToolTip.Tip="Which engine Play starts. The one found first follows what is installed: UZDoom when it is there, else GZDoom.">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:EngineRow">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding Where}" Classes="secondary" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Where}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Grid.Column="1" Classes="metal" Content="Choose…" Margin="10,0,0,0" Command="{Binding ChooseEngineCommand}" VerticalAlignment="Center"
+                                ToolTip.Tip="Point WadSmith at an engine it did not find: the uzdoom or gzdoom program (uzdoom.exe on Windows), an AppImage of either, or a Flatpak's command." />
+                    </Grid>
+                    <TextBlock Text="{Binding EngineNote}" Classes="secondary" TextWrapping="Wrap" IsVisible="{Binding EngineNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
                     <TextBlock Classes="section" Text="MAPS MADE FOR YOU" Margin="0,12,0,0" />
                     <TextBlock Classes="secondary" TextWrapping="Wrap"
                                Text="Where Make me a map puts the maps it makes. Each one is a folder of its own, listed on its game's card with your other maps." />
@@ -105,7 +126,7 @@
                         <Image Source="/Assets/icon.png" Width="104" Height="104" VerticalAlignment="Top" />
                         <StackPanel Spacing="6" VerticalAlignment="Center" MaxWidth="400">
                             <TextBlock Text="{Binding Version}" FontWeight="SemiBold" FontSize="16" />
-                            <TextBlock Classes="secondary" TextWrapping="Wrap" Text="A modern, Linux-native map editor for Doom, Doom II, Heretic, Hexen and Strife, built for GZDoom." />
+                            <TextBlock Classes="secondary" TextWrapping="Wrap" Text="A modern, Linux-native map editor for Doom, Doom II, Heretic, Hexen and Strife, built for UZDoom and GZDoom." />
                             <TextBlock Classes="secondary" TextWrapping="Wrap" Text="Free software under the GNU General Public License, version 3 or later. Your game files are only ever read." />
                             <Button Classes="metal" Content="Project page" Click="OnProjectPage" HorizontalAlignment="Left"
                                     ToolTip.Tip="Opens WadSmith's page on GitHub in your browser." />
