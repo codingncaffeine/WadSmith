@@ -62,7 +62,9 @@
                     <StackPanel Spacing="2">
                         <CheckBox Content="Doom Builder keys" IsChecked="{Binding DoomBuilderKeys}"
                                   ToolTip.Tip="The keys of Ultimate Doom Builder's defaults: W for the 3D view, E S D F to move in it, V L S T to pick only corners, walls, rooms or objects, Ctrl+D to draw, Shift+D for a door, C to select nothing, Ctrl+F9 to play from here." />
-                        <TextBlock Text="Every command and its key is in the command palette (Ctrl+K)." Classes="secondary" FontSize="12" Margin="28,0,0,0" />
+                        <TextBlock Text="Every command and its key is in the command palette (Ctrl+K); Alt+Enter there gives the highlighted one a key of your own." Classes="secondary" FontSize="12" Margin="28,0,0,0" TextWrapping="Wrap" />
+                        <Button Content="Keys back to the preset" Command="{Binding PresetKeysCommand}" IsVisible="{Binding HasOwnKeys}" Margin="28,4,0,0" HorizontalAlignment="Left"
+                                ToolTip.Tip="Forgets the keys you gave commands yourself: every command has the key of the preset above again." />
                     </StackPanel>
 
                     <TextBlock Classes="section" Text="GAME FOLDERS" Margin="0,12,0,0" />

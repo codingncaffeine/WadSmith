@@ -22,19 +22,76 @@ internal sealed record EditorCommand(string Name, string Group, string Shortcut,
 internal sealed partial class CommandPaletteViewModel : ObservableObject
 {
     private const int Shown = 60;
-    private readonly IReadOnlyList<EditorCommand> _all;
+    private IReadOnlyList<EditorCommand> _all;
     private readonly List<string> _recent;
     private readonly Action _close;
     private readonly Action? _ran;
+    private readonly Func<string, string, string?>? _rebind;
+    private readonly Func<IReadOnlyList<EditorCommand>>? _reread;
 
-    /// <summary>The palette over <paramref name="all"/>; <paramref name="ran"/> is told when a command is run from it, before it runs.</summary>
-    public CommandPaletteViewModel(IReadOnlyList<EditorCommand> all, List<string> recent, Action close, Action? ran = null)
+    /// <summary>
+    /// The palette over <paramref name="all"/>; <paramref name="ran"/> is told when a command is run from it, before it runs;
+    /// <paramref name="rebind"/> gives a command a new key (Alt+Enter) and says which command lost it, and
+    /// <paramref name="reread"/> gives the commands with their keys as they are after that.
+    /// </summary>
+    public CommandPaletteViewModel(IReadOnlyList<EditorCommand> all, List<string> recent, Action close, Action? ran = null, Func<string, string, string?>? rebind = null, Func<IReadOnlyList<EditorCommand>>? reread = null)
     {
         _all = all;
         _recent = recent;
         _close = close;
         _ran = ran;
+        _rebind = rebind;
+        _reread = reread;
         Refresh();
+    }
+
+    /// <summary>Whether keys can be changed here (the editor's palette).</summary>
+    public bool CanRebind => _rebind is not null;
+
+    /// <summary>The command waiting for its new key (after Alt+Enter); null otherwise.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Recording))]
+    private EditorCommand? _keyFor;
+
+    /// <summary>Whether the next key pressed becomes a command's key.</summary>
+    public bool Recording => KeyFor is not null;
+
+    /// <summary>What the last change of a key did, in words; empty until one is made.</summary>
+    [ObservableProperty]
+    private string _said = "";
+
+    /// <summary>Starts changing the highlighted command's key (Alt+Enter): the next key pressed becomes it.</summary>
+    public void StartRecording()
+    {
+        if (_rebind is null || SelectedIndex < 0 || SelectedIndex >= Results.Count) return;
+        KeyFor = Results[SelectedIndex];
+        Said = $"Press the new key for {KeyFor.Name}: Esc keeps the old one, Backspace leaves it with none.";
+    }
+
+    /// <summary>
+    /// A key pressed while a command waits for its key: Esc cancels, Backspace or Delete leaves it with none, a modifier alone waits
+    /// for the rest; anything else becomes its key, taken from the command that had it. Returns whether the key was used here.
+    /// </summary>
+    public bool Record(Avalonia.Input.Key key, Avalonia.Input.KeyModifiers modifiers)
+    {
+        if (KeyFor is not { } command || _rebind is null) return false;
+        if (key == Avalonia.Input.Key.Escape)
+        {
+            KeyFor = null;
+            Said = $"{command.Name} keeps {(command.Shortcut.Length > 0 ? command.Shortcut : "no key")}.";
+            return true;
+        }
+
+        var shortcut = key is Avalonia.Input.Key.Back or Avalonia.Input.Key.Delete && modifiers == Avalonia.Input.KeyModifiers.None ? "" : KeyChords.Format(key, modifiers);
+        if (shortcut is null) return true;
+        var lost = _rebind(command.Name, shortcut);
+        KeyFor = null;
+        Said = shortcut.Length == 0 ? $"{command.Name} has no key now." : lost is null ? $"{command.Name} is {shortcut} now." : $"{command.Name} is {shortcut} now, and {lost} has no key.";
+        var at = SelectedIndex;
+        if (_reread is not null) _all = _reread();
+        Refresh();
+        SelectedIndex = Math.Clamp(at, -1, Results.Count - 1);
+        return true;
     }
 
     /// <summary>What has been typed.</summary>

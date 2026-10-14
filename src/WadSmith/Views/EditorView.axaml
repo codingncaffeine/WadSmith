@@ -706,9 +706,10 @@
             <Border DataContext="{Binding Palette}" x:DataType="vm:CommandPaletteViewModel" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="16,64,16,16"
                     Width="620" MaxHeight="520" CornerRadius="8" Padding="10" Background="{DynamicResource Brush.Surface1}"
                     BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1" PointerPressed="OnPalettePressed">
-                <Grid RowDefinitions="Auto,Auto,*">
-                    <TextBox x:Name="PaletteSearch" Text="{Binding Query}" PlaceholderText="Type a command, such as “door” or “play”…" KeyDown="OnPaletteKeyDown"
-                             ToolTip.Tip="Type a few letters of what you want to do; the arrows choose, Enter does it, Esc closes. Classic names such as “sector” or “linedef” work too." />
+                <Grid RowDefinitions="Auto,Auto,*,Auto">
+                    <!-- Read only while a command waits for its new key, so the key pressed is not also typed here. -->
+                    <TextBox x:Name="PaletteSearch" Text="{Binding Query}" PlaceholderText="Type a command, such as “door” or “play”…" KeyDown="OnPaletteKeyDown" IsReadOnly="{Binding Recording}"
+                             ToolTip.Tip="Type a few letters of what you want to do; the arrows choose, Enter does it, Alt+Enter changes its key, Esc closes. Classic names such as “sector” or “linedef” work too." />
                     <TextBlock Grid.Row="1" Text="Nothing matches. Try another word." Classes="secondary" Margin="6,10" IsVisible="{Binding NothingFound}" />
                     <ListBox x:Name="PaletteList" Grid.Row="2" Margin="0,8,0,0" ItemsSource="{Binding Results}" SelectedIndex="{Binding SelectedIndex}"
                              Background="Transparent" Focusable="False" Tapped="OnPaletteTapped"
@@ -726,6 +727,11 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
+                    <!-- Changing keys (6c): what to press, or what the last change did. -->
+                    <TextBlock Grid.Row="3" Margin="6,8,6,0" TextWrapping="Wrap" FontSize="12" Classes="secondary" IsVisible="{Binding CanRebind}"
+                               Text="{Binding Said, TargetNullValue='', FallbackValue=''}" />
+                    <TextBlock Grid.Row="3" Margin="6,8,6,0" FontSize="12" Classes="secondary" Text="Alt+Enter gives the highlighted command a key of your own (Preferences puts the preset's back)."
+                               IsVisible="{Binding Said, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
                 </Grid>
             </Border>
         </Panel>

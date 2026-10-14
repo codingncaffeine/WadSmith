@@ -447,7 +447,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             return;
         }
 
-        Palette = new CommandPaletteViewModel(Commands(), _recentCommands, () => Palette = null, () => Guide?.Happened(GuideEvents.Palette));
+        Palette = new CommandPaletteViewModel(Commands(), _recentCommands, () => Palette = null, () => Guide?.Happened(GuideEvents.Palette), Rebind, Commands);
         Learned("palette");
     }
 
@@ -579,7 +579,36 @@ internal sealed partial class EditorViewModel : ObservableObject
 
         list.Add(new("Preferences", "WadSmith", K("Ctrl+,", "F5"), "settings|options|tips|larger text|classic names|keys", () => OpenPreferencesCommand.Execute(null)));
         list.Add(new("Back to the start screen", "WadSmith", "", "close|other map|home", () => CloseCommand.Execute(null)));
+
+        // Keys changed by hand (the palette's Alt+Enter) over the preset's: each takes its key from any other command that had it.
+        var keys = _services.Settings.Current.Keys;
+        if (keys.Count == 0) return list;
+        var taken = keys.Values.Where(k => k.Length > 0).ToHashSet(StringComparer.Ordinal);
+        for (var i = 0; i < list.Count; i++)
+        {
+            var c = list[i];
+            var own = keys.TryGetValue(c.Name, out var mine) ? mine : null;
+            list[i] = c with
+            {
+                Shortcut = own ?? (taken.Contains(c.Shortcut) ? "" : c.Shortcut),
+                Also = taken.Contains(c.Also) && c.Also != own ? "" : c.Also,
+            };
+        }
+
         return list;
+    }
+
+    /// <summary>
+    /// Gives a command the key pressed for it in the palette ("" for none), kept in the settings over the preset's; a command that
+    /// had that key loses it. Every key, label and tooltip follows at once. Returns the command that lost the key, if one did.
+    /// </summary>
+    internal string? Rebind(string command, string shortcut)
+    {
+        var lost = shortcut.Length == 0 ? null : Commands().FirstOrDefault(c => c.Name != command && (c.Shortcut == shortcut || c.Also == shortcut))?.Name;
+        _services.Settings.Current.Keys[command] = shortcut;
+        _services.Settings.Save();
+        VeteranChanged();
+        return lost;
     }
 
     /// <summary>What the Select tool picks: anything, or only corners, walls, rooms or objects (Doom Builder's modes).</summary>

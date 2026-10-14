@@ -160,6 +160,19 @@ internal sealed partial class PreferencesViewModel : ObservableObject
         }
     }
 
+    /// <summary>Whether keys were changed by hand (the palette's Alt+Enter).</summary>
+    public bool HasOwnKeys => _services.Settings.Current.Keys.Count > 0;
+
+    /// <summary>Puts the preset's keys back over every key changed by hand.</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void PresetKeys()
+    {
+        _services.Settings.Current.Keys.Clear();
+        _services.Settings.Save();
+        OnPropertyChanged(nameof(HasOwnKeys));
+        VeteranChanged?.Invoke();
+    }
+
     public bool UseSystemTitleBar
     {
         get => _services.Settings.Current.UseSystemTitleBar;

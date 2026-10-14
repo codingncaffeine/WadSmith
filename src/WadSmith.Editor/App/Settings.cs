@@ -62,6 +62,9 @@ public sealed class AppSettings
 
     public bool DoomBuilderKeys { get; set; }
 
+    /// <summary>Keys changed by hand (the palette's Alt+Enter), over the preset's: a command's name and its key, "" for none.</summary>
+    public Dictionary<string, string> Keys { get; set; } = [];
+
     /// <summary>Tips the coach has already given, so it does not repeat itself.</summary>
     public List<string> CoachSeen { get; set; } = [];
 

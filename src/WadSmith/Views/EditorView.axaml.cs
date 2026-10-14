@@ -160,8 +160,20 @@ public partial class EditorView : UserControl
     private void OnPaletteKeyDown(object? sender, KeyEventArgs e)
     {
         if ((DataContext as EditorViewModel)?.Palette is not { } palette) return;
+
+        // A command waiting for its new key takes whatever is pressed (Esc keeps the old one).
+        if (palette.Recording)
+        {
+            palette.Record(e.Key, e.KeyModifiers);
+            e.Handled = true;
+            return;
+        }
+
         switch (e.Key)
         {
+            case Key.Enter when (e.KeyModifiers & KeyModifiers.Alt) != 0 && palette.CanRebind:
+                palette.StartRecording();
+                break;
             case Key.Up:
                 palette.Move(-1);
                 break;

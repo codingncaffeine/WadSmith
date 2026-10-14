@@ -34,6 +34,22 @@ internal static class KeyChords
         return (key, mods);
     }
 
+    /// <summary>A key press written as a shortcut, as <see cref="Parse"/> reads it back; null for a modifier pressed alone.</summary>
+    public static string? Format(Key key, KeyModifiers modifiers)
+    {
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin or Key.None) return null;
+        var name = key switch
+        {
+            Key.OemOpenBrackets => "[",
+            Key.OemCloseBrackets => "]",
+            Key.OemComma => ",",
+            Key.OemQuotes => "'",
+            Key.Escape => "Esc",
+            _ => key.ToString(),
+        };
+        return ((modifiers & KeyModifiers.Control) != 0 ? "Ctrl+" : "") + ((modifiers & KeyModifiers.Shift) != 0 ? "Shift+" : "") + ((modifiers & KeyModifiers.Alt) != 0 ? "Alt+" : "") + name;
+    }
+
     /// <summary>Whether a key press is this shortcut (exactly these modifiers).</summary>
     public static bool Matches(string shortcut, Key key, KeyModifiers modifiers) => Parse(shortcut) is { } c && c.Key == key && c.Modifiers == (modifiers & (KeyModifiers.Control | KeyModifiers.Shift | KeyModifiers.Alt));
 }
