@@ -258,6 +258,63 @@ public sealed class ModelPropInTheWindowTests
         Assert.Equal("portal_loop=PORTA000; tiles of its frames 1", said);
     }
 
+    /// <summary>
+    /// A GIF on a room's floor plays on the plan, as the user sees it: brought in by the shelf's button, its tile dropped
+    /// inside the new map's room, then the window's frames over half a second (the GIF loops every six tics, 171 ms) show the
+    /// room's middle in more than one colour. A plan that is not drawn again as time passes shows one.
+    /// </summary>
+    [Fact]
+    public async Task AGifOnARoomsFloorPlaysOnThePlan()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var gif = Path.Combine(temp.Path, "portal_loop.gif");
+        File.WriteAllBytes(gif, PictureTests.Gif());
+        var said = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(Path.Combine(temp.Path, "profile"), Path.GetDirectoryName(wad)!);
+            try
+            {
+                var editor = Ui.NewMap(vm);
+                editor.ShowTextures = true;
+                var shelf = editor.TextureShelf;
+                for (var i = 0; i < 400 && shelf.Tiles.Count == 0; i++) Ui.Pump(0.05);
+                editor.PickMaterial = () => Task.FromResult<string?>(gif);
+                Click(window, window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && AutomationProperties.GetName(b) == "Add a picture or material…"));
+                for (var i = 0; i < 400 && !shelf.Tiles.Any(t => t.Group == ShelfViewModel.PictureGroup); i++) Ui.Pump(0.05);
+                var tile = shelf.Tiles.First(t => t.Group == ShelfViewModel.PictureGroup);
+
+                var session = editor.Session!;
+                var room = session.Geometry.Frame.Sectors.First(s => s.Element is not null && session.Geometry.LoopsAt(s.Element.Slot).Count > 0);
+                var corners = session.Geometry.LoopsAt(room.Element!.Slot).SelectMany(l => l).ToArray();
+                var middle = new MapPoint((corners.Min(p => p.X) + corners.Max(p => p.X)) / 2, (corners.Min(p => p.Y) + corners.Max(p => p.Y)) / 2);
+                var canvas = window.GetVisualDescendants().OfType<WadSmith.App.Canvas.MapCanvas>().First(c => c.IsEffectivelyVisible);
+                LibraryInTheWindowTests.Drop(window, canvas, middle, tile.Drop);
+                for (var i = 0; i < 200 && session.Geometry.AreaAt(middle)?.FloorTexture != tile.Drop.Texture; i++) Ui.Pump(0.05);
+                Ui.Pump(0.5);
+
+                var at = canvas.TranslatePoint(canvas.ToScreen(middle), window)!.Value;
+                var seen = new HashSet<int>();
+                for (var i = 0; i < 25; i++)
+                {
+                    Ui.Pump(0.02);
+                    using var frame = window.CaptureRenderedFrame()!;
+                    using var pixels = frame.Lock();
+                    var scale = frame.PixelSize.Width / window.Bounds.Width;
+                    seen.Add(System.Runtime.InteropServices.Marshal.ReadInt32(pixels.Address + (int)(at.Y * scale) * pixels.RowBytes + (int)(at.X * scale) * 4));
+                }
+
+                return $"floor {session.Geometry.AreaAt(middle)?.FloorTexture}; colours seen {(seen.Count > 1 ? "several" : "one")}";
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.Equal("floor PORTA000; colours seen several", said);
+    }
+
     [Fact]
     public async Task TheTextureShelfsButtonBringsAMaterialInAsATexture()
     {

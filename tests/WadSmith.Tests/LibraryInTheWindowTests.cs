@@ -60,7 +60,7 @@ public sealed class LibraryInTheWindowTests
         return WadWriter.Write(WadKind.Pwad, [("TX_START", ReadOnlyMemory<byte>.Empty), ("WINPACK1", ImageCodec.EncodePng(picture)), ("TX_END", ReadOnlyMemory<byte>.Empty)]);
     }
 
-    private static void Drop(MainWindow window, MapCanvas canvas, MapPoint at, ShelfDrop drop)
+    internal static void Drop(MainWindow window, MapCanvas canvas, MapPoint at, ShelfDrop drop)
     {
         var data = new DataTransfer();
         data.Add(DataTransferItem.Create(ShelfDrop.Format, drop));

@@ -28,8 +28,11 @@ internal enum AreaDetail
     Average,
 }
 
-/// <summary>One group of areas painted alike: a texture at a brightness, or a solid colour.</summary>
-internal sealed record AreaStyle(FlatPicture? Flat, byte Light, SKColor Solid, WadSmith.Editor.Scene.FlatTransform? Transform = null);
+/// <summary>
+/// One group of areas painted alike: a texture at a brightness, or a solid colour. A picture that moves (a GIF brought in)
+/// carries every frame and its tics, and the plan steps through them as GZDoom does.
+/// </summary>
+internal sealed record AreaStyle(FlatPicture? Flat, byte Light, SKColor Solid, WadSmith.Editor.Scene.FlatTransform? Transform = null, FlatPicture?[]? Frames = null, int[]? Tics = null);
 
 /// <summary>
 /// The map's picture for the render thread, built on a worker from one <see cref="MapGeometry"/> and
@@ -41,7 +44,7 @@ internal sealed class CanvasSnapshot
 {
     public readonly record struct ThingMark(float X, float Y, float Angle, int Type, float Radius, SKImage? Sprite);
 
-    private readonly Dictionary<(int Group, AreaDetail Detail, bool Smooth, int Level), SKPaint> _paints = [];
+    private readonly Dictionary<(int Group, AreaDetail Detail, bool Smooth, int Level, int Frame), SKPaint> _paints = [];
 
     private CanvasSnapshot(long version, MapViewMode mode, CellPaths walls, CellPaths? areas, AreaStyle[] styles, float[] vertices, ThingMark[] things)
     {
@@ -52,6 +55,25 @@ internal sealed class CanvasSnapshot
         AreaStyles = styles;
         Vertices = vertices;
         Things = things;
+        Animated = Array.Exists(styles, s => s.Frames is not null);
+    }
+
+    /// <summary>Whether any area shows a picture that moves, so the plan is drawn again as time passes.</summary>
+    public bool Animated { get; }
+
+    /// <summary>The frame an area group shows <paramref name="seconds"/> after the plan opened (0 for a picture that does not move).</summary>
+    public int FrameOf(int group, double seconds) => AreaStyles[group].Tics is { } tics ? Pictures.FrameIndexAt(tics, seconds) : 0;
+
+    /// <summary>Every moving group's frame at <paramref name="seconds"/>, folded into one number that changes when any of them does.</summary>
+    public long FramesAt(double seconds)
+    {
+        long sum = 0;
+        for (var g = 0; g < AreaStyles.Length; g++)
+        {
+            if (AreaStyles[g].Tics is not null) sum = sum * 31 + FrameOf(g, seconds);
+        }
+
+        return sum;
     }
 
     public long Version { get; }
@@ -71,8 +93,11 @@ internal sealed class CanvasSnapshot
 
     public ThingMark[] Things { get; }
 
-    /// <summary>Builds the picture: whole-map work, so call it on a worker.</summary>
-    public static CanvasSnapshot Take(MapGeometry geometry, MapLook look, MapViewMode mode, IReadOnlySet<string>? hidden = null)
+    /// <summary>
+    /// Builds the picture: whole-map work, so call it on a worker. <paramref name="animations"/> are the project's moving
+    /// pictures by their first frame's name (<see cref="Pictures.Animations"/>); an area showing one carries all its frames.
+    /// </summary>
+    public static CanvasSnapshot Take(MapGeometry geometry, MapLook look, MapViewMode mode, IReadOnlySet<string>? hidden = null, IReadOnlyDictionary<string, (string[] Frames, int[] Tics)>? animations = null)
     {
         var f = geometry.Frame;
 
@@ -104,7 +129,7 @@ internal sealed class CanvasSnapshot
             path.LineTo(s.X2, s.Y2);
         });
 
-        var (areas, styles) = mode == MapViewMode.Lines ? (null, []) : BuildAreas(geometry, look, mode, hidden);
+        var (areas, styles) = mode == MapViewMode.Lines ? (null, []) : BuildAreas(geometry, look, mode, hidden, animations);
 
         var verts = new List<float>(f.Vertices.Count * 2);
         for (var i = 0; i < f.Vertices.Count; i++)
@@ -124,7 +149,7 @@ internal sealed class CanvasSnapshot
     /// by floor height for Heights. Outlines run with their area on the right, so outer loops and
     /// holes wind opposite ways and many areas can share one non-zero path without a hole being filled.
     /// </summary>
-    private static (CellPaths Areas, AreaStyle[] Styles) BuildAreas(MapGeometry geometry, MapLook look, MapViewMode mode, IReadOnlySet<string>? hidden)
+    private static (CellPaths Areas, AreaStyle[] Styles) BuildAreas(MapGeometry geometry, MapLook look, MapViewMode mode, IReadOnlySet<string>? hidden, IReadOnlyDictionary<string, (string[] Frames, int[] Tics)>? animations)
     {
         var f = geometry.Frame;
         var sectors = new List<int>();
@@ -199,7 +224,13 @@ internal sealed class CanvasSnapshot
                 if (!index.TryGetValue((name, light, transform), out var g))
                 {
                     g = index[(name, light, transform)] = styles.Count;
-                    styles.Add(new AreaStyle(look.Flat(name), Shown(light), new SKColor(0x2A, 0x2A, 0x2E), transform));
+                    var style = new AreaStyle(look.Flat(name), Shown(light), new SKColor(0x2A, 0x2A, 0x2E), transform);
+                    if (animations is not null && animations.TryGetValue(name, out var animation) && animation.Frames.Length > 1)
+                    {
+                        style = style with { Frames = [.. animation.Frames.Select(look.Flat)], Tics = animation.Tics };
+                    }
+
+                    styles.Add(style);
                 }
 
                 groupOf[i] = g;
@@ -244,10 +275,11 @@ internal sealed class CanvasSnapshot
     /// then kept. <paramref name="level"/> above 0 draws a smaller copy of the texture without
     /// smoothing (fast without a GPU); 0 with <see cref="AreaDetail.Smooth"/> uses true mipmaps.
     /// </summary>
-    public SKPaint PaintFor(int group, AreaDetail detail, bool smooth, int level = 0)
+    public SKPaint PaintFor(int group, AreaDetail detail, bool smooth, int level = 0, int frame = 0)
     {
-        if (_paints.TryGetValue((group, detail, smooth, level), out var paint)) return paint;
+        if (_paints.TryGetValue((group, detail, smooth, level, frame), out var paint)) return paint;
         var style = AreaStyles[group];
+        if (style.Frames is { } frames && frame > 0 && frame < frames.Length && frames[frame] is { } moving) style = style with { Flat = moving };
         paint = new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = smooth };
         if (Mode is MapViewMode.Heights or MapViewMode.Brightness or MapViewMode.Sound)
         {
@@ -270,7 +302,7 @@ internal sealed class CanvasSnapshot
             paint.Color = new SKColor((byte)(c.Red * style.Light / 255), (byte)(c.Green * style.Light / 255), (byte)(c.Blue * style.Light / 255));
         }
 
-        _paints[(group, detail, smooth, level)] = paint;
+        _paints[(group, detail, smooth, level, frame)] = paint;
         return paint;
     }
 

@@ -129,4 +129,58 @@ public sealed class PictureTests
         Assert.Equal(("POSTER", 1), (poster.Texture, poster.Frames));
         Assert.DoesNotContain("POSTER", File.ReadAllText(Path.Combine(project.Folder, Pictures.AnimationFile)), StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// The plan plays a moving floor as the 3D view and GZDoom do: a room floored with the GIF's first frame shows only red
+    /// at the start and the second frame's blue corner three tics in (its tics are 2 and 4). Without the project's
+    /// animations (the control) the plan keeps the first frame.
+    /// </summary>
+    [Fact]
+    public void ThePlanPlaysAMovingFloorAtGZDoomsPace()
+    {
+        using var temp = new TempFolder();
+        var gif = Path.Combine(temp.Path, "portal_loop.gif");
+        File.WriteAllBytes(gif, Gif());
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        var wad = GameFiles.Require("freedoom2.wad");
+        var game = GameResources.Load("freedoom2", project.Folder, [new FoundGame(GameCatalog.Get("freedoom2")!, wad, new FileInfo(wad).Length)], null)!;
+        var moving = Pictures.Import(project, game, gif);
+
+        var map = WadSmith.Editor.Model.EditorMap.FromModel(new WadSmith.Core.Maps.MapModel { Name = "MAP01", Namespace = "zdoom" });
+        Assert.All(EditScript.Run(map, $"look custom STARTAN3 {moving.Texture} CEIL1_1\nroom 0 0 256 256", Look.For("doom"), "doom"), s => Assert.True(s.Done, s.Said));
+        var geometry = WadSmith.Editor.Geometry.MapGeometry.Build(map.Frame);
+        var look = new WadSmith.App.Canvas.MapLook(game);
+        var animations = Pictures.Animations(project.CopiedNow());
+
+        var playing = WadSmith.App.Canvas.CanvasSnapshot.Take(geometry, look, WadSmith.App.Canvas.MapViewMode.Floors, null, animations);
+        var still = WadSmith.App.Canvas.CanvasSnapshot.Take(geometry, look, WadSmith.App.Canvas.MapViewMode.Floors);
+        Assert.True(playing.Animated);
+        Assert.False(still.Animated);
+        Assert.NotEqual(playing.FramesAt(0), playing.FramesAt(3 / 35.0));
+
+        Assert.Equal(0, BluePixels(playing, 0));
+        Assert.True(BluePixels(playing, 3 / 35.0) > 0, "the second frame's blue corner is not drawn");
+        Assert.Equal(0, BluePixels(playing, 6.5 / 35.0));
+        Assert.Equal(0, BluePixels(still, 3 / 35.0));
+
+        // Sixteen map units round the room's middle at four pixels a unit: each texel of the 4 × 4 picture is 4 × 4 pixels.
+        static int BluePixels(WadSmith.App.Canvas.CanvasSnapshot picture, double seconds)
+        {
+            using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(64, 64, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Premul));
+            new WadSmith.App.Canvas.MapPainter(picture, null, null, new WadSmith.App.Canvas.MapCanvas.View(128, 128, 4, 64, 64), seconds: seconds).Paint(surface.Canvas, gpu: false, grid: false);
+            using var image = surface.Snapshot();
+            using var pixels = image.PeekPixels();
+            var blue = 0;
+            for (var y = 0; y < 64; y++)
+            {
+                for (var x = 0; x < 64; x++)
+                {
+                    var c = pixels.GetPixelColor(x, y);
+                    if (c.Blue > 2 * c.Red + 20) blue++;
+                }
+            }
+
+            return blue;
+        }
+    }
 }

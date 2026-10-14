@@ -86,19 +86,22 @@ public static class Pictures
     }
 
     /// <summary>The frame an animation shows <paramref name="seconds"/> after it began: GZDoom counts 35 tics a second and loops.</summary>
-    public static string FrameAt((string[] Frames, int[] Tics) animation, double seconds)
+    public static string FrameAt((string[] Frames, int[] Tics) animation, double seconds) =>
+        animation.Frames.Length == 0 ? "" : animation.Frames[Math.Min(FrameIndexAt(animation.Tics, seconds), animation.Frames.Length - 1)];
+
+    /// <summary>Which frame (by its place) an animation of these tics shows <paramref name="seconds"/> after it began.</summary>
+    public static int FrameIndexAt(IReadOnlyList<int> tics, double seconds)
     {
-        var total = animation.Tics.Sum();
-        if (animation.Frames.Length == 0) return "";
-        if (total <= 0) return animation.Frames[0];
+        var total = tics.Sum();
+        if (tics.Count == 0 || total <= 0) return 0;
         var tic = (long)Math.Floor(seconds * 35) % total;
-        for (var i = 0; i < animation.Frames.Length; i++)
+        for (var i = 0; i < tics.Count; i++)
         {
-            tic -= animation.Tics[i];
-            if (tic < 0) return animation.Frames[i];
+            tic -= tics[i];
+            if (tic < 0) return i;
         }
 
-        return animation.Frames[^1];
+        return tics.Count - 1;
     }
 
     /// <summary>The project's animations by their first frame's name: every frame and its tics (what its ANIMDEFS says), for the 3D view to play.</summary>

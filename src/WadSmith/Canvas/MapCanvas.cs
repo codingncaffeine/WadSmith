@@ -69,6 +69,13 @@ internal sealed class MapCanvas : Control
     private readonly LatestOnWorker<(EditorSession Session, bool Add, IReadOnlyList<Element> Picked)> _boxes;
     private readonly LatestOnWorker<(EditorSession Session, FitMarks Marks)> _fits;
 
+    /// <summary>The time moving pictures play to (the 3D view keeps its own, as GZDoom starts each level's at zero).</summary>
+    private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+
+    /// <summary>Ticks once a game tic while the picture holds a moving floor, and asks for a frame only when one of them changes.</summary>
+    private readonly Avalonia.Threading.DispatcherTimer _tics;
+    private long _shownFrames;
+
     /// <summary>Where the player cannot pass (from a worker), the player's box at the pointer, and the pointer it follows.</summary>
     private FitMarks? _fitMarks;
     private (MapPoint At, WadSmith.Editor.Checks.GhostFit Fit)? _ghost;
@@ -199,8 +206,13 @@ internal sealed class MapCanvas : Control
         {
             if (!ReferenceEquals(r.Session, Session) || r.Picture.Mode != Mode || (_snapshot is not null && _snapshot.Mode == Mode && r.Picture.Version < _snapshot.Version)) return;
             _snapshot = r.Picture;
+            PlayFrames();
             InvalidateVisual();
         }, "the map picture");
+        _tics = new Avalonia.Threading.DispatcherTimer(TimeSpan.FromSeconds(1 / 35.0), Avalonia.Threading.DispatcherPriority.Render, (_, _) =>
+        {
+            if (_snapshot is { Animated: true } shown && shown.FramesAt(_clock.Elapsed.TotalSeconds) != _shownFrames) InvalidateVisual();
+        });
         _outlines = new(ViewModels.MainViewModel.PostToUi, r =>
         {
             if (!ReferenceEquals(r.Session, Session) || r.Generation != _outlineGeneration) return;
@@ -365,6 +377,7 @@ internal sealed class MapCanvas : Control
         }
 
         _snapshot = null;
+        PlayFrames();
         _selection = null;
         _hover = null;
         _hoverOutline = null;
@@ -385,6 +398,26 @@ internal sealed class MapCanvas : Control
 
         UpdateGhost(_ghostPointer);
         InvalidateVisual();
+    }
+
+    /// <summary>Runs the tic timer while the shown picture has a moving floor and the plan is on screen, and stops it otherwise.</summary>
+    private void PlayFrames()
+    {
+        var play = _snapshot is { Animated: true } && VisualRoot is not null;
+        if (play && !_tics.IsEnabled) _tics.Start();
+        else if (!play && _tics.IsEnabled) _tics.Stop();
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        PlayFrames();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        _tics.Stop();
     }
 
     /// <summary>The map changed and its new shapes are ready: rebuild the picture and outlines from them.</summary>
@@ -433,7 +466,7 @@ internal sealed class MapCanvas : Control
         _pictures.Request(() =>
         {
             var started = System.Diagnostics.Stopwatch.GetTimestamp();
-            var picture = CanvasSnapshot.Take(geometry, look, mode, hidden);
+            var picture = CanvasSnapshot.Take(geometry, look, mode, hidden, WadSmith.Editor.Editing.Pictures.Animations(session.Project.CopiedNow()));
             FrameStats.Snapshot(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             return (session, picture);
         });
@@ -543,7 +576,9 @@ internal sealed class MapCanvas : Control
         // A grid chosen by hand shows all the time, so what a corner will snap to is in sight.
         if (preview is null && GridSize > 0) preview = new DrawPreview(null, null, null, GridSize);
         var fit = ShowFit ? new FitOverlay(_fitMarks, _ghost?.At, _ghost?.Fit.Fits ?? false) : null;
-        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview, move, fit, Session.Mirror.IsOn ? Session.Mirror : null));
+        var seconds = _clock.Elapsed.TotalSeconds;
+        _shownFrames = _snapshot?.FramesAt(seconds) ?? 0;
+        context.Custom(new MapDrawOperation(new Rect(Bounds.Size), _snapshot, _selection, hover, new View(_cx, _cy, _zoom, Bounds.Width, Bounds.Height), _camera, preview, move, fit, Session.Mirror.IsOn ? Session.Mirror : null, seconds));
         // The selected object's facing knob, at the tip of its arrow.
         if (FacingKnob() is { } knob)
         {

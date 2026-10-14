@@ -209,7 +209,7 @@ internal sealed record FitMarks(long Version, IReadOnlyList<WadSmith.Editor.Geom
 /// <summary>What the plan shows of the player's fit: the marks, and the player's box at the pointer (null when off the map).</summary>
 internal sealed record FitOverlay(FitMarks? Marks, WadSmith.Editor.Geometry.MapPoint? Ghost, bool GhostFits);
 
-internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null, FitOverlay? fit = null, WadSmith.Editor.Editing.Mirror? mirror = null) : ICustomDrawOperation
+internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null, FitOverlay? fit = null, WadSmith.Editor.Editing.Mirror? mirror = null, double seconds = 0) : ICustomDrawOperation
 {
     public Rect Bounds { get; } = bounds;
 
@@ -227,7 +227,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         using var lease = feature.Lease();
         FrameStats.Gpu = lease.GrContext is not null;
-        new MapPainter(snapshot, selection, hover, view, camera, preview, move, fit, mirror).Paint(lease.SkCanvas, lease.GrContext is not null);
+        new MapPainter(snapshot, selection, hover, view, camera, preview, move, fit, mirror, seconds).Paint(lease.SkCanvas, lease.GrContext is not null);
         lease.SkCanvas.Flush();
         FrameStats.Draw(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
@@ -237,7 +237,7 @@ internal sealed class MapDrawOperation(Rect bounds, CanvasSnapshot? snapshot, Se
 /// Paints the map onto any Skia canvas: the window's (through <see cref="MapDrawOperation"/>) or an
 /// offscreen picture such as a version's thumbnail.
 /// </summary>
-internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null, FitOverlay? fit = null, WadSmith.Editor.Editing.Mirror? mirror = null)
+internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? selection, SelectionOverlay? hover, MapCanvas.View view, ThreeD.Camera3D? camera = null, DrawPreview? preview = null, MovePreview? move = null, FitOverlay? fit = null, WadSmith.Editor.Editing.Mirror? mirror = null, double seconds = 0)
 {
     private static readonly SKColor Background = new(0x0A, 0x07, 0x08);
     private static readonly SKColor GridFine = new(0x15, 0x10, 0x11);
@@ -563,7 +563,7 @@ internal sealed class MapPainter(CanvasSnapshot? snapshot, SelectionOverlay? sel
         // Without a GPU, smoothing every pixel costs four times as much; a texture shrunk to the zoom
         // and drawn plainly looks the same at a quarter of the cost.
         var level = detail == AreaDetail.Smooth && !gpu ? Math.Clamp((int)Math.Floor(Math.Log2(1 / texel)), 0, 4) : 0;
-        areas.DrawAll(canvas, g => snapshot.PaintFor(g, detail, smooth, level), visible);
+        areas.DrawAll(canvas, g => snapshot.PaintFor(g, detail, smooth, level, snapshot.FrameOf(g, seconds)), visible);
     }
 
     internal static SKColor HeightColour(double t) => HeightRamp.At(t);
