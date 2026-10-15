@@ -5,6 +5,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 allowed='codingncaffeine <codingncaffeine@users.noreply.github.com>'
+# GitHub's web editor signs the same account's commits with its numbered noreply address (no personal address).
+web='codingncaffeine <19158626+codingncaffeine@users.noreply.github.com>'
 # GitHub stamps web merges with its own committer identity.
 github='GitHub <noreply@github.com>'
 
@@ -17,7 +19,7 @@ refs=(--all)
 mapfile -t found < <(git log "${refs[@]}" --format='%an <%ae>%n%cn <%ce>' | sort -u)
 bad=0
 for id in "${found[@]}"; do
-    if [[ "$id" != "$allowed" && "$id" != "$github" ]]; then
+    if [[ "$id" != "$allowed" && "$id" != "$web" && "$id" != "$github" ]]; then
         echo "identity-audit: foreign identity in history: $id"
         bad=1
     fi
