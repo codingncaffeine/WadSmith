@@ -162,6 +162,64 @@ public sealed class CarriedActorTests
         Assert.Contains("addslotdefault 4 Blaster", File.ReadAllText(Path.Combine(project.Folder, ActorBorrowing.SlotFile)));
     }
 
+    /// <summary>
+    /// The engine renames some of Heretic's, Hexen's and Strife's own sprites as it loads them, and their objects draw the new
+    /// names: Strife's stalker is SPID in STRIFE1.WAD and STLK in the game. It comes into a Doom II map under STLK, so it shows
+    /// in the game ("has no frames" before), and leaves SPID to Doom II's spider mastermind.
+    /// </summary>
+    [Fact]
+    public void AStalkerFromStrifeComesWithItsPicturesUnderTheNamesTheEngineGivesThem()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var doom = Load("doom2", "DOOM2.WAD", project.Folder);
+        var strife = Load("strife", "STRIFE1.WAD");
+        Assert.NotEmpty(strife.Sprites.Frames("STLK"));
+        Assert.Empty(strife.Sprites.Frames("SPID"));
+
+        var stalker = strife.Things.FindClass("Stalker")!;
+        Assert.Null(ActorBorrowing.WhyNot(doom, strife, stalker));
+        var carried = ActorBorrowing.Carry(project, doom, strife, stalker);
+        var sprites = Directory.GetFiles(Path.Combine(project.Folder, "sprites")).Select(Path.GetFileName).ToList();
+        Assert.Contains(sprites, f => f!.StartsWith("STLK", StringComparison.Ordinal));
+        Assert.DoesNotContain(sprites, f => f!.StartsWith("SPID", StringComparison.Ordinal));
+        Assert.True(doom.CanShow(carried.Number));
+        Assert.All(doom.Sprites.Frames("SPID"), f => Assert.False(doom.IsProjectFile(f.Entry)));
+
+        // Heretic's Iron Lich is HEAD in its file and LICH in the game; Doom's cacodemon keeps HEAD, so either comes into the other's game.
+        var heretic = Load("heretic", "HERETIC.WAD");
+        Assert.NotEmpty(heretic.Sprites.Frames("LICH"));
+        Assert.Empty(heretic.Sprites.Frames("HEAD"));
+        ActorBorrowing.Carry(project, doom, heretic, heretic.Things.FindClass("Ironlich")!);
+        Assert.Contains(Directory.GetFiles(Path.Combine(project.Folder, "sprites")), f => Path.GetFileName(f).StartsWith("LICH", StringComparison.Ordinal));
+        Assert.Null(ActorBorrowing.WhyNot(heretic, doom, doom.Things.FindClass("Cacodemon")!));
+        Assert.Null(ActorBorrowing.WhyNot(strife, doom, doom.Things.FindClass("SpiderMastermind")!));
+    }
+
+    /// <summary>
+    /// Hexen's own file names most of its monsters' sounds (its SNDINFO: BishopSight is SYAB2D), in no table of the engine's:
+    /// a Hexen monster comes into a Doom II map with them, where it was silent before.
+    /// </summary>
+    [Fact]
+    public void AHexenMonsterComesWithTheSoundsHexensOwnTableNames()
+    {
+        using var temp = new TempFolder();
+        var project = Project.Create(Path.Combine(temp.Path, "p"), "p", "doom2");
+        project.SaveMap(StarterRoom.Create("MAP01", "doom"));
+        var doom = Load("doom2", "DOOM2.WAD", project.Folder);
+        var hexen = Load("hexen", "HEXEN.WAD");
+        Assert.NotNull(hexen.Things.Sounds.LumpFor("BishopSight"));
+        var bishop = hexen.Things.FindClass("Bishop")!;
+        Assert.NotNull(bishop.Sound);
+
+        var carried = ActorBorrowing.Carry(project, doom, hexen, bishop);
+        Assert.True(carried.Sounds > 0);
+        Assert.Contains("BishopSight", File.ReadAllText(Path.Combine(project.Folder, ActorBorrowing.SoundFile)));
+        var lump = hexen.Things.Sounds.LumpFor("BishopSight")!.ToUpperInvariant();
+        Assert.True(File.Exists(Path.Combine(project.Folder, "sounds", $"{lump}.lmp")));
+    }
+
     [Fact]
     public void AnObjectWhosePicturesShareANameWithThisGamesWaitsForALaterUpdate()
     {

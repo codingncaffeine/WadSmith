@@ -170,7 +170,7 @@ public sealed class GameResources
             var files = ResourceContainer.Open(projectFolder);
             _projectFiles.Add(files);
             _stack.Add(files);
-            Sprites = new SpriteIndex(_stack);
+            Sprites = new SpriteIndex(_stack, Game.Engine);
             Things = Things.With(things);
             _sprites.Clear();
         }
@@ -268,6 +268,14 @@ public sealed class GameResources
         var things = engineData is null
             ? ThingCatalog.Empty
             : Catalogues.GetOrAdd((engineData, found.Game.Engine), key => new Lazy<ThingCatalog>(() => ThingCatalog.Load(ResourceContainer.Open(key.Engine), key.Family))).Value;
+        // The game's own sound tables after the engine's, as the engine reads them: Hexen's file names its monsters' sounds.
+        if (engineData is not null)
+        {
+            things = things.WithGameSounds([.. stack.Containers.Where(c => c != projectFiles).SelectMany(c => c.Entries)
+                .Where(e => !e.IsMarker && e.Namespace == ResourceNamespace.Global && LumpName.Comparer.Equals(e.Name, "SNDINFO"))
+                .Select(e => System.Text.Encoding.UTF8.GetString(e.Read()))]);
+        }
+
         // Objects carried in from the user's other games (D55), by the numbers the project gave them.
         if (projectFolder is not null && File.Exists(Path.Combine(projectFolder, Core.Projects.Project.SidecarName)))
         {
@@ -315,7 +323,7 @@ public sealed class GameResources
             }
         }
 
-        var made = new GameResources(found.Game, files, stack, new TextureLibrary(stack), new SpriteIndex(stack), things, FindMusic(stack)) { ProjectFiles = projectFiles };
+        var made = new GameResources(found.Game, files, stack, new TextureLibrary(stack), new SpriteIndex(stack, found.Game.Engine), things, FindMusic(stack)) { ProjectFiles = projectFiles };
         foreach (var sky in skyboxes) made.AddSky(sky);
         made._switches = new(() => Core.Graphics.SwitchPictures.Read(engineData, found.Game.Engine, stack));
         made._animatedDoors = new(() => Core.Graphics.AnimatedDoors.Read(engineData, stack));
@@ -340,7 +348,7 @@ public sealed class GameResources
         files.AddRange(packFiles.Where(File.Exists));
         var containers = files.Select(ResourceContainer.Open).ToList();
         var stack = new ResourceStack(containers);
-        return new GameResources(found.Game with { Id = item.Id, Title = item.Title }, files, stack, new TextureLibrary(stack), new SpriteIndex(stack), ThingCatalog.Empty, [])
+        return new GameResources(found.Game with { Id = item.Id, Title = item.Title }, files, stack, new TextureLibrary(stack), new SpriteIndex(stack, found.Game.Engine), ThingCatalog.Empty, [])
         {
             Pack = containers.Skip(under).ToHashSet(),
             Library = item,

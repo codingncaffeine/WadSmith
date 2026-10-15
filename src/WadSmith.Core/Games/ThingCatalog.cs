@@ -47,12 +47,14 @@ public sealed partial class ThingCatalog
 {
     private readonly Dictionary<int, ThingType> _byNumber;
     private readonly Dictionary<string, ActorClass> _classes;
+    private readonly IReadOnlyList<string> _soundTexts;
 
-    private ThingCatalog(Dictionary<int, ThingType> byNumber, Dictionary<string, ActorClass>? classes = null, WadSmith.Core.Audio.SoundInfo? sounds = null)
+    private ThingCatalog(Dictionary<int, ThingType> byNumber, Dictionary<string, ActorClass>? classes = null, WadSmith.Core.Audio.SoundInfo? sounds = null, IReadOnlyList<string>? soundTexts = null)
     {
         _byNumber = byNumber;
         _classes = classes ?? new(StringComparer.OrdinalIgnoreCase);
         Sounds = sounds ?? WadSmith.Core.Audio.SoundInfo.Empty;
+        _soundTexts = soundTexts ?? [];
     }
 
     public static ThingCatalog Empty { get; } = new([]);
@@ -68,7 +70,26 @@ public sealed partial class ThingCatalog
     {
         var numbers = new Dictionary<int, ThingType>(_byNumber);
         foreach (var t in extra) numbers[t.Number] = t;
-        return new ThingCatalog(numbers, _classes, Sounds);
+        return new ThingCatalog(numbers, _classes, Sounds, _soundTexts);
+    }
+
+    /// <summary>
+    /// This catalogue with the game's own sound tables read after the engine's, as the engine reads them: the SNDINFO lumps of
+    /// the game's files, in load order. Hexen's file names most of its monsters' sounds itself (BishopSight is SYAB2D there,
+    /// in no table of the engine's). The objects' sounds are looked up again in the whole table. This catalogue when there are none.
+    /// </summary>
+    public ThingCatalog WithGameSounds(IReadOnlyList<string> texts)
+    {
+        if (texts.Count == 0) return this;
+        var soundTexts = _soundTexts.Concat(texts).ToList();
+        var sounds = WadSmith.Core.Audio.SoundInfo.Parse(soundTexts);
+        var numbers = new Dictionary<int, ThingType>(_byNumber.Count);
+        foreach (var (number, t) in _byNumber)
+        {
+            numbers[number] = _classes.ContainsKey(t.ClassName) && SoundOf(_classes, t.ClassName, t.Category) is { } name ? t with { Sound = sounds.LumpFor(name) ?? t.Sound } : t;
+        }
+
+        return new ThingCatalog(numbers, _classes, sounds, soundTexts);
     }
 
     /// <summary>
@@ -255,7 +276,8 @@ public sealed partial class ThingCatalog
         }
 
         var strings = LanguageStrings(engine);
-        var sounds = WadSmith.Core.Audio.SoundInfo.Parse(SoundInfoFor(family).Select(Text).OfType<string>());
+        var soundTexts = SoundInfoFor(family).Select(Text).OfType<string>().ToList();
+        var sounds = WadSmith.Core.Audio.SoundInfo.Parse(soundTexts);
         var types = new Dictionary<int, ThingType>();
         foreach (var (number, className) in numbers)
         {
@@ -271,19 +293,22 @@ public sealed partial class ThingCatalog
             var declared = classes[className].Name;
             var name = starts.TryGetValue(number, out var start) ? start : NameOf(tag, declared, NamedAncestor(classes, className), strings);
             var category = starts.ContainsKey(number) ? ThingCategory.Start : CategoryOf(classes, className, sprite);
-            var sound = category switch
-            {
-                ThingCategory.Monster => Inherited(classes, className, c => c.SeeSound) ?? Inherited(classes, className, c => c.ActiveSound),
-                ThingCategory.Weapon or ThingCategory.Ammo or ThingCategory.Health or ThingCategory.Armor or ThingCategory.Key or ThingCategory.Powerup => Inherited(classes, className, c => c.PickupSound),
-                ThingCategory.Decoration => Inherited(classes, className, c => c.ActiveSound),
-                _ => null,
-            };
+            var sound = SoundOf(classes, className, category);
             var ammoType = category == ThingCategory.Ammo ? AmmoClass(classes, className) : category == ThingCategory.Weapon ? Inherited(classes, className, c => c.AmmoTypeName) : null;
             types[number] = new ThingType(number, declared, name, sprite, frame, radius, height, scaleX, scaleY, ceiling, category, sound is null ? null : sounds.LumpFor(sound), Inherited(classes, className, c => c.Health), Inherited(classes, className, c => c.Amount) ?? 0, ammoType, Inherited(classes, className, c => c.AmmoGive) ?? 0);
         }
 
-        return new ThingCatalog(types, classes, sounds);
+        return new ThingCatalog(types, classes, sounds, soundTexts);
     }
+
+    /// <summary>The sound an object of a class stands for: a monster's sight (else active) sound, a pickup's, a decoration's active one.</summary>
+    private static string? SoundOf(Dictionary<string, ActorClass> classes, string className, ThingCategory category) => category switch
+    {
+        ThingCategory.Monster => Inherited(classes, className, c => c.SeeSound) ?? Inherited(classes, className, c => c.ActiveSound),
+        ThingCategory.Weapon or ThingCategory.Ammo or ThingCategory.Health or ThingCategory.Armor or ThingCategory.Key or ThingCategory.Powerup => Inherited(classes, className, c => c.PickupSound),
+        ThingCategory.Decoration => Inherited(classes, className, c => c.ActiveSound),
+        _ => null,
+    };
 
     /// <summary>The ammunition a pickup is: the class in its chain whose parent is Ammo (a box of bullets is Clip).</summary>
     private static string? AmmoClass(Dictionary<string, ActorClass> classes, string name)

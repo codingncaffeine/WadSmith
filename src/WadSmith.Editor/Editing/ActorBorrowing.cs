@@ -68,14 +68,17 @@ public static class ActorBorrowing
         var sprites = 0;
         foreach (var sprite in needs.Sprites.Where(s => into.Sprites.Frames(s).Count == 0))
         {
-            foreach (var (_, entry) in from.Sprites.Frames(sprite))
+            // Each picture under the name the engine gives it (Strife's SPIDA1 is the stalker's STLKA1): the project is not
+            // the game's own file, so the engine takes its names as they are.
+            foreach (var (name, entry) in from.Sprites.Frames(sprite))
             {
-                var file = $"sprites/{Core.Assets.AssetExtractor.SafeName(entry.Name)}.png";
-                if (project.FindCopy(from.Game.Id, entry.Name, "sprite") is null && !Pending("sprite", entry.Name))
+                var lump = name.Lump;
+                var file = $"sprites/{Core.Assets.AssetExtractor.SafeName(lump)}.png";
+                if (project.FindCopy(from.Game.Id, lump, "sprite") is null && !Pending("sprite", lump))
                 {
                     var image = PictureLoader.Load(entry.Read(), ResourceNamespace.Sprites, from.Textures.Palette, entry.Name).Image;
                     files.Add((file, ImageCodec.EncodePng(image)));
-                    copies.Add(new CopiedAsset { Kind = "sprite", Game = from.Game.Id, Original = entry.Name, Name = entry.Name, File = file });
+                    copies.Add(new CopiedAsset { Kind = "sprite", Game = from.Game.Id, Original = lump, Name = lump, File = file });
                 }
 
                 sprites++;

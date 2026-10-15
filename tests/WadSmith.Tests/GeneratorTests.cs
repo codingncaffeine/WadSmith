@@ -322,6 +322,87 @@ public sealed class GeneratorTests
         Assert.Empty(missing);
     }
 
+    /// <summary>The test games of each family a made map takes things from, opened as the Make me a map page opens them.</summary>
+    private static Dictionary<string, GameResources> OtherGames(string engine, params (string Family, string Id, string File)[] games) =>
+        games.Where(g => GameFiles.Find(g.File) is not null).ToDictionary(g => g.Family, g =>
+        {
+            var path = GameFiles.Require(g.File);
+            return GameResources.Load(g.Id, null, [new FoundGame(GameCatalog.Get(g.Id)!, path, new FileInfo(path).Length)], engine)!;
+        });
+
+    /// <summary>Makes a Doom II project from <paramref name="settings"/> in <paramref name="folder"/>, carrying in from <paramref name="others"/> as the page does.</summary>
+    private static (Core.Projects.Project Project, IReadOnlyList<string> Notes) MakeWith(string folder, GeneratorSettings settings, Dictionary<string, GameResources> others, string engine)
+    {
+        var doomPath = GameFiles.Require("DOOM2.WAD");
+        var notes = new List<string>();
+        var (project, _) = MadeProjects.Create(folder, settings, prepare: (project, plan) =>
+        {
+            var into = GameResources.Load("doom2", project.Folder, [new FoundGame(GameCatalog.Get("doom2")!, doomPath, new FileInfo(doomPath).Length)], engine)!;
+            var (lent, said) = Sources.Carry(project, into, m => others.GetValueOrDefault(m.Family), l => others.GetValueOrDefault(l.Family), f => others.GetValueOrDefault(f), plan, engine);
+            notes.AddRange(said);
+            return lent;
+        });
+        return (project, notes);
+    }
+
+    /// <summary>
+    /// A made Doom II map with monsters from Heretic, Hexen and Strife: each comes whole, as the engine reads the other game
+    /// (D55). Every sprite a monster draws in its own game is in the project under the name the engine gives it (Strife's
+    /// stalker is SPID in STRIFE1.WAD and STLK in the game: it showed the engine's sign for a missing picture), and every
+    /// sound it makes is in a table and a file (Hexen's own table names its monsters' sounds: they were silent).
+    /// </summary>
+    [Fact]
+    public void AMadeMapsMonstersFromOtherGamesShowAndSound()
+    {
+        var engine = GameFiles.Require("gzdoom.pk3");
+        var doomPath = GameFiles.Require("DOOM2.WAD");
+        var others = OtherGames(engine, ("heretic", "heretic", "HERETIC.WAD"), ("hexen", "hexen", "HEXEN.WAD"), ("strife", "strife", "STRIFE1.WAD"));
+        Assert.Equal(3, others.Count);
+        (string Family, string Class)[] wanted = [("strife", "Stalker"), ("strife", "Reaver"), ("hexen", "Bishop"), ("hexen", "Ettin"), ("hexen", "FireDemon"), ("heretic", "Ironlich"), ("heretic", "Minotaur")];
+        var settings = For("doom", "echoing-cistern", MapSize.Large) with { Monsters = [.. wanted.Select(w => FamilyPalette.For(w.Family)!.Monsters.Single(m => m.Class == w.Class))] };
+
+        using var temp = new TempFolder();
+        var (project, notes) = MakeWith(Path.Combine(temp.Path, "Echoing Cistern"), settings, others, engine);
+        Assert.Empty(notes);
+        var carried = project.Info.Copied.Where(c => c.Kind == "actor").ToList();
+        Assert.Contains(carried, c => c.Original == "Stalker");
+        Assert.Contains(carried, c => c.Game == "hexen");
+
+        // The project as the engine plays it: Doom II, then the project's own files and sound table.
+        var game = GameResources.Load("doom2", project.Folder, [new FoundGame(GameCatalog.Get("doom2")!, doomPath, new FileInfo(doomPath).Length)], engine)!;
+        var table = Core.Audio.SoundInfo.Parse([File.ReadAllText(Path.Combine(project.Folder, Editor.Editing.ActorBorrowing.SoundFile))]);
+        var faults = new List<string>();
+        foreach (var copy in carried)
+        {
+            var from = others[GameCatalog.Get(copy.Game)!.Engine];
+            var needs = from.Things.Needs(copy.Original);
+            faults.AddRange(needs.OwnSprites.Where(s => from.Sprites.Frames(s).Count > 0 && game.Sprites.Frames(s).Count == 0).Select(s => $"{copy.Original} draws {s}, which the project lacks"));
+            if (needs.Sounds.Count == 0) faults.Add($"{copy.Original} makes no sound");
+            foreach (var sound in needs.Sounds)
+            {
+                if ((game.Things.Sounds.LumpFor(sound) ?? table.LumpFor(sound)) is not { } lump) faults.Add($"{copy.Original}'s {sound} is in no sound table");
+                else if (game.Find(lump, Core.Containers.ResourceNamespace.Sounds) is null && game.Find(lump, Core.Containers.ResourceNamespace.Global) is null) faults.Add($"{copy.Original}'s {sound} ({lump}) is in no file");
+            }
+        }
+
+        Assert.Empty(faults);
+    }
+
+    /// <summary>
+    /// For a play check by hand (tools/engine/play-check.sh): with WADSMITH_MADE_SETTINGS naming a generator.json and
+    /// WADSMITH_MADE_OUT a folder, makes that map there with the test games' things carried in, as the page does.
+    /// </summary>
+    [Fact]
+    public void MakesTheMapOfGivenSettingsWhenAsked()
+    {
+        if (Environment.GetEnvironmentVariable("WADSMITH_MADE_SETTINGS") is not { Length: > 0 } file || Environment.GetEnvironmentVariable("WADSMITH_MADE_OUT") is not { Length: > 0 } folder) return;
+        var engine = GameFiles.Require("gzdoom.pk3");
+        var settings = SettingsJson.Read(File.ReadAllText(file))!;
+        var others = OtherGames(engine, ("heretic", "heretic", "HERETIC.WAD"), ("hexen", "hexen", "HEXEN.WAD"), ("strife", "strife", "STRIFE1.WAD"), ("build", "duke3d", "DUKE3D.GRP"), ("quake", "quake", "PAK0.PAK"));
+        var (_, notes) = MakeWith(folder, settings, others, engine);
+        Assert.Empty(notes);
+    }
+
     /// <summary>A made Doom II map whose rooms all take another game's looks: the pictures are copied into the project (Duke's and Quake's floors as floors too) and the map's walls, floors and ceilings use them.</summary>
     [Theory]
     [InlineData("heretic", "heretic", "HERETIC.WAD")]
