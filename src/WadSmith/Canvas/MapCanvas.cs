@@ -586,6 +586,15 @@ internal sealed class MapCanvas : Control
         InvalidateVisual();
     }
 
+    /// <summary>Puts <paramref name="at"/> in the middle of the plan's open part (beside the tool column), the zoom as it is.</summary>
+    public void CentreOn(MapPoint at)
+    {
+        _focus = null;
+        _fitted = true;
+        (_cx, _cy) = (at.X - ToolsRoom / 2 / _zoom, at.Y);
+        InvalidateVisual();
+    }
+
     /// <summary>Centres the map and zooms so all of it shows.</summary>
     public void FitMap()
     {

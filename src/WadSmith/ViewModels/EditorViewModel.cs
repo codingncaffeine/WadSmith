@@ -540,6 +540,7 @@ internal sealed partial class EditorViewModel : ObservableObject
             new("Show the whole map", "View", "Home", "zoom to fit|fit map|overview|center in screen", () => FitMap?.Invoke()),
             new("Put the 3D camera here", "View", "'", "place camera|camera here|stand here|look from here|visual mode here", PutCameraAtPointer),
             new("Show the selection", "View", "Shift+Home", "zoom to selection|frame selected|go to selection|center on selection", () => FitSelection?.Invoke(), Selected),
+            new("Go to a point…", "View", K("Ctrl+G", ""), "go to coordinates|coordinates|jump to|position|xy|centre on|center on|find a spot", AskGoTo),
             new("Finer grid", "View", "[", "grid smaller|smaller grid|decrease grid|grid size", () => StepGrid(-1)),
             new("Coarser grid", "View", "]", "grid larger|larger grid|increase grid|grid size", () => StepGrid(1)),
             new("Grid follows the zoom", "View", "", "automatic grid|auto grid|grid size", () => SetGrid(0), () => GridSize > 0),
@@ -1833,6 +1834,59 @@ internal sealed partial class EditorViewModel : ObservableObject
     public Action<MapPoint, double>? PutCamera { get; set; }
 
     /// <summary>Puts the 3D camera where the pointer is on the plan (Eureka's ' key), showing the 3D view beside the plan if it was hidden.</summary>
+    /// <summary>Where the pointer is on the plan, in map units (east, north), shown in the status strip; its button goes to a point (D65).</summary>
+    [ObservableProperty]
+    private string _pointerText = "Go to…";
+
+    /// <summary>The Go to a point box: how far east (x) and north (y), as typed.</summary>
+    [ObservableProperty]
+    private string _goToX = "";
+
+    [ObservableProperty]
+    private string _goToY = "";
+
+    /// <summary>Centres the plan on a map point (the view sets it).</summary>
+    public Action<MapPoint>? CentreOn { get; set; }
+
+    /// <summary>Opens the Go to a point box beside the status strip's coordinates (the view sets it).</summary>
+    public Action? OpenGoTo { get; set; }
+
+    /// <summary>Ctrl+K "Go to a point…" (Ultimate Doom Builder's Go To Coordinates): the box opens with where the pointer last was.</summary>
+    private void AskGoTo()
+    {
+        if (_pointer is { } at) (GoToX, GoToY) = (at.X.ToString("0.##", CultureInfo.InvariantCulture), at.Y.ToString("0.##", CultureInfo.InvariantCulture));
+        OpenGoTo?.Invoke();
+    }
+
+    /// <summary>Goes to the point typed: the plan centres on it; with the 3D view alone, the camera stands there.</summary>
+    [RelayCommand]
+    private void GoTo()
+    {
+        if (!double.TryParse(GoToX.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var x) || !double.TryParse(GoToY.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
+        {
+            Session.Tell("Type the point as two numbers: how far east (x) and how far north (y), such as 512 and -64.");
+            return;
+        }
+
+        var at = new MapPoint(x, y);
+        var where = string.Create(CultureInfo.InvariantCulture, $"{x:0.##}, {y:0.##}");
+        if (Layout == MapLayout.ThreeD)
+        {
+            if (Session.Geometry.AreaAt(at) is not { } area)
+            {
+                Session.Tell($"{where} is outside every room: the 3D view stands only in a room. Show the plan (Tab) to see that point.");
+                return;
+            }
+
+            PutCamera?.Invoke(at, area.FloorHeight);
+            Session.Tell($"The 3D view stands at {where}.");
+            return;
+        }
+
+        CentreOn?.Invoke(at);
+        Session.Tell($"The plan shows {where} in the middle.");
+    }
+
     private void PutCameraAtPointer()
     {
         if (_pointer is not { } at || Session.Geometry.AreaAt(at) is not { } area)
@@ -2108,7 +2162,12 @@ internal sealed partial class EditorViewModel : ObservableObject
     /// <summary>Called by the canvas when the pointer moves over something new.</summary>
     public void Hover(Element? element, MapPoint at)
     {
-        if (at != default) _pointer = at;
+        if (at != default)
+        {
+            _pointer = at;
+            PointerText = string.Create(CultureInfo.InvariantCulture, $"{at.X:0}, {at.Y:0}");
+        }
+
         _hovered = element;
         if (WhatIsThis) Explain();
         _hoverText = element switch

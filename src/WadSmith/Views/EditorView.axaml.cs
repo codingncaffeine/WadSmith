@@ -42,6 +42,12 @@ public partial class EditorView : UserControl
             };
             vm.FitMap = Canvas.FitMap;
             vm.FitSelection = () => Canvas.FitTo(vm.Session.Selection.Items);
+            vm.CentreOn = Canvas.CentreOn;
+            vm.OpenGoTo = () =>
+            {
+                FlyoutBase.ShowAttachedFlyout(PointerButton);
+                Dispatcher.UIThread.Post(() => GoToX.Focus(), DispatcherPriority.Input);
+            };
             vm.GridNow = () => Canvas.GridStepNow;
             vm.PickModel = PickModelAsync;
             vm.PickMaterial = PickMaterialAsync;
@@ -211,6 +217,31 @@ public partial class EditorView : UserControl
     /// since the click comes first and a list closed then would leave the button with no command to run.
     /// </summary>
     private void OnMapsChoice(object? sender, RoutedEventArgs e) => Dispatcher.UIThread.Post(() => FlyoutBase.GetAttachedFlyout(MapsButton)?.Hide());
+
+    /// <summary>The status strip's coordinates open the Go to a point box (D65), or close it when it is open.</summary>
+    private void OnPointerButton(object? sender, RoutedEventArgs e)
+    {
+        if (FlyoutBase.GetAttachedFlyout(PointerButton) is not { } box || DataContext is not EditorViewModel vm) return;
+        if (box.IsOpen)
+        {
+            box.Hide();
+            return;
+        }
+
+        vm.Commands().Single(c => c.Name == "Go to a point…").Run();
+    }
+
+    /// <summary>Enter in the Go to a point box goes there and closes it; Esc closes it.</summary>
+    private void OnGoToKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Escape) || DataContext is not EditorViewModel vm) return;
+        if (e.Key == Key.Enter) vm.GoToCommand.Execute(null);
+        FlyoutBase.GetAttachedFlyout(PointerButton)?.Hide();
+        e.Handled = true;
+    }
+
+    /// <summary>The Go button: after its command has run, the box closes.</summary>
+    private void OnGoToChoice(object? sender, RoutedEventArgs e) => Dispatcher.UIThread.Post(() => FlyoutBase.GetAttachedFlyout(PointerButton)?.Hide());
 
     /// <summary>The map's slot button opens the list of the project's maps, or closes it when it is open.</summary>
     private void OnMapsButton(object? sender, RoutedEventArgs e)

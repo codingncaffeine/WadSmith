@@ -676,12 +676,33 @@
 
         <!-- Status strip: what is under the pointer, or the coach's next tip; the Guide; the problems; whether changes are kept. -->
         <Border Grid.Row="3" Background="{DynamicResource Brush.Surface1}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,1,0,0">
-            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="12,0">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" Margin="12,0">
                 <TextBlock Text="{Binding Status}" Classes="secondary" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                <ToggleButton Grid.Column="1" Classes="segment first last" Content="What is this?" IsChecked="{Binding WhatIsThis}" Padding="10,1" Margin="16,2,0,2"
+                <!-- Where the pointer is on the plan (east, north); a click opens Go to a point (D65, UDB's Go To Coordinates). -->
+                <Button x:Name="PointerButton" Grid.Column="1" Classes="metal" Content="{Binding PointerText}" Padding="8,1" Margin="16,2,0,2" VerticalAlignment="Center"
+                        AutomationProperties.Name="Go to a point" Click="OnPointerButton"
+                        ToolTip.Tip="Where the pointer is on the plan: how far east (x) and north (y), in map units. Click to go to a point (Ctrl+K: Go to a point).">
+                    <FlyoutBase.AttachedFlyout>
+                        <!-- Opened and closed by the view, as the maps list is. -->
+                        <Flyout Placement="TopEdgeAlignedRight" OverlayDismissEventPassThrough="True">
+                            <StackPanel Spacing="8" MinWidth="240" KeyDown="OnGoToKey">
+                                <TextBlock Text="Go to a point" FontWeight="SemiBold" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="X" VerticalAlignment="Center" ToolTip.Tip="How far east, in map units (west is below zero)." />
+                                    <TextBox x:Name="GoToX" Text="{Binding GoToX}" Width="90" AutomationProperties.Name="Go to X" />
+                                    <TextBlock Text="Y" VerticalAlignment="Center" Margin="6,0,0,0" ToolTip.Tip="How far north, in map units (south is below zero)." />
+                                    <TextBox Text="{Binding GoToY}" Width="90" AutomationProperties.Name="Go to Y" />
+                                </StackPanel>
+                                <Button Content="Go" Command="{Binding GoToCommand}" Click="OnGoToChoice" AutomationProperties.Name="Go" HorizontalAlignment="Right"
+                                        ToolTip.Tip="Puts the point in the middle of the plan (with the 3D view alone, stands the camera there). Enter does the same." />
+                            </StackPanel>
+                        </Flyout>
+                    </FlyoutBase.AttachedFlyout>
+                </Button>
+                <ToggleButton Grid.Column="2" Classes="segment first last" Content="What is this?" IsChecked="{Binding WhatIsThis}" Padding="10,1" Margin="16,2,0,2"
                               ToolTip.Tip="Point at anything on the plan or in the 3D view to read what it is, what it does in the game and how to change it (Shift+F1)." />
                 <!-- The Guide (§3.9): its chapters, each a few hands-on minutes on this map. -->
-                <Button Grid.Column="2" Classes="metal" Content="Guide" Padding="10,1" Margin="16,2,0,2" VerticalAlignment="Center"
+                <Button Grid.Column="3" Classes="metal" Content="Guide" Padding="10,1" Margin="16,2,0,2" VerticalAlignment="Center"
                         ToolTip.Tip="Short hands-on chapters on this map: rooms and heights, doors and keys, lifts and stairs, textures, monsters, lights, secrets, map settings, and classic names for veterans.">
                     <Button.Flyout>
                         <MenuFlyout Placement="TopEdgeAlignedRight" ItemsSource="{Binding GuideMenu}">
@@ -695,9 +716,9 @@
                         </MenuFlyout>
                     </Button.Flyout>
                 </Button>
-                <ToggleButton Grid.Column="3" Classes="segment first last" Content="{Binding Problems.Summary}" IsChecked="{Binding ShowProblems}" Padding="10,1" Margin="16,2,0,2"
+                <ToggleButton Grid.Column="4" Classes="segment first last" Content="{Binding Problems.Summary}" IsChecked="{Binding ShowProblems}" Padding="10,1" Margin="16,2,0,2"
                               ToolTip.Tip="Things that would break or spoil the map, checked as you work, each with a way to see it and often a one-click fix." />
-                <TextBlock Grid.Column="4" Text="{Binding SaveText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
+                <TextBlock Grid.Column="5" Text="{Binding SaveText}" Classes="secondary" VerticalAlignment="Center" Margin="16,0,0,0" />
             </Grid>
         </Border>
 
