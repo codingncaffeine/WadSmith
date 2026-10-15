@@ -2759,8 +2759,9 @@ public sealed class EditorSession : IDisposable
             // A door is one thing: any part of it selected (its area, a frame, a wall or face round them) takes the whole door
             // away, and the wall it stood in closes up as the wall beside it (the user's report, 2026-10-15). A sliding or
             // swinging door's polyobjects go with it.
-            var doorways = items.Select(e => Doors.DoorwayOf(geometry, e, family)).OfType<Sector>().Distinct().ToList();
-            var rest = items.Where(e => Doors.DoorwayOf(geometry, e, family) is null).ToList();
+            var known = new Dictionary<Sector, Sector?>(ReferenceEqualityComparer.Instance);
+            var doorways = items.Select(e => Doors.DoorwayOf(geometry, e, family, known)).OfType<Sector>().Distinct().ToList();
+            var rest = items.Where(e => Doors.DoorwayOf(geometry, e, family, known) is null).ToList();
             var walledUp = doorways.Select(d => (Doorway: d, Frames: Doors.FramesBeside(geometry, d), Poly: PolyDoors.Recognise(geometry, d, family), Rising: Doors.Recognise(geometry, d))).ToList();
 
             // Switches that opened a door going away open nothing now: they lose their action, unless another area keeps the tag.

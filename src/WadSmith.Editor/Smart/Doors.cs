@@ -123,18 +123,26 @@ public static partial class Doors
     /// in — or null: the area itself, one of its frames, a wall round either (the door's faces and sides, a frame's walls), a
     /// face of such a wall, or one of a polyobject door's own walls. A click on the plan or in the 3D view lands on one of these,
     /// and the door is what the user means: the Inspector shows it, and Delete takes it away. Walls elsewhere that open it (a
-    /// switch) are not parts of it. Looks only near the element, through the shapes: quick, for the UI thread.
+    /// switch) are not parts of it. Looks only near the element, through the shapes: quick, for the UI thread. Asking about many
+    /// elements at once, pass the same <paramref name="known"/> to each call: every area is then looked at once.
     /// </summary>
-    public static Sector? DoorwayOf(MapGeometry geometry, Element element, string family) => element switch
+    public static Sector? DoorwayOf(MapGeometry geometry, Element element, string family, Dictionary<Sector, Sector?>? known = null) => element switch
     {
-        Side { Line: { } wall } => DoorwayOf(geometry, wall, family),
+        Side { Line: { } wall } => DoorwayOf(geometry, wall, family, known),
         Line { OnMap: true } wall when PolyDoors.OfWall(geometry, wall, family) is { } poly && poly.Halves.Any(h => h.Lines.Contains(wall)) => poly.Doorway,
-        Line { OnMap: true } wall => DoorwayOfArea(geometry, wall.Front.Sector, family) ?? (wall.Back is { } back ? DoorwayOfArea(geometry, back.Sector, family) : null),
-        Sector { OnMap: true } area => DoorwayOfArea(geometry, area, family),
+        Line { OnMap: true } wall => DoorwayOfArea(geometry, wall.Front.Sector, family, known) ?? (wall.Back is { } back ? DoorwayOfArea(geometry, back.Sector, family, known) : null),
+        Sector { OnMap: true } area => DoorwayOfArea(geometry, area, family, known),
         _ => null,
     };
 
     /// <summary>The doorway an area is (a door's area, a polyobject door's doorway) or is a frame of; null for any other area.</summary>
+    private static Sector? DoorwayOfArea(MapGeometry geometry, Sector area, string family, Dictionary<Sector, Sector?>? known)
+    {
+        if (known is null) return DoorwayOfArea(geometry, area, family);
+        if (!known.TryGetValue(area, out var doorway)) known[area] = doorway = DoorwayOfArea(geometry, area, family);
+        return doorway;
+    }
+
     private static Sector? DoorwayOfArea(MapGeometry geometry, Sector area, string family)
     {
         if (!area.OnMap) return null;
