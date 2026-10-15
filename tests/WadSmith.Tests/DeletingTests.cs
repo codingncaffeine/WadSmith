@@ -110,6 +110,27 @@ public sealed class DeletingTests
         }
     }
 
+    /// <summary>
+    /// A step (or a lift, or a frame) beside a room: deleting the wall between them joins the step to the room, whichever of them
+    /// faces the wall's front, and the room keeps its floor and ceiling; the step's were taken by the whole room before.
+    /// </summary>
+    [Fact]
+    public void AWallBetweenARoomAndAStepGoesAndTheStepJoinsTheRoomWhicheverWayItRuns()
+    {
+        foreach (var stepInFront in new[] { true, false })
+        {
+            var (map, history, rooms) = MovingTests.Drawn((0, 0, 256, 256), (256, 96, 288, 160));
+            var (room, step) = (rooms[0], rooms[1]);
+            history.Record("Raise it", e => e.Set(step, s => s.FloorHeight, (s, v) => s.FloorHeight = v, 24));
+            var shared = WallList(map).Single(l => l.Back is not null);
+            if (ReferenceEquals(shared.Front.Sector, step) != stepInFront) history.Record("Turn", e => Walls.Turn(e, shared));
+            var (floor, ceiling) = (room.FloorHeight, room.CeilingHeight);
+            Assert.Empty(Delete(map, history, shared));
+            Assert.Same(room, Assert.Single(map.Sectors, s => s.OnMap));
+            Assert.Equal((floor, ceiling), (room.FloorHeight, room.CeilingHeight));
+        }
+    }
+
     [Fact]
     public void OnePieceOfAWallBetweenTwoRoomsTakesTheRestOfItWhenTheyBecomeOne()
     {
