@@ -864,6 +864,7 @@ public sealed class EditorSession : IDisposable
     public string? PaintSurface(SurfaceTarget target, string texture, MapPoint? section = null, MapPoint? dropped = null)
     {
         if (Grouping.Holds(_geometry, target.Element)) return "That is locked: unlock it with nothing selected, under Groups, to change it.";
+
         switch (target.Element)
         {
             case Side { OnMap: true } face:
@@ -2699,16 +2700,44 @@ public sealed class EditorSession : IDisposable
         {
             var geometry = _geometry;
             var look = Look;
-
-            // A sliding or swinging door goes with its doorway, and with its pen: its polyobjects, anchors and spots too, so
-            // the game never finds a spot without its polyobject.
             var family = Engine;
-            var polyDoors = items.OfType<Sector>().SelectMany(s => PolyDoors.Recognise(geometry, s, family) is { } d ? [d] : PolyDoors.InPen(geometry, s, family)).DistinctBy(d => d.Number).ToList();
-            History.Record("Delete", e =>
+
+            // A door is one thing: any part of it selected (its area, a frame, a wall or face round them) takes the whole door
+            // away, and the wall it stood in closes up as the wall beside it (the user's report, 2026-10-15). A sliding or
+            // swinging door's polyobjects go with it.
+            var doorways = items.Select(e => Doors.DoorwayOf(geometry, e, family)).OfType<Sector>().Distinct().ToList();
+            var rest = items.Where(e => Doors.DoorwayOf(geometry, e, family) is null).ToList();
+            var walledUp = doorways.Select(d => (Doorway: d, Frames: Doors.FramesBeside(geometry, d), Poly: PolyDoors.Recognise(geometry, d, family), Rising: Doors.Recognise(geometry, d))).ToList();
+
+            // Switches that opened a door going away open nothing now: they lose their action, unless another area keeps the tag.
+            var switches = walledUp.Where(w => w.Rising is { } r && r.Area.Tag != 0 && geometry.SectorsTagged(r.Area.Tag).Count == 1).SelectMany(w => w.Rising!.Remote).ToList();
+            var polySwitches = walledUp.Sum(w => w.Poly?.Remote.Count() ?? 0);
+
+            // A sliding or swinging door's pen selected takes its polyobjects, anchors and spots too, so the game never finds a
+            // spot without its polyobject.
+            var polyDoors = rest.OfType<Sector>().SelectMany(s => PolyDoors.InPen(geometry, s, family)).DistinctBy(d => d.Number).ToList();
+            var label = rest.Count > 0 || doorways.Count == 0 ? "Delete" : doorways.Count == 1 ? "Delete the door" : "Delete the doors";
+            History.Record(label, e =>
             {
-                said = Deleting.Delete(e, geometry, items, look);
+                said = Deleting.Delete(e, geometry, rest, look);
                 foreach (var door in polyDoors) PolyDoors.Remove(e, door);
+                foreach (var (doorway, frames, poly, _) in walledUp)
+                {
+                    if (poly is not null) PolyDoors.Remove(e, poly);
+                    Doors.WallUp(e, geometry, doorway, frames, look);
+                }
+
+                foreach (var l in switches.Where(l => l.OnMap))
+                {
+                    e.Set(l, x => x.Special, (x, v) => x.Special = v, 0);
+                    for (var i = 0; i < 5; i++)
+                    {
+                        var k = i;
+                        e.Set(l, x => x.Args[k], (x, v) => x.Args[k] = v, 0);
+                    }
+                }
             });
+            if (switches.Count + polySwitches > 0) said = [.. said, switches.Count + polySwitches == 1 ? "The switch that opened the door does nothing now." : "The switches that opened the doors do nothing now."];
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {

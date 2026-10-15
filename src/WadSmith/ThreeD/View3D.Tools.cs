@@ -196,13 +196,17 @@ internal sealed partial class View3D
     private string ToolWords(Editor.EditorSession session, SceneHit? hit)
     {
         var floor = hit is { Kind: HitKind.Floor };
-        var near = hit is { } h && session.Geometry.LineNear(new MapPoint(h.X, h.Y), Reach) is { Back: not null };
+        var wall = hit is { } h && session.Geometry.LineNear(new MapPoint(h.X, h.Y), Reach) is { Back: not null } l ? l : null;
+        var near = wall is not null;
+
+        // A wall of a piece of wall (closed from floor to ceiling, as the wall beside a door or a deleted door is): a door goes through it.
+        var through = wall is { Back: { } back } && wall.Front.Sector.FloorHeight >= wall.Front.Sector.CeilingHeight != back.Sector.FloorHeight >= back.Sector.CeilingHeight;
         return Tool switch
         {
             EditorTool.Room => floor ? "Drag on this floor to draw a room (Shift square, Ctrl round)."
                 : hit is { Kind: HitKind.Wall, Element: Side { Line.Back: null } } ? "Drag away from this wall to pull a room out of it, sharing the wall."
                 : "Point at a floor to draw a room, or at a solid wall to pull one out of it.",
-            EditorTool.Door => near ? "Click: a door goes in this opening (drag along it for its width)." : "Point near the opening between two rooms: a door goes in the wall they share.",
+            EditorTool.Door => through ? "Click: a door goes through this wall into the room beyond (drag along it for its width)." : near ? "Click: a door goes in this opening (drag along it for its width)." : "Point near the opening between two rooms: a door goes in the wall they share.",
             EditorTool.Window => near ? "Click: a window goes in this opening (drag along it for its width)." : "Point near the opening between two rooms: a window goes in the wall they share.",
             EditorTool.Stairs => floor ? "Drag across this floor, from the bottom of the stairs to the top." : "Point at a floor: stairs are dragged across one.",
             EditorTool.Measure => floor ? "Drag across the floor to measure it and see the floors and ceilings along the way." : "Point at a floor to measure from.",

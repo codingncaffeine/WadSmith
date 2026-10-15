@@ -871,18 +871,14 @@ internal sealed partial class EditorViewModel : ObservableObject
 
     /// <summary>The Guide's chapters, for the Guide menu.</summary>
     /// <summary>
-    /// The choices a right-click on the plan offers for an element: a door (its area, or one of its faces) gets its locks
-    /// (the game's keys) and its looks, the game's own door pictures; anything else gets none, and no menu opens.
+    /// The choices a right-click on the plan offers for an element: a door (any part of it: its area, a frame, a wall or face
+    /// round them) gets its locks (the game's keys) and its looks, the game's own door pictures; anything else gets none, and no
+    /// menu opens.
     /// </summary>
     public Func<Element, IReadOnlyList<MenuChoice>> ContextMenuFor => element =>
     {
         if (Session.Resources is not { } resources) return [];
-        var area = element switch
-        {
-            Sector s => s,
-            Line l => Doors.Recognise(Session.Geometry, l.Front.Sector) is not null ? l.Front.Sector : l.Back is { } b && Doors.Recognise(Session.Geometry, b.Sector) is not null ? b.Sector : null,
-            _ => null,
-        };
+        var area = Doors.DoorwayOf(Session.Geometry, element, Session.Engine);
         if (area is null || Doors.Recognise(Session.Geometry, area) is not { } found) return [];
         var choices = new List<MenuChoice>();
 

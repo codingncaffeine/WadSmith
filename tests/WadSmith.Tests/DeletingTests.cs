@@ -86,6 +86,30 @@ public sealed class DeletingTests
         Assert.Same(keep, MapGeometry.Build(map.Frame).SectorAt(new MapPoint(192, 64)));
     }
 
+    /// <summary>
+    /// The user's map (2026-10-15): a piece of wall beside a door (closed from floor to ceiling) faced the room from the front of
+    /// their shared wall, and deleting that wall made the room the piece's, floor up on its ceiling. Whichever way the wall
+    /// runs, the piece gives way to the room: it joins the room, which keeps its floor and ceiling.
+    /// </summary>
+    [Fact]
+    public void AWallOfAPieceOfWallGoesAndThePieceJoinsTheRoomWhicheverWayItRuns()
+    {
+        foreach (var pieceInFront in new[] { true, false })
+        {
+            var (map, history, rooms) = MovingTests.Drawn((0, 0, 128, 128), (128, 0, 160, 128));
+            var (room, piece) = (rooms[0], rooms[1]);
+            history.Record("Close it", e => e.Set(piece, s => s.FloorHeight, (s, v) => s.FloorHeight = v, piece.CeilingHeight));
+            var shared = WallList(map).Single(l => l.Back is not null);
+            if (ReferenceEquals(shared.Front.Sector, piece) != pieceInFront) history.Record("Turn", e => Walls.Turn(e, shared));
+            Assert.Equal(pieceInFront, ReferenceEquals(shared.Front.Sector, piece));
+            var (floor, ceiling) = (room.FloorHeight, room.CeilingHeight);
+            Assert.Empty(Delete(map, history, pieceInFront ? shared.Front : shared.Back!));
+            Assert.Same(room, Assert.Single(map.Sectors, s => s.OnMap));
+            Assert.Equal((floor, ceiling), (room.FloorHeight, room.CeilingHeight));
+            Assert.Same(room, MapGeometry.Build(map.Frame).SectorAt(new MapPoint(144, 64)));
+        }
+    }
+
     [Fact]
     public void OnePieceOfAWallBetweenTwoRoomsTakesTheRestOfItWhenTheyBecomeOne()
     {

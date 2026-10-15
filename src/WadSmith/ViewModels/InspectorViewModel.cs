@@ -543,12 +543,43 @@ internal sealed partial class InspectorViewModel : ObservableObject
         return null;
     }
 
+    /// <summary>Whether an area is closed from floor to ceiling: a piece of wall, as the Door tool leaves beside a door.</summary>
+    private static bool Closed(Sector s) => s.FloorHeight >= s.CeilingHeight;
+
+    /// <summary>The doorway a part of the map belongs to (see <see cref="Doors.DoorwayOf"/>): a click on any part of a door means the door.</summary>
+    private Sector? DoorwayOf(Element element) => Doors.DoorwayOf(_session.Geometry, element, _session.Engine);
+
+    /// <summary>A door's layout key: which kind it is and how it is locked, as its rows depend on them.</summary>
+    private string DoorKey(Sector doorway) => PolyDoorIn(doorway) is { } pd ? $"poly {pd.Kind} {pd.Double} {pd.Settings.Lock}" : Doors.Recognise(_session.Geometry, doorway) is { } d ? $"{d.Kind} {d.Settings.Lock}" : "gone";
+
+    /// <summary>The door's rows (sliding, swinging or rising), with its key and switch actions, for the door a part of it belongs to.</summary>
+    private void AddDoorOf(Sector doorway)
+    {
+        if (PolyDoorIn(doorway) is not null)
+        {
+            _summaryOf = () => PolyDoorIn(doorway) is { } pd ? Explaining.Describe(pd, _session.Engine) : "No longer a door.";
+            Summary = _summaryOf();
+            AddPolyDoor(doorway);
+            Rows.Add(new ActionRow("Select the doorway", "Selects the doorway the door stands in, with its area's settings.", () => _session.Selection.Set(doorway)));
+            return;
+        }
+
+        _summaryOf = () => Doors.Recognise(_session.Geometry, doorway) is { } d ? Explaining.Describe(d, _session.Engine) : "No longer a door.";
+        Summary = _summaryOf();
+        AddDoor(doorway);
+        AddDoorKey(doorway);
+        Rows.Add(new ActionRow("Add a switch that opens it", "Click a solid wall next: a piece of it becomes a switch the player uses to open this door from there (the door gets a tag; its own walls still open it).", () => SwitchFor?.Invoke(doorway)));
+        Rows.Add(new ActionRow("Select the door's area", "Selects the door itself, with its area's settings.", () => _session.Selection.Set(doorway)));
+    }
+
     /// <summary>What the selection is, as far as the Inspector's layout goes: a door, an exit, a wall, a room…</summary>
     private string KindOf() => _session.Selection.Items switch
     {
         [Sector s] when Platforms.ControlOf(_session.Geometry, s) is not null => "platform control",
+        [Sector s] when DoorwayOf(s) is { } frameOf && !ReferenceEquals(frameOf, s) => $"door frame {DoorKey(frameOf)}",
         [Sector s] => (PolyDoorIn(s) is { } pd ? $"polydoor {pd.Kind} {pd.Double} {pd.Settings.Lock}" : Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Kind} {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room") + $" {Platforms.Of(_session.Geometry, s).Count}" + ClimbKind(s),
         [Line or Side] when PolyDoorOfWall(_session.Selection.Items[0]) is { } wallDoorway && PolyDoorIn(wallDoorway) is { } wallDoor => $"polydoor wall {wallDoor.Kind} {wallDoor.Double} {wallDoor.Settings.Lock}",
+        [Line or Side] when DoorwayOf(_session.Selection.Items[0]) is { } partOf => $"door part {DoorKey(partOf)} {_session.Selection.Items[0].GetType().Name}",
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : LiftOf(l) is not null ? "lift face" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : DoorOf(l) is { } doorArea ? $"door {Doors.Recognise(_session.Geometry, doorArea)?.Kind} {Doors.Recognise(_session.Geometry, doorArea)?.Settings.Lock} face" : WindowOf(l) is not null ? "window face" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : $"thing {t.Type}",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
@@ -756,6 +787,13 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Rows.Add(new HeadingRow("ITS AREA"));
                 AddSector(s);
                 break;
+            case Sector s when DoorwayOf(s) is { } frameOf:
+                // A frame of a door (the shallow area either side of it): the door is what was meant, the frame's settings below.
+                Heading = "Door";
+                AddDoorOf(frameOf);
+                Rows.Add(new HeadingRow("ITS FRAME"));
+                AddSector(s);
+                break;
             case Sector s when Lifts.Recognise(_session.Geometry, s) is not null:
                 Heading = "Lift";
                 _summaryOf = () => Lifts.Recognise(_session.Geometry, s) is { } lift ? Explaining.Describe(lift) : "No longer a lift.";
@@ -817,6 +855,25 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 Summary = _summaryOf();
                 AddPolyDoor(polyDoorway);
                 Rows.Add(new ActionRow("Select the doorway", "Selects the doorway the door stands in, with its area's settings.", () => _session.Selection.Set(polyDoorway)));
+                break;
+            case Line or Side when DoorwayOf(items[0]) is { } partOf:
+                // A wall of a door or of its frames, or one of their faces (a click on the plan lands on a wall, one in the 3D view
+                // on a face): the door is what was meant, with what was clicked below it.
+                Heading = "Door";
+                AddDoorOf(partOf);
+                if (items[0] is Side face)
+                {
+                    Rows.Add(new HeadingRow("THIS FACE"));
+                    AddFace(face);
+                }
+                else if (items[0] is Line part)
+                {
+                    Rows.Add(new HeadingRow(Doors.Recognise(_session.Geometry, partOf)?.Own.Contains(part) == true ? "THIS FACE" : "THIS WALL"));
+                    AddLine(part);
+                    AddSide("Front", part.Front);
+                    if (part.Back is { } partBack) AddSide("Back", partBack);
+                }
+
                 break;
             case Line or Side when (items[0] switch { Line pl => pl, Side { Line: { } sl } => sl, _ => null }) is { } polyWall && WadSmith.Editor.Geometry.Polyobjects.OfWall(_session.Geometry, polyWall, _session.Engine) is { } poly:
                 // A polyobject that is no door of WadSmith's (Hexen's scripted ones): what it is, with its wall's rows.
@@ -884,20 +941,6 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 }));
                 AddThing(t);
                 break;
-            case Line l when DoorOf(l) is { } doorArea:
-                // A face of a door: the door is what was meant, with the face's own details below it.
-                Heading = "Door";
-                _summaryOf = () => Doors.Recognise(_session.Geometry, doorArea) is { } d ? Explaining.Describe(d, _session.Engine) : "No longer a door.";
-                Summary = _summaryOf();
-                AddDoor(doorArea);
-                AddDoorKey(doorArea);
-                Rows.Add(new ActionRow("Add a switch that opens it", "Click a solid wall next: a piece of it becomes a switch the player uses to open this door from there (the door gets a tag; its own walls still open it).", () => SwitchFor?.Invoke(doorArea)));
-                Rows.Add(new ActionRow("Select the door's area", "Selects the door itself, with its area's settings.", () => _session.Selection.Set(doorArea)));
-                Rows.Add(new HeadingRow("THIS FACE"));
-                AddLine(l);
-                AddSide("Front", l.Front);
-                if (l.Back is { } doorBack) AddSide("Back", doorBack);
-                break;
             case Line l when Exits.IsExit(l):
                 Heading = l.Flag("playeruse") ? "Exit switch" : l.Flag("playercross") ? "Exit line" : "Exit";
                 _summaryOf = () => Exits.IsExit(l) ? $"Ends the map when the player {Exits.How(l)}, going on to {(l.Special == Exits.Secret ? "the secret map" : "the next map")}." : "No longer an exit.";
@@ -909,14 +952,16 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 if (l.Back is { } exitBack) AddSide("Back", exitBack);
                 break;
             case Line l:
-                Heading = l.Back is null ? "Solid wall" : "Opening between two rooms";
-                Summary = l.Back is null ? "Nothing can pass through it." : "Players can walk through unless it blocks them.";
+                // A wall between a room and a piece of wall (closed from floor to ceiling) is wall to the player, not an opening.
+                var piece = l.Back is { } pieceBack && Closed(l.Front.Sector) != Closed(pieceBack.Sector);
+                Heading = l.Back is null ? "Solid wall" : piece ? "Wall" : "Opening between two rooms";
+                Summary = l.Back is null ? "Nothing can pass through it." : piece ? "A piece of wall between two areas, closed from floor to ceiling: nothing passes through it. The Door tool puts a door through it." : "Players can walk through unless it blocks them.";
                 AddLine(l);
                 AddSide("Front", l.Front);
                 if (l.Back is { } back) AddSide("Back", back);
                 Rows.Add(new ActionRow(l.Back is null ? "Select its face" : "Select the front face", "Shows only the side you see from the front: its textures and how they line up.", () => _session.Selection.Set(l.Front)));
                 if (l.Back is { } behind) Rows.Add(new ActionRow("Select the back face", "Shows only the side you see from the back: its textures and how they line up.", () => _session.Selection.Set(behind)));
-                if (l.Special == 0)
+                if (l.Special == 0 && !piece)
                 {
                     Rows.Add(l.Back is null
                         ? new ActionRow("Make it the exit switch", "The exit switch picture is set into this wall where you clicked it (its middle when it was not clicked): a piece as wide as the picture, in an alcove as tall as the picture with the wall above it when the room is taller; the rest stays wall. The player uses the switch to end the map (Exit_Normal).", () => _session.MakeExit(l, false, _session.Selection.At))
@@ -992,6 +1037,9 @@ internal sealed partial class InspectorViewModel : ObservableObject
         // Last: deleting it, in words that say what happens to the rest (Delete does the same).
         var (verb, tip) = items[0] switch
         {
+            _ when DoorwayOf(items[0]) is not null => ("Delete this door", "The door goes, and the wall it stood in closes up like the wall beside it (Delete). The Door tool puts a new door into that wall."),
+            Line { Back: { } pb } pl when Closed(pl.Front.Sector) != Closed(pb.Sector) => ("Delete this piece of wall", "It goes, and its place joins the room beside it (Delete)."),
+            Side { Line: { Back: { } sb } sl } when Closed(sl.Front.Sector) != Closed(sb.Sector) => ("Delete this piece of wall", "It goes, and its place joins the room beside it (Delete)."),
             Sector => ("Delete this room", "The room and the things in it go; the walls it shared become its neighbours' solid walls (Delete)."),
             Line { Back: not null } or Side { Line.Back: not null } => ("Delete this wall", "The wall goes and the rooms on its two sides become one room (Delete)."),
             Thing => ("Delete this thing", "Takes it off the map (Delete)."),
@@ -1972,7 +2020,12 @@ internal sealed partial class InspectorViewModel : ObservableObject
         }
         else
         {
-            if (l.Special == 0)
+            if (l.Special == 0 && DoorwayOf(l) is null && Closed(l.Front.Sector) != Closed(l.Back.Sector))
+            {
+                // A piece of wall's face (the wall beside a door, a walled-off opening, a deleted door): a door goes through it.
+                Rows.Add(new ActionRow("Make it a door", "Builds a door through this piece of wall, from the room on this side to the room beyond, with the game's door and track textures; the rest stays wall. It opens when the player uses it and closes again. One undo step.", () => _session.MakeDoor(l)));
+            }
+            else if (l.Special == 0 && DoorwayOf(l) is null)
             {
                 // What a first-time mapper came here for: the opening is where a door or a window goes.
                 Rows.Add(new ActionRow("Make it a door", "Builds a door into this opening with the game's door and track textures, with wall either side when the opening is wider than a door; it opens when the player uses it and closes again. One undo step.", () => _session.MakeDoor(l)));

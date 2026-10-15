@@ -6,7 +6,8 @@ namespace WadSmith.Editor.Editing;
 /// <summary>
 /// Deleting what is selected so the map stays whole: an object goes; a room goes with the objects
 /// standing in it, and the walls it shared become its neighbours' solid walls, keeping their look; a
-/// wall between two rooms goes and the rooms become one (the first's settings); a corner where two
+/// wall between two rooms goes and the rooms become one (the first's settings, but a piece of wall closed
+/// from floor to ceiling always gives way to the room beside it); a corner where two
 /// walls meet goes and they become one straight wall. What deleting would leave open (a room's outer
 /// wall, a corner where three walls meet) stays, with a sentence saying why. A face counts as its wall.
 /// </summary>
@@ -69,7 +70,10 @@ public static class Deleting
                 continue;
             }
 
+            // A piece of wall (an area closed from floor to ceiling) gives way to the room beside it, never the room to it: deleting
+            // one of its walls opens it up, and the room keeps its floor and ceiling.
             var (keep, gone) = (l.Front.Sector, l.Back.Sector);
+            if (keep.FloorHeight >= keep.CeilingHeight && gone.FloorHeight < gone.CeilingHeight) (keep, gone) = (gone, keep);
             RemoveWall(edit, l, loose);
             if (ReferenceEquals(keep, gone) || !gone.OnMap) continue;
 

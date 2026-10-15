@@ -119,6 +119,210 @@ public static partial class Doors
     }
 
     /// <summary>
+    /// The doorway a part of the map belongs to — a door's area, or the doorway a sliding or swinging polyobject door stands
+    /// in — or null: the area itself, one of its frames, a wall round either (the door's faces and sides, a frame's walls), a
+    /// face of such a wall, or one of a polyobject door's own walls. A click on the plan or in the 3D view lands on one of these,
+    /// and the door is what the user means: the Inspector shows it, and Delete takes it away. Walls elsewhere that open it (a
+    /// switch) are not parts of it. Looks only near the element, through the shapes: quick, for the UI thread.
+    /// </summary>
+    public static Sector? DoorwayOf(MapGeometry geometry, Element element, string family) => element switch
+    {
+        Side { Line: { } wall } => DoorwayOf(geometry, wall, family),
+        Line { OnMap: true } wall when PolyDoors.OfWall(geometry, wall, family) is { } poly && poly.Halves.Any(h => h.Lines.Contains(wall)) => poly.Doorway,
+        Line { OnMap: true } wall => DoorwayOfArea(geometry, wall.Front.Sector, family) ?? (wall.Back is { } back ? DoorwayOfArea(geometry, back.Sector, family) : null),
+        Sector { OnMap: true } area => DoorwayOfArea(geometry, area, family),
+        _ => null,
+    };
+
+    /// <summary>The doorway an area is (a door's area, a polyobject door's doorway) or is a frame of; null for any other area.</summary>
+    private static Sector? DoorwayOfArea(MapGeometry geometry, Sector area, string family)
+    {
+        if (!area.OnMap) return null;
+        if (Recognise(geometry, area) is not null || PolyDoors.Recognise(geometry, area, family) is not null) return area;
+
+        // A frame is shallow: a room too big to be one is passed over before its walls are looked at.
+        if (area.CeilingHeight <= area.FloorHeight || geometry.WallBoundsAt(area.Slot) is not { } b || Math.Min(b.MaxX - b.MinX, b.MaxY - b.MinY) > FrameReach) return null;
+        foreach (var l in geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY))
+        {
+            if (!l.OnMap || l.Back is null) continue;
+            var other = ReferenceEquals(l.Front.Sector, area) ? l.Back.Sector : ReferenceEquals(l.Back.Sector, area) ? l.Front.Sector : null;
+            if (other is null || ReferenceEquals(other, area)) continue;
+            if ((Recognise(geometry, other) is not null || PolyDoors.Recognise(geometry, other, family) is not null) && FrameAgainst(geometry, area, l)) return other;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The frames of a doorway (a door's area, or the doorway a polyobject door stands in): the shallow open areas against its
+    /// walls, each within <see cref="FrameDepth"/> of the wall it shares with the doorway.
+    /// </summary>
+    public static IReadOnlyList<Sector> FramesBeside(MapGeometry geometry, Sector doorway)
+    {
+        if (geometry.WallBoundsAt(doorway.Slot) is not { } b) return [];
+        var frames = new List<Sector>();
+        foreach (var l in geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY))
+        {
+            if (!l.OnMap || l.Back is null) continue;
+            var other = ReferenceEquals(l.Front.Sector, doorway) ? l.Back.Sector : ReferenceEquals(l.Back.Sector, doorway) ? l.Front.Sector : null;
+            if (other is null || ReferenceEquals(other, doorway) || frames.Contains(other) || !FrameAgainst(geometry, other, l)) continue;
+            frames.Add(other);
+        }
+
+        return frames;
+    }
+
+    /// <summary>The widest a frame's box can be across both ways: a frame no deeper than <see cref="FrameDepth"/> along the widest door, turned 45°.</summary>
+    private const double FrameReach = (MaxWidth + FrameDepth) / 1.41 + 1;
+
+    /// <summary>Whether an area is a frame against a doorway's wall: open, every corner of its walls within a frame's depth of that wall and along it.</summary>
+    private static bool FrameAgainst(MapGeometry geometry, Sector area, Line against)
+    {
+        if (area.CeilingHeight <= area.FloorHeight || geometry.WallBoundsAt(area.Slot) is not { } b) return false;
+        var corners = geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY).Where(l => l.OnMap && (ReferenceEquals(l.Front.Sector, area) || ReferenceEquals(l.Back?.Sector, area))).SelectMany(l => new[] { l.Start, l.End }).ToList();
+        return corners.Count > 0 && corners.All(v => DistanceTo(against, v) <= FrameDepth + 0.5 && Beside(against, v));
+    }
+
+    /// <summary>
+    /// Takes a door out of the wall it stood in through <paramref name="edit"/> (Delete; the user's report, 2026-10-15): its area
+    /// and <paramref name="frames"/> become wall like the wall beside them. Beside pieces of wall (areas closed from floor to
+    /// ceiling, as the Door tool leaves either side of a door) they join those pieces, and pieces of the same heights either side
+    /// become one; with none beside, they become a piece of wall of their own, closed at the highest ceiling beside. The faces
+    /// toward each room show what the wall beside shows there, walls left in one line facing the same rooms become one wall, and
+    /// what stood in the doorway goes. A polyobject door's polyobjects are taken off first (<see cref="PolyDoors.Remove"/>).
+    /// <paramref name="geometry"/> shows the map before this edit (the areas' walls are found through it, and read from the map).
+    /// </summary>
+    public static void WallUp(StructureEdit edit, MapGeometry geometry, Sector doorway, IReadOnlyCollection<Sector> frames, Look look)
+    {
+        if (!doorway.OnMap) return;
+        var column = new HashSet<Sector>(ReferenceEqualityComparer.Instance) { doorway };
+        foreach (var f in frames.Where(f => f.OnMap)) column.Add(f);
+        static bool Closed(Sector s) => s.FloorHeight >= s.CeilingHeight;
+        static string? Shown(string texture) => texture is "-" or "" ? null : texture;
+        bool Bounds(Line l, Sector area) => ReferenceEquals(l.Front.Sector, area) || ReferenceEquals(l.Back?.Sector, area);
+        HashSet<Line> Around(IEnumerable<Sector> areas)
+        {
+            var found = new HashSet<Line>(ReferenceEqualityComparer.Instance);
+            foreach (var area in areas)
+            {
+                if (geometry.WallBoundsAt(area.Slot) is not { } b) continue;
+                foreach (var l in geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY).Where(l => l.OnMap && Bounds(l, area))) found.Add(l);
+            }
+
+            return found;
+        }
+
+        var walls = Around(column);
+        Sector? Across(Line l) => column.Contains(l.Front.Sector) ? l.Back?.Sector : l.Front.Sector;
+
+        // The pieces of wall beside it, and the faces toward the rooms (walls between the column and an open area).
+        var beside = walls.Select(Across).OfType<Sector>().Where(s => !column.Contains(s) && Closed(s) && Recognise(geometry, s) is null).Distinct().ToList();
+        var faces = walls.Where(l => l.Back is not null && column.Contains(l.Front.Sector) != column.Contains(l.Back.Sector) && Across(l) is { } room && !Closed(room)).ToList();
+
+        // What the wall beside each face shows toward its room: the next wall along the same line facing the same room (a piece of
+        // wall's face, or the room's own solid wall), else what the face showed above the doorway, else the Look's wall.
+        (string Top, string Bottom, double OffsetY, bool PegTop, bool PegBottom) LookBeside(Line face, Sector room)
+        {
+            foreach (var end in new[] { face.Start, face.End })
+            {
+                foreach (var next in geometry.LinesIn(end.X, end.Y, end.X, end.Y))
+                {
+                    if (!next.OnMap || walls.Contains(next) || (next.Start != end && next.End != end) || !Parallel(next, face)) continue;
+                    var toward = ReferenceEquals(next.Front.Sector, room) ? next.Front : next.Back is { } b && ReferenceEquals(b.Sector, room) ? b : null;
+                    if (toward is null) continue;
+                    if (next.Back is null)
+                    {
+                        var solid = Shown(toward.Middle) ?? look.Wall;
+                        return (solid, solid, toward.OffsetY, false, false);
+                    }
+
+                    var lower = Shown(toward.Bottom) ?? Shown(toward.Top) ?? look.Wall;
+                    return (Shown(toward.Top) ?? lower, lower, toward.OffsetY, next.Flag("dontpegtop"), next.Flag("dontpegbottom"));
+                }
+            }
+
+            var own = ReferenceEquals(face.Front.Sector, room) ? face.Front : face.Back!;
+            var shown = Shown(own.Top) ?? Shown(own.Bottom) ?? look.Wall;
+            return (shown, shown, own.OffsetY, true, false);
+        }
+
+        var dressed = faces.Select(l => (Line: l, Room: Across(l)!, Look: LookBeside(l, Across(l)!))).ToList();
+        var standing = new List<Thing>();
+        var f0 = geometry.Frame;
+        foreach (var area in column)
+        {
+            if (geometry.WallBoundsAt(area.Slot) is not { } b) continue;
+            standing.AddRange(geometry.ThingSlotsIn(b.MinX, b.MinY, b.MaxX, b.MaxY).Where(i => ReferenceEquals(geometry.SectorAt(new MapPoint(f0.Things[i].X, f0.Things[i].Y)), area)).Select(i => f0.Things[i].Element!));
+        }
+
+        // The piece it joins: the one beside it along the most wall; pieces of the same heights beside it join too.
+        double Shared(Sector s) => walls.Where(l => Bounds(l, s)).Sum(l => l.Length);
+        var keep = beside.OrderByDescending(Shared).FirstOrDefault() ?? doorway;
+        var merging = column.Concat(beside.Where(s => s.FloorHeight == keep.FloorHeight && s.CeilingHeight == keep.CeilingHeight)).Where(s => !ReferenceEquals(s, keep)).Distinct().ToList();
+        var lines = new HashSet<Line>(walls, ReferenceEqualityComparer.Instance);
+        lines.UnionWith(Around(merging.Where(s => !column.Contains(s))));
+
+        // Its own faces lose their action (walls elsewhere that open it by its tag are the caller's): what stays of them is wall.
+        foreach (var l in walls.Where(l => IsDoorAction(l.Special) && l.Args[0] == 0))
+        {
+            edit.Set(l, x => x.Special, (x, v) => x.Special = v, 0);
+            for (var i = 0; i < 5; i++)
+            {
+                var k = i;
+                edit.Set(l, x => x.Args[k], (x, v) => x.Args[k] = v, 0);
+            }
+
+            edit.Flag(l, "playeruse", false);
+            edit.Flag(l, "monsteruse", false);
+            edit.Flag(l, "repeatspecial", false);
+        }
+
+        foreach (var (l, room, (top, bottom, offsetY, pegTop, pegBottom)) in dressed)
+        {
+            var side = ReferenceEquals(l.Front.Sector, room) ? l.Front : l.Back!;
+            edit.Set(side, s => s.Top, (s, v) => s.Top = v, top);
+            edit.Set(side, s => s.Middle, (s, v) => s.Middle = v, "-");
+            edit.Set(side, s => s.Bottom, (s, v) => s.Bottom = v, bottom);
+            edit.Set(side, s => s.OffsetY, (s, v) => s.OffsetY = v, offsetY);
+            edit.Flag(l, "dontpegtop", pegTop);
+            edit.Flag(l, "dontpegbottom", pegBottom);
+        }
+
+        foreach (var t in standing) edit.Remove(t);
+        if (ReferenceEquals(keep, doorway))
+        {
+            // A piece of wall of its own: closed at the highest ceiling beside it, as the Door tool closes the wall beside a door.
+            var top = dressed.Select(d => d.Room.CeilingHeight).DefaultIfEmpty(column.Max(s => s.CeilingHeight)).Max();
+            edit.Set(doorway, s => s.FloorHeight, (s, v) => s.FloorHeight = v, top);
+            edit.Set(doorway, s => s.CeilingHeight, (s, v) => s.CeilingHeight = v, top);
+        }
+
+        foreach (var area in merging)
+        {
+            foreach (var l in lines.Where(l => l.OnMap))
+            {
+                if (ReferenceEquals(l.Front.Sector, area)) edit.Set(l.Front, s => s.Sector, (s, v) => s.Sector = v, keep);
+                if (l.Back is { } back && ReferenceEquals(back.Sector, area)) edit.Set(back, s => s.Sector, (s, v) => s.Sector = v, keep);
+            }
+
+            edit.Remove(area);
+        }
+
+        // The walls inside it go; the corners of its faces where two walls now run on in one line, facing the same rooms, go too.
+        var loose = new HashSet<Vertex>(ReferenceEqualityComparer.Instance);
+        foreach (var l in lines.Where(l => l.OnMap && l.Back is not null && ReferenceEquals(l.Front.Sector, keep) && ReferenceEquals(l.Back.Sector, keep)).ToList()) Deleting.RemoveWall(edit, l, loose);
+        var rerouted = new List<Line>();
+        List<Line> WallsAt(Vertex v) => [.. geometry.LinesIn(v.X, v.Y, v.X, v.Y).Concat(rerouted).Distinct().Where(l => l.OnMap && (l.Start == v || l.End == v))];
+        foreach (var v in dressed.SelectMany(d => new[] { d.Line.Start, d.Line.End }).Concat(loose).Distinct().ToList())
+        {
+            if (!v.OnMap) continue;
+            var at = WallsAt(v);
+            if (at.Count == 0) edit.Remove(v);
+            else if (at.Count == 2 && Parallel(at[0], at[1]) && Deleting.Straighten(edit, v, at[0], at[1])) rerouted.Add(at[0]);
+        }
+    }
+
+    /// <summary>
     /// Gives a door the picture <paramref name="texture"/> on its faces through <paramref name="edit"/>, hung from the door's
     /// top edge as before, and the doorway the picture's size (<paramref name="size"/>): as wide as the picture about the door's
     /// middle, the wall either side giving way or growing back (<see cref="Refit"/>), and its frames, when it has them, as tall,
@@ -408,6 +612,14 @@ public static partial class Doors
         }
         if (Recognise(before, front) is not null || Recognise(before, back) is not null) return (null, "This wall is already a door's.");
 
+        // A wall of a piece of wall — an area closed from floor to ceiling, as the wall beside a door, a walled-off opening or a
+        // deleted door is — takes the door through the piece, from this side's room to the room beyond.
+        if (door && !flush && front.FloorHeight >= front.CeilingHeight != back.FloorHeight >= back.CeilingHeight)
+        {
+            var (piece, near) = front.FloorHeight >= front.CeilingHeight ? (front, back) : (back, front);
+            return Through(edit, before, wall, piece, near, look, from, to, heightOf);
+        }
+
         // The door goes into the corridor: the room with walls running on from both ends of this one.
         var sides = new[] { back, front }.OrderByDescending(r => Corridor(before, wall, r)).ToList();
         var texture = width <= 64 ? look.Door : look.BigDoor;
@@ -474,26 +686,6 @@ public static partial class Doors
                     else area.FloorHeight = area.CeilingHeight;
                 }
 
-                void DoorFace(Line l, Sector doorSector)
-                {
-                    // A face of the door: the room (or the frame) in front, the door behind, so using it opens the door.
-                    if (ReferenceEquals(l.Front.Sector, doorSector)) Walls.Turn(edit, l);
-                    edit.Set(l.Front, x => x.Top, (x, v) => x.Top = v, texture);
-                    edit.Set(l.Front, x => x.OffsetX, (x, v) => x.OffsetX = v, 0);
-                    edit.Set(l.Front, x => x.OffsetY, (x, v) => x.OffsetY = v, 0);
-                    var (special, args) = Encode(new DoorSettings(false, false, 0), 0);
-                    edit.Set(l, x => x.Special, (x, v) => x.Special = v, special);
-                    for (var i = 0; i < args.Length; i++)
-                    {
-                        var k = i;
-                        edit.Set(l, x => x.Args[k], (x, v) => x.Args[k] = v, args[k]);
-                    }
-
-                    edit.Flag(l, "playeruse", true);
-                    edit.Flag(l, "monsteruse", true);
-                    edit.Flag(l, "repeatspecial", true);
-                }
-
                 foreach (var slab in made)
                 {
                     var isDoor = ReferenceEquals(slab, doorArea);
@@ -507,7 +699,7 @@ public static partial class Doors
                             // Between two of the new areas: the door's face against a frame; the door's side against a piece of wall
                             // (whose floor is up on the ceiling) shows the track below it; a frame's side against one shows the room's
                             // wall, hung from the wall's top so it lines up with the walls beside.
-                            if (isDoor && frames.Contains(other)) DoorFace(l, slab);
+                            if (isDoor && frames.Contains(other)) DoorFace(edit, l, slab, texture);
                             else if (isDoor) edit.Set(mine, x => x.Bottom, (x, v) => x.Bottom = v, look.Track);
                             else if (isFrame && !ReferenceEquals(other, doorArea)) edit.Set(mine, x => x.Bottom, (x, v) => x.Bottom = v, look.Wall);
                             continue;
@@ -534,7 +726,7 @@ public static partial class Doors
 
                         if (other is not null && Parallel(l, wall))
                         {
-                            DoorFace(l, slab);
+                            DoorFace(edit, l, slab, texture);
                         }
                         else if (other is null)
                         {
@@ -550,6 +742,146 @@ public static partial class Doors
         }
 
         return (null, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"There is not room for {(door ? "a door" : "a wall")} {Depth:0} deep on either side of this wall."));
+    }
+
+    /// <summary>A face of a door: the room (or the frame) in front, the door behind, so using it opens the door (Door_Raise, used again and again by players and monsters), with the door's picture on it.</summary>
+    private static void DoorFace(StructureEdit edit, Line l, Sector doorSector, string texture)
+    {
+        if (ReferenceEquals(l.Front.Sector, doorSector)) Walls.Turn(edit, l);
+        edit.Set(l.Front, x => x.Top, (x, v) => x.Top = v, texture);
+        edit.Set(l.Front, x => x.OffsetX, (x, v) => x.OffsetX = v, 0);
+        edit.Set(l.Front, x => x.OffsetY, (x, v) => x.OffsetY = v, 0);
+        var (special, args) = Encode(new DoorSettings(false, false, 0), 0);
+        edit.Set(l, x => x.Special, (x, v) => x.Special = v, special);
+        for (var i = 0; i < args.Length; i++)
+        {
+            var k = i;
+            edit.Set(l, x => x.Args[k], (x, v) => x.Args[k] = v, args[k]);
+        }
+
+        edit.Flag(l, "playeruse", true);
+        edit.Flag(l, "monsteruse", true);
+        edit.Flag(l, "repeatspecial", true);
+    }
+
+    /// <summary>
+    /// <see cref="Make"/>'s door through a piece of wall (<paramref name="piece"/>, closed from floor to ceiling between
+    /// <paramref name="near"/> and a room beyond): the door's column runs through the piece from <paramref name="wall"/> to the
+    /// piece's far wall over the stretch <paramref name="from"/>–<paramref name="to"/>, as deep as the piece is; the piece either
+    /// side stays wall. The door stands on the rooms' floor (the higher one's when the player would not fit under the opened door
+    /// from a step up), framed either side when the piece is deep enough for frames and the rooms are taller than its picture.
+    /// The faces above the doorway keep the wall's own texture toward each room.
+    /// </summary>
+    private static (Sector? Door, string? Why) Through(StructureEdit edit, MapGeometry before, Line wall, Sector piece, Sector near, Look look, double from, double to, Func<string, double?>? heightOf)
+    {
+        static string? Shown(string texture) => texture is "-" or "" ? null : texture;
+        var (nx, ny) = Normal(wall, piece);
+        var (dx, dy) = ((wall.End.X - wall.Start.X) / wall.Length, (wall.End.Y - wall.Start.Y) / wall.Length);
+        double AlongOf(Vertex v) => (v.X - wall.Start.X) * dx + (v.Y - wall.Start.Y) * dy;
+        double InwardOf(Vertex v) => (v.X - wall.Start.X) * nx + (v.Y - wall.Start.Y) * ny;
+        MapPoint At(double along, double inward = 0) => new(wall.Start.X + dx * along + nx * inward, wall.Start.Y + dy * along + ny * inward);
+
+        // The piece's far wall over the stretch: its walls in line with this one on the far side, with one room beyond them all.
+        if (before.WallBoundsAt(piece.Slot) is not { } b) return (null, "This wall's piece of wall could not be found.");
+        Sector? far = null;
+        Side? farFace = null;
+        double? depth = null;
+        var covered = new List<(double From, double To)>();
+        foreach (var l in before.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY))
+        {
+            if (!l.OnMap || ReferenceEquals(l, wall) || l.Back is null || !Parallel(l, wall)) continue;
+            var other = ReferenceEquals(l.Front.Sector, piece) ? l.Back.Sector : ReferenceEquals(l.Back.Sector, piece) ? l.Front.Sector : null;
+            var d = InwardOf(l.Start);
+            if (other is null || ReferenceEquals(other, piece) || other.FloorHeight >= other.CeilingHeight || d <= 0.5) continue;
+            var (a, c) = (Math.Min(AlongOf(l.Start), AlongOf(l.End)), Math.Max(AlongOf(l.Start), AlongOf(l.End)));
+            if (c <= from + 0.5 || a >= to - 0.5) continue;
+            if ((depth is { } known && Math.Abs(known - d) > 0.5) || (far is not null && !ReferenceEquals(far, other)))
+            {
+                return (null, "This wall is not the same thickness, with the same room beyond it, all along where the door would go: drag a stretch of it where it is.");
+            }
+
+            (depth, far, farFace) = (d, other, ReferenceEquals(l.Front.Sector, other) ? l.Front : l.Back);
+            covered.Add((a, c));
+        }
+
+        var reached = from;
+        foreach (var (a, c) in covered.OrderBy(x => x.From))
+        {
+            if (a > reached + 0.5) break;
+            reached = Math.Max(reached, c);
+        }
+
+        if (far is null || depth is not { } deep || farFace is null || reached < to - 0.5) return (null, "There is no room beyond this wall all along where the door would go: a door goes through a wall from one room into another.");
+
+        // The door stands on the lower room's floor, or on the higher one's when the player would not fit under it from there.
+        var texture = to - from <= 64 ? look.Door : look.BigDoor;
+        var height = heightOf?.Invoke(texture);
+        var (low, high) = near.FloorHeight <= far.FloorHeight ? (near, far) : (far, near);
+        var rise = high.FloorHeight - low.FloorHeight;
+        var floor = height is { } tall && rise > 0 && rise <= Scene.Walker.StepHeight && tall - OpenGap - rise < Scene.Walker.PlayerHeight ? high.FloorHeight : low.FloorHeight;
+        var framed = height is { } h && h > 0 && h < Math.Min(near.CeilingHeight, far.CeilingHeight) - floor && deep >= Depth + FrameDepth;
+        var frameDepth = framed ? (deep - Depth) / 2 : 0;
+        var strip = Strip(wall, piece, deep, from, to);
+        if (!Clear(before, wall, strip)) return (null, "Something stands inside this wall where the door would go.");
+        var cuts = framed ? new List<(MapPoint A, MapPoint B)> { (At(from, frameDepth), At(to, frameDepth)), (At(from, frameDepth + Depth), At(to, frameDepth + Depth)) } : null;
+
+        // The textures the wall shows each room, for the wall above the doorway.
+        var nearFace = ReferenceEquals(wall.Front.Sector, near) ? wall.Front : wall.Back!;
+        var nearWall = Shown(nearFace.Bottom) ?? Shown(nearFace.Top) ?? look.Wall;
+        var farWall = Shown(farFace.Bottom) ?? Shown(farFace.Top) ?? look.Wall;
+
+        var made = ShapeDrawing.Draw(edit, before, strip, look, cuts);
+        if (made.Count != 1 + (cuts?.Count ?? 0)) throw new InvalidOperationException(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"The door's area did not come out as one area: {made.Count} areas for {cuts?.Count ?? 0} cuts."));
+
+        // Which area is which: by depth, the near frame, the door and the far frame (the door alone without frames).
+        var touched = edit.Touched.Select(e => e switch { Line w => w, Side { Line: { } w } => w, _ => null }).OfType<Line>().Distinct().Where(l => l.OnMap).ToList();
+        double Inward(Sector area) => touched.Where(l => ReferenceEquals(l.Front.Sector, area) || ReferenceEquals(l.Back?.Sector, area)).SelectMany(l => new[] { l.Start, l.End }).Select(InwardOf).DefaultIfEmpty(double.NaN).Average();
+        var column = made.OrderBy(Inward).ToList();
+        var doorArea = column[framed ? 1 : 0];
+        var frames = new HashSet<Sector>(ReferenceEqualityComparer.Instance);
+        if (framed) frames.UnionWith([column[0], column[2]]);
+        foreach (var area in made)
+        {
+            area.CeilingTexture = Look.SolidUnder(area.CeilingTexture, area.FloorTexture);
+            area.FloorHeight = floor;
+            area.CeilingHeight = frames.Contains(area) ? floor + height!.Value : floor;
+        }
+
+        foreach (var area in made)
+        {
+            var isDoor = ReferenceEquals(area, doorArea);
+            foreach (var l in touched.Where(l => ReferenceEquals(l.Front.Sector, area) || ReferenceEquals(l.Back?.Sector, area)).ToList())
+            {
+                var other = ReferenceEquals(l.Front.Sector, area) ? l.Back?.Sector : l.Front.Sector;
+                var mine = ReferenceEquals(l.Front.Sector, area) ? l.Front : l.Back!;
+                if (other is null)
+                {
+                    // Where the piece ends at the door: the door's side shows the track, which stays put while the door moves.
+                    if (isDoor) edit.Set(mine, x => x.Middle, (x, v) => x.Middle = v, look.Track);
+                    edit.Flag(l, "dontpegbottom", true);
+                }
+                else if (isDoor && (frames.Contains(other) || ReferenceEquals(other, near) || ReferenceEquals(other, far)))
+                {
+                    DoorFace(edit, l, area, texture);
+                }
+                else if (ReferenceEquals(other, piece))
+                {
+                    // The doorway's sides against the wall either side: the track beside the door, the room's wall beside a frame.
+                    edit.Set(mine, x => x.Bottom, (x, v) => x.Bottom = v, isDoor ? look.Track : look.Wall);
+                }
+                else if (ReferenceEquals(other, near) || ReferenceEquals(other, far))
+                {
+                    // A frame's face: the wall above the doorway, toward the room, shows that wall's own texture, hung from the ceiling.
+                    var face = ReferenceEquals(l.Front.Sector, area) ? l.Back! : l.Front;
+                    var shown = ReferenceEquals(other, near) ? nearWall : farWall;
+                    edit.Set(face, x => x.Top, (x, v) => x.Top = v, shown);
+                    edit.Set(face, x => x.Bottom, (x, v) => x.Bottom = v, shown);
+                    edit.Flag(l, "dontpegtop", true);
+                }
+            }
+        }
+
+        return (doorArea, null);
     }
 
     /// <summary>Whether the room has a wall running on from each end of this one, into its side (a corridor's end).</summary>
