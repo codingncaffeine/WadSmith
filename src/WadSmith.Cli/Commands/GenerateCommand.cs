@@ -21,12 +21,14 @@ internal sealed class GenerateCommand : ICommand
                [--size=small|medium|large|huge] [--challenge=0..1] [--keys=0..3] [--bosses=0..3] [--maps=1..8]
                [--outdoors=none|some|lots] [--style=base|caves|castle|mixed]
                [--without=secrets,stairs,lifts,teleporters,dark,ambushes,decorations,traps,hazards]
-               [--script]
+               [--games=FOLDER] [--script]
 
         Plans a map from the seed and the settings, builds it with the editor's own tools (an edit script,
         printed with --script), checks its shapes and Problems, and writes it: as a WAD holding the map in
         its slot, or as a WadSmith project (the map, and generator.json with the settings). The same seed
-        and settings make the same map on any machine. --game is an id from data/games/games.json.
+        and settings make the same map on any machine. --game is an id from data/games/games.json. Its doors
+        stand in doorways as tall as the game's door pictures when the game is found (in GZDoom's and
+        WadSmith's folders, or --games); without it they are as tall as their passages.
         """;
 
     public int Run(CommandArgs args, TextWriter output, TextWriter error)
@@ -63,11 +65,28 @@ internal sealed class GenerateCommand : ICommand
         }
 
         var printScript = args.Flag("script");
+        var games = args.Option("games");
         args.RejectUnread();
         if (args.Positional.Count != 0) throw new UsageException("generate takes no file names; use --out or --project.");
         if ((outPath is null) == (projectPath is null)) throw new UsageException("generate needs one of --out=FILE.wad or --project=FOLDER.");
 
-        IReadOnlyList<MadeMap> all = projectPath is not null ? MadeProjects.Create(projectPath, s).Made : [.. Episodes.Of(s).Select(m => MapMaker.Build(Planner.Plan(m)))];
+        // The game's door pictures, so each door stands in a doorway its picture fits, as the page makes it.
+        Lent? lent = null;
+        var found = GameLocator.Scan([.. GameLocator.StandardFolders(Environment.GetEnvironmentVariable), .. games is null ? Array.Empty<string>() : [games]]);
+        if (found.FirstOrDefault(g => g.Game.Id == game.Id) is { } own)
+        {
+            var stack = new ResourceStack();
+            if (own.Game.AddOnFor is { } baseId && found.FirstOrDefault(g => g.Game.Id == baseId) is { } baseGame) stack.Add(ResourceContainer.Open(baseGame.Path));
+            stack.Add(ResourceContainer.Open(own.Path));
+            var pictures = new Core.Graphics.TextureLibrary(stack);
+            lent = new Lent(HeightOf: t => pictures.FindWall(t)?.Height);
+        }
+        else
+        {
+            error.WriteLine($"{game.Title} was not found, so its doors are as tall as their passages.");
+        }
+
+        IReadOnlyList<MadeMap> all = projectPath is not null ? MadeProjects.Create(projectPath, s, prepare: (_, _) => lent).Made : [.. Episodes.Of(s).Select(m => MapMaker.Build(Planner.Plan(m), lent))];
         var ok = true;
         var lumps = new List<(string, ReadOnlyMemory<byte>)>();
         foreach (var made in all)

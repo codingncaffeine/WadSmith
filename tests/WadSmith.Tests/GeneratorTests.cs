@@ -29,6 +29,9 @@ public sealed class GeneratorTests
         Outdoors = OutdoorShare.Some,
     };
 
+    /// <summary>Doom's door pictures' heights (DOOR3 72, BIGDOOR2 128; the other families' doors stand in at 72), so maps made without a game get doorways.</summary>
+    private static readonly Lent DoorPictures = new(HeightOf: t => t.StartsWith("BIGDOOR", StringComparison.OrdinalIgnoreCase) ? 128 : 72);
+
     private static string Text(MadeMap made) => System.Text.Encoding.UTF8.GetString(MapConversion.ToUdmfLumps(made.Map.Frame.ToModel()).First(l => l.Name == "TEXTMAP").Data);
 
     /// <summary>What is wrong with a made map, in sentences; empty when it is sound, clean and can be finished.</summary>
@@ -70,10 +73,124 @@ public sealed class GeneratorTests
         var faults = new List<string>();
         for (var i = 0; i < seeds; i++)
         {
-            var made = MapMaker.Make(For(family, $"test-{i}", size, keys: i % 4, bosses: i % 4, style) with { Outdoors = (OutdoorShare)(i % 3) });
+            // Every other map with its doors in doorways as tall as their pictures, as the page makes them; the rest as tall as
+            // their passages, as the command line makes them.
+            var made = MapMaker.Make(For(family, $"test-{i}", size, keys: i % 4, bosses: i % 4, style) with { Outdoors = (OutdoorShare)(i % 3) }, i % 2 == 0 ? DoorPictures : null);
             faults.AddRange(Faults(made).Select(f => $"seed test-{i}: {f}"));
         }
 
+        Assert.Empty(faults);
+    }
+
+    /// <summary>
+    /// Nothing solid in a made map has the sky as its ceiling, as the engine draws no wall between two skies: not its columns,
+    /// its shut doors, nor its windows' nooks and panes, in any game, with rooms out under the sky as often as the settings
+    /// allow. A castle's columns in a courtyard showed as columns of sky before.
+    /// </summary>
+    [Theory]
+    [InlineData("doom", MapStyle.Castle)]
+    [InlineData("doom", MapStyle.Mixed)]
+    [InlineData("heretic", MapStyle.Castle)]
+    [InlineData("hexen", MapStyle.Castle)]
+    [InlineData("strife", MapStyle.Castle)]
+    public void NothingSolidInAMadeMapHasTheSkyAsItsCeiling(string family, MapStyle style)
+    {
+        var faults = new List<string>();
+        var (columns, windows) = (0, 0);
+        for (var i = 0; i < 12; i++)
+        {
+            var made = MapMaker.Make(For(family, $"sky-{i}", MapSize.Large, style: style) with { Outdoors = OutdoorShare.Lots });
+            var g = MapGeometry.Build(made.Map.Frame);
+            faults.AddRange(Invariants.Check(made.Map).Where(f => f.Contains("hole of sky", StringComparison.Ordinal)).Select(f => $"seed sky-{i}: {f}"));
+            string? Sky(Box b, string what) => g.SectorAt(new MapPoint(b.CentreX, b.CentreY)) is { } s && GeneratorSettings.IsSky(s.CeilingTexture)
+                ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"seed sky-{i}: {what} at ({b.CentreX}, {b.CentreY}) has the sky as its ceiling")
+                : null;
+            foreach (var room in made.Plan.Rooms.Where(r => r.Outdoors))
+            {
+                columns += room.Pillars.Count;
+                faults.AddRange(room.Pillars.Select(p => Sky(p, "a column")).OfType<string>());
+            }
+
+            foreach (var w in made.Plan.Windows)
+            {
+                windows += made.Plan.Rooms[w.From].Outdoors || made.Plan.Rooms[w.To].Outdoors ? 1 : 0;
+                faults.AddRange(new[] { Sky(w.Nook, "a window's nook"), w.FarNook is { } far ? Sky(far, "a window's far nook") : null, Sky(w.Pane, "a window's pane") }.OfType<string>());
+            }
+        }
+
+        // The settings put columns and windows out under the sky, or the test would see nothing.
+        Assert.True(columns > 0, "no column stood under the sky");
+        if (family == "doom") Assert.True(windows > 0, "no window looked out of or into a room under the sky");
+        Assert.Empty(faults);
+    }
+
+    /// <summary>
+    /// No door of a made map opens higher than its picture, which would repeat the picture up the door: with the game's pictures
+    /// known (as on the page), each door stands in a doorway as tall as its picture, its locks, one-way sides and closet
+    /// triggers still found through the doorway's frames; a secret door stays flush with the wall it hides in, its face there
+    /// the wall's, and shows a doorway its picture fits from behind.
+    /// </summary>
+    [Fact]
+    public void NoDoorOfAMadeMapIsTallerThanItsPicture()
+    {
+        var engine = GameFiles.Require("gzdoom.pk3");
+        var doomPath = GameFiles.Require("DOOM2.WAD");
+        var doom2 = GameResources.Load("doom2", null, [new FoundGame(GameCatalog.Get("doom2")!, doomPath, new FileInfo(doomPath).Length)], engine)!;
+        var lent = new Lent(HeightOf: t => doom2.Textures.FindWall(t)?.Height);
+        var faults = new List<string>();
+        var (doors, doorways, secrets) = (0, 0, 0);
+        for (var i = 0; i < 8; i++)
+        {
+            var made = MapMaker.Make(For("doom", $"doors-{i}", MapSize.Large, keys: 3, style: (MapStyle)(i % 4)), lent);
+            faults.AddRange(Faults(made).Select(f => $"seed doors-{i}: {f}"));
+            var g = MapGeometry.Build(made.Map.Frame);
+            foreach (var area in made.Map.Sectors.Where(s => s.OnMap))
+            {
+                if (Editor.Smart.Doors.Recognise(g, area) is not { } door) continue;
+                doors++;
+                if (door.Openers.Any(l => l.Flag("secret"))) secrets++;
+                var faces = door.Openers.Where(l => l.Back is not null && !l.Flag("secret")).ToList();
+                if (faces.Count == 0) faults.Add($"seed doors-{i}: a door shows no door picture on any side");
+                if (faces.Count == 0) continue;
+
+                var opening = door.OpensTo - area.FloorHeight;
+                if (faces.Select(l => doom2.Textures.FindWall(l.Front.Top)?.Height).Max() is not { } picture)
+                {
+                    faults.Add($"seed doors-{i}: a door shows {faces[0].Front.Top}, which Doom II lacks");
+                    continue;
+                }
+
+                if (opening > picture + 0.5) faults.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"seed doors-{i}: a door showing {faces[0].Front.Top} opens {opening:0} high, its picture is {picture}"));
+                if (opening < picture - 0.5) doorways++;
+            }
+        }
+
+        Assert.Empty(faults);
+        Assert.True(doorways > 0 && secrets > 0, $"{doors} doors: {doorways} in doorways, {secrets} secret");
+    }
+
+    /// <summary>
+    /// A closet's monsters come out through its doorway, which opens 68 high under Doom's 72-tall door picture: none taller,
+    /// whichever games they come from (Heretic's undead warrior, 78 tall, would wait behind it for ever).
+    /// </summary>
+    [Fact]
+    public void AClosetsMonstersFitThroughItsDoorway()
+    {
+        var all = FamilyPalette.Families.SelectMany(f => FamilyPalette.For(f)!.Monsters).ToList();
+        Assert.Contains(all, m => m.Radius <= 24 && m.Height > 68);
+        var faults = new List<string>();
+        var closets = 0;
+        for (var i = 0; i < 20; i++)
+        {
+            var plan = Planner.Plan(For("doom", $"closets-{i}", MapSize.Large) with { Monsters = all });
+            foreach (var t in plan.Things.Where(t => t.Monster is not null && t.Room >= 0 && plan.Rooms[t.Room].Role == RoomRole.Closet))
+            {
+                closets++;
+                if (t.Monster!.Height > 68) faults.Add($"seed closets-{i}: {t.Monster.Class}, {t.Monster.Height} tall, waits in a closet");
+            }
+        }
+
+        Assert.True(closets > 0, "no monster waited in a closet");
         Assert.Empty(faults);
     }
 
@@ -481,7 +598,7 @@ public sealed class GeneratorTests
             foreach (var m in p.Monsters)
             {
                 Expect(m.Number, ThingCategory.Monster, m.Class);
-                if (catalog.Find(m.Number) is { } t && (t.Health != m.Health || t.Radius != m.Radius)) faults.Add($"{family}: {m.Class} has health {t.Health} and radius {t.Radius} in the engine, {m.Health} and {m.Radius} in the palette");
+                if (catalog.Find(m.Number) is { } t && (t.Health != m.Health || t.Radius != m.Radius || t.Height != m.Height)) faults.Add($"{family}: {m.Class} has health {t.Health}, radius {t.Radius} and height {t.Height} in the engine, {m.Health}, {m.Radius} and {m.Height} in the palette");
             }
 
             foreach (var w in p.Weapons)

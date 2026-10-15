@@ -398,8 +398,8 @@ public sealed class MapScene
         return t > 1e-6 ? t : 0;
     }
 
-    /// <summary>The flat that means open sky in every Doom-engine game.</summary>
-    public static bool IsSky(string flat) => flat.Equals("F_SKY1", StringComparison.OrdinalIgnoreCase) || flat.Equals("F_SKY", StringComparison.OrdinalIgnoreCase);
+    /// <summary>The flat that means open sky: F_SKY1, Hexen's F_SKY, Strife's F_SKY001.</summary>
+    public static bool IsSky(string flat) => flat.Equals("F_SKY1", StringComparison.OrdinalIgnoreCase) || flat.Equals("F_SKY", StringComparison.OrdinalIgnoreCase) || flat.Equals("F_SKY001", StringComparison.OrdinalIgnoreCase);
 
     /// <param name="geometry">The map's shapes.</param>
     /// <param name="wallSize">A wall texture's size in pixels, or null when the game has no such texture.</param>

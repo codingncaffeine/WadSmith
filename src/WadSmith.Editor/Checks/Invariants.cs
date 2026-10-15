@@ -1,6 +1,7 @@
 using System.Globalization;
 using WadSmith.Editor.Geometry;
 using WadSmith.Editor.Model;
+using WadSmith.Editor.Scene;
 
 namespace WadSmith.Editor.Checks;
 
@@ -8,7 +9,8 @@ namespace WadSmith.Editor.Checks;
 /// The rules every map WadSmith makes keeps: walls have length and their own faces, point at corners and areas on the
 /// map, and are two-sided exactly when they have a back; no two walls share both corners or cross, no corner sits in the
 /// middle of a wall; every area is closed (as many of its walls arrive at each corner as leave it), has walls, and lies
-/// on the right of every wall that faces it. Uses the map's shapes to look only near each wall, so it is quick on any map.
+/// on the right of every wall that faces it; and nothing closed shows as a hole of sky. Uses the map's shapes to look only
+/// near each wall, so it is quick on any map.
 /// </summary>
 public static class Invariants
 {
@@ -69,6 +71,27 @@ public static class Invariants
         var used = lines.SelectMany(l => new[] { l.Front.Sector, l.Back?.Sector }).OfType<Sector>().ToHashSet();
         foreach (var s in map.Sectors.Where(s => s.OnMap && !used.Contains(s))) Fault("wallless", "An area has no walls.");
         foreach (var s in used.Where(s => !s.OnMap)) Fault("offarea", "A face belongs to an area that is not on the map.");
+
+        // A column or a shut door with the sky as its ceiling, lower than every area beside it and one of those under the sky,
+        // shows as a hole of sky: the engine draws no wall between two skies. A wall closed up at the sky (its floor raised to
+        // it, as beside a door in an open-air passage) stands up to the sky and is left alone. The original games use such
+        // areas on purpose here and there, so this is a rule of the maps WadSmith makes, not a Problem of every map.
+        foreach (var s in map.Sectors.Where(s => s.OnMap && s.CeilingHeight <= s.FloorHeight && MapScene.IsSky(s.CeilingTexture)))
+        {
+            if (g.WallBoundsAt(s.Slot) is not { } b) continue;
+            var beside = new List<Sector>();
+            foreach (var l in g.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY))
+            {
+                if (!l.OnMap || l.Back is not { } back) continue;
+                var other = ReferenceEquals(l.Front.Sector, s) ? back.Sector : ReferenceEquals(back.Sector, s) ? l.Front.Sector : null;
+                if (other is not null && !ReferenceEquals(other, s)) beside.Add(other);
+            }
+
+            if (beside.Count > 0 && beside.All(n => n.CeilingHeight > s.CeilingHeight) && beside.Any(n => MapScene.IsSky(n.CeilingTexture)))
+            {
+                Fault("sky", $"The closed area at {At((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2)} has the sky as its ceiling beside more sky: it shows as a hole of sky.");
+            }
+        }
 
         foreach (var l in lines.Where(l => l.Length > 0))
         {

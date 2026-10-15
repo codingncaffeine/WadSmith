@@ -10,6 +10,16 @@ public sealed record Look(string Floor, string Ceiling, string Wall, double Floo
     /// <summary>The picture on the faces of what stands in a room: a balcony's front, a dais, a column, a window's frame (the wall's when the look names none).</summary>
     public string TrimOrWall => Trim ?? Wall;
 
+    /// <summary>The ceiling picture of what is solid in a room of this look (a column, a door, a window's lintel, an alcove): see <see cref="SolidUnder"/>.</summary>
+    public string SolidCeiling => SolidUnder(Ceiling, Floor);
+
+    /// <summary>
+    /// The ceiling picture of something solid in an area of these pictures (a column, a door and its frames, a window's
+    /// lintel, a switch's alcove): the area's ceiling, or its floor's picture where that is the sky. The engine draws no wall
+    /// between two skies, so a column with the sky on top shows as a column of sky, and a lintel as a slot of sky.
+    /// </summary>
+    public static string SolidUnder(string ceiling, string floor) => Scene.MapScene.IsSky(ceiling) ? floor : ceiling;
+
     /// <summary>Each game family's classic look.</summary>
     public static Look For(string engine) => engine switch
     {

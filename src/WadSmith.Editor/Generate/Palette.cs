@@ -3,8 +3,8 @@ using WadSmith.Core;
 
 namespace WadSmith.Editor.Generate;
 
-/// <summary>A monster the generator can place: the game family it is from, its class, its number in that game, its health and size, its tier (1 weak .. 4 tough, 5 a boss), whether it flies, and whether only the Doom II family has it.</summary>
-public sealed record MonsterKind(string Family, string Class, int Number, int Health, double Radius, int Tier, bool Flies, bool Boss, bool Doom2);
+/// <summary>A monster the generator can place: the game family it is from, its class, its number in that game, its health and size (radius, and height), its tier (1 weak .. 4 tough, 5 a boss), whether it flies, and whether only the Doom II family has it.</summary>
+public sealed record MonsterKind(string Family, string Class, int Number, int Health, double Radius, int Tier, bool Flies, bool Boss, bool Doom2, double Height = 56);
 
 /// <summary>A weapon the generator hands out: its class and number, the ammunition it uses and how much of it comes with it; <paramref name="With"/> are the other classes' weapons placed beside it (Hexen).</summary>
 public sealed record WeaponKind(string Class, int Number, string Ammo, int Gives, bool Doom2, IReadOnlyList<int> With, string Family = "doom");
@@ -58,7 +58,7 @@ public sealed record FamilyPalette(
             result[family.Name] = new FamilyPalette(
                 family.Name,
                 raw.Start,
-                [.. raw.Monsters.Select(m => new MonsterKind(family.Name, m.Class, m.Number, m.Health, m.Radius, m.Tier, m.Flies, m.Boss, m.Doom2))],
+                [.. raw.Monsters.Select(m => new MonsterKind(family.Name, m.Class, m.Number, m.Health, m.Radius, m.Tier, m.Flies, m.Boss, m.Doom2, m.Height))],
                 [.. raw.Weapons.Select(w => new WeaponKind(w.Class, w.Number, w.Ammo, w.Gives, w.Doom2, w.With ?? [], family.Name))],
                 [.. raw.Ammo.Select(a => new AmmoKind(a.Type, a.Damage, a.Small, a.SmallAmount, a.Big, a.BigAmount, family.Name))],
                 (raw.Health.Small, raw.Health.SmallAmount, raw.Health.Big, raw.Health.BigAmount, raw.Health.Super),
@@ -115,6 +115,8 @@ public sealed record FamilyPalette(
         public int Health { get; set; }
 
         public double Radius { get; set; }
+
+        public double Height { get; set; }
 
         public int Tier { get; set; }
 

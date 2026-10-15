@@ -118,6 +118,9 @@ public static class Switches
         var alcove = made[0];
         alcove.CeilingHeight = alcove.FloorHeight + height;
 
+        // Its lintel shows only under a ceiling of its own: the sky beside the sky would show through the wall above it.
+        alcove.CeilingTexture = Look.SolidUnder(alcove.CeilingTexture, alcove.FloorTexture);
+
         Line? back = null;
         var touched = edit.Touched.Select(e => e switch { Line w => w, Side { Line: { } w } => w, _ => null }).OfType<Line>().Distinct().Where(l => l.OnMap).ToList();
         foreach (var l in touched.Where(l => ReferenceEquals(l.Front.Sector, alcove) || ReferenceEquals(l.Back?.Sector, alcove)))

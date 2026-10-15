@@ -205,6 +205,10 @@ public static class WallWindows
             var (floor, ceiling) = ReferenceEquals(piece, window) ? heights : (heights.Sill, heights.Sill);
             edit.Set(piece, x => x.FloorHeight, (x, v) => x.FloorHeight = v, floor);
             edit.Set(piece, x => x.CeilingHeight, (x, v) => x.CeilingHeight = v, ceiling);
+
+            // The window and the closed rest of the wall are solid: under the sky they take the floor's picture as their
+            // ceiling, or the wall above them would show the sky (Look.SolidUnder).
+            edit.Set(piece, x => x.CeilingTexture, (x, v) => x.CeilingTexture = v, Look.SolidUnder(piece.CeilingTexture, piece.FloorTexture));
         }
 
         var pieces = made.ToHashSet(ReferenceEqualityComparer.Instance);

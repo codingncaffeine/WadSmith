@@ -25,9 +25,11 @@ public static class EditScript
         floor X Y HEIGHT            the floor of the room at the point
         ceiling X Y HEIGHT          its ceiling
         light X Y                   a light
-        door X Y [WIDTH]            a door in the wall nearest the point: the whole wall, or WIDTH wide in its middle
-                                    (64 there on a wall longer than a door can be)
-        lock X Y COLOUR|NUMBER      the door at the point locked with the game's key of that colour (red, blue or yellow in Doom;
+        door X Y [WIDTH] [flush]    a door in the wall nearest the point: the whole wall, or WIDTH wide in its middle
+                                    (64 there on a wall longer than a door can be); in a doorway as tall as its picture
+                                    where the passage is taller (when the pictures' sizes are known); flush: flush with
+                                    the wall on the room's side, framed behind only (a secret door, hidden as the wall)
+        lock X Y COLOUR|NUMBER      the door at the point (or beside it, as from a doorway's frame) locked with the game's key of that colour (red, blue or yellow in Doom;
                                     green in Heretic; steel, cave, axe … in Hexen), or with a lock by its number
         oneway X Y SX SY            the door at the point opened from one side only: not from the side of SX SY
         key COLOUR X Y              the game's key of that colour (a keycard in Doom)
@@ -53,8 +55,12 @@ public static class EditScript
         sign X Y TEXT...            a sign for the room: a WadSmith tour shows it in the game when the player walks in
         """;
 
-    /// <summary>Runs <paramref name="script"/> on <paramref name="map"/>, a line at a time, each one undo step; returns what each line did.</summary>
-    public static IReadOnlyList<ScriptStep> Run(EditorMap map, string script, Look look, string engine)
+    /// <summary>
+    /// Runs <paramref name="script"/> on <paramref name="map"/>, a line at a time, each one undo step; returns what each line did.
+    /// <paramref name="heightOf"/> gives the height of a wall picture by name, so a door stands in a doorway as tall as its picture
+    /// (a taller door repeats it); without it doors are as tall as their passage.
+    /// </summary>
+    public static IReadOnlyList<ScriptStep> Run(EditorMap map, string script, Look look, string engine, Func<string, double?>? heightOf = null)
     {
         var history = new History(map);
         var steps = new List<ScriptStep>();
@@ -69,7 +75,7 @@ public static class EditScript
             bool done;
             try
             {
-                (done, said) = Step(map, history, words, ref look, engine);
+                (done, said) = Step(map, history, words, ref look, engine, heightOf);
             }
             catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidOperationException or IndexOutOfRangeException)
             {
@@ -82,13 +88,29 @@ public static class EditScript
         return steps;
     }
 
-    private static (bool Done, string Said) Step(EditorMap map, History history, string[] w, ref Look look, string engine)
+    private static (bool Done, string Said) Step(EditorMap map, History history, string[] w, ref Look look, string engine, Func<string, double?>? heightOf)
     {
         var g = MapGeometry.Build(map.Frame);
         double N(int i) => double.Parse(w[i], NumberStyles.Float, CultureInfo.InvariantCulture);
         MapPoint P(int i) => new(N(i), N(i + 1));
         Sector Room(int i) => g.SectorAt(P(i)) ?? throw new ArgumentException(string.Create(CultureInfo.InvariantCulture, $"no room at ({N(i)}, {N(i + 1)})"));
         Line Wall(int i) => g.LineNear(P(i), 32) ?? throw new ArgumentException(string.Create(CultureInfo.InvariantCulture, $"no wall near ({N(i)}, {N(i + 1)})"));
+
+        // The door at a point: the area there, or the door beside it when the point is in (or on the edge of) a doorway's frame.
+        Door? DoorNear(int i)
+        {
+            var at = Room(i);
+            if (Doors.Recognise(g, at) is { } door) return door;
+            if (g.WallBoundsAt(at.Slot) is not { } b) return null;
+            foreach (var wall in g.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY))
+            {
+                if (!wall.OnMap || wall.Back is not { } back) continue;
+                var beside = ReferenceEquals(wall.Front.Sector, at) ? back.Sector : ReferenceEquals(back.Sector, at) ? wall.Front.Sector : null;
+                if (beside is not null && Doors.Recognise(g, beside) is { } next) return next;
+            }
+
+            return null;
+        }
         var l = look;
         string? why = null;
         string made = "";
@@ -128,20 +150,21 @@ public static class EditScript
                 break;
             case "door":
                 var doorWall = Wall(1);
-                (double, double)? doorSpan = w.Length > 3 ? Doors.Centred(doorWall, N(3)) : doorWall.Length > Doors.MaxWidth ? Doors.Centred(doorWall) : null;
-                Record("Make a door", e => why = Doors.Make(e, g, doorWall, l, doorSpan).Why);
+                var flush = w[^1].Equals("flush", StringComparison.OrdinalIgnoreCase);
+                (double, double)? doorSpan = w.Length > (flush ? 4 : 3) ? Doors.Centred(doorWall, N(3)) : doorWall.Length > Doors.MaxWidth ? Doors.Centred(doorWall) : null;
+                Record("Make a door", e => why = Doors.Make(e, g, doorWall, l, doorSpan, heightOf: heightOf, flush: flush).Why);
                 made = "a door";
                 break;
             case "lock":
                 var colour = w[3].ToLowerInvariant();
                 var lockNumber = int.TryParse(colour, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : Keys.Of(engine).FirstOrDefault(k => k.Colour == colour)?.Lock ?? 0;
                 if (lockNumber <= 0) throw new ArgumentException($"no key is {w[3]}");
-                if (Doors.Recognise(g, Room(1)) is not { } door) throw new ArgumentException("no door there");
+                if (DoorNear(1) is not { } door) throw new ArgumentException("no door there");
                 Record("Change the door's lock", e => Doors.Change(e, door, door.Settings with { Lock = lockNumber }, false, door.StartsOpen));
                 made = char.IsDigit(colour[0]) ? $"locked with lock {lockNumber}" : $"locked with the {colour} key";
                 break;
             case "oneway":
-                if (Doors.Recognise(g, Room(1)) is not { } oneWay) throw new ArgumentException("no door there");
+                if (DoorNear(1) is not { } oneWay) throw new ArgumentException("no door there");
                 var shut = P(3);
                 Record("Open the door from one side only", e => Doors.OneWay(e, oneWay, shut));
                 made = "a door that opens from one side only";
@@ -180,7 +203,7 @@ public static class EditScript
                 made = "a secret";
                 break;
             case "hide":
-                if (Doors.Recognise(g, Room(1)) is not { } hidden) throw new ArgumentException("no door there");
+                if (DoorNear(1) is not { } hidden) throw new ArgumentException("no door there");
                 var behind = Room(3);
                 Record("Hide the door", e => Secrets.HideDoor(e, g, hidden, behind));
                 made = "a door that looks like the wall beside it";
@@ -207,7 +230,7 @@ public static class EditScript
                 break;
             case "trigger":
                 var crossed = Wall(1);
-                var opened = Room(3);
+                var opened = DoorNear(3)?.Area ?? Room(3);
                 Record("Make a trigger", e => why = WalkOvers.Make(e, g, crossed, opened));
                 made = "a line that opens the door when walked over";
                 break;

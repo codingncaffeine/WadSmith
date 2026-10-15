@@ -314,7 +314,7 @@ public static partial class Doors
             if (other is not null && !ReferenceEquals(other, area)) lowest = Math.Min(lowest, other.CeilingHeight);
         }
 
-        var opensTo = lowest == double.MaxValue ? area.FloorHeight : lowest - 4;
+        var opensTo = lowest == double.MaxValue ? area.FloorHeight : lowest - OpenGap;
         return new Door(area, openers, settings, openers[0].Flag("monsteruse") || openers[0].Flag("monsteractivate"), opensTo);
     }
 
@@ -374,6 +374,9 @@ public static partial class Doors
     /// <summary>How deep each frame of a doorway is: the piece either side of the door whose ceiling is the door's height.</summary>
     public const double FrameDepth = 8;
 
+    /// <summary>How far below the lowest ceiling beside it the engine opens a door.</summary>
+    private const double OpenGap = 4;
+
     /// <summary>
     /// Makes a door into the opening <paramref name="wall"/>, over <paramref name="span"/> of it (the whole of it when none),
     /// as Doom's own doors are made: an area <see cref="Depth"/> deep in the corridor's side (the room with walls running on
@@ -384,10 +387,12 @@ public static partial class Doors
     /// is the picture's height, so the wall shows above the door — the picture hangs from the door's top edge and would
     /// repeat upward otherwise. With <paramref name="fill"/>, the rest of the opening either side of the door is closed with
     /// wall — a door in a wall, which is what a door between two rooms means — as closed slabs of the same depth; with
-    /// <paramref name="door"/> false, the whole opening becomes wall and no door is made ("wall it off"). Returns the door's
+    /// <paramref name="door"/> false, the whole opening becomes wall and no door is made ("wall it off"). With
+    /// <paramref name="flush"/> the door stands flush with the wall on the room's side, framed on the corridor's side only:
+    /// a secret door, hidden as the room's wall, that still shows a doorway its picture fits from behind. Returns the door's
     /// area, or null and the reason it cannot be made there. <paramref name="before"/> must show the map as it is.
     /// </summary>
-    public static (Sector? Door, string? Why) Make(StructureEdit edit, MapGeometry before, Line wall, Look look, (double From, double To)? span = null, bool fill = false, bool door = true, Func<string, double?>? heightOf = null)
+    public static (Sector? Door, string? Why) Make(StructureEdit edit, MapGeometry before, Line wall, Look look, (double From, double To)? span = null, bool fill = false, bool door = true, Func<string, double?>? heightOf = null, bool flush = false)
     {
         if (wall.Back is null) return (null, door ? "A door goes in a wall between two rooms; this wall has a room on one side only." : "This wall already has a room on one side only.");
         var (front, back) = (wall.Front.Sector, wall.Back.Sector);
@@ -410,10 +415,15 @@ public static partial class Doors
         foreach (var into in sides)
         {
             // A doorway as tall as the door's picture when the room is taller; when there is no room for its frames, the door alone.
-            var framed = height is { } h && h > 0 && h < into.CeilingHeight - into.FloorHeight;
+            // A door's way is only as tall as its picture: where the floor beyond is a step higher and the player would not fit
+            // under the opened door from there, the doorway stands on that floor, stepped up into from the lower side.
+            var beyond = ReferenceEquals(into, front) ? back : front;
+            var rise = beyond.FloorHeight - into.FloorHeight;
+            var floor = height is { } tall && rise > 0 && rise <= Scene.Walker.StepHeight && tall - OpenGap - rise < Scene.Walker.PlayerHeight ? beyond.FloorHeight : into.FloorHeight;
+            var framed = height is { } h && h > 0 && h < into.CeilingHeight - floor;
             foreach (var withFrames in framed ? new[] { true, false } : [false])
             {
-                var depth = withFrames ? Depth + 2 * FrameDepth : Depth;
+                var depth = withFrames ? Depth + (flush ? 1 : 2) * FrameDepth : Depth;
 
                 // Wall either side of the door: the whole opening is carved as one strip, cut where the door starts and ends.
                 var whole = !door || (fill && (from > 0 || to < wall.Length));
@@ -429,11 +439,13 @@ public static partial class Doors
                     if (to < wall.Length) cuts.Add((At(to), At(to, depth)));
                 }
 
-                // The frames' walls across the door column, after the cuts along its sides so that they end on them.
+                // The frames' walls across the door column, after the cuts along its sides so that they end on them (a flush
+                // door's one frame behind it).
                 if (withFrames)
                 {
-                    cuts.Add((At(from, FrameDepth), At(to, FrameDepth)));
-                    cuts.Add((At(from, FrameDepth + Depth), At(to, FrameDepth + Depth)));
+                    if (!flush) cuts.Add((At(from, FrameDepth), At(to, FrameDepth)));
+                    var behind = flush ? Depth : FrameDepth + Depth;
+                    cuts.Add((At(from, behind), At(to, behind)));
                 }
 
                 var made = ShapeDrawing.Draw(edit, before, strip, look, cuts.Count > 0 ? cuts : null);
@@ -447,11 +459,16 @@ public static partial class Doors
                 IEnumerable<Vertex> Corners(Sector area) => touched.Where(l => ReferenceEquals(l.Front.Sector, area) || ReferenceEquals(l.Back?.Sector, area)).SelectMany(l => new[] { l.Start, l.End });
                 double Along(Sector area) => Corners(area).Select(v => (v.X - wall.Start.X) * dx + (v.Y - wall.Start.Y) * dy).DefaultIfEmpty(double.NaN).Average();
                 double Inward(Sector area) => Corners(area).Select(v => (v.X - wall.Start.X) * nx + (v.Y - wall.Start.Y) * ny).DefaultIfEmpty(double.NaN).Average();
-                var column = door ? made.OrderBy(area => Math.Abs(Along(area) - (from + to) / 2)).Take(withFrames ? 3 : 1).OrderBy(Inward).ToList() : [];
-                var doorArea = door ? column[withFrames ? 1 : 0] : null;
-                var frames = withFrames ? new HashSet<Sector>(ReferenceEqualityComparer.Instance) { column[0], column[2] } : new HashSet<Sector>(ReferenceEqualityComparer.Instance);
+                var column = door ? made.OrderBy(area => Math.Abs(Along(area) - (from + to) / 2)).Take(withFrames ? flush ? 2 : 3 : 1).OrderBy(Inward).ToList() : [];
+                var doorArea = door ? column[withFrames && !flush ? 1 : 0] : null;
+                var frames = new HashSet<Sector>(ReferenceEqualityComparer.Instance);
+                if (withFrames) frames.UnionWith(flush ? [column[1]] : [column[0], column[2]]);
+                // The door and its frames are solid: in an open-air passage they take the floor's picture as their ceiling,
+                // not the sky, which would show through them (Look.SolidUnder).
                 foreach (var area in made)
                 {
+                    if (frames.Contains(area) || ReferenceEquals(area, doorArea)) area.CeilingTexture = Look.SolidUnder(area.CeilingTexture, area.FloorTexture);
+                    if (withFrames && (frames.Contains(area) || ReferenceEquals(area, doorArea))) area.FloorHeight = floor;
                     if (frames.Contains(area)) area.CeilingHeight = area.FloorHeight + height!.Value;
                     else if (ReferenceEquals(area, doorArea)) area.CeilingHeight = area.FloorHeight;
                     else area.FloorHeight = area.CeilingHeight;

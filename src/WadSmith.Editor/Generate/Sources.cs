@@ -139,7 +139,7 @@ public static class Sources
             looks[choice] = look;
         }
 
-        return (new Lent(m => numbers.GetValueOrDefault(m), l => looks.GetValueOrDefault(l) ?? l.Look, (family, number) => items.GetValueOrDefault((family, number))), notes);
+        return (new Lent(m => numbers.GetValueOrDefault(m), l => looks.GetValueOrDefault(l) ?? l.Look, (family, number) => items.GetValueOrDefault((family, number)), name => into.Textures.FindWall(name)?.Height), notes);
     }
 }
 

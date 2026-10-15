@@ -99,8 +99,8 @@ internal sealed class MapLook(GameResources? resources)
         });
     }
 
-    /// <summary>The sky marker every Doom-engine game uses for open-air ceilings.</summary>
-    public static bool IsSky(string flat) => flat.Equals("F_SKY1", StringComparison.OrdinalIgnoreCase) || flat.Equals("F_SKY", StringComparison.OrdinalIgnoreCase);
+    /// <summary>The sky marker the Doom-engine games use for open-air ceilings: F_SKY1, Hexen's F_SKY, Strife's F_SKY001.</summary>
+    public static bool IsSky(string flat) => flat.Equals("F_SKY1", StringComparison.OrdinalIgnoreCase) || flat.Equals("F_SKY", StringComparison.OrdinalIgnoreCase) || flat.Equals("F_SKY001", StringComparison.OrdinalIgnoreCase);
 
     private int _picturesVersion;
 

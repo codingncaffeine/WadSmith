@@ -448,6 +448,9 @@ public static class Planner
 
     // ── Closets ─────────────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>How tall a closet's monsters may be: its door stands in a doorway as tall as Doom's door picture (72), and opens 4 below it.</summary>
+    private const double ClosetDoorway = 68;
+
     /// <summary>
     /// Monster closets: a small room 96 or 128 deep against a side of a room that has no corridor, window or balcony, inside the
     /// room's cell (so it touches nothing else), whose door opens the first time the player walks into the room through its
@@ -966,10 +969,11 @@ public static class Planner
             var budget = baseline * factor * (0.7 + 0.9 * room.Progress);
             var maxTier = room.Role == RoomRole.Arena ? 4 : Math.Clamp(1 + (int)Math.Floor(room.Progress * (2.2 + 2 * c) + c), 1, 4);
 
-            // A closet's monsters face its door; they are small enough to stand in it, and wait for it to open.
+            // A closet's monsters face its door; they are small enough to stand in it and to come out through its doorway (Doom's
+            // door picture is 72 tall, so it opens 68 high), and wait for it to open.
             var closet = room.Role == RoomRole.Closet;
             var entry = closet ? room.ClosetDoor : entries.GetValueOrDefault(room.Index, (room.Box.CentreX, room.Box.CentreY));
-            var fits = closet ? pool.Where(m => m.Radius <= 24).ToList() : pool;
+            var fits = closet ? pool.Where(m => m.Radius <= 24 && m.Height <= ClosetDoorway).ToList() : pool;
             if (fits.Count == 0) continue;
             var ambush = s.Ambushes && room.Role is not (RoomRole.Arena or RoomRole.Closet) && rng.Chance(0.5);
             // The bosses first, at the far end of the arena, so the arena's crowd never leaves them no room: one that does not

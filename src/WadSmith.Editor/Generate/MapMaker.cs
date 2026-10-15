@@ -10,8 +10,10 @@ namespace WadSmith.Editor.Generate;
 /// What a made map borrows, as it is in its project: the number each monster from another game was carried in as, the look
 /// a room's choice has there (another game's pictures under the names they were copied in as), and the number another
 /// game's weapon or ammunition (its family and own number) was carried in as. A null answer leaves the thing out.
+/// <paramref name="HeightOf"/> gives the height of the project's wall pictures, so each door stands in a doorway as tall as its
+/// picture (a door taller than its picture repeats it); without it doors are as tall as their passage.
 /// </summary>
-public sealed record Lent(Func<MonsterKind, int?>? Monsters = null, Func<LookChoice, Look>? Looks = null, Func<string, int, int?>? Items = null);
+public sealed record Lent(Func<MonsterKind, int?>? Monsters = null, Func<LookChoice, Look>? Looks = null, Func<string, int, int?>? Items = null, Func<string, double?>? HeightOf = null);
 
 /// <summary>A made map: its plan, the map the editor's tools built from it, the script they ran, and any line that failed.</summary>
 public sealed record MadeMap(MapPlan Plan, EditorMap Map, string Script, IReadOnlyList<ScriptStep> Failed);
@@ -42,6 +44,13 @@ public static class MapMaker
             Line($"brightness {b.CentreX} {b.CentreY} {light}");
         }
 
+        // What is solid (a column, a window's nook and pane) never has the sky as its ceiling: the engine draws no wall
+        // between two skies, so it would show as a hole of sky.
+        void Solid(Box b, Look l)
+        {
+            if (l.SolidCeiling != l.Ceiling) Line($"ceilingflat {b.CentreX} {b.CentreY} {l.SolidCeiling}");
+        }
+
         Line($"# {SeedWords.Title(s.Seed)}: made by WadSmith from the seed {SeedWords.Tidy(s.Seed)}");
         Line($"# Rooms");
         foreach (var room in plan.Rooms)
@@ -64,10 +73,12 @@ public static class MapMaker
             // Its columns, dais, pools and balcony show the room's own trim on their faces (its walls where the look has none).
             if (room.Pillars.Count > 0 || room.Dais is not null || room.Pools.Count > 0 || room.Ledge is not null || room.LightPools.Count > 0) UseLook(Trimmed(room));
 
+            // A column under the sky is closed under the floor's picture, never the sky's (Look.SolidUnder).
             foreach (var p in room.Pillars)
             {
                 Line($"room {p.X0} {p.Y0} {p.X1} {p.Y1}");
                 Line($"ceiling {p.CentreX} {p.CentreY} {room.Floor}");
+                Solid(p, LookFor(room));
             }
 
             // The dais: a step up, a little brighter.
@@ -197,19 +208,24 @@ public static class MapMaker
         foreach (var w in plan.Windows)
         {
             var (a, b) = (plan.Rooms[w.From], plan.Rooms[w.To]);
+            // The nooks and the pane sit lower than the rooms: under the sky they take the floor's picture, so the wall above
+            // them shows.
             UseLook(LookFor(a));
             Line($"room {w.Nook.X0} {w.Nook.Y0} {w.Nook.X1} {w.Nook.Y1}");
             Heights(w.Nook, a.Floor, w.NookCeiling, a.Light);
+            Solid(w.Nook, LookFor(a));
             UseLook(LookFor(b));
             if (w.FarNook is { } far)
             {
                 Line($"room {far.X0} {far.Y0} {far.X1} {far.Y1}");
                 Heights(far, b.Floor, w.FarCeiling, b.Light);
+                Solid(far, LookFor(b));
             }
 
             UseLook(Trimmed(b));
             Line($"room {w.Pane.X0} {w.Pane.Y0} {w.Pane.X1} {w.Pane.Y1}");
             Heights(w.Pane, w.Sill, w.Top, Math.Max(a.Light, b.Light));
+            Solid(w.Pane, LookFor(b));
         }
 
         Line($"# Doors and locks");
@@ -217,7 +233,11 @@ public static class MapMaker
         {
             var room = plan.Rooms[link.DoorAt];
             var (mx, my) = Planner.Mouth(link, room);
-            Line($"door {mx} {my}");
+
+            // A door into a secret stays flush with the wall it hides in (a doorway would give it away); the others stand in
+            // doorways as tall as their pictures.
+            if (plan.Rooms[link.A].Role == RoomRole.Secret || plan.Rooms[link.B].Role == RoomRole.Secret) Line($"door {mx} {my} flush");
+            else Line($"door {mx} {my}");
             var (ix, iy) = link.AlongX ? (Math.Abs(mx - room.Box.X1) < 1 ? mx + 8 : mx - 8, my) : (mx, Math.Abs(my - room.Box.Y1) < 1 ? my + 8 : my - 8);
             if (link.Key is { } key) Line($"lock {ix} {iy} {key.Lock}");
 
@@ -296,7 +316,7 @@ public static class MapMaker
         var s = plan.Settings;
         var script = Script(plan, lent);
         var map = EditorMap.FromModel(new MapModel { Name = s.Slot, Namespace = "zdoom" });
-        var steps = EditScript.Run(map, script, Look.For(s.Family), s.Family);
+        var steps = EditScript.Run(map, script, Look.For(s.Family), s.Family, lent?.HeightOf);
         return new MadeMap(plan, map, script, [.. steps.Where(x => !x.Done)]);
     }
 }

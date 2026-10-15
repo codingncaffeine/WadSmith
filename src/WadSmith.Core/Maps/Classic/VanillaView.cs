@@ -637,7 +637,7 @@ public sealed class VanillaView
         }
     }
 
-    private static bool IsSky(string picture) => picture.Equals("F_SKY1", StringComparison.OrdinalIgnoreCase) || picture.Equals("F_SKY", StringComparison.OrdinalIgnoreCase);
+    private static bool IsSky(string picture) => picture.Equals("F_SKY1", StringComparison.OrdinalIgnoreCase) || picture.Equals("F_SKY", StringComparison.OrdinalIgnoreCase) || picture.Equals("F_SKY001", StringComparison.OrdinalIgnoreCase);
 
     private static bool Textured(string name) => name.Length > 0 && name != "-";
 
