@@ -121,7 +121,7 @@ internal sealed partial class View3D : Control
             if (r.Drop is not { } drop) return;
             if (!r.Apply)
             {
-                DropHint?.Invoke(DropWords(drop, r.Hit));
+                DropHint?.Invoke(DropWords(drop, r.Hit, r.Hit is { Kind: not HitKind.Thing } on ? r.Session.PickedWith(on.Element).Count : 1));
                 return;
             }
 
@@ -252,7 +252,7 @@ internal sealed partial class View3D : Control
         : Canvas.MapCanvas.AudioFileIn(e) is { } audio ? new ViewModels.ShelfDrop(null, 0, System.IO.Path.GetFileName(audio), AudioFile: audio)
         : Canvas.MapCanvas.PictureFileIn(e) is { } picture ? new ViewModels.ShelfDrop(null, 0, System.IO.Path.GetFileName(picture), PictureFile: picture) : null);
 
-    private static string DropWords(ViewModels.ShelfDrop drop, SceneHit? hit)
+    private static string DropWords(ViewModels.ShelfDrop drop, SceneHit? hit, int picked = 1)
     {
         if (drop.PictureFile is not null) return hit is { Kind: not HitKind.Thing } p ? $"Let go to bring in {drop.Label} and put it on {p.Words}." : "Drop the picture on a wall, a floor or a ceiling.";
         if (drop.AudioFile is not null) return hit is { Kind: HitKind.Floor } ? $"Let go to place {drop.Label} here as a sound (music becomes the map's music)." : "Drop the sound on a floor.";
@@ -260,7 +260,8 @@ internal sealed partial class View3D : Control
         if (drop.Prefab is not null) return "Prefabs go on the plan: drop it there.";
         if (drop.Texture is null) return hit is { Kind: HitKind.Floor } ? $"Let go to place {drop.Label} here." : "Drop the object on a floor.";
         if (hit is not { Kind: not HitKind.Thing } h) return "Drop it on a wall, a floor or a ceiling.";
-        var wall = h.Kind == HitKind.Wall ? " (the whole wall; hold Shift for just a section as wide as the picture)" : "";
+        if (picked > 1) return $"Let go to put {drop.Label} on the {picked} picked {(h.Kind == HitKind.Wall ? "walls" : h.Kind == HitKind.Ceiling ? "ceilings" : "floors")}, and nothing else." + (drop.From is { } from ? $" It is copied into this project from {from.Game.Title} first." : "");
+        var wall = h.Kind == HitKind.Wall ? " (the whole wall; hold Shift for just a section as wide as the picture, or Shift+click the walls you want first)" : "";
         return $"Let go to put {drop.Label} on {h.Words}{wall}." + (drop.From is { } source ? $" It is copied into this project from {source.Game.Title} first." : "");
     }
 

@@ -742,6 +742,20 @@ internal sealed partial class InspectorViewModel : ObservableObject
             Rows.Add(new ActionRow("Save as a prefab", "Keeps a copy of the selected rooms and things in this project, under Objects, Prefabs, to drag onto any of its maps.", _session.SavePrefab));
             if (items.All(i => i is Sector)) Rows.Add(new ActionRow("Join them into one room", "The rooms become the first one you selected: the walls between them go, and its floor, ceiling and light hold for all of it (J).", _session.JoinRooms));
             if (items.OfType<Sector>().Where(r => r.OnMap).ToList() is { Count: >= 2 } rooms) AddHeights(rooms);
+
+            // Walls or floors picked together (Shift+click in the 3D view): a texture for all of them and nothing else.
+            if (items.All(i => i is Side) && items.OfType<Side>().ToList() is var faces)
+            {
+                string Common(Func<Side, string> shown) => faces.Select(shown).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1 ? shown(faces[0]) : "";
+                static string ShownOn(Side f) => f.Line?.Opposite(f) is null ? f.Middle : f.Bottom is not ("-" or "") ? f.Bottom : f.Top;
+                Rows.Add(new TextRow("Texture", "The picture on each of the picked walls, and on no other: a solid wall's picture, the upper and lower parts of a wall between two areas. Letting a texture go on one of them from Textures does the same.", () => Common(ShownOn), v => _session.PaintFaces(faces, v)));
+            }
+            else if (items.All(i => i is Sector) && items.OfType<Sector>().ToList() is var areas)
+            {
+                string Common(Func<Sector, string> shown) => areas.Select(shown).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1 ? shown(areas[0]) : "";
+                Rows.Add(new TextRow("Floor picture", "The floor's picture in each of the picked areas (texturefloor). Letting one go on one of their floors from Textures does the same.", () => Common(a => a.FloorTexture), v => _session.PaintFlats(areas, v, ceiling: false)));
+                Rows.Add(new TextRow("Ceiling picture", "The ceiling's picture in each of the picked areas (textureceiling).", () => Common(a => a.CeilingTexture), v => _session.PaintFlats(areas, v, ceiling: true)));
+            }
             AddShaping();
             if (items.OfType<Thing>().Where(t => t.OnMap).ToList() is { Count: >= 2 } things) AddArranging(things);
             AddLikeIt(null);

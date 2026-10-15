@@ -865,6 +865,15 @@ public sealed class EditorSession : IDisposable
     {
         if (Grouping.Holds(_geometry, target.Element)) return "That is locked: unlock it with nothing selected, under Groups, to change it.";
 
+        // Panels picked together (Shift+click in the 3D view): a texture let go on one of them goes on each of them and nowhere
+        // else, and they stay picked. A picture of the user's own, or Shift for a section, still goes on the one let go on.
+        if (section is null && !IsOwnPicture(texture) && PickedWith(target.Element) is { Count: > 1 } picked)
+        {
+            if (target.Element is Side face) PaintFaces([.. picked.OfType<Side>()], texture, (face, target.Part));
+            else PaintFlats([.. picked.OfType<Sector>()], texture, target.Ceiling);
+            return null;
+        }
+
         switch (target.Element)
         {
             case Side { OnMap: true } face:
@@ -899,6 +908,51 @@ public sealed class EditorSession : IDisposable
             default:
                 return "Drop it on a wall, a floor or a ceiling.";
         }
+    }
+
+    /// <summary>
+    /// Puts a texture on each of <paramref name="faces"/> and on nothing else, one undo step: a solid wall's face takes it as its
+    /// picture, a face between two areas on its upper and lower parts (where heights show them), except <paramref name="hit"/>'s
+    /// face, which takes it on the part given (the part a drop landed on).
+    /// </summary>
+    public void PaintFaces(IReadOnlyList<Side> faces, string texture, (Side Face, WallPart Part)? hit = null)
+    {
+        var live = faces.Where(f => f.OnMap && !Grouping.Holds(_geometry, f)).ToList();
+        if (live.Count == 0) return;
+        History.Record(live.Count == 1 ? "Put a texture on a wall" : "Put a texture on the picked walls", e =>
+        {
+            foreach (var f in live) PaintFace(e, f, texture, hit is { } h && ReferenceEquals(h.Face, f) ? h.Part : null);
+        });
+    }
+
+    /// <summary>Puts a texture on the floors (or ceilings) of <paramref name="areas"/> and on nothing else, one undo step.</summary>
+    public void PaintFlats(IReadOnlyList<Sector> areas, string texture, bool ceiling)
+    {
+        var live = areas.Where(a => a.OnMap && !Grouping.Holds(_geometry, a)).ToList();
+        if (live.Count == 0) return;
+        History.Record(ceiling ? "Put a texture on the picked ceilings" : "Put a texture on the picked floors", e =>
+        {
+            foreach (var area in live)
+            {
+                if (ceiling) e.Set(area, s => s.CeilingTexture, (s, v) => s.CeilingTexture = v, texture);
+                else e.Set(area, s => s.FloorTexture, (s, v) => s.FloorTexture = v, texture);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The surfaces picked together with <paramref name="element"/>: when it is one of several selected, the selected faces (for a
+    /// face) or areas (for a floor or ceiling) still on the map and free to change; else just it.
+    /// </summary>
+    public IReadOnlyList<Element> PickedWith(Element element)
+    {
+        if (Selection.Count < 2 || !Selection.Contains(element)) return [element];
+        return element switch
+        {
+            Side => [.. Selection.OfType<Side>().Where(s => s.OnMap && !Grouping.Holds(_geometry, s))],
+            Sector => [.. Selection.OfType<Sector>().Where(s => s.OnMap && !Grouping.Holds(_geometry, s))],
+            _ => [element],
+        };
     }
 
     /// <summary>
