@@ -110,6 +110,24 @@ internal sealed class SelectionOverlay
         return o;
     }
 
+    /// <summary>Whether an action works on objects by the id in its first argument: GZDoom's Thing_ actions (activate, remove, spawn at a spot…).</summary>
+    private static bool NamesThings(int special) => WadSmith.Core.Games.ActionCatalog.Get(special)?.Name.StartsWith("Thing_", StringComparison.Ordinal) == true;
+
+    /// <summary>A patrol point or an interpolation point: the stops of a monster's route and of a camera's or mover's path.</summary>
+    private static bool IsPathPoint(int type) => type is 9024 or 9070;
+
+    /// <summary>
+    /// The id of the next stop after <paramref name="t"/> on its path: a patrol point's first argument; an interpolation point's
+    /// fourth and fifth (low and high byte); a path follower's, moving camera's or actor mover's first two (its first stop).
+    /// </summary>
+    private static int? NextPoint(ThingFrame t) => t.Type switch
+    {
+        9024 => t.Args[0],
+        9070 => t.Args[3] | (t.Args[4] << 8),
+        9071 or 9072 or 9074 => t.Args[0] | (t.Args[1] << 8),
+        _ => null,
+    };
+
     /// <summary>The tag links of the selected walls and areas, from the frame alone (a worker builds the overlay).</summary>
     private static void AddLinks(SelectionOverlay o, IReadOnlyList<Element> items, MapGeometry geometry)
     {
@@ -161,6 +179,15 @@ internal sealed class SelectionOverlay
                     if (Middle(s) is { } c) o.Links.Add((mx, my, c.Item1, c.Item2));
                 }
             }
+            else if (e is Line && slot >= 0 && slot < f.Lines.Count && f.Lines[slot] is { Element: not null, Special: not 0 } worker && worker.Args[0] != 0 && NamesThings(worker.Special))
+            {
+                // An action on objects by their id (Thing_Activate, Thing_Remove, Thing_Spawn at a spot…): to each of them.
+                var (mx, my) = Mid(worker);
+                foreach (var i in geometry.ThingsWithTid(worker.Args[0]).Take(64))
+                {
+                    if (f.Things[i] is { Element: not null } target) o.Links.Add((mx, my, (float)target.X, (float)target.Y));
+                }
+            }
             else if (e is Sector && slot >= 0 && slot < f.Sectors.Count && f.Sectors[slot] is { Element: not null, Tag: not 0 } area && Middle(slot) is { } c)
             {
                 foreach (var i in geometry.LinesNaming(area.Tag).Take(64))
@@ -171,7 +198,66 @@ internal sealed class SelectionOverlay
                         o.Links.Add((mx, my, c.Item1, c.Item2));
                     }
                 }
+
+                // Objects whose own action works on it (a monster that lowers a floor when it dies).
+                foreach (var t in f.Things.Where(t => t.Element is not null && t.Special != 0 && t.Args[0] == area.Tag && Switches.NamesAreas(t.Special)).Take(64)) o.Links.Add(((float)t.X, (float)t.Y, c.Item1, c.Item2));
             }
+            else if (e is Thing && slot >= 0 && slot < f.Things.Count && f.Things[slot] is { Element: not null } thing)
+            {
+                ThingLinks(o, geometry, slot, thing, Middle, Mid);
+            }
+        }
+    }
+
+    /// <summary>
+    /// An object's links: its own action, as a wall's (the areas or objects it names); the walls and objects whose action names
+    /// its id; and, for a patrol point, an interpolation point or what follows one, its path stop to stop (UDB's event lines).
+    /// </summary>
+    private static void ThingLinks(SelectionOverlay o, MapGeometry geometry, int slot, ThingFrame thing, Func<int, (float, float)?> middle, Func<LineFrame, (float, float)> mid)
+    {
+        var f = geometry.Frame;
+        var (tx, ty) = ((float)thing.X, (float)thing.Y);
+        if (thing.Special != 0 && thing.Args[0] != 0)
+        {
+            if (Switches.NamesAreas(thing.Special))
+            {
+                foreach (var s in geometry.SectorsTagged(thing.Args[0]).Take(64))
+                {
+                    if (middle(s) is { } m) o.Links.Add((tx, ty, m.Item1, m.Item2));
+                }
+            }
+            else if (NamesThings(thing.Special))
+            {
+                foreach (var i in geometry.ThingsWithTid(thing.Args[0]).Take(64))
+                {
+                    if (i != slot && f.Things[i] is { Element: not null } target) o.Links.Add((tx, ty, (float)target.X, (float)target.Y));
+                }
+            }
+        }
+
+        if (thing.Tid != 0)
+        {
+            foreach (var i in geometry.LinesNaming(thing.Tid).Take(64))
+            {
+                if (f.Lines[i] is { Element: not null, Special: not 0 } by && NamesThings(by.Special))
+                {
+                    var (mx, my) = mid(by);
+                    o.Links.Add((mx, my, tx, ty));
+                }
+            }
+
+            foreach (var t in f.Things.Where(t => t.Element is not null && t.Special != 0 && t.Args[0] == thing.Tid && NamesThings(t.Special)).Take(64)) o.Links.Add(((float)t.X, (float)t.Y, tx, ty));
+        }
+
+        var at = thing;
+        var visited = new HashSet<int> { slot };
+        for (var step = 0; step < 256 && NextPoint(at) is { } next and not 0; step++)
+        {
+            var stop = geometry.ThingsWithTid(next).FirstOrDefault(i => f.Things[i] is { Element: not null } p && IsPathPoint(p.Type), -1);
+            if (stop < 0) break;
+            o.Links.Add(((float)at.X, (float)at.Y, (float)f.Things[stop].X, (float)f.Things[stop].Y));
+            if (!visited.Add(stop)) break;
+            at = f.Things[stop];
         }
     }
 }
