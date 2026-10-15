@@ -92,9 +92,9 @@ public sealed class AddOnsInTheWindowTests
                 said.Add($"added: add-ons [{string.Join(", ", added.Session.Project.Info.AddOns.Select(Path.GetFileName))}], shelf {Shelf(added)}");
 
                 // Play loads it before the project, after the game.
-                project = Path.GetFileName(added.Session.Project.Folder.TrimEnd('/'));
+                project = Path.GetFileName(Path.TrimEndingDirectorySeparator(added.Session.Project.Folder));
                 var (request, why) = PlayRequests.For(added.Session.Project, added.Session.Slot, App.App.Services!.Games!, "config.ini", "log.txt", 3);
-                said.Add($"play: {why ?? string.Join(" then ", request!.Files.Select(f => Path.GetFileName(f.TrimEnd('/'))))}");
+                said.Add($"play: {why ?? string.Join(" then ", request!.Files.Select(f => Path.GetFileName(Path.TrimEndingDirectorySeparator(f))))}");
 
                 // Taken out in the Inspector: the map opens again without it.
                 Press("Take out my-textures");
