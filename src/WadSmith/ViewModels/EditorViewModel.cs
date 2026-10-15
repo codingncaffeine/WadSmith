@@ -1200,7 +1200,7 @@ internal sealed partial class EditorViewModel : ObservableObject
     }
 
     /// <summary>Called by the canvas while the selection is being moved (null when the move ends).</summary>
-    public void Moving((int Corners, int Things, double Dx, double Dy)? move)
+    public void Moving((int Corners, int Things, double Dx, double Dy, bool Keys)? move)
     {
         if (move is not { } m)
         {
@@ -1219,7 +1219,9 @@ internal sealed partial class EditorViewModel : ObservableObject
             var across = m.Dx == 0 ? "" : string.Create(CultureInfo.InvariantCulture, $"{Math.Abs(m.Dx):0.#} {(m.Dx > 0 ? "east" : "west")}");
             var up = m.Dy == 0 ? "" : string.Create(CultureInfo.InvariantCulture, $"{Math.Abs(m.Dy):0.#} {(m.Dy > 0 ? "north" : "south")}");
             var by = string.Join(", ", new[] { across, up }.Where(x => x.Length > 0));
-            _drawingText = $"Moving {what}{(by.Length > 0 ? $" {by}" : "")} · Shift moves freely, Esc puts it back";
+            _drawingText = m.Keys
+                ? $"Moving {what}{(by.Length > 0 ? $" {by}" : "")} · the arrow keys go on moving it (Shift: by 1); Ctrl+Z puts it back"
+                : $"Moving {what}{(by.Length > 0 ? $" {by}" : "")} · Shift moves freely, Esc puts it back";
         }
 
         UpdateStatus();

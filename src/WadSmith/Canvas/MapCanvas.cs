@@ -65,6 +65,7 @@ internal sealed class MapCanvas : Control
 
     public static readonly StyledProperty<PickOnly> PicksProperty = AvaloniaProperty.Register<MapCanvas, PickOnly>(nameof(Picks));
     public static readonly StyledProperty<double> GridSizeProperty = AvaloniaProperty.Register<MapCanvas, double>(nameof(GridSize));
+    public static readonly StyledProperty<bool> ClassicKeysProperty = AvaloniaProperty.Register<MapCanvas, bool>(nameof(ClassicKeys));
 
     private readonly LatestOnWorker<(EditorSession Session, CanvasSnapshot Picture)> _pictures;
     private readonly LatestOnWorker<(EditorSession Session, long Generation, SelectionOverlay Outline)> _outlines;
@@ -140,6 +141,19 @@ internal sealed class MapCanvas : Control
     private bool _endWhenGathered;
     private HashSet<Vertex> _moving = new(ReferenceEqualityComparer.Instance);
     private MapPoint? _mergeAt;
+
+    /// <summary>
+    /// Whether the move under way comes from the arrow keys: each press adds a grid step to the offset, and the move is let
+    /// go (one undo step, joined to the map as a drag is) after a pause, a click or any other key.
+    /// </summary>
+    private bool _keyMove;
+    private Avalonia.Threading.DispatcherTimer? _keyMoveEnd;
+
+    /// <summary>How long the arrow keys may rest before their move is let go.</summary>
+    private static readonly TimeSpan KeyMovePause = TimeSpan.FromMilliseconds(700);
+
+    /// <summary>How far one press of an arrow key scrolls the plan, in screen pixels (Eureka's 120).</summary>
+    private const double ArrowScroll = 120;
 
     /// <summary>Moves of up to this many corners and objects change the map as the pointer goes; bigger ones when let go.</summary>
     private const int LiveMoveLimit = MoveSet.LiveLimit;
@@ -241,6 +255,7 @@ internal sealed class MapCanvas : Control
             // The point that snaps: the moving corner nearest the grab, else the nearest object.
             _anchor = Nearest(r.Set.Vertices.Select(v => new MapPoint(v.X, v.Y))) ?? Nearest(r.Set.Things.Select(t => new MapPoint(t.X, t.Y)));
             if (_grip != Grip.None) Shape(_lastPointer, _free, _fromMiddle);
+            else if (_keyMove) ApplyMove();
             else Follow(_lastPointer, _free);
             if (_endWhenGathered) EndMove(keep: true);
         }, "what a drag moves");
@@ -308,6 +323,16 @@ internal sealed class MapCanvas : Control
     /// <summary>The grid corners snap to now.</summary>
     public double GridStepNow => GridStep();
 
+    /// <summary>Whether the keys are Doom Builder's: the arrow keys then always scroll the plan, and Ctrl with them moves the selection.</summary>
+    public bool ClassicKeys
+    {
+        get => GetValue(ClassicKeysProperty);
+        set => SetValue(ClassicKeysProperty, value);
+    }
+
+    /// <summary>Where the middle of the plan is, in map units (for instruments).</summary>
+    internal MapPoint Centre => new(_cx, _cy);
+
     /// <summary>Whether a drawing, a drag or a box is under way: the editor's keys wait until it ends.</summary>
     internal bool IsGesturing => _drawFrom is not null || _corners.Count > 0 || _boxFrom is not null || _moveGesture != 0 || _pressed is not null || _windowWall is not null;
     /// <summary>Raised as the player's box follows the pointer: whether the player fits there (null off the map or when hidden), and where.</summary>
@@ -325,8 +350,8 @@ internal sealed class MapCanvas : Control
     /// <summary>Raised while a room is drawn corner by corner: the corners so far and the length of the side to the pointer (null when it ends).</summary>
     public event Action<(int Corners, double Side)?>? CornersChanged;
 
-    /// <summary>Raised while the selection is being moved, with what moves and how far (null when the move ends).</summary>
-    public event Action<(int Corners, int Things, double Dx, double Dy)?>? Moving;
+    /// <summary>Raised while the selection is being moved, with what moves, how far and whether by the arrow keys (null when the move ends).</summary>
+    public event Action<(int Corners, int Things, double Dx, double Dy, bool Keys)?>? Moving;
 
     /// <summary>Raised with a sentence while the selection is turned or resized with its handles (null when it ends).</summary>
     public event Action<string?>? Placing;
@@ -361,6 +386,7 @@ internal sealed class MapCanvas : Control
         if (change.Property == ToolProperty)
         {
             CancelDrawing();
+            EndKeyMove();
             CancelMove();
             if (change.GetNewValue<EditorTool>() != EditorTool.Teleport && Session is { } leaving) leaving.TeleportPad = null;
             _windowWall = null;
@@ -374,6 +400,10 @@ internal sealed class MapCanvas : Control
         }
 
         if (change.Property != SessionProperty) return;
+
+        // A move of the arrow keys belongs to the map it began on: dropped here (focus left the plan first, which let it go).
+        _keyMoveEnd?.Stop();
+        if (_keyMove) (_keyMove, _moveGesture, _moveSet, _moveEdit) = (false, 0, null, null);
         if (change.OldValue is EditorSession old)
         {
             old.GeometryChanged -= OnGeometryChanged;
@@ -710,8 +740,54 @@ internal sealed class MapCanvas : Control
         return best;
     }
 
+    /// <summary>
+    /// The arrow keys on the plan (D65): with something selected they move it a grid step (Shift: one unit), all the presses
+    /// of a run one undo step; with nothing selected they scroll the plan, as Ultimate Doom Builder's and Eureka's do. With
+    /// Doom Builder's keys the arrows always scroll and Ctrl with them moves the selection (Ctrl moves it in both).
+    /// Returns whether the key was an arrow the plan used.
+    /// </summary>
+    private bool ArrowKey(KeyEventArgs e)
+    {
+        var (x, y) = e.Key switch { Key.Left => (-1, 0), Key.Right => (1, 0), Key.Up => (0, 1), Key.Down => (0, -1), _ => (0, 0) };
+        if ((x, y) == (0, 0) || (e.KeyModifiers & KeyModifiers.Alt) != 0) return false;
+        var ctrl = (e.KeyModifiers & KeyModifiers.Control) != 0;
+        var pressing = _drawFrom is not null || _boxFrom is not null || _pressed is not null || (_moveGesture != 0 && !_keyMove);
+        if (Session is { Selection.IsEmpty: false } && (ctrl || !ClassicKeys) && !pressing && _corners.Count == 0 && _windowWall is null)
+        {
+            var step = (e.KeyModifiers & KeyModifiers.Shift) != 0 ? 1 : GridStep();
+            if (!_keyMove)
+            {
+                _grip = Grip.None;
+                BeginMove(_lastPointer, keys: true);
+                _keyMove = true;
+            }
+
+            _offset = (_offset.X + x * step, _offset.Y + y * step);
+            ApplyMove();
+            _keyMoveEnd ??= new Avalonia.Threading.DispatcherTimer(KeyMovePause, Avalonia.Threading.DispatcherPriority.Input, (_, _) => EndKeyMove());
+            _keyMoveEnd.Stop();
+            _keyMoveEnd.Start();
+            return true;
+        }
+
+        // Scrolling: also while a room is drawn corner by corner, to reach the next corner; never under a pressed button.
+        if (ctrl || pressing) return false;
+        EndKeyMove();
+        _cx += x * ArrowScroll / _zoom;
+        _cy += y * ArrowScroll / _zoom;
+        InvalidateVisual();
+        return true;
+    }
+
+    /// <summary>Lets go of a move made with the arrow keys: the map keeps it, joined as a drag's is.</summary>
+    private void EndKeyMove()
+    {
+        _keyMoveEnd?.Stop();
+        if (_keyMove) EndMove(keep: true);
+    }
+
     /// <summary>Starts moving the selection: what moves is gathered on a worker (a selection can be the whole map).</summary>
-    private void BeginMove(Point at)
+    private void BeginMove(Point at, bool keys = false)
     {
         if (Session is not { } session) return;
         _moveGesture = History.NewGesture();
@@ -731,7 +807,7 @@ internal sealed class MapCanvas : Control
             var set = MoveSet.Gather(geometry, seeds);
             return (session, gesture, set, Grouping.HeldBy(geometry, set.Vertices));
         });
-        Cursor = new Cursor(StandardCursorType.SizeAll);
+        if (!keys) Cursor = new Cursor(StandardCursorType.SizeAll);
     }
 
     /// <summary>The offset for the pointer at <paramref name="p"/>: the anchor follows it, snapped to the grid unless moving freely.</summary>
@@ -778,7 +854,7 @@ internal sealed class MapCanvas : Control
         if (_moveSet is { IsEmpty: false } set)
         {
             if (set.Count <= LiveMoveLimit && (Committed || Changed)) Commit(session, set);
-            if (_grip == Grip.None) Moving?.Invoke((set.Vertices.Count, set.Things.Count, _offset.X, _offset.Y));
+            if (_grip == Grip.None) Moving?.Invoke((set.Vertices.Count, set.Things.Count, _offset.X, _offset.Y, _keyMove));
             else Placing?.Invoke(DescribePlacing());
         }
 
@@ -831,6 +907,8 @@ internal sealed class MapCanvas : Control
         }
 
         _moveGesture = 0;
+        _keyMove = false;
+        _keyMoveEnd?.Stop();
         _moveSet = null;
         _moveEdit = null;
         _mergeAt = null;
@@ -1180,6 +1258,7 @@ internal sealed class MapCanvas : Control
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
+        EndKeyMove();
         Focus();
         var props = e.GetCurrentPoint(this).Properties;
         if (_drawFrom is not null && (props.IsRightButtonPressed || props.IsMiddleButtonPressed))
@@ -1698,6 +1777,15 @@ internal sealed class MapCanvas : Control
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        if (ArrowKey(e))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        // Any other key (not a modifier on its own) lets go of the arrows' move first, so it acts on the map as moved.
+        if (_keyMove && e.Key is not (Key.LeftShift or Key.RightShift or Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt)) EndKeyMove();
+
         switch (e.Key)
         {
             case Key.Space:
@@ -1771,6 +1859,12 @@ internal sealed class MapCanvas : Control
     protected override void OnKeyUp(KeyEventArgs e)
     {
         if (e.Key == Key.Space) _spaceDown = false;
+    }
+
+    protected override void OnLostFocus(FocusChangedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        EndKeyMove();
     }
 
     /// <summary>Marks where the 3D camera stands and looks (null hides the mark).</summary>
