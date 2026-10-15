@@ -473,6 +473,32 @@
                 <ContentControl Grid.Row="1" Content="{Binding ObjectShelf}" IsVisible="{Binding ShowObjects}" Margin="18,8,12,8" />
                 <ScrollViewer Grid.Row="1" IsVisible="{Binding ShowVersions}">
                     <StackPanel Margin="18,10,18,18" Spacing="10">
+                        <!-- This session's undo list (D65, Ultimate Doom Builder's): a click goes back, or forward, to just after that step. -->
+                        <TextBlock Classes="section" Text="THIS SESSION'S STEPS" />
+                        <TextBlock Text="{Binding StepsNote}" Classes="secondary" TextWrapping="Wrap" IsVisible="{Binding StepsNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <ItemsControl ItemsSource="{Binding StepList}">
+                            <ItemsControl.Styles>
+                                <Style Selector="Button.step.now TextBlock.label">
+                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                </Style>
+                                <Style Selector="Button.step.undone">
+                                    <Setter Property="Opacity" Value="0.5" />
+                                </Style>
+                            </ItemsControl.Styles>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="vm:StepItem">
+                                    <Button Classes="step" Classes.now="{Binding IsNow}" Classes.undone="{Binding IsUndone}" Command="{Binding GoCommand}" ToolTip.Tip="{Binding Tip}"
+                                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" Padding="8,3" AutomationProperties.Name="{Binding Label}">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <TextBlock Text="▸" Margin="0,0,6,0" Foreground="{DynamicResource Brush.Accent}" IsVisible="{Binding IsNow}" />
+                                            <TextBlock Grid.Column="1" Classes="label" Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="2" Text="{Binding When}" Classes="secondary" Margin="8,0,0,0" />
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Classes="section" Text="KEPT VERSIONS" Margin="0,8,0,0" />
                         <TextBlock Text="{Binding VersionsNote}" Classes="secondary" TextWrapping="Wrap" />
                         <ItemsControl ItemsSource="{Binding Versions}">
                             <ItemsControl.ItemTemplate>

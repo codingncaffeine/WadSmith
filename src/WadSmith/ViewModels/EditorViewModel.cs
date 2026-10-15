@@ -1249,6 +1249,7 @@ internal sealed partial class EditorViewModel : ObservableObject
         switch (value)
         {
             case SidePanel.Versions:
+                RefreshSteps();
                 _ = RefreshVersionsAsync();
                 break;
             case SidePanel.Textures:
@@ -1497,8 +1498,53 @@ internal sealed partial class EditorViewModel : ObservableObject
         if (value != Canvas.MapViewMode.Floors) Learned("heights");
     }
 
+    /// <summary>This session's steps for the Versions panel's undo list (D65): the map as opened, each step done, then those taken back.</summary>
+    public ObservableCollection<StepItem> StepList { get; } = [];
+
+    /// <summary>What the undo list leaves out (it lists the latest steps); empty when it lists them all.</summary>
+    [ObservableProperty]
+    private string _stepsNote = "";
+
+    /// <summary>The most steps the list shows on each side of now; Undo and Redo still reach the rest.</summary>
+    private const int MostSteps = 100;
+
+    /// <summary>Lists the steps again, while the Versions panel shows them.</summary>
+    private void RefreshSteps()
+    {
+        if (!ShowVersions) return;
+        var done = Session.History.Steps;
+        var undone = Session.History.UndoneSteps;
+        StepList.Clear();
+        string Time(DateTimeOffset when) => when.ToLocalTime().ToString("HH:mm", CultureInfo.CurrentCulture);
+        var first = Math.Max(0, done.Count - MostSteps);
+        if (first == 0) StepList.Add(new StepItem("The map as it was opened", "", done.Count == 0 ? StepState.Now : StepState.Done, () => GoToStep(0)));
+        for (var i = first; i < done.Count; i++)
+        {
+            var after = i + 1;
+            var (label, checkpoint, when) = done[i];
+            StepList.Add(new StepItem(checkpoint is null ? label : $"{label} · {checkpoint}", Time(when), after == done.Count ? StepState.Now : StepState.Done, () => GoToStep(after)));
+        }
+
+        for (var j = 0; j < Math.Min(undone.Count, MostSteps); j++)
+        {
+            var after = done.Count + j + 1;
+            StepList.Add(new StepItem(undone[j].Label, Time(undone[j].When), StepState.Undone, () => GoToStep(after)));
+        }
+
+        StepsNote = first > 0 ? string.Create(CultureInfo.InvariantCulture, $"{first} earlier step{(first == 1 ? " is" : "s are")} not listed; Undo still takes {(first == 1 ? "it" : "them")} back.") : "";
+    }
+
+    /// <summary>Puts the map as it was just after the <paramref name="done"/>th step of this session (0: as opened).</summary>
+    private void GoToStep(int done)
+    {
+        if (!Session.History.GoTo(done)) return;
+        Session.Selection.Prune();
+        Learned("undo");
+    }
+
     private void OnHistoryMoved()
     {
+        RefreshSteps();
         UndoCommand.NotifyCanExecuteChanged();
         RedoCommand.NotifyCanExecuteChanged();
         UndoTip = Session.History.UndoLabel is { } u ? $"Undo: {u} (Ctrl+Z)" : "Nothing to undo";

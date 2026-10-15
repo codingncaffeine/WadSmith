@@ -52,6 +52,21 @@ public sealed class History(EditorMap map)
     /// <summary>The steps, oldest first, with their checkpoint names, for the History panel.</summary>
     public IReadOnlyList<(string Label, string? Checkpoint, DateTimeOffset When)> Steps => _undo.Select(e => (e.Edit.Label, e.Checkpoint, e.When)).ToList();
 
+    /// <summary>The steps taken back, the one Redo brings back first; for the History panel's list.</summary>
+    public IReadOnlyList<(string Label, DateTimeOffset When)> UndoneSteps => _redo.AsEnumerable().Reverse().Select(e => (e.Edit.Label, e.When)).ToList();
+
+    /// <summary>
+    /// Undoes or redoes until <paramref name="done"/> steps are done (0: none, the map as it was opened), as Ultimate Doom
+    /// Builder's undo list does when a step in it is picked. Returns whether the map moved.
+    /// </summary>
+    public bool GoTo(int done)
+    {
+        var moved = false;
+        while (_undo.Count > done && Undo()) moved = true;
+        while (_undo.Count < done && Redo()) moved = true;
+        return moved;
+    }
+
     /// <summary>Raised after every Run, Undo or Redo.</summary>
     public event Action? Moved;
 
