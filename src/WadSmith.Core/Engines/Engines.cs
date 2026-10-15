@@ -466,10 +466,10 @@ public static class PlayRequests
             files.Add(game.Path);
         }
 
-        // The project's add-ons (a map pack it was started from) load before the project, as in the editor.
+        // The project's add-ons (a map pack it was started from, the user's own files and folders) load before the project, as in the editor.
         foreach (var addOn in project.Info.AddOns)
         {
-            if (File.Exists(addOn)) files.Add(Path.GetFullPath(addOn));
+            if (File.Exists(addOn) || Directory.Exists(addOn)) files.Add(Path.GetFullPath(addOn));
         }
 
         files.Add(Path.GetFullPath(project.Folder));

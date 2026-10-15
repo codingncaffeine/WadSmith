@@ -54,6 +54,7 @@ public partial class EditorView : UserControl
             vm.ReadClipboardPicture = ReadClipboardPictureAsync;
             vm.OpenInOtherProgram = async path => TopLevel.GetTopLevel(this)?.Launcher is { } launcher && await launcher.LaunchFileInfoAsync(new System.IO.FileInfo(path)).ConfigureAwait(true);
             vm.PickExportFile = PickExportFileAsync;
+            vm.PickAddOn = PickAddOnAsync;
             vm.Inspector.PickPanorama = PickPanoramaAsync;
             vm.Inspector.PickGrid = PickGridAsync;
             vm.Inspector.PickMusic = PickMusicAsync;
@@ -393,6 +394,28 @@ public partial class EditorView : UserControl
             Title = "Bring in a music file for this map",
             AllowMultiple = false,
             FileTypeFilter = [new("Music (OGG, MP3, FLAC, WAV, MIDI, MUS, MOD, XM, IT, S3M)") { Patterns = [.. kinds.Select(k => $"*.{k}"), .. kinds.Select(k => $"*.{k.ToUpperInvariant()}")] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
+        }).ConfigureAwait(true);
+        return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
+    }
+
+    /// <summary>The pickers for the Inspector's "Add a WAD or PK3…" and "Add a folder…" (D65): a file or a folder to load with the project.</summary>
+    private async Task<string?> PickAddOnAsync(bool folder)
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return null;
+        if (folder)
+        {
+            if (!storage.CanPickFolder) return null;
+            var folders = await storage.OpenFolderPickerAsync(new Avalonia.Platform.Storage.FolderPickerOpenOptions { Title = "Add a folder to load with this project", AllowMultiple = false }).ConfigureAwait(true);
+            return folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+        }
+
+        if (!storage.CanOpen) return null;
+        string[] kinds = ["wad", "pk3", "zip"];
+        var picked = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "Add a WAD or PK3 to load with this project",
+            AllowMultiple = false,
+            FileTypeFilter = [new("Doom add-ons (WAD, PK3, ZIP)") { Patterns = [.. kinds.Select(k => $"*.{k}"), .. kinds.Select(k => $"*.{k.ToUpperInvariant()}")] }, Avalonia.Platform.Storage.FilePickerFileTypes.All],
         }).ConfigureAwait(true);
         return picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
     }

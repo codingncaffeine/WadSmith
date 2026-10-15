@@ -698,6 +698,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
             Rows.Add(new ActionRow("Export…", "One file to share or play anywhere: a .pk3 for GZDoom, or a .wad for vanilla Doom, Crispy, Boom or MBF21 ports, with what each would lose (Ctrl+E).", () => ExportMap?.Invoke()));
             Rows.Add(new ActionRow("Files WadSmith writes…", "The text files WadSmith writes into the project for GZDoom (zmapinfo, ANIMDEFS, zscript …), to read as they are; WadSmith writes them again from your choices.", () => ShowFiles?.Invoke()));
             AddMapSettings();
+            AddAddOns();
             AddGroups();
             return;
         }
@@ -1411,6 +1412,32 @@ internal sealed partial class InspectorViewModel : ObservableObject
 
     /// <summary>What the Map settings rows' choices are built from: the game's defaults and the values set, which can add a choice.</summary>
     private string MapSettingsKey() => $"{_session.Target}|{_session.Defaults?.Title}|{_session.Defaults?.Music}|{_session.Defaults?.Sky}|{_session.Defaults?.Next}|{_session.Defaults?.Slots.Count}|{_session.Defaults?.Switches.Count}|{_session.Defaults?.Foreign}|{_session.MapEntry.Music}|{_session.MapEntry.Sky}|{_session.MapEntry.Next}|{_session.Defaults?.Cluster}|{_session.MapEntry.Hub}";
+
+    /// <summary>Asks for a file (true: a folder) to load with the project (the editor sets it).</summary>
+    public Action<bool>? AddAddOn { get; set; }
+
+    /// <summary>Stops loading a file with the project (the editor sets it).</summary>
+    public Action<string>? RemoveAddOn { get; set; }
+
+    /// <summary>
+    /// The files the project loads with its game, before itself (D65, Ultimate Doom Builder's resources): a texture WAD, a PK3,
+    /// a folder, a map pack the project was started from. Their pictures are on the Textures shelf (the objects they declare
+    /// are not on the Objects shelf yet: D65 B2) and Play loads them in the same order; the project keeps where they are, not a copy.
+    /// </summary>
+    private void AddAddOns()
+    {
+        Rows.Add(new HeadingRow("ADD-ONS"));
+        foreach (var path in _session.Project.Info.AddOns)
+        {
+            var name = Path.GetFileName(path.TrimEnd('/', '\\'));
+            var there = File.Exists(path) || Directory.Exists(path);
+            Rows.Add(new InfoRow(name, $"{path}: loaded with the game before this project, in WadSmith and when you play.", () => there ? "Loaded with the game" : "Not found: the map is shown without it"));
+            Rows.Add(new ActionRow($"Take out {name}", "Stops loading it with this project; the file stays where it is. The map opens again without it.", () => RemoveAddOn?.Invoke(path)));
+        }
+
+        Rows.Add(new ActionRow("Add a WAD or PK3…", "Loads a file of yours with this project, before it: a texture pack (OTEX, a texture WAD), a map pack, or any PK3 GZDoom loads. Its pictures go on the Textures shelf, Play loads it too, and Export says the map needs it.", () => AddAddOn?.Invoke(false)));
+        Rows.Add(new ActionRow("Add a folder…", "Loads a folder of yours with this project, read as GZDoom reads a PK3's folders (textures, flats, sprites, sounds, zscript…).", () => AddAddOn?.Invoke(true)));
+    }
 
     /// <summary>
     /// The map's own settings, with nothing selected: its name, music, sky and what follows its exit, each the game's own

@@ -427,6 +427,12 @@ public sealed class Project
         SaveInfo();
     }
 
+    /// <summary>Stops loading <paramref name="path"/> with the project (the file itself is left where it is), and saves the record.</summary>
+    public void RemoveAddOn(string path)
+    {
+        if (Info.AddOns.RemoveAll(a => string.Equals(a, path, StringComparison.Ordinal)) > 0) SaveInfo();
+    }
+
     /// <summary>Gives the project a new name (its folder stays where it is).</summary>
     public void Rename(string name)
     {

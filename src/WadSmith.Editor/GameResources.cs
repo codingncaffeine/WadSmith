@@ -255,7 +255,7 @@ public sealed class GameResources
         files.Add(found.Path);
         foreach (var addOn in addOns ?? [])
         {
-            if (File.Exists(addOn)) files.Add(addOn);
+            if (File.Exists(addOn) || Directory.Exists(addOn)) files.Add(addOn);
             else Log.Warn($"{Path.GetFileName(addOn)} is no longer there; the map is shown without what it brought.");
         }
 

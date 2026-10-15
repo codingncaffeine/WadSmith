@@ -110,6 +110,8 @@ internal sealed partial class EditorViewModel : ObservableObject
         Inspector.ExplainMap += () => ExplainMapCommand.Execute(null);
         Inspector.ExportMap += () => OpenExportCommand.Execute(null);
         Inspector.ShowFiles += () => OpenFilesCommand.Execute(null);
+        Inspector.AddAddOn = folder => _ = AddAddOnAsync(folder);
+        Inspector.RemoveAddOn = path => _ = RemoveAddOnAsync(path);
         FindPorts();
         _shelfSounds = new LatestOnWorker<byte[]?>(session.OnUiThread, wav =>
         {
@@ -1882,6 +1884,70 @@ internal sealed partial class EditorViewModel : ObservableObject
     public Action<MapPoint, double>? PutCamera { get; set; }
 
     /// <summary>Puts the 3D camera where the pointer is on the plan (Eureka's ' key), showing the 3D view beside the plan if it was hidden.</summary>
+    /// <summary>Asks for a file (true: a folder) to load with the project; null when none was picked (the view sets it).</summary>
+    public Func<bool, Task<string?>>? PickAddOn { get; set; }
+
+    /// <summary>
+    /// Loads a file or folder of the user's with the project (D65, Ultimate Doom Builder's resources), after checking it is one
+    /// WadSmith and GZDoom read and not a game: the map is closed, its changes kept, and opened again with it.
+    /// </summary>
+    private async Task AddAddOnAsync(bool folder)
+    {
+        if (PickAddOn is null || await PickAddOn(folder).ConfigureAwait(true) is not { } picked) return;
+        var path = Path.GetFullPath(picked).TrimEnd(Path.DirectorySeparatorChar);
+        var (project, current) = (Session.Project, Session.Slot);
+        var name = Path.GetFileName(path);
+        if (project.Info.AddOns.Contains(path, StringComparer.Ordinal))
+        {
+            Session.Tell($"{name} loads with this project already.");
+            return;
+        }
+
+        // The project's own folder loads with it already, and a folder holding the project would load it twice.
+        var projectFolder = Path.GetFullPath(project.Folder).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if ((path + Path.DirectorySeparatorChar).StartsWith(projectFolder, StringComparison.Ordinal) || projectFolder.StartsWith(path + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            Session.Tell($"{name} is part of this project, or holds it: what is in the project loads with it already.");
+            return;
+        }
+
+        var why = await Task.Run(() =>
+        {
+            try
+            {
+                _ = Core.Containers.ResourceContainer.Open(path);
+                return File.Exists(path) && Core.Containers.WadDirectory.IsIwad(path) ? $"{name} is a game, not an add-on: its pictures are on the Textures shelf under the game chooser, copied in when you use them." : null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Core.CorruptDataException)
+            {
+                return $"{name} cannot be loaded: {ex.Message}";
+            }
+        }).ConfigureAwait(true);
+        if (why is not null)
+        {
+            Session.Tell(why);
+            return;
+        }
+
+        await _main.ChangeMapsAsync(project, current, () =>
+        {
+            project.AddAddOn(path);
+            return (current, $"{name} now loads with this project, in WadSmith and when you play: its pictures are on the Textures shelf. The Inspector, with nothing selected, lists the add-ons.");
+        }).ConfigureAwait(true);
+    }
+
+    /// <summary>Stops loading a file with the project: the map is closed, its changes kept, and opened again without it.</summary>
+    private Task RemoveAddOnAsync(string path)
+    {
+        var (project, current) = (Session.Project, Session.Slot);
+        var name = Path.GetFileName(path.TrimEnd('/', '\\'));
+        return _main.ChangeMapsAsync(project, current, () =>
+        {
+            project.RemoveAddOn(path);
+            return (current, $"{name} no longer loads with this project; the file is where it was.");
+        });
+    }
+
     /// <summary>Where the pointer is on the plan, in map units (east, north), shown in the status strip; its button goes to a point (D65).</summary>
     [ObservableProperty]
     private string _pointerText = "Go to…";
