@@ -2,8 +2,6 @@
   <img src="assets/branding/banner.png" alt="WadSmith" width="100%">
 </p>
 
-# WadSmith
-
 A modern map editor for Doom, Doom II, Heretic, Hexen and Strife, built for UZDoom and GZDoom, on Linux and Windows.
 
 WadSmith is meant to be the editor someone who has only ever *played* these games can open and use:
