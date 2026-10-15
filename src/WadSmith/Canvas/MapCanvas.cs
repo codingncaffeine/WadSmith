@@ -643,9 +643,56 @@ internal sealed class MapCanvas : Control
         }
 
         if (_drawFrom is { } a && _drawTo is { } b && (a.X != b.X || a.Y != b.Y)) DrawSize(context, a, b);
+        foreach (var (text, at) in LengthLabels()) DrawLabel(context, text, at);
         DrawGrips(context);
         DrawWindowDrag(context);
         DrawMeasure(context);
+    }
+
+    /// <summary>The most walls a drag labels with their lengths; a bigger move would bury the plan in numbers.</summary>
+    private const int MostLengthLabels = 16;
+
+    /// <summary>
+    /// The lengths on the plan (Ultimate Doom Builder's line labels, D65): beside each side of a room drawn corner by corner,
+    /// the side to the pointer with its angle too (0° east, 90° north); and beside each wall a drag is stretching, up to
+    /// <see cref="MostLengthLabels"/>. Each with the screen point its label is centred on, for the drawing and for tests.
+    /// </summary>
+    internal IReadOnlyList<(string Text, Point At)> LengthLabels()
+    {
+        var labels = new List<(string Text, Point At)>();
+        if (_corners.Count > 0)
+        {
+            for (var i = 1; i < _corners.Count; i++) labels.Add(Label(_corners[i - 1], _corners[i], angle: false));
+            if (_snap is { } s && s.DistanceTo(_corners[^1]) >= 1) labels.Add(Label(_corners[^1], s, angle: true));
+        }
+        else if (_moveGesture != 0 && _grip == Grip.None && _moveSet is { Stretched.Count: > 0 and <= MostLengthLabels } set)
+        {
+            foreach (var w in set.Stretched) labels.Add(Label(new MapPoint(w.MX + _offset.X, w.MY + _offset.Y), new MapPoint(w.FX, w.FY), angle: false));
+        }
+
+        return labels;
+
+        (string Text, Point At) Label(MapPoint from, MapPoint to, bool angle)
+        {
+            var length = from.DistanceTo(to);
+            var degrees = Math.Round(Math.Atan2(to.Y - from.Y, to.X - from.X) * 180 / Math.PI + 360) % 360;
+            var text = angle ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{length:0} · {degrees:0}°") : length.ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+
+            // At the side's middle, moved a little off it at a right angle, so the label never hides the line.
+            var (p, q) = (ToScreen(from), ToScreen(to));
+            var span = Math.Max(1, Math.Sqrt((q.X - p.X) * (q.X - p.X) + (q.Y - p.Y) * (q.Y - p.Y)));
+            return (text, new Point((p.X + q.X) / 2 + (q.Y - p.Y) / span * 14, (p.Y + q.Y) / 2 - (q.X - p.X) / span * 14));
+        }
+    }
+
+    /// <summary>A short number in a dark box centred on <paramref name="at"/> (screen pixels), kept on the plan.</summary>
+    private void DrawLabel(DrawingContext context, string label, Point at)
+    {
+        var text = new FormattedText(label, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 12, Brushes.White);
+        var x = Math.Clamp(at.X - text.Width / 2, 4, Math.Max(4, Bounds.Width - text.Width - 8));
+        var y = Math.Clamp(at.Y - text.Height / 2, 4, Math.Max(4, Bounds.Height - text.Height - 6));
+        context.FillRectangle(new SolidColorBrush(Color.FromArgb(0xD0, 0x0A, 0x07, 0x08)), new Rect(x - 4, y - 1, text.Width + 8, text.Height + 2), 3);
+        context.DrawText(text, new Point(x, y));
     }
 
     /// <summary>The line measured: dashed between its two ends, its length beside it (screen pixels).</summary>
