@@ -70,7 +70,7 @@ internal sealed class MapCanvas : Control
     private readonly LatestOnWorker<(EditorSession Session, CanvasSnapshot Picture)> _pictures;
     private readonly LatestOnWorker<(EditorSession Session, long Generation, SelectionOverlay Outline)> _outlines;
     private readonly LatestOnWorker<(EditorSession Session, long Gesture, MoveSet Set, string? Held)> _gathers;
-    private readonly LatestOnWorker<(EditorSession Session, bool Add, IReadOnlyList<Element> Picked)> _boxes;
+    private readonly LatestOnWorker<(EditorSession Session, BoxMode Mode, IReadOnlyList<Element> Picked)> _boxes;
     private readonly LatestOnWorker<(EditorSession Session, FitMarks Marks)> _fits;
 
     /// <summary>The time moving pictures play to (the 3D view keeps its own, as GZDoom starts each level's at zero).</summary>
@@ -91,10 +91,19 @@ internal sealed class MapCanvas : Control
     private (MapPoint At, WadSmith.Editor.Checks.GhostFit Fit)? _ghost;
     private Point? _ghostPointer;
 
-    /// <summary>A box being drawn over empty space with the Select tool (screen points), and whether it adds to the selection.</summary>
+    /// <summary>A box being drawn over empty space with the Select tool (screen points), and what it does to the selection.</summary>
     private Point? _boxFrom;
     private Point? _boxTo;
-    private bool _boxAdd;
+    private BoxMode _boxMode;
+
+    /// <summary>What a box does to the selection (Ultimate Doom Builder's keys, D65): no key replaces it, Shift adds, Ctrl takes away, Ctrl+Shift keeps only what is in both.</summary>
+    private enum BoxMode
+    {
+        Replace,
+        Add,
+        Remove,
+        Keep,
+    }
     private CanvasSnapshot? _snapshot;
     private MapLook _look = new(null);
     private SelectionOverlay? _selection;
@@ -264,8 +273,15 @@ internal sealed class MapCanvas : Control
             if (!ReferenceEquals(r.Session, Session)) return;
             // Locked rooms and objects stay out of a box selection.
             var picked = r.Picked.Where(e => !Grouping.Holds(r.Session.Geometry, e)).ToList();
-            if (r.Add) r.Session.Selection.Set([.. r.Session.Selection.Items, .. picked]);
-            else r.Session.Selection.Set([.. picked]);
+            var inBox = new HashSet<Element>(picked, ReferenceEqualityComparer.Instance);
+            var had = r.Session.Selection.Items;
+            r.Session.Selection.Set(r.Mode switch
+            {
+                BoxMode.Add => [.. had, .. picked],
+                BoxMode.Remove => [.. had.Where(e => !inBox.Contains(e))],
+                BoxMode.Keep => [.. had.Where(inBox.Contains)],
+                _ => [.. picked],
+            });
         }, "a box selection");
         _fits = new(ViewModels.MainViewModel.PostToUi, r =>
         {
@@ -1517,10 +1533,12 @@ internal sealed class MapCanvas : Control
 
             if (hit is null)
             {
-                // Empty space: a drag draws a box that selects what is inside (Shift adds to the selection).
-                if (!shift) Session.Selection.Clear();
+                // Empty space: a drag draws a box that selects what is inside; Shift adds to the selection, Ctrl takes away from
+                // it, Ctrl+Shift keeps only what is in both.
+                var ctrl = (e.KeyModifiers & KeyModifiers.Control) != 0;
+                _boxMode = (ctrl, shift) switch { (true, true) => BoxMode.Keep, (true, false) => BoxMode.Remove, (false, true) => BoxMode.Add, _ => BoxMode.Replace };
+                if (_boxMode == BoxMode.Replace) Session.Selection.Clear();
                 _boxFrom = _boxTo = e.GetPosition(this);
-                _boxAdd = shift;
                 e.Pointer.Capture(this);
             }
             else if (shift)
@@ -1703,9 +1721,9 @@ internal sealed class MapCanvas : Control
             if (Math.Abs(to.X - from.X) + Math.Abs(to.Y - from.Y) <= 4 || Session is not { } boxed) return;
             var (c0, c1) = (ToMap(from), ToMap(to));
             var geometry = boxed.Geometry;
-            var add = _boxAdd;
+            var mode = _boxMode;
             var only = Tool == EditorTool.Select ? Picks : PickOnly.Anything;
-            _boxes.Request(() => (boxed, add, BoxSelection.Pick(geometry, Math.Min(c0.X, c1.X), Math.Min(c0.Y, c1.Y), Math.Max(c0.X, c1.X), Math.Max(c0.Y, c1.Y), only)));
+            _boxes.Request(() => (boxed, mode, BoxSelection.Pick(geometry, Math.Min(c0.X, c1.X), Math.Min(c0.Y, c1.Y), Math.Max(c0.X, c1.X), Math.Max(c0.Y, c1.Y), only)));
             return;
         }
 
