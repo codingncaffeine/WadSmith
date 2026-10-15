@@ -2767,6 +2767,11 @@ public sealed class EditorSession : IDisposable
             var knownWindows = new Dictionary<Sector, bool>(ReferenceEqualityComparer.Instance);
             var windows = rest.Select(e => WallWindows.WindowOf(geometry, e, knownWindows)).OfType<Sector>().Distinct().ToList();
             rest = [.. rest.Where(e => WallWindows.WindowOf(geometry, e, knownWindows) is null)];
+
+            // A switch the same: any part of it (its wall, its face, its alcove) takes it away, and the wall it was set into is
+            // the wall beside it again.
+            var switchWalls = rest.Select(e => Switches.SwitchOf(geometry, e)).OfType<Line>().Distinct().ToList();
+            rest = [.. rest.Where(e => Switches.SwitchOf(geometry, e) is null)];
             var walledUp = doorways.Select(d => (Doorway: d, Frames: Doors.FramesBeside(geometry, d), Poly: PolyDoors.Recognise(geometry, d, family), Rising: Doors.Recognise(geometry, d))).ToList();
 
             // Switches that opened a door going away open nothing now: they lose their action, unless another area keeps the tag.
@@ -2776,8 +2781,11 @@ public sealed class EditorSession : IDisposable
             // A sliding or swinging door's pen selected takes its polyobjects, anchors and spots too, so the game never finds a
             // spot without its polyobject.
             var polyDoors = rest.OfType<Sector>().SelectMany(s => PolyDoors.InPen(geometry, s, family)).DistinctBy(d => d.Number).ToList();
-            var label = rest.Count > 0 || doorways.Count + windows.Count == 0 || (doorways.Count > 0 && windows.Count > 0) ? "Delete"
-                : doorways.Count == 1 ? "Delete the door" : doorways.Count > 1 ? "Delete the doors" : windows.Count == 1 ? "Delete the window" : "Delete the windows";
+            var kinds = (doorways.Count > 0 ? 1 : 0) + (windows.Count > 0 ? 1 : 0) + (switchWalls.Count > 0 ? 1 : 0);
+            var label = rest.Count > 0 || kinds != 1 ? "Delete"
+                : doorways.Count == 1 ? "Delete the door" : doorways.Count > 1 ? "Delete the doors"
+                : windows.Count == 1 ? "Delete the window" : windows.Count > 1 ? "Delete the windows"
+                : switchWalls.Count == 1 ? "Delete the switch" : "Delete the switches";
             History.Record(label, e =>
             {
                 said = Deleting.Delete(e, geometry, rest, look);
@@ -2789,6 +2797,7 @@ public sealed class EditorSession : IDisposable
                 }
 
                 foreach (var window in windows) Doors.WallUp(e, geometry, window, [], look);
+                foreach (var wall in switchWalls) Switches.Remove(e, geometry, wall, look);
 
                 foreach (var l in switches.Where(l => l.OnMap))
                 {

@@ -543,6 +543,26 @@ internal sealed partial class InspectorViewModel : ObservableObject
         return null;
     }
 
+    /// <summary>The wall of a selected wall or face: a click on the plan lands on a wall, one in the 3D view on a face.</summary>
+    private static Line? WallOf(Element element) => element switch { Line l => l, Side { Line: { } l } => l, _ => null };
+
+    /// <summary>What was clicked, below the object it belongs to: a wall's rows and faces (a click on the plan), or a face's rows (one in the 3D view).</summary>
+    private void AddClicked(Element clicked, string wallHeading)
+    {
+        if (clicked is Side face)
+        {
+            Rows.Add(new HeadingRow("THIS FACE"));
+            AddFace(face);
+            return;
+        }
+
+        if (clicked is not Line l) return;
+        Rows.Add(new HeadingRow(wallHeading));
+        AddLine(l);
+        AddSide("Front", l.Front);
+        if (l.Back is { } back) AddSide("Back", back);
+    }
+
     /// <summary>Whether an area is closed from floor to ceiling: a piece of wall, as the Door tool leaves beside a door.</summary>
     private static bool Closed(Sector s) => s.FloorHeight >= s.CeilingHeight;
 
@@ -583,7 +603,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         [Side] when WallWindows.WindowOf(_session.Geometry, _session.Selection.Items[0]) is not null => "window face",
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : LiftOf(l) is not null ? "lift face" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : DoorOf(l) is { } doorArea ? $"door {Doors.Recognise(_session.Geometry, doorArea)?.Kind} {Doors.Recognise(_session.Geometry, doorArea)?.Settings.Lock} face" : WindowOf(l) is not null ? "window face" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : $"thing {t.Type}",
-        [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
+        [Side { Line: { } l }] => (LiftOf(l) is not null ? "lift" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : Teleports.IsTeleport(l) ? "teleporter" : Exits.IsExit(l) ? "exit" : "") + " face",
         [var one] => one.GetType().Name,
         var many => many.Count.ToString(CultureInfo.InvariantCulture),
     };
@@ -897,18 +917,15 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 AddLine(polyWall);
                 AddSide("Front", polyWall.Front);
                 break;
-            case Line l when LiftOf(l) is { } liftArea:
-                // A wall of a lift: the lift is what was meant, with the wall's own details below it.
+            case Line or Side when WallOf(items[0]) is { } liftWall && LiftOf(liftWall) is { } liftArea:
+                // A wall of a lift (or its face, clicked in the 3D view): the lift is what was meant, with what was clicked below it.
                 Heading = "Lift";
                 _summaryOf = () => Lifts.Recognise(_session.Geometry, liftArea) is { } lift ? Explaining.Describe(lift) : "No longer a lift.";
                 Summary = _summaryOf();
                 AddLift(liftArea);
                 Rows.Add(new ActionRow("Add a switch that lowers it", "Click a solid wall next: a piece of it becomes a switch the player uses to send this lift down from there.", () => SwitchFor?.Invoke(liftArea)));
                 Rows.Add(new ActionRow("Select the lift's area", "Selects the lift itself, with its area's settings.", () => _session.Selection.Set(liftArea)));
-                Rows.Add(new HeadingRow("THIS WALL"));
-                AddLine(l);
-                AddSide("Front", l.Front);
-                if (l.Back is { } liftBack) AddSide("Back", liftBack);
+                AddClicked(items[0], "THIS WALL");
                 break;
             case Line or Side when WallWindows.WindowOf(_session.Geometry, items[0]) is { } windowArea:
                 // A wall of a window, or one of its faces (a click in the 3D view lands on a face): the window is what was meant,
@@ -932,25 +949,19 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 }
 
                 break;
-            case Line l when Switches.Recognise(_session.Geometry, l) is not null:
+            case Line or Side when WallOf(items[0]) is { } switchWall && Switches.Recognise(_session.Geometry, switchWall) is not null:
                 Heading = "Switch";
-                _summaryOf = () => Switches.Recognise(_session.Geometry, l) is { } sw ? Explaining.Describe(sw) : "No longer a switch.";
+                _summaryOf = () => Switches.Recognise(_session.Geometry, switchWall) is { } sw ? Explaining.Describe(sw) : "No longer a switch.";
                 Summary = _summaryOf();
-                AddSwitch(l);
-                Rows.Add(new HeadingRow("THE WALL"));
-                AddLine(l);
-                AddSide("Front", l.Front);
-                if (l.Back is { } switchBack) AddSide("Back", switchBack);
+                AddSwitch(switchWall);
+                AddClicked(items[0], "THE WALL");
                 break;
-            case Line l when Teleports.IsTeleport(l):
+            case Line or Side when WallOf(items[0]) is { } teleWall && Teleports.IsTeleport(teleWall):
                 Heading = "Teleporter";
-                _summaryOf = () => Teleports.Recognise(_session.Geometry, l) is { } t ? Explaining.Describe(t) : "No longer a teleporter.";
+                _summaryOf = () => Teleports.Recognise(_session.Geometry, teleWall) is { } t ? Explaining.Describe(t) : "No longer a teleporter.";
                 Summary = _summaryOf();
-                AddTeleporter(l);
-                Rows.Add(new HeadingRow("THE WALL"));
-                AddLine(l);
-                AddSide("Front", l.Front);
-                if (l.Back is { } teleBack) AddSide("Back", teleBack);
+                AddTeleporter(teleWall);
+                AddClicked(items[0], "THE WALL");
                 break;
             case Thing t when Teleports.IsArrival(t):
                 Heading = "Teleport arrival";
@@ -966,15 +977,12 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 }));
                 AddThing(t);
                 break;
-            case Line l when Exits.IsExit(l):
-                Heading = l.Flag("playeruse") ? "Exit switch" : l.Flag("playercross") ? "Exit line" : "Exit";
-                _summaryOf = () => Exits.IsExit(l) ? $"Ends the map when the player {Exits.How(l)}, going on to {(l.Special == Exits.Secret ? "the secret map" : "the next map")}." : "No longer an exit.";
+            case Line or Side when WallOf(items[0]) is { } exitWall && Exits.IsExit(exitWall):
+                Heading = exitWall.Flag("playeruse") ? "Exit switch" : exitWall.Flag("playercross") ? "Exit line" : "Exit";
+                _summaryOf = () => Exits.IsExit(exitWall) ? $"Ends the map when the player {Exits.How(exitWall)}, going on to {(exitWall.Special == Exits.Secret ? "the secret map" : "the next map")}." : "No longer an exit.";
                 Summary = _summaryOf();
-                AddExit(l);
-                Rows.Add(new HeadingRow("THE WALL"));
-                AddLine(l);
-                AddSide("Front", l.Front);
-                if (l.Back is { } exitBack) AddSide("Back", exitBack);
+                AddExit(exitWall);
+                AddClicked(items[0], "THE WALL");
                 break;
             case Line l:
                 // A wall between a room and a piece of wall (closed from floor to ceiling) is wall to the player, not an opening.
@@ -1064,6 +1072,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         {
             _ when DoorwayOf(items[0]) is not null => ("Delete this door", "The door goes, and the wall it stood in closes up like the wall beside it (Delete). The Door tool puts a new door into that wall."),
             _ when WallWindows.WindowOf(_session.Geometry, items[0]) is not null => ("Delete this window", "The window goes, and the wall it was in closes up like the wall beside it (Delete)."),
+            _ when Switches.SwitchOf(_session.Geometry, items[0]) is not null => ("Delete this switch", "The switch goes, and the wall it was set into is the wall beside it again (Delete)."),
             Line { Back: { } pb } pl when Closed(pl.Front.Sector) != Closed(pb.Sector) => ("Delete this piece of wall", "It goes, and its place joins the room beside it (Delete)."),
             Side { Line: { Back: { } sb } sl } when Closed(sl.Front.Sector) != Closed(sb.Sector) => ("Delete this piece of wall", "It goes, and its place joins the room beside it (Delete)."),
             Sector => ("Delete this room", "The room and the things in it go; the walls it shared become its neighbours' solid walls (Delete)."),

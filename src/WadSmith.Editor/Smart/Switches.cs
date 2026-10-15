@@ -49,6 +49,108 @@ public static class Switches
         return new Switch(wall, targets, does, wall.Flag("repeatspecial"));
     }
 
+    /// <summary>
+    /// The switch a part of the map belongs to — the wall carrying it (a switch, or an exit switch), a face of that wall, or the
+    /// alcove it sits in (its area, or a wall round it) — or null: a click in the 3D view lands on a face, and the switch is what
+    /// the user means (Delete takes it away).
+    /// </summary>
+    public static Line? SwitchOf(MapGeometry geometry, Element element) => element switch
+    {
+        Side { Line: { } wall } => SwitchOf(geometry, wall),
+        Line { OnMap: true } wall when Carries(geometry, wall) => wall,
+        Line { OnMap: true } wall => AlcoveOf(geometry, wall.Front.Sector)?.Switch ?? (wall.Back is { } back ? AlcoveOf(geometry, back.Sector)?.Switch : null),
+        Sector { OnMap: true } area => AlcoveOf(geometry, area)?.Switch,
+        _ => null,
+    };
+
+    /// <summary>Whether a wall carries a switch the player uses: one that works on something elsewhere, or an exit switch.</summary>
+    private static bool Carries(MapGeometry geometry, Line wall) => Recognise(geometry, wall) is not null || (Exits.IsExit(wall) && wall.Flag("playeruse"));
+
+    /// <summary>
+    /// The alcove a switch sits in (as <see cref="Place"/> makes it): an area opening onto one room by one wall, its mouth, its
+    /// other walls solid, the one in line with the mouth no deeper than <see cref="RecessDepth"/> carrying a switch; null otherwise.
+    /// </summary>
+    private static (Line Switch, Line Mouth, Sector Room)? AlcoveOf(MapGeometry geometry, Sector area)
+    {
+        if (!area.OnMap || area.CeilingHeight <= area.FloorHeight || geometry.WallBoundsAt(area.Slot) is not { } b || Math.Min(b.MaxX - b.MinX, b.MaxY - b.MinY) > 256) return null;
+        var walls = geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY).Where(l => l.OnMap && (ReferenceEquals(l.Front.Sector, area) || ReferenceEquals(l.Back?.Sector, area))).ToList();
+        if (walls.Count > 8 || walls.Count(l => l.Back is not null) != 1) return null;
+        var mouth = walls.Single(l => l.Back is not null);
+        var room = ReferenceEquals(mouth.Front.Sector, area) ? mouth.Back!.Sector : mouth.Front.Sector;
+        var (dx, dy) = ((mouth.End.X - mouth.Start.X) / mouth.Length, (mouth.End.Y - mouth.Start.Y) / mouth.Length);
+        double Apart(Line l) => Math.Abs((l.Start.X - mouth.Start.X) * dy - (l.Start.Y - mouth.Start.Y) * dx);
+        return walls.FirstOrDefault(l => l.Back is null && Doors.Parallel(l, mouth) && Apart(l) <= RecessDepth + 0.5 && Carries(geometry, l)) is { } wall ? (wall, mouth, room) : null;
+    }
+
+    /// <summary>
+    /// Takes a switch away through <paramref name="edit"/>, leaving the wall it was set into as the wall beside it (Delete; the
+    /// user's report on doors, 2026-10-15): an alcove closes up (its walls, its area and what stands in it go, and its mouth is
+    /// the room's wall again); a switch on a flat piece of wall loses its action. The wall left takes the texture of the wall
+    /// beside it, and walls left in one line facing the same room become one wall. <paramref name="geometry"/> shows the map as
+    /// it was before this edit.
+    /// </summary>
+    public static void Remove(StructureEdit edit, MapGeometry geometry, Line wall, Look look)
+    {
+        if (!wall.OnMap) return;
+        var loose = new HashSet<Vertex>(ReferenceEqualityComparer.Instance);
+        var face = wall;
+        var room = wall.Front.Sector;
+        if (wall.Back is null && AlcoveOf(geometry, wall.Front.Sector) is { } alcove)
+        {
+            var area = wall.Front.Sector;
+            room = alcove.Room;
+            face = alcove.Mouth;
+            if (geometry.WallBoundsAt(area.Slot) is { } b)
+            {
+                var f = geometry.Frame;
+                foreach (var t in geometry.ThingSlotsIn(b.MinX, b.MinY, b.MaxX, b.MaxY).Where(i => ReferenceEquals(geometry.SectorAt(new MapPoint(f.Things[i].X, f.Things[i].Y)), area)).Select(i => f.Things[i].Element!)) edit.Remove(t);
+                foreach (var l in geometry.LinesIn(b.MinX, b.MinY, b.MaxX, b.MaxY).Where(l => l.OnMap && l.Back is null && ReferenceEquals(l.Front.Sector, area)).ToList()) Deleting.RemoveWall(edit, l, loose);
+            }
+
+            // The mouth turns to face the room, and is its solid wall again.
+            if (ReferenceEquals(face.Front.Sector, area)) Walls.Turn(edit, face);
+            var gone = face.Back!;
+            edit.Set(face, x => x.Back, (x, v) => x.Back = v, null);
+            edit.Remove(gone);
+            edit.Flag(face, "twosided", false);
+            edit.Flag(face, "blocking", true);
+            edit.Remove(area);
+        }
+
+        edit.Set(face, x => x.Special, (x, v) => x.Special = v, 0);
+        for (var i = 0; i < 5; i++)
+        {
+            var k = i;
+            edit.Set(face, x => x.Args[k], (x, v) => x.Args[k] = v, 0);
+        }
+
+        edit.Flag(face, "playeruse", false);
+        edit.Flag(face, "repeatspecial", false);
+
+        // A solid wall takes the picture of the wall beside it along the same line, facing the same room.
+        if (face.Back is null)
+        {
+            var beside = new[] { face.Start, face.End }.SelectMany(v => geometry.LinesIn(v.X, v.Y, v.X, v.Y).Where(l => l.OnMap && !ReferenceEquals(l, face) && l.Back is null && (l.Start == v || l.End == v) && ReferenceEquals(l.Front.Sector, room) && Doors.Parallel(l, face) && !Carries(geometry, l))).FirstOrDefault();
+            edit.Set(face.Front, x => x.Middle, (x, v) => x.Middle = v, beside?.Front.Middle is { } shown and not ("-" or "") ? shown : look.Wall);
+            edit.Set(face.Front, x => x.Top, (x, v) => x.Top = v, "-");
+            edit.Set(face.Front, x => x.Bottom, (x, v) => x.Bottom = v, "-");
+            edit.Set(face.Front, x => x.OffsetY, (x, v) => x.OffsetY = v, beside?.Front.OffsetY ?? 0);
+            edit.Flag(face, "dontpegtop", false);
+            edit.Flag(face, "dontpegbottom", beside?.Flag("dontpegbottom") ?? false);
+        }
+
+        // Walls left in one line facing the same room become one wall; corners no wall uses go.
+        var rerouted = new List<Line>();
+        List<Line> WallsAt(Vertex v) => [.. geometry.LinesIn(v.X, v.Y, v.X, v.Y).Concat(rerouted).Concat([face]).Distinct().Where(l => l.OnMap && (l.Start == v || l.End == v))];
+        foreach (var v in new[] { face.Start, face.End }.Concat(loose).Distinct().ToList())
+        {
+            if (!v.OnMap) continue;
+            var at = WallsAt(v);
+            if (at.Count == 0) edit.Remove(v);
+            else if (at.Count == 2 && Doors.Parallel(at[0], at[1]) && Deleting.Straighten(edit, v, at[0], at[1])) rerouted.Add(at[0]);
+        }
+    }
+
     /// <summary>The switches that work on <paramref name="area"/>: walls elsewhere used by the player naming its tag.</summary>
     public static IReadOnlyList<Line> Of(MapGeometry geometry, Sector area)
     {
