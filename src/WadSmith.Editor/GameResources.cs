@@ -268,9 +268,11 @@ public sealed class GameResources
         var things = engineData is null
             ? ThingCatalog.Empty
             : Catalogues.GetOrAdd((engineData, found.Game.Engine), key => new Lazy<ThingCatalog>(() => ThingCatalog.Load(ResourceContainer.Open(key.Engine), key.Family))).Value;
-        // The game's own sound tables after the engine's, as the engine reads them: Hexen's file names its monsters' sounds.
+        // The objects the game's own files and the project's add-ons define (D65 B2: a friend's PK3 of monsters), then the
+        // game's own sound tables after the engine's, as the engine reads them: Hexen's file names its monsters' sounds.
         if (engineData is not null)
         {
+            things = things.WithResources(stack.Containers.Where(c => c != projectFiles));
             things = things.WithGameSounds([.. stack.Containers.Where(c => c != projectFiles).SelectMany(c => c.Entries)
                 .Where(e => !e.IsMarker && e.Namespace == ResourceNamespace.Global && LumpName.Comparer.Equals(e.Name, "SNDINFO"))
                 .Select(e => System.Text.Encoding.UTF8.GetString(e.Read()))]);

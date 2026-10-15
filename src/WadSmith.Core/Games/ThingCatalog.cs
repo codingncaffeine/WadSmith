@@ -49,12 +49,16 @@ public sealed partial class ThingCatalog
     private readonly Dictionary<string, ActorClass> _classes;
     private readonly IReadOnlyList<string> _soundTexts;
 
-    private ThingCatalog(Dictionary<int, ThingType> byNumber, Dictionary<string, ActorClass>? classes = null, WadSmith.Core.Audio.SoundInfo? sounds = null, IReadOnlyList<string>? soundTexts = null)
+    /// <summary>The language tables' English strings by identifier, for tags such as <c>$FN_IMP</c>.</summary>
+    private readonly Dictionary<string, string> _strings;
+
+    private ThingCatalog(Dictionary<int, ThingType> byNumber, Dictionary<string, ActorClass>? classes = null, WadSmith.Core.Audio.SoundInfo? sounds = null, IReadOnlyList<string>? soundTexts = null, Dictionary<string, string>? strings = null)
     {
         _byNumber = byNumber;
         _classes = classes ?? new(StringComparer.OrdinalIgnoreCase);
         Sounds = sounds ?? WadSmith.Core.Audio.SoundInfo.Empty;
         _soundTexts = soundTexts ?? [];
+        _strings = strings ?? new(StringComparer.OrdinalIgnoreCase);
     }
 
     public static ThingCatalog Empty { get; } = new([]);
@@ -70,7 +74,7 @@ public sealed partial class ThingCatalog
     {
         var numbers = new Dictionary<int, ThingType>(_byNumber);
         foreach (var t in extra) numbers[t.Number] = t;
-        return new ThingCatalog(numbers, _classes, Sounds, _soundTexts);
+        return new ThingCatalog(numbers, _classes, Sounds, _soundTexts, _strings);
     }
 
     /// <summary>
@@ -89,7 +93,133 @@ public sealed partial class ThingCatalog
             numbers[number] = _classes.ContainsKey(t.ClassName) && SoundOf(_classes, t.ClassName, t.Category) is { } name ? t with { Sound = sounds.LumpFor(name) ?? t.Sound } : t;
         }
 
-        return new ThingCatalog(numbers, _classes, sounds, soundTexts);
+        return new ThingCatalog(numbers, _classes, sounds, soundTexts, _strings);
+    }
+
+    /// <summary>
+    /// This catalogue with the objects <paramref name="files"/> define, read in load order (D65 B2: a friend's PK3 of monsters, a
+    /// game's own actors): the actor classes of their ZScript and DECORATE (the ZSCRIPT and DECORATE lumps, following #include),
+    /// the numbers their MAPINFO's DoomEdNums and DECORATE's actor lines give, and the names their LANGUAGE tables give. A class
+    /// that replaces another takes that one's numbers, as the engine spawns it there. The Doom Builder keys in a class's comments
+    /// name it (//$Title), file it on the shelf (//$Category) and pick its picture (//$Sprite). Their sound tables are read by
+    /// <see cref="WithGameSounds"/>, after this. This catalogue when they define nothing.
+    /// </summary>
+    public ThingCatalog WithResources(IEnumerable<ResourceContainer> files)
+    {
+        var classes = new Dictionary<string, ActorClass>(_classes, StringComparer.OrdinalIgnoreCase);
+        var strings = new Dictionary<string, string>(_strings, StringComparer.OrdinalIgnoreCase);
+        var numbered = new Dictionary<int, string>();
+        var own = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Add(ActorClass c)
+        {
+            // The engine's own classes stay its own; a later file's class of the same name takes an earlier one's place.
+            if (_classes.ContainsKey(c.Name)) return;
+            classes[c.Name] = c;
+            own.Add(c.Name);
+        }
+
+        foreach (var file in files)
+        {
+            var seen = new HashSet<ResourceEntry>(ReferenceEqualityComparer.Instance);
+            List<ResourceEntry> Lumps(string name) => [.. file.Entries.Where(e => !e.IsMarker && e.Namespace == ResourceNamespace.Global && LumpName.Comparer.Equals(e.Name, name))];
+
+            // A lump and the ones it includes, each once (an include names a path in the file, a lump's name in a WAD).
+            IEnumerable<string> Texts(IEnumerable<ResourceEntry> roots, Regex include)
+            {
+                var queue = new Queue<ResourceEntry>(roots);
+                while (queue.Count > 0)
+                {
+                    var entry = queue.Dequeue();
+                    if (!seen.Add(entry)) continue;
+                    var text = Encoding.UTF8.GetString(entry.Read());
+                    yield return text;
+                    foreach (Match m in include.Matches(StripComments(text)))
+                    {
+                        var path = m.Groups[1].Value.Replace('\\', '/');
+                        if ((file.FindPath(path) ?? file.Find(System.IO.Path.GetFileNameWithoutExtension(path))) is { } next) queue.Enqueue(next);
+                    }
+                }
+            }
+
+            foreach (var text in Texts(Lumps("ZSCRIPT"), HashInclude()))
+            {
+                foreach (var c in ParseClasses(BlankComments(text), text)) Add(c);
+            }
+
+            foreach (var text in Texts(Lumps("DECORATE"), HashInclude()))
+            {
+                foreach (var (c, number) in ParseDecorate(BlankComments(text), text))
+                {
+                    Add(c);
+                    if (number is { } n && classes.ContainsKey(c.Name)) numbered[n] = c.Name;
+                }
+            }
+
+            // GZDoom reads a file's ZMAPINFO in place of its MAPINFO.
+            var mapInfo = Lumps("ZMAPINFO") is { Count: > 0 } z ? z : Lumps("MAPINFO");
+            foreach (var text in Texts(mapInfo, IncludeLine()))
+            {
+                foreach (Match block in DoomEdNumsBlock().Matches(StripComments(text)))
+                {
+                    foreach (Match entry in EdNumEntry().Matches(block.Groups[1].Value)) numbered[int.Parse(entry.Groups[1].Value, CultureInfo.InvariantCulture)] = entry.Groups[2].Value;
+                }
+            }
+
+            foreach (var text in Texts(Lumps("LANGUAGE"), HashInclude()))
+            {
+                foreach (Match m in DefEntry().Matches(StripComments(text))) strings[m.Groups[1].Value] = m.Groups[2].Value;
+            }
+        }
+
+        if (own.Count == 0 && numbered.Count == 0) return this;
+
+        // Each number to the class the engine spawns there: the files' numbers over the engine's, then what replaces that class.
+        var replacement = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in own)
+        {
+            if (classes[name].Replaces is { } replaced) replacement[replaced] = name;
+        }
+
+        string Spawned(string name)
+        {
+            for (var i = 0; i < 8 && replacement.TryGetValue(name, out var next) && !next.Equals(name, StringComparison.OrdinalIgnoreCase); i++) name = next;
+            return name;
+        }
+
+        var numbers = new Dictionary<int, ThingType>(_byNumber);
+        foreach (var (number, name) in _byNumber.Where(kv => kv.Value.Category != ThingCategory.Start).Select(kv => (kv.Key, kv.Value.ClassName)).Concat(numbered.Select(kv => (kv.Key, kv.Value))))
+        {
+            var spawned = Spawned(name);
+            if ((!numbered.ContainsKey(number) && !own.Contains(spawned)) || !classes.ContainsKey(spawned)) continue;
+            numbers[number] = Keyed(MakeType(number, spawned, classes, strings, Sounds), classes[spawned].Keys);
+        }
+
+        return new ThingCatalog(numbers, classes, Sounds, _soundTexts, strings);
+    }
+
+    /// <summary>An object as the Doom Builder keys in its class's comments say: its title, its shelf (a kind the words name), its picture.</summary>
+    private static ThingType Keyed(ThingType t, Dictionary<string, string> keys)
+    {
+        if (keys.TryGetValue("Title", out var title) && title.Length > 0) t = t with { Name = title };
+        if (keys.TryGetValue("Category", out var category) && CategoryNamed(category) is { } kind) t = t with { Category = kind };
+        if (keys.TryGetValue("Sprite", out var sprite) && sprite.Length >= 5 && !sprite.Contains(':', StringComparison.Ordinal)) t = t with { Sprite = sprite[..4].ToUpperInvariant(), Frame = char.ToUpperInvariant(sprite[4]) };
+        return t;
+    }
+
+    /// <summary>The kind of object a Doom Builder category names ("Monsters", "Items/Keys", "Light sources"); null for one it does not.</summary>
+    private static ThingCategory? CategoryNamed(string category)
+    {
+        var words = category.ToLowerInvariant();
+        if (words.Contains("monster", StringComparison.Ordinal) || words.Contains("enem", StringComparison.Ordinal)) return ThingCategory.Monster;
+        if (words.Contains("weapon", StringComparison.Ordinal)) return ThingCategory.Weapon;
+        if (words.Contains("ammo", StringComparison.Ordinal)) return ThingCategory.Ammo;
+        if (words.Contains("health", StringComparison.Ordinal)) return ThingCategory.Health;
+        if (words.Contains("armor", StringComparison.Ordinal) || words.Contains("armour", StringComparison.Ordinal)) return ThingCategory.Armor;
+        if (words.Contains("key", StringComparison.Ordinal)) return ThingCategory.Key;
+        if (words.Contains("power", StringComparison.Ordinal) || words.Contains("artifact", StringComparison.Ordinal) || words.Contains("item", StringComparison.Ordinal) || words.Contains("pickup", StringComparison.Ordinal)) return ThingCategory.Powerup;
+        if (words.Contains("decoration", StringComparison.Ordinal) || words.Contains("light", StringComparison.Ordinal) || words.Contains("obstacle", StringComparison.Ordinal) || words.Contains("prop", StringComparison.Ordinal)) return ThingCategory.Decoration;
+        if (words.Contains("marker", StringComparison.Ordinal) || words.Contains("spot", StringComparison.Ordinal)) return ThingCategory.Marker;
+        return null;
     }
 
     /// <summary>
@@ -281,24 +411,33 @@ public sealed partial class ThingCatalog
         var types = new Dictionary<int, ThingType>();
         foreach (var (number, className) in numbers)
         {
-            if (!classes.ContainsKey(className)) continue;
-            var radius = Inherited(classes, className, c => c.Radius) ?? 20;
-            var height = Inherited(classes, className, c => c.Height) ?? 16;
-            var scale = Inherited(classes, className, c => c.Scale) ?? 1;
-            var scaleX = Inherited(classes, className, c => c.ScaleX) ?? scale;
-            var scaleY = Inherited(classes, className, c => c.ScaleY) ?? scale;
-            var ceiling = Inherited(classes, className, c => c.SpawnCeiling) ?? false;
-            var tag = Inherited(classes, className, c => c.Tag);
-            var (sprite, frame) = SpawnFrame(classes, className);
-            var declared = classes[className].Name;
-            var name = starts.TryGetValue(number, out var start) ? start : NameOf(tag, declared, NamedAncestor(classes, className), strings);
-            var category = starts.ContainsKey(number) ? ThingCategory.Start : CategoryOf(classes, className, sprite);
-            var sound = SoundOf(classes, className, category);
-            var ammoType = category == ThingCategory.Ammo ? AmmoClass(classes, className) : category == ThingCategory.Weapon ? Inherited(classes, className, c => c.AmmoTypeName) : null;
-            types[number] = new ThingType(number, declared, name, sprite, frame, radius, height, scaleX, scaleY, ceiling, category, sound is null ? null : sounds.LumpFor(sound), Inherited(classes, className, c => c.Health), Inherited(classes, className, c => c.Amount) ?? 0, ammoType, Inherited(classes, className, c => c.AmmoGive) ?? 0);
+            if (classes.ContainsKey(className)) types[number] = MakeType(number, className, classes, strings, sounds, starts.GetValueOrDefault(number));
         }
 
-        return new ThingCatalog(types, classes, sounds, soundTexts);
+        return new ThingCatalog(types, classes, sounds, soundTexts, strings);
+    }
+
+    /// <summary>
+    /// The object a number places when it names <paramref name="className"/>: size, picture, kind, sound and Balance figures
+    /// read from the class and its parents, its name from its tag through the language tables (<paramref name="start"/>, for a
+    /// player start, names it instead).
+    /// </summary>
+    private static ThingType MakeType(int number, string className, Dictionary<string, ActorClass> classes, Dictionary<string, string> strings, WadSmith.Core.Audio.SoundInfo sounds, string? start = null)
+    {
+        var radius = Inherited(classes, className, c => c.Radius) ?? 20;
+        var height = Inherited(classes, className, c => c.Height) ?? 16;
+        var scale = Inherited(classes, className, c => c.Scale) ?? 1;
+        var scaleX = Inherited(classes, className, c => c.ScaleX) ?? scale;
+        var scaleY = Inherited(classes, className, c => c.ScaleY) ?? scale;
+        var ceiling = Inherited(classes, className, c => c.SpawnCeiling) ?? false;
+        var tag = Inherited(classes, className, c => c.Tag);
+        var (sprite, frame) = SpawnFrame(classes, className);
+        var declared = classes[className].Name;
+        var name = start ?? NameOf(tag, declared, NamedAncestor(classes, className), strings);
+        var category = start is not null ? ThingCategory.Start : CategoryOf(classes, className, sprite);
+        var sound = SoundOf(classes, className, category);
+        var ammoType = category == ThingCategory.Ammo ? AmmoClass(classes, className) : category == ThingCategory.Weapon ? Inherited(classes, className, c => c.AmmoTypeName) : null;
+        return new ThingType(number, declared, name, sprite, frame, radius, height, scaleX, scaleY, ceiling, category, sound is null ? null : sounds.LumpFor(sound), Inherited(classes, className, c => c.Health), Inherited(classes, className, c => c.Amount) ?? 0, ammoType, Inherited(classes, className, c => c.AmmoGive) ?? 0);
     }
 
     /// <summary>The sound an object of a class stands for: a monster's sight (else active) sound, a pickup's, a decoration's active one.</summary>
@@ -352,6 +491,12 @@ public sealed partial class ThingCatalog
         public required string Name { get; init; }
 
         public string? Parent { get; init; }
+
+        /// <summary>The class it replaces (ZScript's and DECORATE's <c>replaces</c>): the engine spawns it wherever that one would be.</summary>
+        public string? Replaces { get; init; }
+
+        /// <summary>The Doom Builder keys in its definition's comments (//$Title, //$Category, //$Sprite), by key.</summary>
+        public Dictionary<string, string> Keys { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>The class's whole definition, for what it names (D55).</summary>
         public string Body { get; init; } = "";
@@ -635,8 +780,12 @@ public sealed partial class ThingCatalog
         }
     }
 
-    /// <summary>The actor classes declared in one ZScript file: their parent, the properties WadSmith uses and their state lines.</summary>
-    private static List<ActorClass> ParseClasses(string text)
+    /// <summary>
+    /// The actor classes declared in one ZScript file (<paramref name="text"/>, without its comments): their parent, what they
+    /// replace, the properties WadSmith uses and their state lines. With <paramref name="raw"/>, the same file with its comments
+    /// (blanked to spaces in <paramref name="text"/>, so the two line up), each class's Doom Builder keys are read from them.
+    /// </summary>
+    private static List<ActorClass> ParseClasses(string text, string? raw = null)
     {
         var found = new List<ActorClass>();
         foreach (Match m in ClassHeader().Matches(text))
@@ -645,72 +794,110 @@ public sealed partial class ThingCatalog
             var close = MatchingBrace(text, open);
             if (close < 0) continue;
             var body = text[(open + 1)..close];
-            var c = new ActorClass { Name = m.Groups[1].Value, Parent = m.Groups[2].Success ? m.Groups[2].Value : null, Body = body };
-
-            if (BlockAfter(body, DefaultHeader()) is { } defaults)
-            {
-                foreach (var raw in defaults.Split((char[])[';', '\n'], StringSplitOptions.RemoveEmptyEntries))
-                {
-                    var item = raw.Trim();
-                    if (item.Length == 0) continue;
-                    if (item[0] is '+' or '-')
-                    {
-                        foreach (var flag in item.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries))
-                        {
-                            var on = flag[0] == '+';
-                            var name = flag.TrimStart('+', '-');
-                            if (name.Equals("SPAWNCEILING", StringComparison.OrdinalIgnoreCase)) c.SpawnCeiling = on;
-                            if (name.Equals("ISMONSTER", StringComparison.OrdinalIgnoreCase)) c.Monster = on;
-                        }
-
-                        continue;
-                    }
-
-                    if (item.Equals("Monster", StringComparison.OrdinalIgnoreCase)) c.Monster = true;
-                    if (item.Equals("Skip_Super", StringComparison.OrdinalIgnoreCase)) c.SkipSuper = true;
-                    var space = item.IndexOfAny([' ', '\t']);
-                    if (space < 0) continue;
-                    var key = item[..space];
-                    var value = item[(space + 1)..].Trim();
-                    switch (key.ToUpperInvariant())
-                    {
-                        case "RADIUS": c.Radius = Number(value); break;
-                        case "HEIGHT": c.Height = Number(value); break;
-                        case "SCALE": c.Scale = Number(value); break;
-                        case "XSCALE": c.ScaleX = Number(value); break;
-                        case "YSCALE": c.ScaleY = Number(value); break;
-                        case "TAG": c.Tag = value.Trim('"'); break;
-                        case "SEESOUND": c.SeeSound = value.Trim('"'); break;
-                        case "ACTIVESOUND": c.ActiveSound = value.Trim('"'); break;
-                        case "INVENTORY.PICKUPSOUND": c.PickupSound = value.Trim('"'); break;
-                        case "HEALTH": c.Health = (int?)Number(value); break;
-                        case "INVENTORY.AMOUNT": c.Amount = (int?)Number(value); break;
-                        case "WEAPON.AMMOGIVE" or "WEAPON.AMMOGIVE1": c.AmmoGive = (int?)Number(value); break;
-                        case "WEAPON.AMMOTYPE" or "WEAPON.AMMOTYPE1": c.AmmoTypeName = value.Trim('"'); break;
-                    }
-                }
-            }
-
-            if (BlockAfter(body, StatesHeader()) is { } states)
-            {
-                foreach (var raw in states.Split((char[])[';', '\n'], StringSplitOptions.RemoveEmptyEntries))
-                {
-                    var item = raw.Trim();
-                    // Leading labels ("Melee:", "Spawn:"), possibly several, possibly followed by a state.
-                    while (LeadingLabel().Match(item) is { Success: true } label)
-                    {
-                        c.States.Add(label.Groups[1].Value + ":");
-                        item = item[label.Length..].Trim();
-                    }
-
-                    if (item.Length > 0) c.States.Add(item);
-                }
-            }
-
+            var replaces = ReplacesWord().Match(m.Value);
+            var c = new ActorClass { Name = m.Groups[1].Value, Parent = m.Groups[2].Success ? m.Groups[2].Value : null, Body = body, Replaces = replaces.Success ? replaces.Groups[1].Value : null };
+            if (raw is not null) ReadKeys(c, raw[open..close]);
+            if (BlockAfter(body, DefaultHeader()) is { } defaults) ReadDefaults(c, defaults);
+            if (BlockAfter(body, StatesHeader()) is { } states) ReadStates(c, states);
             found.Add(c);
         }
 
         return found;
+    }
+
+    /// <summary>
+    /// The actors declared in one DECORATE file (<paramref name="text"/> with its comments blanked, <paramref name="raw"/> with
+    /// them, for the Doom Builder keys): <c>actor Name : Parent replaces Other 1234 { … }</c>, each with the number its line gives.
+    /// </summary>
+    private static List<(ActorClass Class, int? Number)> ParseDecorate(string text, string raw)
+    {
+        var found = new List<(ActorClass, int?)>();
+        foreach (Match m in DecorateHeader().Matches(text))
+        {
+            var open = m.Index + m.Length - 1;
+            var close = MatchingBrace(text, open);
+            if (close < 0) continue;
+            var body = text[(open + 1)..close];
+            var c = new ActorClass { Name = m.Groups[1].Value, Parent = m.Groups[2].Success ? m.Groups[2].Value : null, Body = body, Replaces = m.Groups[3].Success ? m.Groups[3].Value : null };
+            ReadKeys(c, raw[open..close]);
+
+            // Its properties are the lines outside its States block.
+            var states = StatesHeader().Match(body);
+            var statesClose = states.Success ? MatchingBrace(body, states.Index + states.Length - 1) : -1;
+            ReadDefaults(c, statesClose < 0 ? body : body[..states.Index] + body[(statesClose + 1)..]);
+            if (statesClose >= 0) ReadStates(c, body[(states.Index + states.Length)..statesClose]);
+            found.Add((c, m.Groups[4].Success && int.TryParse(m.Groups[4].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 0 ? n : null));
+        }
+
+        return found;
+    }
+
+    /// <summary>The Doom Builder keys among a definition's comments: <c>//$Title "Fire imp"</c>, <c>//$Category Monsters</c>, <c>//$Sprite TROOA1</c>.</summary>
+    private static void ReadKeys(ActorClass c, string raw)
+    {
+        foreach (Match k in EditorKey().Matches(raw)) c.Keys.TryAdd(k.Groups[1].Value, k.Groups[2].Value.Trim().Trim('"').Trim());
+    }
+
+    /// <summary>A class's default properties, one per line or between semicolons (a ZScript Default block, a DECORATE actor's lines).</summary>
+    private static void ReadDefaults(ActorClass c, string defaults)
+    {
+        foreach (var raw in defaults.Split((char[])[';', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var item = raw.Trim();
+            if (item.Length == 0) continue;
+            if (item[0] is '+' or '-')
+            {
+                foreach (var flag in item.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var on = flag[0] == '+';
+                    var name = flag.TrimStart('+', '-');
+                    if (name.Equals("SPAWNCEILING", StringComparison.OrdinalIgnoreCase)) c.SpawnCeiling = on;
+                    if (name.Equals("ISMONSTER", StringComparison.OrdinalIgnoreCase)) c.Monster = on;
+                }
+
+                continue;
+            }
+
+            if (item.Equals("Monster", StringComparison.OrdinalIgnoreCase)) c.Monster = true;
+            if (item.Equals("Skip_Super", StringComparison.OrdinalIgnoreCase)) c.SkipSuper = true;
+            var space = item.IndexOfAny([' ', '\t']);
+            if (space < 0) continue;
+            var key = item[..space];
+            var value = item[(space + 1)..].Trim();
+            switch (key.ToUpperInvariant())
+            {
+                case "RADIUS": c.Radius = Number(value); break;
+                case "HEIGHT": c.Height = Number(value); break;
+                case "SCALE": c.Scale = Number(value); break;
+                case "XSCALE": c.ScaleX = Number(value); break;
+                case "YSCALE": c.ScaleY = Number(value); break;
+                case "TAG": c.Tag = value.Trim('"'); break;
+                case "SEESOUND": c.SeeSound = value.Trim('"'); break;
+                case "ACTIVESOUND": c.ActiveSound = value.Trim('"'); break;
+                case "INVENTORY.PICKUPSOUND": c.PickupSound = value.Trim('"'); break;
+                case "HEALTH": c.Health = (int?)Number(value); break;
+                case "INVENTORY.AMOUNT": c.Amount = (int?)Number(value); break;
+                case "WEAPON.AMMOGIVE" or "WEAPON.AMMOGIVE1": c.AmmoGive = (int?)Number(value); break;
+                case "WEAPON.AMMOTYPE" or "WEAPON.AMMOTYPE1": c.AmmoTypeName = value.Trim('"'); break;
+            }
+        }
+    }
+
+    /// <summary>A class's state lines in order, with labels as "Label:" entries.</summary>
+    private static void ReadStates(ActorClass c, string states)
+    {
+        foreach (var raw in states.Split((char[])[';', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var item = raw.Trim();
+            // Leading labels ("Melee:", "Spawn:"), possibly several, possibly followed by a state.
+            while (LeadingLabel().Match(item) is { Success: true } label)
+            {
+                c.States.Add(label.Groups[1].Value + ":");
+                item = item[label.Length..].Trim();
+            }
+
+            if (item.Length > 0) c.States.Add(item);
+        }
     }
 
     private static double? Number(string text) => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : null;
@@ -744,6 +931,44 @@ public sealed partial class ThingCatalog
         }
 
         return -1;
+    }
+
+    /// <summary>The text with its comments turned to spaces (line breaks kept), so it lines up with the text as written.</summary>
+    private static string BlankComments(string text)
+    {
+        var chars = text.ToCharArray();
+        var inString = false;
+        for (var i = 0; i < chars.Length; i++)
+        {
+            if (inString)
+            {
+                if (chars[i] == '\\') i++;
+                else if (chars[i] == '"') inString = false;
+                continue;
+            }
+
+            if (chars[i] == '"')
+            {
+                inString = true;
+            }
+            else if (chars[i] == '/' && i + 1 < chars.Length && chars[i + 1] == '/')
+            {
+                for (; i < chars.Length && chars[i] != '\n'; i++) chars[i] = ' ';
+            }
+            else if (chars[i] == '/' && i + 1 < chars.Length && chars[i + 1] == '*')
+            {
+                var end = text.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                end = end < 0 ? chars.Length : end + 2;
+                for (; i < end; i++)
+                {
+                    if (chars[i] != '\n') chars[i] = ' ';
+                }
+
+                i--;
+            }
+        }
+
+        return new string(chars);
     }
 
     private static string StripComments(string text)
@@ -793,6 +1018,19 @@ public sealed partial class ThingCatalog
 
     [GeneratedRegex(@"(?im)^\s*include\s+""([^""]+)""")]
     private static partial Regex IncludeLine();
+
+    [GeneratedRegex(@"(?im)^\s*#include\s+""([^""]+)""")]
+    private static partial Regex HashInclude();
+
+    [GeneratedRegex(@"(?i)\breplaces\s+([A-Za-z_]\w*)")]
+    private static partial Regex ReplacesWord();
+
+    // DECORATE: "actor Name : Parent replaces Other 1234 {", every part after the name optional.
+    [GeneratedRegex(@"(?i)(?<![A-Za-z_.])actor\s+([A-Za-z_][\w.]*)\s*(?::\s*([A-Za-z_][\w.]*))?\s*(?:replaces\s+([A-Za-z_][\w.]*))?\s*(-?\d+)?\s*(?:native\s*)?\{")]
+    private static partial Regex DecorateHeader();
+
+    [GeneratedRegex(@"(?m)//\$(Title|Category|Sprite)[ \t]+([^\r\n]+)")]
+    private static partial Regex EditorKey();
 
     [GeneratedRegex(@"(?is)\bDoomEdNums\s*\{(.*?)\}")]
     private static partial Regex DoomEdNumsBlock();

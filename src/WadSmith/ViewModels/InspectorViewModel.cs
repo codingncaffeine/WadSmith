@@ -1497,8 +1497,8 @@ internal sealed partial class InspectorViewModel : ObservableObject
             Rows.Add(new ActionRow($"Take out {name}", "Stops loading it with this project; the file stays where it is. The map opens again without it.", () => RemoveAddOn?.Invoke(path)));
         }
 
-        Rows.Add(new ActionRow("Add a WAD or PK3…", "Loads a file of yours with this project, before it: a texture pack (OTEX, a texture WAD), a map pack, or any PK3 GZDoom loads. Its pictures go on the Textures shelf, Play loads it too, and Export says the map needs it.", () => AddAddOn?.Invoke(false)));
-        Rows.Add(new ActionRow("Add a folder…", "Loads a folder of yours with this project, read as GZDoom reads a PK3's folders (textures, flats, sprites, sounds, zscript…).", () => AddAddOn?.Invoke(true)));
+        Rows.Add(new ActionRow("Add a WAD or PK3…", "Loads a file of yours with this project, before it: a texture pack (OTEX, a texture WAD), a pack of monsters or objects, a map pack, or any PK3 GZDoom loads. Its pictures go on the Textures shelf, the monsters and objects its ZScript or DECORATE defines on the Objects shelf, Play loads it too, and Export says the map needs it.", () => AddAddOn?.Invoke(false)));
+        Rows.Add(new ActionRow("Add a folder…", "Loads a folder of yours with this project, read as GZDoom reads a PK3's folders (textures, flats, sprites, sounds, zscript, decorate…).", () => AddAddOn?.Invoke(true)));
     }
 
     /// <summary>

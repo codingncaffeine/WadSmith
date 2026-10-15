@@ -28,6 +28,68 @@ public sealed class AddOnsInTheWindowTests
         return ImageCodec.EncodePng(img);
     }
 
+    /// <summary>
+    /// The monsters an add-on defines (D65 B2): a folder with a DECORATE monster, its sprite and a language name, added in the
+    /// Inspector, puts the monster on the Objects shelf under its kind and name, and let go on the plan it stands there with its
+    /// own picture.
+    /// </summary>
+    [Fact]
+    public async Task AFolderOfMonstersPutsThemOnTheObjectsShelfAndOnThePlan()
+    {
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var pack = Path.Combine(temp.Path, "my-monsters");
+        Directory.CreateDirectory(Path.Combine(pack, "sprites"));
+        File.WriteAllText(Path.Combine(pack, "decorate.txt"), "actor Ghoul 20002\n{\n  Monster\n  Health 80\n  Radius 20\n  Height 56\n  Tag \"$GHOUL_TAG\"\n  States\n  {\n  Spawn:\n    GHUL A 10 A_Look\n    Loop\n  }\n}\n");
+        File.WriteAllText(Path.Combine(pack, "language.txt"), "[enu default]\nGHOUL_TAG = \"Hungry ghoul\";\n");
+        File.WriteAllBytes(Path.Combine(pack, "sprites", "GHULA0.png"), Png(40, 56, (40, 200, 40)));
+        var seen = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(Path.Combine(temp.Path, "profile"), Path.GetDirectoryName(wad)!);
+            try
+            {
+                var editor = Ui.NewMap(vm);
+                editor.PickAddOn = _ => Task.FromResult<string?>(pack);
+                editor.ShowInspector = true;
+                editor.Session.Selection.Clear();
+                Ui.Pump(0.3);
+                Ui.Until(() => window.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && b.Content as string == "Add a folder…"), 10);
+                var button = window.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && b.Content as string == "Add a folder…");
+                button.BringIntoView();
+                Ui.Pump(0.2);
+                var middle = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window)!.Value;
+                window.MouseMove(middle, RawInputModifiers.None);
+                window.MouseDown(middle, MouseButton.Left, RawInputModifiers.None);
+                window.MouseUp(middle, MouseButton.Left, RawInputModifiers.None);
+                Assert.True(Ui.Until(() => vm.Page is EditorViewModel now && !ReferenceEquals(now, editor), 30), "The map did not open again.");
+                Ui.Pump(0.5);
+                var added = (EditorViewModel)vm.Page!;
+                var said = new List<string>();
+
+                // The Objects shelf: the monster by its name, among the monsters.
+                added.ShowObjects = true;
+                Assert.True(Ui.Until(() => added.ObjectShelf.Tiles.Count > 0, 30), "The Objects shelf did not fill.");
+                added.ObjectShelf.Search = "ghoul";
+                Ui.Pump(0.2);
+                var tile = added.ObjectShelf.Tiles.FirstOrDefault(t => t.Drop.Thing == 20002);
+                said.Add(tile is null ? $"shelf: no ghoul ({string.Join(", ", added.ObjectShelf.Tiles.Select(t => t.Label))})" : $"shelf: {tile.Label} under {tile.Group}");
+
+                // Let go on the plan: it stands there, drawn with its own picture.
+                var canvas = window.GetVisualDescendants().OfType<App.Canvas.MapCanvas>().First(c => c.IsEffectivelyVisible);
+                if (tile is not null) LibraryInTheWindowTests.Drop(window, canvas, new Editor.Geometry.MapPoint(0, 64), tile.Drop);
+                Ui.Until(() => added.Session.Map.Things.Any(t => t.OnMap && t.Type == 20002), 10);
+                var resources = added.Session.Resources!;
+                said.Add($"plan: {added.Session.Map.Things.Count(t => t.OnMap && t.Type == 20002)} placed, picture {(resources.SpriteFor(20002) is { } sprite ? $"{sprite.Width}x{sprite.Height}" : "none")}, shown {resources.CanShow(20002)}");
+                return said;
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+        Assert.Equal(["shelf: Hungry ghoul under Monsters", "plan: 1 placed, picture 40x56, shown True"], seen);
+    }
+
     [Fact]
     public async Task AFolderAddedInTheInspectorBringsItsPicturesAndPlaysUntilTakenOut()
     {
