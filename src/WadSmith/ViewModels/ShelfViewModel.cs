@@ -366,9 +366,66 @@ internal sealed partial class ShelfViewModel : ObservableObject
         });
     }
 
-    partial void OnGroupChanged(int value) => Filter();
+    partial void OnGroupChanged(int value)
+    {
+        if (ShowsUsed) AskUsed();
+        Filter();
+    }
 
     partial void OnSearchChanged(string value) => Filter();
+
+    /// <summary>The Textures shelf's group of the pictures the map uses (Ultimate Doom Builder's "Used textures", D65).</summary>
+    public const string UsedGroup = "Used in this map";
+
+    /// <summary>The map as it is now (the editor sets it for the Textures shelf), read on the UI thread; its pictures are listed on a worker.</summary>
+    public Func<WadSmith.Editor.Model.MapFrame>? MapNow { get; set; }
+
+    // The names of the pictures the map used when last read (null before the first reading), and the worker that reads them.
+    private IReadOnlySet<string>? _used;
+    private WadSmith.Editor.LatestOnWorker<IReadOnlySet<string>>? _usedWorker;
+
+    private bool ShowsUsed => Group > 0 && Group < Groups.Count && Groups[Group] == UsedGroup;
+
+    /// <summary>The map changed: while the shelf shows what the map uses, it is read again.</summary>
+    public void MapChanged()
+    {
+        if (ShowsUsed) AskUsed();
+    }
+
+    private void AskUsed()
+    {
+        if (MapNow?.Invoke() is not { } frame) return;
+        _usedWorker ??= new WadSmith.Editor.LatestOnWorker<IReadOnlySet<string>>(MainViewModel.PostToUi, names =>
+        {
+            _used = names;
+            Filter();
+        }, "the pictures the map uses");
+        _usedWorker.Request(() => UsedIn(frame));
+    }
+
+    /// <summary>Every picture on the map's walls, floors and ceilings, by name ("-", no picture, left out).</summary>
+    internal static IReadOnlySet<string> UsedIn(WadSmith.Editor.Model.MapFrame frame)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var s in frame.Sides)
+        {
+            if (s.Element is null) continue;
+            names.Add(s.Top);
+            names.Add(s.Middle);
+            names.Add(s.Bottom);
+        }
+
+        foreach (var s in frame.Sectors)
+        {
+            if (s.Element is null) continue;
+            names.Add(s.FloorTexture);
+            names.Add(s.CeilingTexture);
+        }
+
+        names.Remove("-");
+        names.Remove("");
+        return names;
+    }
 
     private void Filter()
     {
@@ -378,10 +435,18 @@ internal sealed partial class ShelfViewModel : ObservableObject
         Tiles.Clear();
         var source = game is null ? null : _sources.FirstOrDefault(x => x.Name == game);
         var pool = source is null ? _all : _sourceTiles.GetValueOrDefault(source.Name) ?? [];
+        var used = group == UsedGroup ? _used ?? new HashSet<string>() : null;
         foreach (var t in pool)
         {
             // A source's tiles that are not of the shelf's groups (a texture pack to download) show whatever group is chosen.
-            if ((group is null || t.Group == group || source is not null && !Groups.Contains(t.Group)) && t.Game == game && words.All(t.Search.Contains)) Tiles.Add(t);
+            var inGroup = group is null || t.Group == group || (used is not null && t.Drop.Texture is { } name && used.Contains(name)) || (source is not null && !Groups.Contains(t.Group));
+            if (inGroup && t.Game == game && words.All(t.Search.Contains)) Tiles.Add(t);
+        }
+
+        if (used is not null && source is null)
+        {
+            Note = _used is null ? "Finding the pictures this map uses…" : Tiles.Count == 0 ? "This map uses none of these pictures yet." : $"{Tiles.Count} pictures this map uses. Drag one onto the map.";
+            return;
         }
 
         if (source is not null)
@@ -402,7 +467,7 @@ internal sealed partial class ShelfViewModel : ObservableObject
     /// </summary>
     public static ShelfViewModel Textures(GameResources? game, Func<IReadOnlyList<Func<GameResources?>>>? others = null, Func<IReadOnlyList<WadSmith.Core.Projects.CopiedAsset>>? copied = null) => new ShelfViewModel(
         game is null ? "Choose a base game to see its textures." : "",
-        ["All", "Walls", "Floors and ceilings", PictureGroup],
+        ["All", UsedGroup, "Walls", "Floors and ceilings", PictureGroup],
         Once(() =>
         {
             if (game is null) return [];
