@@ -195,9 +195,44 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     {
         _services = services;
         _main = main;
+        _watcher = new GameFolderWatcher(() => MainViewModel.PostToUi(FilesChanged));
+        services.ShuttingDown.Register(_watcher.Dispose);
         RefreshRecent();
         _ = ScanAsync();
     }
+
+    /// <summary>Watches the game folders, so a WAD put in one is listed without being asked.</summary>
+    private readonly GameFolderWatcher _watcher;
+
+    /// <summary>The folders watched now, so the watch changes only when they do.</summary>
+    private IReadOnlyList<string> _watching = [];
+
+    /// <summary>Files changed in the game folders while another page showed.</summary>
+    private bool _changedAway;
+
+    /// <summary>Files arrived, moved or went in a game folder: the start screen looks again now, or when it shows again.</summary>
+    private void FilesChanged()
+    {
+        if (ReferenceEquals(_main.Page, this)) _ = ScanAsync(quiet: true);
+        else _changedAway = true;
+    }
+
+    /// <summary>The start screen shows again (back from the editor): it looks again when files changed meanwhile.</summary>
+    public void Shown()
+    {
+        if (!_changedAway) return;
+        _changedAway = false;
+        _ = ScanAsync(quiet: true);
+    }
+
+    /// <summary>The window is used again: a quiet look, at most every half minute, for what a watch cannot see (a folder around one added, a drive mounted since).</summary>
+    public void WindowUsedAgain()
+    {
+        if (ReferenceEquals(_main.Page, this) && _scanGate.CurrentCount > 0 && DateTime.UtcNow - _lastScan > TimeSpan.FromSeconds(30)) _ = ScanAsync(quiet: true);
+    }
+
+    /// <summary>The window closed: the folders are no longer watched.</summary>
+    public void StopWatching() => _watcher.Dispose();
 
     public ObservableCollection<GameTileViewModel> Games { get; } = [];
 
@@ -477,16 +512,54 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     /// <summary>Opens Preferences over the window.</summary>
     public IRelayCommand OpenPreferencesCommand => _main.OpenPreferencesCommand;
 
-    private async Task ScanAsync()
+    private readonly SemaphoreSlim _scanGate = new(1, 1);
+
+    /// <summary>Looks waiting for the one under way to finish.</summary>
+    private int _scansWaiting;
+
+    /// <summary>When the last look finished (at first, when WadSmith started), so using the window again looks only now and then.</summary>
+    private DateTime _lastScan = DateTime.UtcNow;
+
+    /// <summary>
+    /// Looks for the games and maps: when the user asks (shown and awaited), or, <paramref name="quiet"/>, after a change seen
+    /// in the game folders or the window used again: then the page stays as it is (the tiles kept with their pictures and
+    /// searches, only their lists of maps brought up to date). Looks never overlap; a quiet look asked for while another
+    /// waits to start adds nothing, as that one sees the change too.
+    /// </summary>
+    private async Task ScanAsync(bool quiet = false)
     {
-        Scanning = true;
-        Status = "Looking for your games…";
+        if (quiet && _scansWaiting > 0) return;
+        _scansWaiting++;
+        await _scanGate.WaitAsync().ConfigureAwait(true);
+        _scansWaiting--;
+        try
+        {
+            await ScanOnceAsync(quiet).ConfigureAwait(true);
+        }
+        finally
+        {
+            _lastScan = DateTime.UtcNow;
+            _scanGate.Release();
+        }
+    }
+
+    private async Task ScanOnceAsync(bool quiet)
+    {
+        if (!quiet)
+        {
+            Scanning = true;
+            Status = "Looking for your games…";
+        }
+
         var added = _services.Settings.Current.GameFolders.ToList();
         var targets = GameLocator.StandardTargets(Environment.GetEnvironmentVariable, _services.Settings.Current.EnginePath).Concat(added.Select(f => new ScanTarget(f, GameLocator.DefaultDepth, Added: true))).ToList();
         var extracted = ExtractedFolder;
         var cachePath = Path.Combine(_services.Paths.Cache, "game-scan.json");
         var packCachePath = Path.Combine(_services.Paths.Cache, "pack-scan.json");
-        var progress = new Progress<string>(s => Status = s);
+        var progress = new Progress<string>(s =>
+        {
+            if (!quiet) Status = s;
+        });
         ScanReport report;
         IReadOnlyList<FoundGame> found;
         IReadOnlyList<PackFit> packs;
@@ -553,15 +626,34 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         }
 
         _services.Games = found;
-        Games.Clear();
+
+        // A tile already shown is kept (its pictures, its maps, what was typed in its search); only its list of maps found
+        // near the games is brought up to date. A game new to the list gets a tile of its own.
+        var shown = Games.ToDictionary(t => TileKey(t.Found), StringComparer.Ordinal);
+        var tiles = new List<GameTileViewModel>();
+        var fresh = new List<GameTileViewModel>();
         foreach (var g in found.Where(g => g.Game.IsBaseGame && g.Game.Supported).GroupBy(g => g.Game.Id).Select(g => g.First()).OrderBy(g => g.Game.Title, StringComparer.Ordinal))
         {
-            var tile = new GameTileViewModel(g) { Remix = RemixCommand, NewMap = NewMapCommand, GuidedMap = GuidedMapCommand, EditPackMap = EditPackMapCommand, MakeMap = MakeMapCommand };
-            tile.PackMaps = [.. packs.Where(f => f.Games.Any(x => x.Game.Id == g.Game.Id)).OrderBy(f => f.File.Name, StringComparer.OrdinalIgnoreCase).SelectMany(f => f.File.Maps.Order(StringComparer.OrdinalIgnoreCase).Select(m => new PackMapChoice(f.File, m, tile)))];
+            if (!shown.TryGetValue(TileKey(g), out var tile))
+            {
+                tile = new GameTileViewModel(g) { Remix = RemixCommand, NewMap = NewMapCommand, GuidedMap = GuidedMapCommand, EditPackMap = EditPackMapCommand, MakeMap = MakeMapCommand };
+                fresh.Add(tile);
+            }
+
+            var pickFrom = tile;
+            tile.PackMaps = [.. packs.Where(f => f.Games.Any(x => x.Game.Id == g.Game.Id)).OrderBy(f => f.File.Name, StringComparer.OrdinalIgnoreCase).SelectMany(f => f.File.Maps.Order(StringComparer.OrdinalIgnoreCase).Select(m => new PackMapChoice(f.File, m, pickFrom)))];
             tile.PackMapsLabel = $"Maps found near your games · {tile.PackMaps.Count}";
-            Games.Add(tile);
-            _ = LoadTileAsync(tile);
+            tiles.Add(tile);
         }
+
+        var sameTiles = tiles.SequenceEqual(Games);
+        if (!sameTiles)
+        {
+            Games.Clear();
+            foreach (var tile in tiles) Games.Add(tile);
+        }
+
+        foreach (var tile in fresh) _ = LoadTileAsync(tile);
 
         // The game chosen last time, else the first that every way of starting a map is open for.
         _choosing = true;
@@ -581,13 +673,25 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         NoGamesText = NoGamesWords(report, added);
 
         // The tiles exist now: the user's maps go onto them (listed earlier, before the scan, they all fell through to the bottom).
-        await RefreshProjectsAsync().ConfigureAwait(true);
+        // A quiet look that kept every tile leaves them as they are.
+        if (!(quiet && sameTiles)) await RefreshProjectsAsync().ConfigureAwait(true);
+
+        // The folders the user added and WadSmith's own games folder are watched for files arriving, moving or going.
+        IReadOnlyList<string> watch = [.. added, Path.Combine(_services.Paths.Data, "games")];
+        if (!watch.SequenceEqual(_watching, StringComparer.Ordinal))
+        {
+            _watching = watch;
+            _ = Task.Run(() => _watcher.Watch(watch));
+        }
         Log.Info($"Game scan: {report.Games.Count} game file(s) in {report.Folders.Count} folder(s), {found.Count} usable; {Games.Count} base game(s).");
         foreach (var f in report.Folders.Where(f => !f.Empty || added.Contains(f.Folder, StringComparer.Ordinal)))
         {
             Log.Info($"Game scan: {f.Folder}: {f.Wads} WAD(s), {f.Archives} archive(s), {f.Games.Count} game(s), {f.MapFiles.Count} map file(s)");
         }
     }
+
+    /// <summary>What makes a tile the same tile in a later look: the game and the file it stands for.</summary>
+    private static string TileKey(FoundGame found) => $"{found.Game.Id}|{found.Path}";
 
     /// <summary>" They are in gzdoom, above the folder you added (DOOM WADs)." when games were found around a folder the user added rather than in it.</summary>
     private static string FoundAround(ScanReport report, IReadOnlyList<string> added, int total)
@@ -744,10 +848,23 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         }).ConfigureAwait(true);
     }
 
-    /// <summary>Starts a project from a map in a pack found near the games (D52): the pack goes with the project as an add-on.</summary>
+    /// <summary>
+    /// Starts a project from a map in a pack found near the games or opened by the user (D52): the pack goes with the project
+    /// as an add-on. A pack no longer where it was found is said so, and the games and maps are looked for again.
+    /// </summary>
     [RelayCommand]
     private async Task EditPackMapAsync(PackMapChoice choice)
     {
+        CloseOffered();
+        var name = Path.GetFileName(choice.Pack.Path);
+        if (!await Task.Run(() => File.Exists(choice.Pack.Path)).ConfigureAwait(true))
+        {
+            Notice = $"{name} is no longer in {Path.GetDirectoryName(choice.Pack.Path)}: it was moved or deleted. WadSmith is looking for your maps again and lists it where it is now, if that is in one of your game folders; or open it with Open a map file… at the top.";
+            Log.Warn($"{choice.Pack.Path} is gone; looking again.");
+            _ = ScanAsync(quiet: true);
+            return;
+        }
+
         await StartAsync(() =>
         {
             var engine = _services.EngineData ?? throw new CorruptDataException("Editing a map from a pack needs UZDoom or GZDoom installed: WadSmith reads the engine's own rules for what each line does.");
@@ -757,7 +874,128 @@ internal sealed partial class WelcomeViewModel : ObservableObject
             var project = Remix.CreateFromPack(folder, pack, choice.Slot, choice.Tile.Found.Game, engine, notes, target: choice.Tile.Target);
             foreach (var n in notes) Log.Info($"Pack map note: {n}");
             return (project, choice.Slot);
-        }).ConfigureAwait(true);
+        }, said: (project, slot) => $"Editing {slot} of {choice.Pack.Name} in a project of your own, {project.Info.Name}. {name} itself is never changed; it is loaded with your map, so its own pictures and things are there.").ConfigureAwait(true);
+    }
+
+    /// <summary>What the start screen has to say about the last thing tried (why a map or a project did not open, and what to do); empty when nothing.</summary>
+    [ObservableProperty]
+    private string _notice = "";
+
+    [RelayCommand]
+    private void CloseNotice() => Notice = "";
+
+    /// <summary>The maps of a file the user opened, or of the map files in a folder that is no project, to pick one from.</summary>
+    public ObservableCollection<PackMapChoice> Offered { get; } = [];
+
+    /// <summary>What the offered maps are: "RELAY.WAD: 3 maps for The Ultimate Doom. Pick one to edit it."</summary>
+    [ObservableProperty]
+    private string _offeredTitle = "";
+
+    [RelayCommand]
+    private void CloseOffered()
+    {
+        Offered.Clear();
+        OfferedTitle = "";
+    }
+
+    /// <summary>"Open a map file…": a WAD, PK3 or ZIP from anywhere (a friend's), its maps opened or offered.</summary>
+    [RelayCommand]
+    private async Task OpenMapFileAsync()
+    {
+        if (PickFile is null) return;
+        var file = await PickFile("Open a map file: a WAD, PK3 or ZIP with maps in it, a friend's for instance").ConfigureAwait(true);
+        if (file is null) return;
+        await OpenMapFilesAsync([file], Path.GetFileName(file)).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// The maps in <paramref name="files"/> (called <paramref name="what"/> to the user), matched to the games found as the maps
+    /// near the games are: one map opens at once, several are offered under the bar to pick from; with none, or none for a
+    /// game found, the notice says so and what to do.
+    /// </summary>
+    internal async Task OpenMapFilesAsync(IReadOnlyList<string> files, string what)
+    {
+        Notice = "";
+        CloseOffered();
+        var games = _services.Games ?? [];
+        IReadOnlyList<PackFit> fits;
+        IReadOnlyList<string> slots;
+        string? baseGame;
+        try
+        {
+            (fits, slots, baseGame) = await Task.Run(() =>
+            {
+                var packs = new List<MapFile>();
+                string? game = null;
+                foreach (var file in files)
+                {
+                    packs.AddRange(GameLocator.MapFilesIn(file, out var g));
+                    game ??= g?.Title;
+                }
+
+                IReadOnlySet<string> NamesOf(string path)
+                {
+                    try
+                    {
+                        return MapPacks.TextureNamesOf(path);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+                    {
+                        return new HashSet<string>();
+                    }
+                }
+
+                return (MapPacks.Fit(packs, games, NamesOf), (IReadOnlyList<string>)[.. packs.SelectMany(p => p.Maps)], game);
+            }).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+        {
+            Notice = $"{what} could not be read: {ex.Message}";
+            return;
+        }
+
+        if (slots.Count == 0)
+        {
+            Notice = baseGame is { } g
+                ? $"{what} is {g} itself: a game to make maps for, not a map. Add it with Add games → Pick a game file…."
+                : $"{what} holds no maps.";
+            return;
+        }
+
+        GameTileViewModel? TileFor(PackFit fit) =>
+            Games.FirstOrDefault(t => ReferenceEquals(t, SelectedGame) && fit.Games.Any(g => g.Game.Id == t.Found.Game.Id)) ?? Games.FirstOrDefault(t => fit.Games.Any(g => g.Game.Id == t.Found.Game.Id));
+        var choices = fits.SelectMany(f => TileFor(f) is { } tile ? f.File.Maps.Order(StringComparer.OrdinalIgnoreCase).Select(m => new PackMapChoice(f.File, m, tile)) : []).ToList();
+        if (choices.Count == 0)
+        {
+            var named = string.Join(", ", slots.Take(3)) + (slots.Count > 3 ? "…" : "");
+            Notice = $"{what} holds {(slots.Count == 1 ? "a map" : $"{slots.Count} maps")} ({named}), but not for a game WadSmith found: maps named like E1M1 are Doom's or Heretic's, like MAP01 Doom II's, Hexen's or Strife's. Add the game it is for with Add games, then open it again.";
+            return;
+        }
+
+        SelectedGame = choices[0].Tile;
+        if (choices.Count == 1)
+        {
+            await EditPackMapAsync(choices[0]).ConfigureAwait(true);
+            return;
+        }
+
+        var for_ = string.Join(" and ", choices.Select(c => c.Tile.Title).Distinct(StringComparer.Ordinal));
+        OfferedTitle = $"{what}: {choices.Count} maps for {for_}. Pick one to edit it; the file itself is never changed.";
+        foreach (var c in choices) Offered.Add(c);
+    }
+
+    /// <summary>The map and game files in a folder and in the folders in it: what a folder that is no project is offered as.</summary>
+    private static IReadOnlyList<string> MapFilesInFolder(string folder)
+    {
+        try
+        {
+            return [.. Directory.EnumerateFiles(folder, "*", new EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = 1, IgnoreInaccessible = true })
+                .Where(GameLocator.IsMapOrGameFile).Order(StringComparer.OrdinalIgnoreCase).Take(64)];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
     }
 
     /// <summary>Opens "Make me a map" (D50) for the tile's game.</summary>
@@ -796,20 +1034,43 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     /// <summary>Opens a project folder named on the command line.</summary>
     public Task OpenFolderAsync(string folder) => OpenRecentAsync(new RecentProject(Path.GetFullPath(folder)));
 
+    /// <summary>
+    /// Opens a project folder; a folder that is no project but holds map files (a friend's WAD put in a folder) has its maps
+    /// opened or offered as Open a map file does, and one holding neither is said so, with what to do.
+    /// </summary>
     [RelayCommand]
     private async Task OpenProjectAsync()
     {
         if (PickFolder is null) return;
-        var folder = await PickFolder("Choose a WadSmith project folder").ConfigureAwait(true);
+        var folder = await PickFolder("Choose a WadSmith project folder, or a folder with map files in it").ConfigureAwait(true);
         if (folder is null) return;
-        await OpenRecentAsync(new RecentProject(folder)).ConfigureAwait(true);
+        Notice = "";
+        var (isProject, files) = await Task.Run(() => File.Exists(Path.Combine(folder, Project.SidecarName)) ? (true, (IReadOnlyList<string>)[]) : (false, MapFilesInFolder(folder))).ConfigureAwait(true);
+        if (isProject)
+        {
+            await OpenRecentAsync(new RecentProject(folder)).ConfigureAwait(true);
+            return;
+        }
+
+        var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(folder));
+        if (files.Count == 0)
+        {
+            Notice = $"{name} is not a WadSmith project, and holds no map files. A project is a folder WadSmith makes, with wadsmith.json in it: yours are under Your maps for their game. A WAD, PK3 or ZIP of maps, a friend's for instance, opens with Open a map file… at the top.";
+            return;
+        }
+
+        await OpenMapFilesAsync(files, files.Count == 1 ? Path.GetFileName(files[0]) : $"The map files in {name}").ConfigureAwait(true);
     }
 
-    /// <summary>Runs the project work and reads the map on a worker, then opens the editor on the UI thread.</summary>
-    private async Task StartAsync(Func<(Project Project, string Slot)> work, bool guide = false)
+    /// <summary>
+    /// Runs the project work and reads the map on a worker, then opens the editor on the UI thread, which says
+    /// <paramref name="said"/> (what was opened) when given; what went wrong is the start screen's notice.
+    /// </summary>
+    private async Task StartAsync(Func<(Project Project, string Slot)> work, bool guide = false, Func<Project, string, string>? said = null)
     {
         if (Busy) return;
         Busy = true;
+        Notice = "";
         try
         {
             var session = await Task.Run(() =>
@@ -817,11 +1078,11 @@ internal sealed partial class WelcomeViewModel : ObservableObject
                 var (project, slot) = work();
                 return EditorSession.Open(project, slot, MainViewModel.HooksFor(_services.ResourcesFor(project), _services.EngineData));
             }).ConfigureAwait(true);
-            _main.OpenEditor(session, guide: guide);
+            _main.OpenEditor(session, said?.Invoke(session.Project, session.Slot), guide: guide);
         }
         catch (Exception ex) when (ex is CorruptDataException or IOException or UnauthorizedAccessException or KeyNotFoundException)
         {
-            Status = ex.Message;
+            Notice = ex.Message;
             Log.Warn(ex.Message);
         }
         finally

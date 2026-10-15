@@ -292,29 +292,69 @@
                         </Button.Flyout>
                     </Button>
                     <Button Classes="metal" Content="Open a project…" Command="{Binding OpenProjectCommand}"
-                            ToolTip.Tip="Open a WadSmith project folder." />
+                            ToolTip.Tip="Open a WadSmith project folder: one WadSmith made, with wadsmith.json in it. A folder with map files in it instead offers their maps." />
+                    <Button Classes="metal" Content="Open a map file…" Command="{Binding OpenMapFileCommand}"
+                            ToolTip.Tip="Open a WAD, PK3 or ZIP with maps in it, from anywhere: a friend's, for instance. Pick one of its maps to edit; the file is never changed, your changes become a project of your own." />
                     <Button Classes="metal" Content="Preferences" Command="{Binding OpenPreferencesCommand}"
                             ToolTip.Tip="Larger text, tips, the title bar and where your games are (Ctrl+,)." />
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- The one quiet question (§3.2 step 5, D34), asked once, as a strip under the bar. -->
-        <Border Grid.Row="1" IsVisible="{Binding AskExperience}" Background="{DynamicResource Brush.Surface2}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1" Padding="20,10">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <Border Width="3" CornerRadius="2" Background="{DynamicResource Brush.Accent}" Margin="0,0,14,0" />
-                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                    <TextBlock FontWeight="SemiBold" Text="Have you made Doom maps before?" />
-                    <TextBlock Classes="secondary" FontSize="12.5" TextWrapping="Wrap" Text="Your answer only sets how much WadSmith teaches as you go: tips in the status bar, the Guide's invitations, how long tooltips are and the classic names. The editor is the same either way, and Preferences → Teaching changes any of it later." />
-                </StackPanel>
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0" VerticalAlignment="Center">
-                    <Button Classes="metal" Content="Yes, I have" Command="{Binding AnswerExperienceCommand}" CommandParameter="yes"
-                            ToolTip.Tip="Tips and the Guide's invitations off, short tooltips, classic names (sector, linedef, thing). Everything else stays." />
-                    <Button Classes="metal" Content="No, I'm new" Command="{Binding AnswerExperienceCommand}" CommandParameter="no"
-                            ToolTip.Tip="WadSmith teaches as you go: tips, the Guide and full tooltips, in plain words." />
-                </StackPanel>
-            </Grid>
-        </Border>
+        <StackPanel Grid.Row="1">
+            <!-- What the last thing tried came to when it did not open: said where the user is looking, with what to do. -->
+            <Border x:Name="NoticeStrip" IsVisible="{Binding Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" Background="{DynamicResource Brush.Surface2}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1" Padding="20,10">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <Border Width="3" CornerRadius="2" Background="{DynamicResource Brush.Warning}" Margin="0,0,14,0" />
+                    <TextBlock Grid.Column="1" Text="{Binding Notice}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Classes="metal" Content="OK" Margin="16,0,0,0" VerticalAlignment="Center" Command="{Binding CloseNoticeCommand}"
+                            ToolTip.Tip="Put this message away." />
+                </Grid>
+            </Border>
+
+            <!-- The maps of a file the user opened (or of a folder's map files), to pick one from. -->
+            <Border x:Name="OfferedStrip" IsVisible="{Binding Offered.Count}" Background="{DynamicResource Brush.Surface2}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1" Padding="20,10">
+                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
+                    <Border Grid.RowSpan="2" Width="3" CornerRadius="2" Background="{DynamicResource Brush.Accent}" Margin="0,0,14,0" />
+                    <TextBlock Grid.Column="1" FontWeight="SemiBold" Text="{Binding OfferedTitle}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Classes="metal" Content="Close" Margin="16,0,0,0" VerticalAlignment="Center" Command="{Binding CloseOfferedCommand}"
+                            ToolTip.Tip="Put these maps away; the file opens again with Open a map file… at the top." />
+                    <ScrollViewer Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" MaxHeight="150" Margin="0,8,0,0">
+                        <ItemsControl ItemsSource="{Binding Offered}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PackMapChoice">
+                                    <Button Classes="metal" Content="{Binding Label}" Margin="0,0,8,8"
+                                            Command="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).EditPackMapCommand}" CommandParameter="{Binding}"
+                                            ToolTip.Tip="Edit this map in a project of your own, with its file loaded; the file is never changed." />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <!-- The one quiet question (§3.2 step 5, D34), asked once, as a strip under the bar. -->
+            <Border IsVisible="{Binding AskExperience}" Background="{DynamicResource Brush.Surface2}" BorderBrush="{DynamicResource Brush.Border.Subtle}" BorderThickness="0,0,0,1" Padding="20,10">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <Border Width="3" CornerRadius="2" Background="{DynamicResource Brush.Accent}" Margin="0,0,14,0" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock FontWeight="SemiBold" Text="Have you made Doom maps before?" />
+                        <TextBlock Classes="secondary" FontSize="12.5" TextWrapping="Wrap" Text="Your answer only sets how much WadSmith teaches as you go: tips in the status bar, the Guide's invitations, how long tooltips are and the classic names. The editor is the same either way, and Preferences → Teaching changes any of it later." />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0" VerticalAlignment="Center">
+                        <Button Classes="metal" Content="Yes, I have" Command="{Binding AnswerExperienceCommand}" CommandParameter="yes"
+                                ToolTip.Tip="Tips and the Guide's invitations off, short tooltips, classic names (sector, linedef, thing). Everything else stays." />
+                        <Button Classes="metal" Content="No, I'm new" Command="{Binding AnswerExperienceCommand}" CommandParameter="no"
+                                ToolTip.Tip="WadSmith teaches as you go: tips, the Guide and full tooltips, in plain words." />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </StackPanel>
 
         <Grid Grid.Row="2" ColumnDefinitions="290,*">
             <!-- The games found: pick one to see what can be made with it. -->

@@ -16,6 +16,10 @@ public partial class MainWindow : Window
         Opened += OnFirstOpened;
         WindowFrame.Apply(this);
         WindowFrame.Drags(this, TitleBar);
+
+        // Back in the window (files may have been put in a game folder meanwhile): the start screen looks again now and then.
+        Activated += (_, _) => (DataContext as MainViewModel)?.Welcome.WindowUsedAgain();
+        Closed += (_, _) => (DataContext as MainViewModel)?.Welcome.StopWatching();
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainViewModel main)

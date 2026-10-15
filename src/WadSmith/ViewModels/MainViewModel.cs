@@ -30,6 +30,12 @@ internal sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private object _page;
 
+    /// <summary>Back on the start screen: it looks again when files changed in the game folders meanwhile.</summary>
+    partial void OnPageChanged(object value)
+    {
+        if (ReferenceEquals(value, Welcome)) Welcome.Shown();
+    }
+
     [ObservableProperty]
     private string _title = "WadSmith";
 

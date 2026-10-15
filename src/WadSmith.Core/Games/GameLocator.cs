@@ -441,6 +441,32 @@ public static partial class GameLocator
         return maps;
     }
 
+    /// <summary>
+    /// The maps one file holds, read as a scan reads it: a WAD's own, or those of each WAD inside a ZIP or PK3; none for a
+    /// base game or a file with no maps. <paramref name="game"/> says when the file is a base game itself. Reads the file:
+    /// call it off the UI thread.
+    /// </summary>
+    public static IReadOnlyList<MapFile> MapFilesIn(string file, out GameDefinition? game)
+    {
+        game = null;
+        var real = Path.GetFullPath(file);
+        var games = new List<FoundGame>();
+        var maps = new List<MapFile>();
+        if (IsArchive(real))
+        {
+            LookInside(real, null, null, games, maps, CancellationToken.None);
+            game = games.FirstOrDefault(g => g.Inside is null)?.Game;
+            return maps;
+        }
+
+        if (WadDirectory.ReadNames(real) is not { } names) return [];
+        game = GameCatalog.Identify(names);
+        return game is null && MapsIn(names) is { Count: > 0 } found ? [new MapFile(real, null, found)] : [];
+    }
+
+    /// <summary>Whether a file is one a scan reads for maps and games: a WAD, or a ZIP, PK3 or IPK3 archive.</summary>
+    public static bool IsMapOrGameFile(string path) => IsArchive(path) || path.EndsWith(".wad", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsArchive(string path) =>
         path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".pk3", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".ipk3", StringComparison.OrdinalIgnoreCase);
 
