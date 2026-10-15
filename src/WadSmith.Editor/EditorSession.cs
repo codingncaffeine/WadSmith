@@ -2762,6 +2762,11 @@ public sealed class EditorSession : IDisposable
             var known = new Dictionary<Sector, Sector?>(ReferenceEqualityComparer.Instance);
             var doorways = items.Select(e => Doors.DoorwayOf(geometry, e, family, known)).OfType<Sector>().Distinct().ToList();
             var rest = items.Where(e => Doors.DoorwayOf(geometry, e, family, known) is null).ToList();
+
+            // A window the same: any part of it takes it away, and the wall it was in closes up as the wall beside it.
+            var knownWindows = new Dictionary<Sector, bool>(ReferenceEqualityComparer.Instance);
+            var windows = rest.Select(e => WallWindows.WindowOf(geometry, e, knownWindows)).OfType<Sector>().Distinct().ToList();
+            rest = [.. rest.Where(e => WallWindows.WindowOf(geometry, e, knownWindows) is null)];
             var walledUp = doorways.Select(d => (Doorway: d, Frames: Doors.FramesBeside(geometry, d), Poly: PolyDoors.Recognise(geometry, d, family), Rising: Doors.Recognise(geometry, d))).ToList();
 
             // Switches that opened a door going away open nothing now: they lose their action, unless another area keeps the tag.
@@ -2771,7 +2776,8 @@ public sealed class EditorSession : IDisposable
             // A sliding or swinging door's pen selected takes its polyobjects, anchors and spots too, so the game never finds a
             // spot without its polyobject.
             var polyDoors = rest.OfType<Sector>().SelectMany(s => PolyDoors.InPen(geometry, s, family)).DistinctBy(d => d.Number).ToList();
-            var label = rest.Count > 0 || doorways.Count == 0 ? "Delete" : doorways.Count == 1 ? "Delete the door" : "Delete the doors";
+            var label = rest.Count > 0 || doorways.Count + windows.Count == 0 || (doorways.Count > 0 && windows.Count > 0) ? "Delete"
+                : doorways.Count == 1 ? "Delete the door" : doorways.Count > 1 ? "Delete the doors" : windows.Count == 1 ? "Delete the window" : "Delete the windows";
             History.Record(label, e =>
             {
                 said = Deleting.Delete(e, geometry, rest, look);
@@ -2781,6 +2787,8 @@ public sealed class EditorSession : IDisposable
                     if (poly is not null) PolyDoors.Remove(e, poly);
                     Doors.WallUp(e, geometry, doorway, frames, look);
                 }
+
+                foreach (var window in windows) Doors.WallUp(e, geometry, window, [], look);
 
                 foreach (var l in switches.Where(l => l.OnMap))
                 {

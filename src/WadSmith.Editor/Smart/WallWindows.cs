@@ -67,6 +67,29 @@ public static class WallWindows
         return new WallWindow(area, rooms, faces, blocks);
     }
 
+    /// <summary>
+    /// The window a part of the map belongs to — its area, a wall round it, or a face of such a wall — or null: a click on the
+    /// plan lands on a wall and one in the 3D view on a face, and the window is what the user means (the Inspector shows it,
+    /// Delete takes it away). Asking about many elements at once, pass the same <paramref name="known"/> to each call.
+    /// </summary>
+    public static Sector? WindowOf(MapGeometry geometry, Element element, Dictionary<Sector, bool>? known = null)
+    {
+        bool IsWindow(Sector area)
+        {
+            if (known is null) return Recognise(geometry, area) is not null;
+            if (!known.TryGetValue(area, out var window)) known[area] = window = Recognise(geometry, area) is not null;
+            return window;
+        }
+
+        return element switch
+        {
+            Side { Line: { } wall } => WindowOf(geometry, wall, known),
+            Line { OnMap: true } wall => IsWindow(wall.Front.Sector) ? wall.Front.Sector : wall.Back is { } back && IsWindow(back.Sector) ? back.Sector : null,
+            Sector { OnMap: true } area when IsWindow(area) => area,
+            _ => null,
+        };
+    }
+
     /// <summary>The sill and top a new window between two rooms gets: about a third of the way up and a fifth down from the top, on whole eighths.</summary>
     public static (double Sill, double Top)? DefaultHeights(Sector a, Sector b)
     {

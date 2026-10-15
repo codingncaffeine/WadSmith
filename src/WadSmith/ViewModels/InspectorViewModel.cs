@@ -580,6 +580,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         [Sector s] => (PolyDoorIn(s) is { } pd ? $"polydoor {pd.Kind} {pd.Double} {pd.Settings.Lock}" : Doors.Recognise(_session.Geometry, s) is { } door ? $"door {door.Kind} {door.Settings.Lock}" : Lifts.Recognise(_session.Geometry, s) is not null ? "lift" : WallWindows.Recognise(_session.Geometry, s) is not null ? "window" : Secrets.IsSecret(s) ? "secret" : StairsFinder.Recognise(_session.Geometry, s) is { } flight ? $"stairs {flight.Count}" : Rooms.Island(_session.Geometry, s) is not null ? "island" : "room") + $" {Platforms.Of(_session.Geometry, s).Count}" + ClimbKind(s),
         [Line or Side] when PolyDoorOfWall(_session.Selection.Items[0]) is { } wallDoorway && PolyDoorIn(wallDoorway) is { } wallDoor => $"polydoor wall {wallDoor.Kind} {wallDoor.Double} {wallDoor.Settings.Lock}",
         [Line or Side] when DoorwayOf(_session.Selection.Items[0]) is { } partOf => $"door part {DoorKey(partOf)} {_session.Selection.Items[0].GetType().Name}",
+        [Side] when WallWindows.WindowOf(_session.Geometry, _session.Selection.Items[0]) is not null => "window face",
         [Line l] => Exits.IsExit(l) ? "exit" : Teleports.IsTeleport(l) ? "teleporter" : LiftOf(l) is not null ? "lift face" : Switches.Recognise(_session.Geometry, l) is not null ? "switch" : DoorOf(l) is { } doorArea ? $"door {Doors.Recognise(_session.Geometry, doorArea)?.Kind} {Doors.Recognise(_session.Geometry, doorArea)?.Settings.Lock} face" : WindowOf(l) is not null ? "window face" : l.Special == 0 ? "wall" : "wall with an action",
         [Thing t] => Teleports.IsArrival(t) ? "arrival" : Lights.Kind(t.Type) is { } kind ? $"light {kind}" : $"thing {t.Type}",
         [Side { Line: { } l }] => Exits.IsExit(l) ? "exit face" : "face",
@@ -909,17 +910,27 @@ internal sealed partial class InspectorViewModel : ObservableObject
                 AddSide("Front", l.Front);
                 if (l.Back is { } liftBack) AddSide("Back", liftBack);
                 break;
-            case Line l when WindowOf(l) is { } windowArea:
-                // A wall of a window: the window is what was meant, with the wall's own details below it.
+            case Line or Side when WallWindows.WindowOf(_session.Geometry, items[0]) is { } windowArea:
+                // A wall of a window, or one of its faces (a click in the 3D view lands on a face): the window is what was meant,
+                // with what was clicked below it.
                 Heading = "Window";
                 _summaryOf = () => WallWindows.Recognise(_session.Geometry, windowArea) is { } w ? Explaining.Describe(w) : "No longer a window.";
                 Summary = _summaryOf();
                 AddWindow(windowArea);
                 Rows.Add(new ActionRow("Select the window's area", "Selects the window itself, with its area's settings.", () => _session.Selection.Set(windowArea)));
-                Rows.Add(new HeadingRow("THIS WALL"));
-                AddLine(l);
-                AddSide("Front", l.Front);
-                if (l.Back is { } windowBack) AddSide("Back", windowBack);
+                if (items[0] is Side windowFace)
+                {
+                    Rows.Add(new HeadingRow("THIS FACE"));
+                    AddFace(windowFace);
+                }
+                else if (items[0] is Line l)
+                {
+                    Rows.Add(new HeadingRow("THIS WALL"));
+                    AddLine(l);
+                    AddSide("Front", l.Front);
+                    if (l.Back is { } windowBack) AddSide("Back", windowBack);
+                }
+
                 break;
             case Line l when Switches.Recognise(_session.Geometry, l) is not null:
                 Heading = "Switch";
@@ -1052,6 +1063,7 @@ internal sealed partial class InspectorViewModel : ObservableObject
         var (verb, tip) = items[0] switch
         {
             _ when DoorwayOf(items[0]) is not null => ("Delete this door", "The door goes, and the wall it stood in closes up like the wall beside it (Delete). The Door tool puts a new door into that wall."),
+            _ when WallWindows.WindowOf(_session.Geometry, items[0]) is not null => ("Delete this window", "The window goes, and the wall it was in closes up like the wall beside it (Delete)."),
             Line { Back: { } pb } pl when Closed(pl.Front.Sector) != Closed(pb.Sector) => ("Delete this piece of wall", "It goes, and its place joins the room beside it (Delete)."),
             Side { Line: { Back: { } sb } sl } when Closed(sl.Front.Sector) != Closed(sb.Sector) => ("Delete this piece of wall", "It goes, and its place joins the room beside it (Delete)."),
             Sector => ("Delete this room", "The room and the things in it go; the walls it shared become its neighbours' solid walls (Delete)."),
