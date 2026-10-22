@@ -32,8 +32,10 @@ gh auth status > /dev/null 2>&1 || { echo "gh is not logged in"; exit 1; }
 echo "ok"
 
 say "CI for $(git rev-parse --short HEAD)"
+# tools/push.sh ran CI on this very commit (on the gate branch) before main moved: a green run there is enough, and the
+# same run started again on main is not waited for.
 for i in $(seq 1 60); do
-    s=$(gh run list --commit "$(git rev-parse HEAD)" --json status,conclusion -q '.[0] | "\(.status) \(.conclusion)"' 2>/dev/null || true)
+    s=$(gh run list --commit "$(git rev-parse HEAD)" --json status,conclusion -q '(map(select(.conclusion == "success")) | .[0]) // .[0] | "\(.status) \(.conclusion)"' 2>/dev/null || true)
     case "$s" in
         "completed success") echo "green"; break ;;
         "completed "*) echo "CI: $s"; exit 1 ;;
