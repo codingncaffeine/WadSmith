@@ -131,6 +131,59 @@
             <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
         </Style>
 
+        <!-- The right-click menus: a raised panel with room around each row, an icon per action, the accent on hover. -->
+        <Style Selector="ContextMenu.rich">
+            <Setter Property="Background" Value="{DynamicResource Brush.Raised}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Strong}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="MinWidth" Value="240" />
+        </Style>
+        <Style Selector="ContextMenu.rich MenuItem">
+            <Setter Property="Padding" Value="10,9" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="ContextMenu.rich MenuItem /template/ Border#PART_LayoutRoot">
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+        <Style Selector="ContextMenu.rich MenuItem PathIcon">
+            <Setter Property="Width" Value="15" />
+            <Setter Property="Height" Value="15" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+        </Style>
+        <Style Selector="ContextMenu.rich MenuItem.primary">
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="ContextMenu.rich MenuItem.primary PathIcon">
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+        </Style>
+        <!-- The menu's heading: what it is for, small and quiet, above a line. -->
+        <Style Selector="ContextMenu.rich MenuItem.title">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Tertiary}" />
+            <Setter Property="Padding" Value="10,6,10,4" />
+            <Setter Property="MaxWidth" Value="320" />
+        </Style>
+        <Style Selector="ContextMenu.rich Separator">
+            <Setter Property="Background" Value="{DynamicResource Brush.Border}" />
+            <Setter Property="Margin" Value="4,4" />
+        </Style>
+        <Style Selector="ContextMenu.rich MenuItem:pointerover /template/ Border#PART_LayoutRoot">
+            <Setter Property="Background" Value="#33E0582A" />
+        </Style>
+        <Style Selector="ContextMenu.rich MenuItem:pointerover PathIcon">
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Accent.Hover}" />
+        </Style>
+        <Style Selector="ContextMenu.rich MenuItem:pressed /template/ Border#PART_LayoutRoot">
+            <Setter Property="Background" Value="#55E0582A" />
+        </Style>
+
         <Style Selector="TextBlock.heading">
             <Setter Property="FontSize" Value="17" />
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -144,6 +197,8 @@
         <StreamGeometry x:Key="Icon.Remix">F0 M8,2 H22 V16 H8 Z M10,4 V14 H20 V4 Z M2,8 H6 V10 H4 V20 H14 V18 H16 V22 H2 Z</StreamGeometry>
         <StreamGeometry x:Key="Icon.Guide">M4,2 H6.5 V22 H4 Z M8,3 H20 L16.5,8 L20,13 H8 Z</StreamGeometry>
         <StreamGeometry x:Key="Icon.Folder">M2,5 C2,4 3,3 4,3 H9 L11,5 H20 C21,5 22,6 22,7 V19 C22,20 21,21 20,21 H4 C3,21 2,20 2,19 Z</StreamGeometry>
+        <StreamGeometry x:Key="Icon.Play">M6,3.5 C6,2.7 6.9,2.2 7.6,2.7 L20.4,11.2 C21,11.6 21,12.4 20.4,12.8 L7.6,21.3 C6.9,21.8 6,21.3 6,20.5 Z</StreamGeometry>
+        <StreamGeometry x:Key="Icon.List">M3,4 H7 V8 H3 Z M10,5 H21 V7 H10 Z M3,10 H7 V14 H3 Z M10,11 H21 V13 H10 Z M3,16 H7 V20 H3 Z M10,17 H21 V19 H10 Z</StreamGeometry>
 
         <!-- One of the user's maps: its name (editable in place), when it changed, and what can be done with it. -->
         <DataTemplate x:Key="ProjectRow" x:DataType="vm:ProjectChoice">
@@ -295,10 +350,16 @@
                                 <Button Classes="set" Width="216" Command="{Binding Tile.ShowSetCommand}" CommandParameter="{Binding}"
                                         AutomationProperties.Name="{Binding Title}" ToolTip.Tip="{Binding Title, StringFormat='Show the maps of {0}.'}">
                                     <Button.ContextMenu>
-                                        <ContextMenu>
-                                            <MenuItem Header="{Binding Title, StringFormat='Show the maps of {0}'}" Command="{Binding Tile.ShowSetCommand}" CommandParameter="{Binding}" />
-                                            <MenuItem Header="{Binding Title, StringFormat='Play {0}'}" Command="{Binding Tile.PlaySet}" CommandParameter="{Binding}" IsVisible="{Binding CanPlay}"
-                                                      ToolTip.Tip="Starts it as it is, from the title screen, in UZDoom or GZDoom with your own settings and saves: a pack or an add-on loaded over the game." />
+                                        <ContextMenu Classes="rich">
+                                            <MenuItem Classes="title" Header="{Binding Title}" IsHitTestVisible="False" Focusable="False" />
+                                            <Separator />
+                                            <MenuItem Classes="primary" Header="Play" Command="{Binding Tile.PlaySet}" CommandParameter="{Binding}" IsVisible="{Binding CanPlay}"
+                                                      ToolTip.Tip="Starts it as it is, from the title screen, in UZDoom or GZDoom with your own settings and saves: a pack or an add-on loaded over the game.">
+                                                <MenuItem.Icon><PathIcon Data="{StaticResource Icon.Play}" /></MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="Show its maps" Command="{Binding Tile.ShowSetCommand}" CommandParameter="{Binding}">
+                                                <MenuItem.Icon><PathIcon Data="{StaticResource Icon.List}" /></MenuItem.Icon>
+                                            </MenuItem>
                                         </ContextMenu>
                                     </Button.ContextMenu>
                                     <StackPanel>
@@ -448,9 +509,13 @@
                                 <Grid ColumnDefinitions="Auto,Auto,*" ToolTip.Tip="{Binding Location}" Background="Transparent">
                                     <!-- Right-click: play the game as it is, from its title screen. -->
                                     <Grid.ContextMenu>
-                                        <ContextMenu>
-                                            <MenuItem Header="{Binding Title, StringFormat='Play {0}'}" Command="{Binding PlayGame}" CommandParameter="{Binding}"
-                                                      ToolTip.Tip="Starts the game as it is, from its title screen, in UZDoom or GZDoom with your own settings and saves." />
+                                        <ContextMenu Classes="rich">
+                                            <MenuItem Classes="title" Header="{Binding Title}" IsHitTestVisible="False" Focusable="False" />
+                                            <Separator />
+                                            <MenuItem Classes="primary" Header="Play" Command="{Binding PlayGame}" CommandParameter="{Binding}"
+                                                      ToolTip.Tip="Starts the game as it is, from its title screen, in UZDoom or GZDoom with your own settings and saves.">
+                                                <MenuItem.Icon><PathIcon Data="{StaticResource Icon.Play}" /></MenuItem.Icon>
+                                            </MenuItem>
                                         </ContextMenu>
                                     </Grid.ContextMenu>
                                     <Border Width="3" Margin="0,8" CornerRadius="2" Background="{DynamicResource Brush.Accent}"

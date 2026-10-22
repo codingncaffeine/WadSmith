@@ -136,7 +136,7 @@ public sealed class PackMapsInTheWindowTests
                     window.MouseUp(middle, Avalonia.Input.MouseButton.Right, Avalonia.Input.RawInputModifiers.None);
                     Ui.Pump(0.3);
                     var open = menu.IsOpen;
-                    var item = menu.Items.OfType<MenuItem>().SingleOrDefault(m => m.IsVisible && m.Header is string h && h.StartsWith("Play ", StringComparison.Ordinal)) ?? throw new InvalidOperationException($"{holder.GetType().Name} open {open}, items: {string.Join(", ", menu.Items.OfType<MenuItem>().Select(m => $"{m.Header}/{m.IsVisible}"))}");
+                    var item = menu.Items.OfType<MenuItem>().SingleOrDefault(m => m.IsVisible && m.Header is "Play") ?? throw new InvalidOperationException($"{holder.GetType().Name} open {open}, items: {string.Join(", ", menu.Items.OfType<MenuItem>().Select(m => $"{m.Header}/{m.IsVisible}"))}");
                     item.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
                     // A click on the item closes the menu; raised here as an event, it is closed as the click would.
                     menu.Close();
@@ -156,6 +156,6 @@ public sealed class PackMapsInTheWindowTests
                 window.Close();
             }
         });
-        Assert.Equal(["Play Freedoom: Phase 2 (menu open True): -iwad games/freedoom2.wad", "Play shreds (menu open True): -iwad games/freedoom2.wad -file games/shreds.wad", "Playing shreds in Your engine."], seen);
+        Assert.Equal(["Play (menu open True): -iwad games/freedoom2.wad", "Play (menu open True): -iwad games/freedoom2.wad -file games/shreds.wad", "Playing shreds in Your engine."], seen);
     }
 }
