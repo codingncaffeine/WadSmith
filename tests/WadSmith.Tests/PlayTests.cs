@@ -60,7 +60,7 @@ public sealed class PlayTests
 
         // In a Flatpak the sandbox may read the games' folders, and nothing else is passed: no map, no settings file, no log.
         var (_, sandboxed) = PlayCommand.ForGame(new EngineInstall("Flatpak", "/usr/bin/flatpak", "flatpak", EngineLocator.UZDoomApp), "/games/DOOM2.WAD", ["/packs/sigil2.wad"]);
-        Assert.Equal($"run --filesystem=/games:ro --filesystem=/packs:ro {EngineLocator.UZDoomApp} -iwad /games/DOOM2.WAD -file /packs/sigil2.wad", string.Join(' ', sandboxed));
+        Assert.Equal($"run --filesystem={Path.GetDirectoryName("/games/DOOM2.WAD")}:ro --filesystem={Path.GetDirectoryName("/packs/sigil2.wad")}:ro {EngineLocator.UZDoomApp} -iwad /games/DOOM2.WAD -file /packs/sigil2.wad", string.Join(' ', sandboxed));
     }
 
     [Fact]
