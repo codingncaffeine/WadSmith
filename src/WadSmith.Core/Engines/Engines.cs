@@ -370,6 +370,25 @@ public static class PlayCommand
         args.AddRange(["+map", r.Map, "-skill", r.Skill.ToString(System.Globalization.CultureInfo.InvariantCulture), "-config", r.Config, "+logfile", EngineLogFile.Argument(r.Log)]);
         return (engine.Program, args);
     }
+
+    /// <summary>
+    /// A game played as it is, from its title screen: the game file and any add-ons, with the engine's own settings and saves
+    /// (no WadSmith settings file, no map, no log), as if the user had started it themselves.
+    /// </summary>
+    public static (string Program, IReadOnlyList<string> Arguments) ForGame(EngineInstall engine, string iwad, IReadOnlyList<string> files)
+    {
+        var args = new List<string>();
+        if (engine.Kind == "flatpak")
+        {
+            args.Add("run");
+            foreach (var dir in files.Prepend(iwad).Select(Path.GetDirectoryName).OfType<string>().Distinct(StringComparer.Ordinal)) args.Add($"--filesystem={dir}:ro");
+            args.Add(engine.App ?? EngineLocator.GZDoomApp);
+        }
+
+        args.AddRange(["-iwad", iwad]);
+        foreach (var f in files) args.AddRange(["-file", f]);
+        return (engine.Program, args);
+    }
 }
 
 /// <summary>

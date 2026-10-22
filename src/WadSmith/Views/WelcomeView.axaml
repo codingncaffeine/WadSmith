@@ -110,6 +110,27 @@
             <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         </Style>
 
+        <!-- A map set's card: its picture over its name, how many maps and where it was found. -->
+        <Style Selector="Button.set">
+            <Setter Property="Background" Value="{DynamicResource Brush.Surface3}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{DynamicResource Radius.Large}" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Top" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.set:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Brush.Raised}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent.Hover}" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        </Style>
+        <Style Selector="Button.set:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Brush.Surface2}" />
+        </Style>
+
         <Style Selector="TextBlock.heading">
             <Setter Property="FontSize" Value="17" />
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -244,20 +265,65 @@
                                IsVisible="{Binding $parent[UserControl].((vm:WelcomeViewModel)DataContext).ProjectsNote.Length, FallbackValue=False}" />
                 </StackPanel>
 
-                <!-- The map packs found near the games that are for this game (D52): one click from editing a map in one. -->
-                <StackPanel Spacing="12" IsVisible="{Binding PackMaps.Count}">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Classes="heading" Text="{Binding PackMapsLabel}" VerticalAlignment="Center"
-                                   ToolTip.Tip="Maps found in your folders that are for this game (map packs, loose or inside ZIPs): pick one to edit. The file is never changed; your changes become a project of your own, played with the pack." />
+                <!--
+                    The game's maps as sets, each a card with a picture: its own maps, its official add-ons', then each collection
+                    found near the games (a loose WAD, or an archive with every WAD in it). A card shows its maps; Back, the cards.
+                -->
+                <StackPanel Spacing="12" IsVisible="{Binding Sets.Count}">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <Button Classes="metal" Content="‹ Back" Command="{Binding BackToSetsCommand}" IsVisible="{Binding !ShowingCards}" Margin="0,0,12,0" VerticalAlignment="Center"
+                                AutomationProperties.Name="Back to the map sets" ToolTip.Tip="Back to all of this game's map sets." />
+                        <TextBlock Grid.Column="1" Classes="heading" Text="{Binding SetsLabel}" VerticalAlignment="Center" IsVisible="{Binding ShowingCards}"
+                                   ToolTip.Tip="This game's own maps, its official add-ons' and the map packs found in your folders that are for it (loose, or inside ZIPs): pick a set to see its maps. Files are never changed; your changes become a project of your own." />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" IsVisible="{Binding !ShowingCards}">
+                            <TextBlock Classes="heading" Text="{Binding OpenSet.Title, FallbackValue=''}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Classes="secondary" FontSize="12" Text="{Binding OpenSet.Count, FallbackValue=''}" />
+                        </StackPanel>
                         <!-- A collection can hold thousands of maps: a search box, and a list that only makes the rows on screen. -->
-                        <TextBox Grid.Column="1" Text="{Binding PackFilter}" PlaceholderText="Find a pack or a map…" Width="280"
-                                 ToolTip.Tip="Type part of a pack's name or a map's slot (MAP07, E2M1) to shorten the list." />
+                        <TextBox Grid.Column="2" Text="{Binding PackFilter}" PlaceholderText="Find a set or a map…" Width="280" Margin="12,0,0,0"
+                                 ToolTip.Tip="Type part of a set's name or a map's slot (MAP07, E2M1) to shorten the list." />
                     </Grid>
-                    <Border Classes="card" CornerRadius="{DynamicResource Radius.Medium}" ClipToBounds="True">
-                        <ListBox ItemsSource="{Binding ShownPackMaps}" SelectedItem="{Binding ChosenPackMap}" MaxHeight="320" Background="Transparent"
-                                 ToolTip.Tip="The maps found near your games that are for this game: pick one to edit it, with its pack loaded.">
+
+                    <ItemsControl ItemsSource="{Binding ShownSets}" IsVisible="{Binding ShowingCards}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel ItemSpacing="12" LineSpacing="12" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MapSetViewModel">
+                                <Button Classes="set" Width="216" Command="{Binding Tile.ShowSetCommand}" CommandParameter="{Binding}"
+                                        AutomationProperties.Name="{Binding Title}" ToolTip.Tip="{Binding Title, StringFormat='Show the maps of {0}.'}">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="{Binding Title, StringFormat='Show the maps of {0}'}" Command="{Binding Tile.ShowSetCommand}" CommandParameter="{Binding}" />
+                                            <MenuItem Header="{Binding Title, StringFormat='Play {0}'}" Command="{Binding Tile.PlaySet}" CommandParameter="{Binding}" IsVisible="{Binding CanPlay}"
+                                                      ToolTip.Tip="Starts it as it is, from the title screen, in UZDoom or GZDoom with your own settings and saves: a pack or an add-on loaded over the game." />
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                    <StackPanel>
+                                        <Border Height="122" Background="#000000" ClipToBounds="True" CornerRadius="10,10,0,0">
+                                            <Panel>
+                                                <Image Source="{Binding Picture}" Stretch="{Binding PictureStretch}" />
+                                                <PathIcon Data="{StaticResource Icon.Folder}" Width="34" Height="34" Opacity="0.35" IsVisible="{Binding Picture, Converter={x:Static ObjectConverters.IsNull}}" />
+                                            </Panel>
+                                        </Border>
+                                        <StackPanel Margin="12,9,12,11" Spacing="1">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Classes="secondary" FontSize="12" Text="{Binding Count}" />
+                                            <TextBlock Classes="secondary" FontSize="11.5" Text="{Binding Where}" TextTrimming="CharacterEllipsis" Opacity="0.8" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Border Classes="card" CornerRadius="{DynamicResource Radius.Medium}" ClipToBounds="True" IsVisible="{Binding !ShowingCards}">
+                        <ListBox ItemsSource="{Binding ShownSetMaps}" SelectedItem="{Binding ChosenMap}" MaxHeight="420" Background="Transparent"
+                                 ToolTip.Tip="Pick a map to edit it: one of the game's own starts a remix; one in a pack or an add-on opens with it loaded.">
                             <ListBox.ItemTemplate>
-                                <DataTemplate x:DataType="vm:PackMapChoice">
+                                <DataTemplate x:DataType="vm:SetMap">
                                     <TextBlock Text="{Binding Label}" />
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
@@ -379,7 +445,14 @@
                              ToolTip.Tip="The games WadSmith found: pick one to start a map for it, or to see the maps you made for it.">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:GameTileViewModel">
-                                <Grid ColumnDefinitions="Auto,Auto,*" ToolTip.Tip="{Binding Location}">
+                                <Grid ColumnDefinitions="Auto,Auto,*" ToolTip.Tip="{Binding Location}" Background="Transparent">
+                                    <!-- Right-click: play the game as it is, from its title screen. -->
+                                    <Grid.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="{Binding Title, StringFormat='Play {0}'}" Command="{Binding PlayGame}" CommandParameter="{Binding}"
+                                                      ToolTip.Tip="Starts the game as it is, from its title screen, in UZDoom or GZDoom with your own settings and saves." />
+                                        </ContextMenu>
+                                    </Grid.ContextMenu>
                                     <Border Width="3" Margin="0,8" CornerRadius="2" Background="{DynamicResource Brush.Accent}"
                                             IsVisible="{Binding $parent[ListBoxItem].IsSelected}" />
                                     <Border Grid.Column="1" Width="64" Height="40" Margin="8,7,12,7" CornerRadius="4" ClipToBounds="True" Background="#000000">

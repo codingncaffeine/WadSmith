@@ -147,4 +147,41 @@ public sealed class MapPackTests
         Assert.Null(why);
         Assert.Equal([packPath, Path.GetFullPath(project.Folder)], request!.Files);
     }
+
+    [Fact]
+    public void ASetsCardShowsThePacksTitleScreenElseItsFirstMapDrawnAndIsMadeOnce()
+    {
+        using var temp = new TempFolder();
+        var iwad = GameFiles.Require("freedoom2.wad");
+        var title = new WadSmith.Core.Graphics.RgbaImage(32, 20);
+        for (var i = 3; i < title.Pixels.Length; i += 4) title.Pixels[i] = 255;
+        var titled = Path.Combine(temp.Path, "titled.wad");
+        File.WriteAllBytes(titled, Pack("MAP01", "doom", extra: ("TITLEPIC", WadSmith.Core.Graphics.ImageCodec.EncodePng(title))));
+        var plain = Path.Combine(temp.Path, "plain.wad");
+        File.WriteAllBytes(plain, Pack("MAP02", "doom"));
+        var folder = Path.Combine(temp.Path, "pictures");
+
+        var first = SetPictures.For([new MapFile(titled, null, ["MAP01"])], iwad, "doom", folder);
+        var drawn = SetPictures.For([new MapFile(plain, null, ["MAP02"])], iwad, "doom", folder);
+        // A collection: the first of its packs with a title screen gives the picture, whatever order they come in.
+        var both = SetPictures.For([new MapFile(plain, null, ["MAP02"]), new MapFile(titled, null, ["MAP01"])], iwad, "doom", folder);
+        Assert.Equal((true, false, true), (first!.TitleScreen, drawn!.TitleScreen, both!.TitleScreen));
+        // A pack whose only map is empty (a sound pack with a stand-in MAP01) has none: its card shows the plain icon.
+        var empty = Path.Combine(temp.Path, "sounds.wad");
+        File.WriteAllBytes(empty, WadWriter.Write(WadKind.Pwad, [("MAP01", ReadOnlyMemory<byte>.Empty), ("TEXTMAP", System.Text.Encoding.UTF8.GetBytes("namespace = \"zdoom\";")), ("ENDMAP", ReadOnlyMemory<byte>.Empty)]));
+        Assert.Null(SetPictures.For([new MapFile(empty, null, ["MAP01"])], iwad, "doom", folder));
+        Assert.Equal((32, 20), Size(first.File));
+        Assert.Equal((320, 320), Size(drawn.File));
+
+        // Asked again while the pack is the same, it comes from the folder as it was made.
+        var made = File.GetLastWriteTimeUtc(drawn.File);
+        var again = SetPictures.For([new MapFile(plain, null, ["MAP02"])], iwad, "doom", folder);
+        Assert.Equal((drawn.File, made), (again!.File, File.GetLastWriteTimeUtc(again.File)));
+
+        static (int, int) Size(string png)
+        {
+            var image = WadSmith.Core.Graphics.ImageCodec.Decode(File.ReadAllBytes(png));
+            return (image.Width, image.Height);
+        }
+    }
 }

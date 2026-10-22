@@ -50,38 +50,128 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
     [ObservableProperty]
     private IReadOnlyList<PackMapChoice> _packMaps = [];
 
-    /// <summary>"Maps found near your games · 12", the button that opens the list.</summary>
+    /// <summary>The official add-ons found for this game (Deathkings for Hexen): each one's title and maps, edited with it loaded.</summary>
     [ObservableProperty]
-    private string _packMapsLabel = "Maps found near your games";
+    private IReadOnlyList<(string Title, IReadOnlyList<PackMapChoice> Maps)> _addOns = [];
 
-    /// <summary>What the user typed to shorten the list: part of a pack's name or a map's slot.</summary>
+    /// <summary>The game's maps as sets, each a card: its own maps, its add-ons', then each collection found near the games.</summary>
+    [ObservableProperty]
+    private IReadOnlyList<MapSetViewModel> _sets = [];
+
+    /// <summary>"Maps · 20 sets, 1,640 maps", the heading over the cards.</summary>
+    [ObservableProperty]
+    private string _setsLabel = "Maps";
+
+    /// <summary>What the user typed to shorten the list: on the cards, part of a set's name or a map's; in a set, part of a map's.</summary>
     [ObservableProperty]
     private string _packFilter = "";
 
-    /// <summary>The maps the list shows: all of them, or those matching <see cref="PackFilter"/>.</summary>
+    /// <summary>The cards shown: every set, or those matching <see cref="PackFilter"/>.</summary>
     [ObservableProperty]
-    private IReadOnlyList<PackMapChoice> _shownPackMaps = [];
+    private IReadOnlyList<MapSetViewModel> _shownSets = [];
 
-    /// <summary>The map picked in the list: picking one starts editing it, and the pick clears.</summary>
+    /// <summary>The set whose maps are shown in place of the cards; null shows the cards.</summary>
     [ObservableProperty]
-    private PackMapChoice? _chosenPackMap;
+    [NotifyPropertyChangedFor(nameof(ShowingCards))]
+    private MapSetViewModel? _openSet;
 
-    partial void OnPackMapsChanged(IReadOnlyList<PackMapChoice> value) => ShowPackMaps();
+    public bool ShowingCards => OpenSet is null;
 
-    partial void OnPackFilterChanged(string value) => ShowPackMaps();
+    /// <summary>The open set's maps shown: all of them, or those matching <see cref="PackFilter"/>.</summary>
+    [ObservableProperty]
+    private IReadOnlyList<SetMap> _shownSetMaps = [];
 
-    partial void OnChosenPackMapChanged(PackMapChoice? value)
+    /// <summary>The map picked in the open set: picking one starts editing it, and the pick clears.</summary>
+    [ObservableProperty]
+    private SetMap? _chosenMap;
+
+    /// <summary>Asked for the pictures of the sets' cards (set by the welcome screen).</summary>
+    public Action<GameTileViewModel>? WantPictures { get; set; }
+
+    partial void OnMapsChanged(IReadOnlyList<MapChoice> value) => MakeSets();
+
+    partial void OnPackMapsChanged(IReadOnlyList<PackMapChoice> value) => MakeSets();
+
+    partial void OnAddOnsChanged(IReadOnlyList<(string Title, IReadOnlyList<PackMapChoice> Maps)> value) => MakeSets();
+
+    partial void OnPictureChanged(Bitmap? value)
+    {
+        if (Sets.FirstOrDefault(s => s.Key == "own") is { } own) own.Picture = value;
+    }
+
+    partial void OnPictureStretchChanged(Avalonia.Media.Stretch value)
+    {
+        if (Sets.FirstOrDefault(s => s.Key == "own") is { } own) own.PictureStretch = value;
+    }
+
+    partial void OnPackFilterChanged(string value) => ShowSets();
+
+    partial void OnOpenSetChanged(MapSetViewModel? oldValue, MapSetViewModel? newValue)
+    {
+        // A search typed over the cards found the set; inside it, its maps are shown whole. The same set brought up to date
+        // by a later look keeps what was typed in it.
+        if (newValue is not null && newValue.Key != oldValue?.Key) PackFilter = "";
+        ShowSets();
+    }
+
+    partial void OnChosenMapChanged(SetMap? value)
     {
         if (value is null) return;
-        ChosenPackMap = null;
-        _ = EditPackMap?.ExecuteAsync(value);
+        ChosenMap = null;
+        if (value.Own is { } own) _ = Remix?.ExecuteAsync(own);
+        else if (value.Pack is { } pack) _ = EditPackMap?.ExecuteAsync(pack);
     }
 
-    private void ShowPackMaps()
+    /// <summary>Opens a set's card: its maps in place of the cards.</summary>
+    [RelayCommand]
+    private void ShowSet(MapSetViewModel set) => OpenSet = set;
+
+    /// <summary>Back from a set's maps to the cards.</summary>
+    [RelayCommand]
+    private void BackToSets() => OpenSet = null;
+
+    private void MakeSets()
+    {
+        // A set kept across a later look keeps its picture; the open set stays open while it is still there.
+        var old = Sets.ToDictionary(s => s.Key, StringComparer.Ordinal);
+        var sets = MapSetViewModel.For(this);
+        foreach (var s in sets)
+        {
+            if (s.Key == "own")
+            {
+                s.Picture = Picture;
+                s.PictureStretch = PictureStretch;
+            }
+            else if (old.TryGetValue(s.Key, out var was) && s.Packs.SequenceEqual(was.Packs))
+            {
+                s.Picture = was.Picture;
+                s.PictureStretch = was.PictureStretch;
+                s.PictureAsked = was.PictureAsked;
+            }
+        }
+
+        Sets = sets;
+        var mapCount = sets.Sum(s => s.Maps.Count);
+        SetsLabel = sets.Count == 1 ? $"Maps · {mapCount:N0}" : $"Maps · {sets.Count} sets, {mapCount:N0} maps";
+        var open = OpenSet is { } o ? sets.FirstOrDefault(s => s.Key == o.Key) : null;
+        if (!ReferenceEquals(open, OpenSet)) OpenSet = open;
+        ShowSets();
+        WantPictures?.Invoke(this);
+    }
+
+    private void ShowSets()
     {
         var filter = PackFilter.Trim();
-        ShownPackMaps = filter.Length == 0 ? PackMaps : [.. PackMaps.Where(p => p.Label.Contains(filter, StringComparison.OrdinalIgnoreCase))];
+        ShownSets = OpenSet is null && filter.Length > 0 ? [.. Sets.Where(s => s.Matches(filter))] : Sets;
+        var maps = OpenSet?.Maps ?? [];
+        ShownSetMaps = filter.Length == 0 ? maps : [.. maps.Where(m => m.Label.Contains(filter, StringComparison.OrdinalIgnoreCase))];
     }
+
+    /// <summary>Plays the game as it is, from its title screen (set by the welcome screen).</summary>
+    public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<GameTileViewModel>? PlayGame { get; set; }
+
+    /// <summary>Plays one of its sets as it is (set by the welcome screen).</summary>
+    public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<MapSetViewModel>? PlaySet { get; set; }
 
     /// <summary>Starts a project from a map in a pack found near the games (set by the welcome screen).</summary>
     public CommunityToolkit.Mvvm.Input.IAsyncRelayCommand<PackMapChoice>? EditPackMap { get; set; }
@@ -247,6 +337,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     partial void OnSelectedGameChanged(GameTileViewModel? value)
     {
         if (value is null) return;
+        LoadSetPictures(value);
         ShowingOther = false;
         if (_choosing || _services.Settings.Current.LastGame == value.Found.Game.Id) return;
         _services.Settings.Current.LastGame = value.Found.Game.Id;
@@ -563,9 +654,10 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         ScanReport report;
         IReadOnlyList<FoundGame> found;
         IReadOnlyList<PackFit> packs;
+        IReadOnlyList<(FoundGame Game, MapFile File)> addOns;
         try
         {
-            (report, found, packs, ScanMemory) = await Task.Run(() =>
+            (report, found, packs, addOns, ScanMemory) = await Task.Run(() =>
             {
                 var cache = ArchiveCache.Load(cachePath);
                 var r = GameLocator.Report(targets, cache, progress, _services.ShuttingDown);
@@ -617,7 +709,22 @@ internal sealed partial class WelcomeViewModel : ObservableObject
                 }
 
                 Log.Info($"Game scan: {fits.Count} of {r.MapFiles.Count()} map pack(s) fit a game found, {packCache.Hits} remembered, in {started.ElapsedMilliseconds} ms.");
-                return (r, usable, fits, (cache.Hits, cache.Count));
+                // The official add-ons found (Deathkings over Hexen): their maps are offered under the game they load over.
+                var addOnMaps = new List<(FoundGame, MapFile)>();
+                foreach (var a in usable.Where(u => u.Usable && u.Game.AddOnFor is not null && u.Game.Supported).DistinctBy(u => u.Game.Id))
+                {
+                    try
+                    {
+                        var maps = MapLocator.Find(WadContainer.Open(a.Path)).Select(m => m.Name).ToList();
+                        if (maps.Count > 0) addOnMaps.Add((a, new MapFile(a.Path, null, maps)));
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException)
+                    {
+                        Log.Warn($"The maps of {a.Game.Title} could not be listed: {ex.Message}");
+                    }
+                }
+
+                return (r, usable, fits, (IReadOnlyList<(FoundGame, MapFile)>)addOnMaps, (cache.Hits, cache.Count));
             }, _services.ShuttingDown).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
@@ -636,13 +743,13 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         {
             if (!shown.TryGetValue(TileKey(g), out var tile))
             {
-                tile = new GameTileViewModel(g) { Remix = RemixCommand, NewMap = NewMapCommand, GuidedMap = GuidedMapCommand, EditPackMap = EditPackMapCommand, MakeMap = MakeMapCommand };
+                tile = new GameTileViewModel(g) { Remix = RemixCommand, NewMap = NewMapCommand, GuidedMap = GuidedMapCommand, EditPackMap = EditPackMapCommand, MakeMap = MakeMapCommand, WantPictures = LoadSetPictures, PlayGame = PlayGameCommand, PlaySet = PlaySetCommand };
                 fresh.Add(tile);
             }
 
             var pickFrom = tile;
             tile.PackMaps = [.. packs.Where(f => f.Games.Any(x => x.Game.Id == g.Game.Id)).OrderBy(f => f.File.Name, StringComparer.OrdinalIgnoreCase).SelectMany(f => f.File.Maps.Order(StringComparer.OrdinalIgnoreCase).Select(m => new PackMapChoice(f.File, m, pickFrom)))];
-            tile.PackMapsLabel = $"Maps found near your games · {tile.PackMaps.Count}";
+            tile.AddOns = [.. addOns.Where(a => a.Game.Game.AddOnFor == g.Game.Id).Select(a => (a.Game.Game.Title, (IReadOnlyList<PackMapChoice>)[.. a.File.Maps.Select(m => new PackMapChoice(a.File, m, pickFrom))]))];
             tiles.Add(tile);
         }
 
@@ -737,6 +844,98 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     }
 
     /// <summary>The title picture and the map list, read on a worker.</summary>
+    /// <summary>Plays a game as it is, from its title screen (right-click on it in the list of games).</summary>
+    [RelayCommand]
+    private Task PlayGameAsync(GameTileViewModel tile) => PlayAsIsAsync(tile, null);
+
+    /// <summary>Plays a set as it is: the game itself, an add-on or a pack loaded over it (right-click on its card).</summary>
+    [RelayCommand]
+    private Task PlaySetAsync(MapSetViewModel set) => PlayAsIsAsync(set.Tile, set.Key == "own" ? null : set);
+
+    /// <summary>
+    /// Starts the first engine found on <paramref name="tile"/>'s game with <paramref name="set"/>'s pack, with the engine's
+    /// own settings and saves, and leaves it running: WadSmith does not wait for it or read what it says.
+    /// </summary>
+    private async Task PlayAsIsAsync(GameTileViewModel tile, MapSetViewModel? set)
+    {
+        var name = set?.Title ?? tile.Title;
+        if (set is { CanPlay: false })
+        {
+            Notice = $"{name} holds {set.Packs.Count:N0} WADs: open its card and pick a map to edit, or play one WAD of it from your engine.";
+            return;
+        }
+
+        var chosen = _services.Settings.Current.EnginePath;
+        var packs = Path.Combine(_services.Paths.Cache, "packs");
+        try
+        {
+            var (engine, files) = await Task.Run(() =>
+            {
+                var engines = WadSmith.Core.Engines.EngineLocator.Find(chosen, Environment.GetEnvironmentVariable);
+                IReadOnlyList<string> files = set is null ? [] : [.. set.Packs.Select(p => MapPacks.Materialise(p, packs))];
+                return (engines.FirstOrDefault(), files);
+            }, _services.ShuttingDown).ConfigureAwait(true);
+            if (engine is null)
+            {
+                Notice = WadSmith.Core.Engines.EngineLocator.NoEngine;
+                return;
+            }
+
+            var (program, arguments) = WadSmith.Core.Engines.PlayCommand.ForGame(engine, tile.Found.Path, files);
+            var start = new System.Diagnostics.ProcessStartInfo(program) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(tile.Found.Path) ?? "" };
+            foreach (var a in arguments) start.ArgumentList.Add(a);
+            using var process = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException("the engine did not start");
+            Log.Info($"Playing {name} as it is: {program} {string.Join(' ', arguments)}");
+            Status = $"Playing {name} in {engine.Name}.";
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutting down.
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            Log.Warn($"Playing {name} failed: {ex.Message}");
+            Notice = $"{name} could not be played: {ex.Message}";
+        }
+    }
+
+    /// <summary>Makes the card pictures of the chosen game's map sets, one at a time on a worker; one made before comes from the cache.</summary>
+    private void LoadSetPictures(GameTileViewModel tile)
+    {
+        if (!ReferenceEquals(tile, SelectedGame)) return;
+        var wanted = tile.Sets.Where(s => !s.PictureAsked && s.Packs.Count > 0).ToList();
+        if (wanted.Count == 0) return;
+        foreach (var s in wanted) s.PictureAsked = true;
+        _ = MakeSetPicturesAsync(tile, wanted);
+    }
+
+    private async Task MakeSetPicturesAsync(GameTileViewModel tile, IReadOnlyList<MapSetViewModel> sets)
+    {
+        var folder = Path.Combine(_services.Paths.Cache, "set-pictures");
+        foreach (var set in sets)
+        {
+            try
+            {
+                var (bitmap, title) = await Task.Run(() =>
+                {
+                    var made = SetPictures.For(set.Packs, tile.Found.Path, tile.Found.Game.MapNamespace, folder);
+                    return made is null ? (null, false) : (new Bitmap(made.File), made.TitleScreen);
+                }, _services.ShuttingDown).ConfigureAwait(true);
+                if (bitmap is null) continue;
+                set.PictureStretch = title ? Avalonia.Media.Stretch.UniformToFill : Avalonia.Media.Stretch.Uniform;
+                set.Picture = bitmap;
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+            {
+                Log.Warn($"The picture for {set.Title} could not be made: {ex.Message}");
+            }
+        }
+    }
+
     private async Task LoadTileAsync(GameTileViewModel tile)
     {
         var engine = _services.EngineData;

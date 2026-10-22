@@ -53,6 +53,17 @@ public sealed class PlayTests
     }
 
     [Fact]
+    public void AGamePlayedAsItIsStartsAtItsTitleScreenWithTheEnginesOwnSettings()
+    {
+        var (program, args) = PlayCommand.ForGame(new EngineInstall("UZDoom", "/usr/bin/uzdoom", "native"), "/games/HEXEN.WAD", ["/games/HEXDD.WAD"]);
+        Assert.Equal(("/usr/bin/uzdoom", "-iwad /games/HEXEN.WAD -file /games/HEXDD.WAD"), (program, string.Join(' ', args)));
+
+        // In a Flatpak the sandbox may read the games' folders, and nothing else is passed: no map, no settings file, no log.
+        var (_, sandboxed) = PlayCommand.ForGame(new EngineInstall("Flatpak", "/usr/bin/flatpak", "flatpak", EngineLocator.UZDoomApp), "/games/DOOM2.WAD", ["/packs/sigil2.wad"]);
+        Assert.Equal($"run --filesystem=/games:ro --filesystem=/packs:ro {EngineLocator.UZDoomApp} -iwad /games/DOOM2.WAD -file /packs/sigil2.wad", string.Join(' ', sandboxed));
+    }
+
+    [Fact]
     public void TheLogIsWhicheverFileTheEngineWroteInItsFolder()
     {
         using var temp = new TempFolder();

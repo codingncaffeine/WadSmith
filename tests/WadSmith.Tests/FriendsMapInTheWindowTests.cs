@@ -172,7 +172,7 @@ public sealed class FriendsMapInTheWindowTests
                 var found = Ui.Until(() => tile.PackMaps.Any(p => p.Pack.Path == after), 20);
                 var took = DateTime.UtcNow - moved;
                 said.Add($"found again {found}, after the quiet wait {took >= App.GameFolderWatcher.Quiet}, listed at {Where()}");
-                said.Add($"same tile {ReferenceEquals(vm.Welcome.Games.Single(g => g.Found.Game.Id == "freedoom2"), tile)}, search kept '{tile.PackFilter}', shown {tile.ShownPackMaps.Count}");
+                said.Add($"same tile {ReferenceEquals(vm.Welcome.Games.Single(g => g.Found.Game.Id == "freedoom2"), tile)}, search kept '{tile.PackFilter}', shown {tile.ShownSets.Count}");
             }
             finally
             {
@@ -208,7 +208,9 @@ public sealed class FriendsMapInTheWindowTests
                 Click(window, window.GetVisualDescendants().OfType<ListBoxItem>().Single(i => i.IsEffectivelyVisible && ReferenceEquals(i.DataContext, tile)));
                 var choice = tile.PackMaps.Single(p => p.Pack.Path == gone);
                 File.Delete(gone);
-                Click(window, window.GetVisualDescendants().OfType<ListBoxItem>().Single(i => i.IsEffectivelyVisible && ReferenceEquals(i.DataContext, choice)));
+                // Its card first, then its map in the set.
+                Click(window, window.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible && b.Classes.Contains("set") && b.DataContext is App.ViewModels.MapSetViewModel { Title: "relay" }));
+                Click(window, window.GetVisualDescendants().OfType<ListBoxItem>().Single(i => i.IsEffectivelyVisible && i.DataContext is App.ViewModels.SetMap m && ReferenceEquals(m.Pack, choice)));
                 Ui.Until(() => vm.Welcome.Notice.Length > 0);
                 said.Add($"still on the start screen {vm.Page is WelcomeViewModel}; notice names the file and where it was {vm.Welcome.Notice.StartsWith($"relay.wad is no longer in {Path.Combine(temp.Path, "elsewhere")}: ", StringComparison.Ordinal)}");
                 Ui.Until(() => tile.PackMaps.All(p => p.Pack.Path != gone));
