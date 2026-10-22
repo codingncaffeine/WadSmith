@@ -46,8 +46,11 @@ public sealed class PackMapsInTheWindowTests
                 var said = new List<string>();
                 var tile = vm.Welcome.Games.Single(g => g.Found.Game.Id == "freedoom2");
                 Click(window, window.GetVisualDescendants().OfType<ListBoxItem>().Single(i => i.IsEffectivelyVisible && ReferenceEquals(i.DataContext, tile)));
-                Ui.Until(() => tile.Maps.Count > 0, 10);
+                // The sets are made anew while their pictures are being made, as a later look does: every card still gets one.
+                tile.PackMaps = [.. tile.PackMaps];
+                Ui.Until(() => tile.Maps.Count > 0 && tile.Sets.All(s => s.Picture is not null), 10);
                 Ui.Pump(0.3);
+                said.Add($"pictures: {string.Join(", ", tile.Sets.Select(s => $"{s.Title} {s.Picture is not null}"))}");
 
                 // The maps are sets, each a card: the game's own first, then the pack beside it.
                 var heading = window.GetVisualDescendants().OfType<TextBlock>().Single(b => b.IsEffectivelyVisible && b.Text is { } c && c.StartsWith("Maps · ", StringComparison.Ordinal) && ReferenceEquals(b.DataContext, tile));
@@ -88,7 +91,7 @@ public sealed class PackMapsInTheWindowTests
                 window.Close();
             }
         });
-        Assert.Equal(["Maps · 2 sets, 33 maps: Freedoom: Phase 2, shreds", "own: 32 maps, first MAP01 · Hydroelectric Plant", "back: 0 rows, 2 cards", "found: shreds", "filtered: 0 then MAP03", "opened shreds MAP03 (MAP03): 1 room, add-on shreds.wad, game freedoom2, files freedoom2.wad + shreds.wad"], seen);
+        Assert.Equal(["pictures: Freedoom: Phase 2 True, shreds True", "Maps · 2 sets, 33 maps: Freedoom: Phase 2, shreds", "own: 32 maps, first MAP01 · Hydroelectric Plant", "back: 0 rows, 2 cards", "found: shreds", "filtered: 0 then MAP03", "opened shreds MAP03 (MAP03): 1 room, add-on shreds.wad, game freedoom2, files freedoom2.wad + shreds.wad"], seen);
     }
 
     [Fact]

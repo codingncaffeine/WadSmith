@@ -85,6 +85,12 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
     [ObservableProperty]
     private SetMap? _chosenMap;
 
+    /// <summary>The card pictures made for its sets, by <see cref="MapSetViewModel.PictureKey"/> (null: the set has none).</summary>
+    public Dictionary<string, (Bitmap? Picture, Avalonia.Media.Stretch Stretch)> MadePictures { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>The sets whose pictures were asked for (made, or being made, on a worker), by <see cref="MapSetViewModel.PictureKey"/>.</summary>
+    public HashSet<string> AskedPictures { get; } = new(StringComparer.Ordinal);
+
     /// <summary>Asked for the pictures of the sets' cards (set by the welcome screen).</summary>
     public Action<GameTileViewModel>? WantPictures { get; set; }
 
@@ -132,8 +138,8 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
 
     private void MakeSets()
     {
-        // A set kept across a later look keeps its picture; the open set stays open while it is still there.
-        var old = Sets.ToDictionary(s => s.Key, StringComparer.Ordinal);
+        // The sets are made anew on every change (its own maps read, a later look): pictures are kept by set on the tile, so
+        // one made for a set shown before goes on the new one. The open set stays open while it is still there.
         var sets = MapSetViewModel.For(this);
         foreach (var s in sets)
         {
@@ -142,11 +148,10 @@ internal sealed partial class GameTileViewModel(FoundGame found) : ObservableObj
                 s.Picture = Picture;
                 s.PictureStretch = PictureStretch;
             }
-            else if (old.TryGetValue(s.Key, out var was) && s.Packs.SequenceEqual(was.Packs))
+            else if (MadePictures.TryGetValue(s.PictureKey, out var made))
             {
-                s.Picture = was.Picture;
-                s.PictureStretch = was.PictureStretch;
-                s.PictureAsked = was.PictureAsked;
+                s.Picture = made.Picture;
+                s.PictureStretch = made.Stretch;
             }
         }
 
@@ -903,9 +908,8 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     private void LoadSetPictures(GameTileViewModel tile)
     {
         if (!ReferenceEquals(tile, SelectedGame)) return;
-        var wanted = tile.Sets.Where(s => !s.PictureAsked && s.Packs.Count > 0).ToList();
+        var wanted = tile.Sets.Where(s => s.Packs.Count > 0 && tile.AskedPictures.Add(s.PictureKey)).ToList();
         if (wanted.Count == 0) return;
-        foreach (var s in wanted) s.PictureAsked = true;
         _ = MakeSetPicturesAsync(tile, wanted);
     }
 
@@ -921,9 +925,15 @@ internal sealed partial class WelcomeViewModel : ObservableObject
                     var made = SetPictures.For(set.Packs, tile.Found.Path, tile.Found.Game.MapNamespace, folder);
                     return made is null ? (null, false) : (new Bitmap(made.File), made.TitleScreen);
                 }, _services.ShuttingDown).ConfigureAwait(true);
+                // Kept on the tile and put on the set as it is now: the sets may have been made anew meanwhile.
+                var stretch = title ? Avalonia.Media.Stretch.UniformToFill : Avalonia.Media.Stretch.Uniform;
+                tile.MadePictures[set.PictureKey] = (bitmap, stretch);
                 if (bitmap is null) continue;
-                set.PictureStretch = title ? Avalonia.Media.Stretch.UniformToFill : Avalonia.Media.Stretch.Uniform;
-                set.Picture = bitmap;
+                foreach (var now in tile.Sets.Where(s => s.PictureKey == set.PictureKey))
+                {
+                    now.PictureStretch = stretch;
+                    now.Picture = bitmap;
+                }
             }
             catch (OperationCanceledException)
             {

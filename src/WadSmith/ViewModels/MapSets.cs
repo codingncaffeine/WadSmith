@@ -50,8 +50,8 @@ internal sealed partial class MapSetViewModel(GameTileViewModel tile, string key
     [ObservableProperty]
     private Avalonia.Media.Stretch _pictureStretch = Avalonia.Media.Stretch.UniformToFill;
 
-    /// <summary>Whether its picture was asked for already (made, or being made, on a worker).</summary>
-    public bool PictureAsked { get; set; }
+    /// <summary>What its picture is made from: its packs (a pack added or gone makes another).</summary>
+    public string PictureKey => string.Join("|", Packs.Take(SetPictures.Looked).Select(p => p.Name).Prepend(Key));
 
     /// <summary>The set's maps for one game page: its own maps, its add-ons' maps, then each collection near the games.</summary>
     public static IReadOnlyList<MapSetViewModel> For(GameTileViewModel tile)
