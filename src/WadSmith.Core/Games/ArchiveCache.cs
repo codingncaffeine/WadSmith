@@ -13,6 +13,9 @@ public sealed record ArchiveRecord
     /// <summary>The archive is itself a base game laid out as a PK3 (this id), or null.</summary>
     public string? Packed { get; init; }
 
+    /// <summary>How games were told apart when it was read (<see cref="GameCatalog.Stamp"/>); null in a record older than the mark.</summary>
+    public string? Rules { get; init; }
+
     public List<CachedGame> Games { get; init; } = [];
 
     public List<CachedMapFile> MapFiles { get; init; } = [];
@@ -39,6 +42,8 @@ public sealed class CachedMapFile
 /// <summary>
 /// The archives a scan has read, remembered between runs (a JSON file in the cache folder): a map collection of hundreds
 /// of ZIPs is read once, and later scans only look at what changed. Losing the file costs one slow scan, nothing else.
+/// What an archive held is remembered as games and map packs, so a record made when games were told apart another way
+/// is not believed: that archive is read again.
 /// </summary>
 public sealed class ArchiveCache
 {
@@ -78,7 +83,7 @@ public sealed class ArchiveCache
 
     internal bool TryGet(string archive, long length, DateTime written, out ArchiveRecord record)
     {
-        if (_records.TryGetValue(archive, out var found) && found.Length == length && found.Written == written)
+        if (_records.TryGetValue(archive, out var found) && found.Length == length && found.Written == written && found.Rules == GameCatalog.Stamp)
         {
             Hits++;
             record = found;
@@ -89,7 +94,7 @@ public sealed class ArchiveCache
         return false;
     }
 
-    internal void Put(string archive, ArchiveRecord record) => _records[archive] = record;
+    internal void Put(string archive, ArchiveRecord record) => _records[archive] = record with { Rules = GameCatalog.Stamp };
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 }

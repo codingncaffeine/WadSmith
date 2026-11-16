@@ -105,6 +105,56 @@ public sealed class GameScanTests
         Assert.Equal([Path.Combine(library, "loose.wad")], report.Games.Select(g => g.Path));
     }
 
+    /// <summary>
+    /// What an archive held is remembered as games and map packs, so what was remembered when games were told apart
+    /// another way is not believed: a pack once taken for a game is read again, and is a pack.
+    /// </summary>
+    [Fact]
+    public void WhatWasRememberedUnderOtherRulesIsReadAgain()
+    {
+        using var temp = new TempFolder();
+        var folder = Directory.CreateDirectory(Path.Combine(temp.Path, "downloads")).FullName;
+        var pack = Path.Combine(temp.Path, "pack.wad");
+        File.WriteAllBytes(pack, MapPack());
+        var zip = Zip(Path.Combine(folder, "pack.zip"), ("pack.wad", pack));
+        var info = new FileInfo(zip);
+        var heard = new List<string>();
+        var progress = new SynchronousProgress(heard.Add);
+
+        // The memory as an older version left it: the WAD inside remembered as a copy of a game, under no mark or another.
+        ArchiveCache Remembering(string? rules)
+        {
+            var record = new ArchiveRecord { Length = info.Length, Written = info.LastWriteTimeUtc, Rules = rules, Games = [new CachedGame { Id = "doom2", Inside = "pack.wad", Size = new FileInfo(pack).Length }] };
+            var file = Path.Combine(temp.Path, $"game-scan-{rules ?? "none"}.json");
+            File.WriteAllText(file, System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, ArchiveRecord> { [zip] = record }));
+            return ArchiveCache.Load(file);
+        }
+
+        foreach (var rules in new[] { null, "0123456789abcdef" })
+        {
+            heard.Clear();
+            var cache = Remembering(rules);
+            var report = GameLocator.Report([new ScanTarget(folder, 2)], cache, progress, TestContext.Current.CancellationToken);
+            Assert.Equal(["Looking inside pack.zip…"], heard);
+            Assert.Equal(0, cache.Hits);
+            Assert.Empty(report.Games);
+            Assert.Equal("pack.zip › pack.wad", Assert.Single(report.MapFiles).Name);
+
+            // Read once more with what was just remembered: believed now.
+            heard.Clear();
+            GameLocator.Report([new ScanTarget(folder, 2)], cache, progress, TestContext.Current.CancellationToken);
+            Assert.Empty(heard);
+            Assert.Equal(1, cache.Hits);
+        }
+
+        // The same record under today's mark is believed as it stands: it was the mark that had it read again.
+        heard.Clear();
+        var current = Remembering(GameCatalog.Stamp);
+        var believed = GameLocator.Report([new ScanTarget(folder, 2)], current, progress, TestContext.Current.CancellationToken);
+        Assert.Empty(heard);
+        Assert.Equal("doom2", Assert.Single(believed.Games).Game.Id);
+    }
+
     /// <summary>A progress sink that reports on the caller's thread, so a test sees every message at once.</summary>
     private sealed class SynchronousProgress(Action<string> heard) : IProgress<string>
     {

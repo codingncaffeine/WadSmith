@@ -51,7 +51,10 @@ public static class GameCatalog
     /// <summary>
     /// The lumps every complete base game of an engine family holds: its palette, light tables,
     /// player sprite and status bar picture. Add-ons that reuse map names (MAP01, E1M1) never carry
-    /// the whole set, so they are not mistaken for a base game.
+    /// the whole set, so they are not mistaken for a base game. The Doom family's set also names the
+    /// sounds of the player and the world (<see cref="DoomSounds"/>): a map pack with a palette of its
+    /// own brings every picture drawn in it, the player's and the status bar's among them, and would
+    /// pass for the game by its pictures alone.
     /// </summary>
     public static IReadOnlyList<string> CoreLumps(string engine) => engine switch
     {
@@ -59,8 +62,30 @@ public static class GameCatalog
         "hexen" => ["PLAYPAL", "COLORMAP", "PLAYA1", "H2BAR"],
         "strife" => ["PLAYPAL", "COLORMAP", "PLAYA1", "INVBACK"],
         "doom64" => [],
-        _ => ["PLAYPAL", "COLORMAP", "PLAYA1", "STBAR"],
+        _ => DoomCore,
     };
+
+    /// <summary>
+    /// Sounds every game of the Doom family holds, the free and the stand-alone ones included: the pistol, the player's
+    /// grunt, pain and death, the teleporter, a switch, a moving floor and a weapon picked up. A palette does not change a
+    /// sound, so a map pack has no reason to bring them all.
+    /// </summary>
+    public static IReadOnlyList<string> DoomSounds { get; } = ["DSPISTOL", "DSOOF", "DSPLPAIN", "DSPLDETH", "DSTELEPT", "DSSWTCHX", "DSSTNMOV", "DSWPNUP"];
+
+    private static readonly IReadOnlyList<string> DoomCore = ["PLAYPAL", "COLORMAP", "PLAYA1", "STBAR", .. DoomSounds];
+
+    private static readonly Lazy<string> Rules = new(() =>
+    {
+        var text = new System.Text.StringBuilder(DataFiles.ReadText("games/games.json"));
+        foreach (var engine in All.Select(g => g.Engine).Distinct().Order(StringComparer.Ordinal)) text.Append('\n').Append(engine).Append('=').AppendJoin(',', CoreLumps(engine));
+        return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString())))[..16];
+    });
+
+    /// <summary>
+    /// A short mark of how games are told apart: the game list and each family's core lumps. What a scan remembered
+    /// under another mark was judged by other rules, and is read again.
+    /// </summary>
+    public static string Stamp => Rules.Value;
 
     /// <summary>
     /// The game a container is, judged only by the lumps it holds (never by its file name or its
