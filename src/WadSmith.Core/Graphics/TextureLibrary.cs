@@ -27,6 +27,8 @@ public sealed record TextureInfo(string Name, TextureKind Kind, int Width, int H
 /// Every wall texture and flat a resource stack provides, with the engine's precedence: per file in
 /// load order, TEXTURE1/TEXTURE2 first, then single-picture textures, then TEXTURES definitions; a
 /// later definition of a name replaces an earlier one. Pictures are composed on first use and cached.
+/// A patch is a wall texture too, as in GZDoom, found by its own name when no texture or flat has
+/// it: a map may show one directly. Patches are found, never listed among the walls.
 /// </summary>
 public sealed class TextureLibrary
 {
@@ -35,6 +37,8 @@ public sealed class TextureLibrary
     // Concurrent: pictures are drawn on workers while a texture copied into the project is added (Add).
     private readonly ConcurrentDictionary<string, TextureInfo> _walls = new(LumpName.Comparer);
     private readonly ConcurrentDictionary<string, TextureInfo> _flats = new(LumpName.Comparer);
+    // The patches a wall may show by their own name: looked up after the walls and the flats, and not among Walls.
+    private readonly ConcurrentDictionary<string, TextureInfo> _patchWalls = new(LumpName.Comparer);
     private readonly ConcurrentDictionary<(bool Flat, string Name), RgbaImage?> _cache = new();
     private readonly ConcurrentDictionary<string, RgbaImage?> _patchCache = new(LumpName.Comparer);
 
@@ -71,24 +75,27 @@ public sealed class TextureLibrary
     /// <summary>Whether a wall texture or a flat has this name.</summary>
     public bool Has(string name) => _walls.ContainsKey(name) || _flats.ContainsKey(name);
 
-    public TextureInfo? FindWall(string name) => _walls.GetValueOrDefault(name);
+    /// <summary>The wall texture of this name, or the patch a wall shows under it when no texture or flat has the name.</summary>
+    public TextureInfo? FindWall(string name) => _walls.GetValueOrDefault(name) ?? (_flats.ContainsKey(name) ? null : _patchWalls.GetValueOrDefault(name));
 
     public TextureInfo? FindFlat(string name) => _flats.GetValueOrDefault(name);
 
-    /// <summary>A wall texture's picture; GZDoom also lets a flat stand in when no wall texture has the name.</summary>
+    /// <summary>A wall texture's picture; GZDoom also lets a flat stand in when no wall texture has the name, and then a patch.</summary>
     public RgbaImage? GetWall(string name)
     {
         if (name is "" or "-") return null;
         if (_walls.TryGetValue(name, out var info)) return _cache.GetOrAdd((false, info.Name), _ => Render(info));
-        return _flats.TryGetValue(name, out var flat) ? _cache.GetOrAdd((true, flat.Name), _ => Render(flat)) : null;
+        if (_flats.TryGetValue(name, out var flat)) return _cache.GetOrAdd((true, flat.Name), _ => Render(flat));
+        return _patchWalls.TryGetValue(name, out var patch) ? _cache.GetOrAdd((false, patch.Name), _ => Render(patch)) : null;
     }
 
-    /// <summary>A flat's picture; a wall texture stands in when no flat has the name, as in GZDoom.</summary>
+    /// <summary>A flat's picture; a wall texture stands in when no flat has the name, as in GZDoom, and then a patch.</summary>
     public RgbaImage? GetFlat(string name)
     {
         if (name is "" or "-") return null;
         if (_flats.TryGetValue(name, out var info)) return _cache.GetOrAdd((true, info.Name), _ => Render(info));
-        return _walls.TryGetValue(name, out var wall) ? _cache.GetOrAdd((false, wall.Name), _ => Render(wall)) : null;
+        if (_walls.TryGetValue(name, out var wall)) return _cache.GetOrAdd((false, wall.Name), _ => Render(wall));
+        return _patchWalls.TryGetValue(name, out var patch) ? _cache.GetOrAdd((false, patch.Name), _ => Render(patch)) : null;
     }
 
     /// <summary>
@@ -165,6 +172,28 @@ public sealed class TextureLibrary
             else if (e.Namespace == ResourceNamespace.Flats)
             {
                 _flats[e.Name] = SingleInfo(e, TextureKind.Flat);
+            }
+        }
+
+        // GZDoom makes a wall texture of every patch: those between P_START and P_END (or under patches/), and those the
+        // file's PNAMES lists that it holds outside the markers.
+        foreach (var e in c.Entries)
+        {
+            if (!e.IsMarker && e.Size > 0 && e.Namespace == ResourceNamespace.Patches) _patchWalls[e.Name] = SingleInfo(e, TextureKind.Single);
+        }
+
+        if (c.Find("PNAMES") is { } listed)
+        {
+            try
+            {
+                foreach (var p in TextureLump.ReadPatchNames(listed.Read(), $"{c.DisplayName} PNAMES"))
+                {
+                    if (p.Text.Length > 0 && c.Find(p.Text) is { IsMarker: false, Size: > 0 } outside) _patchWalls[p.Text] = SingleInfo(outside, TextureKind.Single);
+                }
+            }
+            catch (CorruptDataException)
+            {
+                // A patch list that cannot be read names no patches; the textures built on it say so above.
             }
         }
 

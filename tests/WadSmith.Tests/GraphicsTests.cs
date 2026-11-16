@@ -82,6 +82,48 @@ public sealed class GraphicsTests
         Assert.Empty(lib.Notes);
     }
 
+    /// <summary>
+    /// GZDoom makes a wall texture of every patch, so a map may show a patch by its own name. The library finds one when
+    /// no texture or flat has the name (between the patch markers, or outside them when PNAMES lists it), draws it at its
+    /// own size on a wall or a floor, and does not list it among the walls.
+    /// </summary>
+    [Fact]
+    public void APatchIsAWallByItsOwnNameWhenNothingElseHasIt()
+    {
+        static ReadOnlyMemory<byte> Patch(int width, int height)
+        {
+            var picture = new PalettedImage(width, height);
+            Array.Fill(picture.Opaque, true);
+            return DoomPicture.Encode(picture);
+        }
+
+        ReadOnlyMemory<byte> none = ReadOnlyMemory<byte>.Empty;
+        var wad = WadContainer.FromBytes(WadWriter.Write(WadKind.Pwad,
+        [
+            ("PP_START", none), ("MYPATCH", Patch(4, 6)), ("BOTH", Patch(8, 8)), ("TEXWINS", Patch(7, 7)), ("PP_END", none),
+            ("PNAMES", TextureLump.WritePatchNames(["LOOSEP"])), ("LOOSEP", Patch(3, 5)), ("STRAY", Patch(2, 2)),
+            ("F_START", none), ("BOTH", new byte[4096]), ("F_END", none),
+            ("TX_START", none), ("TEXWINS", Patch(5, 5)), ("TX_END", none),
+        ]), "pack.wad");
+        var lib = new TextureLibrary(new ResourceStack([wad]));
+        (int, int)? Wall(string name) => lib.GetWall(name) is { } image ? (image.Width, image.Height) : null;
+
+        Assert.Equal((4, 6), Wall("MYPATCH"));
+        Assert.Equal((3, 5), Wall("LOOSEP"));
+        Assert.NotNull(lib.FindWall("MYPATCH"));
+        Assert.NotNull(lib.FindWall("LOOSEP"));
+        Assert.Equal(["TEXWINS"], lib.Walls.Select(w => w.Name));
+        Assert.Equal((4, 6), lib.GetFlat("MYPATCH") is { } floor ? (floor.Width, floor.Height) : default);
+
+        // A lump PNAMES does not list is no patch; a flat of the name is what a wall shows; a texture of the name is the wall.
+        Assert.Null(Wall("STRAY"));
+        Assert.Null(lib.FindWall("STRAY"));
+        Assert.Equal((64, 64), Wall("BOTH"));
+        Assert.Null(lib.FindWall("BOTH"));
+        Assert.Equal((5, 5), Wall("TEXWINS"));
+        Assert.Empty(lib.Notes);
+    }
+
     [Fact]
     public void AMissingPatchIsNotedNotThrown()
     {
