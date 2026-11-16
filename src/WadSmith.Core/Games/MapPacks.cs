@@ -16,6 +16,9 @@ public sealed record PackFit(MapFile File, IReadOnlyList<FoundGame> Games);
 /// </summary>
 public static partial class MapPacks
 {
+    /// <summary>How a pack is judged, as a number raised with every change to it: what was remembered under another is judged again.</summary>
+    public const int Rules = 2;
+
     /// <summary>
     /// The packs among <paramref name="packs"/> that fit a base game among <paramref name="games"/>, with the games each
     /// fits. <paramref name="namesOf"/> gives the texture and flat names a game file holds (see <see cref="TextureNames"/>);
@@ -97,25 +100,52 @@ public static partial class MapPacks
         if (candidates.Count <= 1) return candidates;
 
         // By the textures: the games that have the most of what the maps use; what the pack brings itself counts for every game.
+        var everything = used.ToList();
         used.ExceptWith(TextureNames(container));
-        if (used.Count == 0) return candidates;
         var scored = candidates.Select(g => (Game: g, Covered: used.Count(namesOf(g.Path).Contains))).ToList();
         var best = scored.Max(s => s.Covered);
-        return [.. scored.Where(s => s.Covered == best).Select(s => s.Game)];
+        return best == 0 ? Family(candidates, everything, namesOf) : [.. scored.Where(s => s.Covered == best).Select(s => s.Game)];
     }
 
-    /// <summary>The wall texture and flat names a file holds: its TEXTURE1 and TEXTURE2, its flats, and its own textures (TX_START, textures/).</summary>
+    /// <summary>
+    /// The games of a pack's family, when nothing its maps use is left to tell the games apart (it is all the pack's own, or
+    /// no game's): a pack that adds to a game's textures repeats that game's list, so its maps go on showing that game's
+    /// names. The games holding at least half as many of <paramref name="names"/> as the one holding most; every game
+    /// when none holds any.
+    /// </summary>
+    private static IReadOnlyList<FoundGame> Family(IReadOnlyList<FoundGame> candidates, IReadOnlyList<string> names, Func<string, IReadOnlySet<string>> namesOf)
+    {
+        var scored = candidates.Select(g => (Game: g, Held: names.Count(namesOf(g.Path).Contains))).ToList();
+        var most = scored.Max(s => s.Held);
+        return most == 0 ? candidates : [.. scored.Where(s => s.Held * 2 >= most).Select(s => s.Game)];
+    }
+
+    /// <summary>
+    /// The names a file holds that a wall, floor or ceiling can show: its TEXTURE1 and TEXTURE2, its flats, its own textures
+    /// (TX_START, textures/), and its patches: GZDoom makes a wall texture of every patch (those between P_START and P_END
+    /// or under patches/, and those PNAMES lists that the file holds), so a map may show one by its own name.
+    /// </summary>
     public static IReadOnlySet<string> TextureNames(ResourceContainer container)
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var pnames = container.Find("PNAMES");
-        IReadOnlyList<NameField>? patchNames = null;
+        IReadOnlyList<NameField> patchNames = [];
+        if (container.Find("PNAMES") is { } pnames)
+        {
+            try
+            {
+                patchNames = TextureLump.ReadPatchNames(pnames.Read(), $"{container.DisplayName} PNAMES");
+            }
+            catch (CorruptDataException)
+            {
+                // A patch list that cannot be read names no patches.
+            }
+        }
+
         foreach (var lumpName in new[] { "TEXTURE1", "TEXTURE2" })
         {
             if (container.Find(lumpName) is not { } lump) continue;
             try
             {
-                patchNames ??= pnames is null ? [] : TextureLump.ReadPatchNames(pnames.Read(), $"{container.DisplayName} PNAMES");
                 foreach (var t in TextureLump.Read(lump.Read(), patchNames, $"{container.DisplayName} {lumpName}").Textures) names.Add(t.Name);
             }
             catch (CorruptDataException)
@@ -126,7 +156,13 @@ public static partial class MapPacks
 
         foreach (var e in container.Entries)
         {
-            if (!e.IsMarker && e.Namespace is ResourceNamespace.Flats or ResourceNamespace.Textures or ResourceNamespace.HiRes) names.Add(e.Name);
+            if (!e.IsMarker && e.Namespace is ResourceNamespace.Flats or ResourceNamespace.Textures or ResourceNamespace.HiRes or ResourceNamespace.Patches) names.Add(e.Name);
+        }
+
+        // A patch a WAD keeps outside the markers is found by its name in PNAMES.
+        foreach (var p in patchNames)
+        {
+            if (p.Text.Length > 0 && container.Find(p.Text) is { IsMarker: false, Size: > 0 }) names.Add(p.Text);
         }
 
         return names;

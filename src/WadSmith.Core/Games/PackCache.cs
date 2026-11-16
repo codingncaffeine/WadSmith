@@ -17,7 +17,8 @@ public sealed record PackRecord
 
 /// <summary>
 /// The map packs a scan has already matched (D52), by path and, inside an archive, by entry, so a big collection is read
-/// once: a pack is read again only when its file changed, or the base games it is judged among did.
+/// once: a pack is read again only when its file changed, or the base games it is judged among did: another set of
+/// games, another file standing for one of them, or another way of judging.
 /// </summary>
 public sealed class PackCache
 {
@@ -59,8 +60,34 @@ public sealed class PackCache
     /// <summary>A pack's key: its path, and its entry inside an archive.</summary>
     public static string KeyOf(MapFile pack) => pack.Inside is null ? pack.Path : pack.Path + "\u203a" + pack.Inside;
 
-    /// <summary>The base games a fit is judged among, as one string: a different set means every pack is judged again.</summary>
-    public static string AmongOf(IEnumerable<FoundGame> bases) => string.Join(",", bases.Select(g => g.Game.Id).Order(StringComparer.Ordinal));
+    /// <summary>
+    /// The base games a fit is judged among, as one short string: each game with the file that stands for it (its path, size
+    /// and date: a pack is matched by the names that file holds), and how games and packs are judged
+    /// (<see cref="GameCatalog.Stamp"/>, <see cref="MapPacks.Rules"/>). A different string means every pack is judged again.
+    /// </summary>
+    public static string AmongOf(IEnumerable<FoundGame> bases)
+    {
+        var text = new System.Text.StringBuilder().Append(GameCatalog.Stamp).Append('|').Append(MapPacks.Rules);
+        foreach (var g in bases.OrderBy(g => g.Game.Id, StringComparer.Ordinal))
+        {
+            text.Append('\n').Append(g.Game.Id).Append('|').Append(g.Path).Append('|').Append(g.Size).Append('|').Append(Written(g.Path));
+        }
+
+        return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString())))[..16];
+    }
+
+    /// <summary>When a game's file was last written, as a number; 0 for one that cannot be asked.</summary>
+    private static long Written(string path)
+    {
+        try
+        {
+            return File.GetLastWriteTimeUtc(path).Ticks;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return 0;
+        }
+    }
 
     /// <summary>The games <paramref name="pack"/> fitted when it was last read, when the file and the games judged among are the same.</summary>
     public bool TryGet(MapFile pack, long length, DateTime written, string among, out IReadOnlyList<string> games)

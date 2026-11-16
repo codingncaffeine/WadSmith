@@ -17,10 +17,12 @@ public sealed class MapPackTests
     private static readonly FoundGame Heretic = new(GameCatalog.Get("heretic")!, "/g/heretic.wad", 1);
     private static readonly FoundGame[] Games = [Freedoom1, Freedoom2, Heretic];
 
-    /// <summary>What each game's file holds, in the test's eyes: Doom's names for the Freedooms, Heretic's for Heretic.</summary>
+    /// <summary>What each game's file holds, in the test's eyes: Doom's names for the Freedooms, one more for TNT, Heretic's for Heretic.</summary>
     private static IReadOnlySet<string> NamesOf(string path) => path.Contains("heretic", StringComparison.Ordinal)
         ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "GRSTNPB", "FLOOR03", "FLAT520", "DOORWOOD" }
-        : new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "STARTAN3", "FLOOR4_8", "CEIL3_5", "DOOR3", "SW1EXIT" };
+        : path.Contains("tnt", StringComparison.Ordinal)
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "STARTAN3", "FLOOR4_8", "CEIL3_5", "DOOR3", "SW1EXIT", "LITEYEL1" }
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "STARTAN3", "FLOOR4_8", "CEIL3_5", "DOOR3", "SW1EXIT" };
 
     /// <summary>A pack holding one UDMF map: the starter room of <paramref name="engine"/>, under <paramref name="slot"/>, its walls showing <paramref name="wall"/> and its floor and ceiling <paramref name="flat"/> when given.</summary>
     private static byte[] Pack(string slot, string engine, string? wall = null, string? ns = null, string? flat = null, params (string Name, byte[] Data)[] extra)
@@ -66,6 +68,11 @@ public sealed class MapPackTests
         var both = Fits(Loose(temp, "e.wad", own, "E1M1"));
         Assert.Equal(["freedoom1", "heretic"], both.Order());
 
+        // A pack that brings Doom's own names again (a list of textures replaces the game's, so it repeats it) is Doom's
+        // by those names, though nothing it uses is left for a game to supply.
+        var repeated = Pack("E1M1", "doom", wall: "STARTAN3", flat: "FLOOR4_8", extra: [("TX_START", []), ("STARTAN3", new byte[8]), ("TX_END", []), ("F_START", []), ("FLOOR4_8", new byte[4096]), ("F_END", [])]);
+        Assert.Equal(["freedoom1"], Fits(Loose(temp, "g.wad", repeated, "E1M1")));
+
         // A name of another shape fits nothing; so does a pack for a game that is not here.
         Assert.Empty(Fits(Loose(temp, "f.wad", Pack("MAP01", "hexen", ns: "hexen"), "MAP01")));
         Assert.Empty(MapPacks.Fit([new MapFile(Path.Combine(temp.Path, "gone.wad"), null, ["MAP01"])], Games, NamesOf, cancel: TestContext.Current.CancellationToken));
@@ -98,6 +105,43 @@ public sealed class MapPackTests
         var fewer = MapPacks.Fit(packs, [Freedoom1, Heretic], NamesOf, loaded, TestContext.Current.CancellationToken);
         Assert.Equal(3, loaded.Hits);
         Assert.Equal(["heretic"], fewer.Select(f => f.Games.Single().Game.Id));
+
+        // The same games again are remembered again; then another file stands for one of them (a pack is matched by the
+        // names that file holds), and every pack is read again.
+        MapPacks.Fit(packs, Games, NamesOf, loaded, TestContext.Current.CancellationToken);
+        Assert.Equal(3, loaded.Hits);
+        MapPacks.Fit(packs, Games, NamesOf, loaded, TestContext.Current.CancellationToken);
+        Assert.Equal(5, loaded.Hits);
+        MapPacks.Fit(packs, [Freedoom1, Freedoom2 with { Path = "/elsewhere/freedoom2.wad" }, Heretic], NamesOf, loaded, TestContext.Current.CancellationToken);
+        Assert.Equal(5, loaded.Hits);
+        MapPacks.Fit(packs, [Freedoom1, Freedoom2 with { Path = "/elsewhere/freedoom2.wad", Size = 2 }, Heretic], NamesOf, loaded, TestContext.Current.CancellationToken);
+        Assert.Equal(5, loaded.Hits);
+    }
+
+    /// <summary>
+    /// GZDoom makes a wall texture of every patch, so a map may show one of its pack's patches by name. Such a name is the
+    /// pack's own: a game that happens to hold a texture of that name fits no better than one that does not.
+    /// </summary>
+    [Fact]
+    public void APatchOfThePacksOwnShownOnAWallIsItsOwn()
+    {
+        using var temp = new TempFolder();
+        var tnt = new FoundGame(GameCatalog.Get("tnt")!, "/g/tnt.wad", 1);
+        string[] Fits(MapFile pack) => [.. MapPacks.GamesFor(pack, [Freedoom2, tnt], NamesOf).Select(g => g.Game.Id)];
+        var patch = new byte[8];
+        var listed = new byte[12];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(listed, 1);
+        System.Text.Encoding.ASCII.GetBytes("LITEYEL1").CopyTo(listed, 4);
+
+        // The wall shows a name only the bigger game has, and the pack does not bring it: that game's alone.
+        Assert.Equal(["tnt"], Fits(Loose(temp, "a.wad", Pack("MAP01", "doom", wall: "LITEYEL1"), "MAP01")));
+
+        // Brought as a patch between the markers, or outside them and listed in PNAMES: the pack's own, and both games fit.
+        Assert.Equal(["freedoom2", "tnt"], Fits(Loose(temp, "b.wad", Pack("MAP01", "doom", wall: "LITEYEL1", extra: [("PP_START", []), ("LITEYEL1", patch), ("PP_END", [])]), "MAP01")));
+        Assert.Equal(["freedoom2", "tnt"], Fits(Loose(temp, "c.wad", Pack("MAP01", "doom", wall: "LITEYEL1", extra: [("PNAMES", listed), ("LITEYEL1", patch)]), "MAP01")));
+
+        // A lump of that name that PNAMES does not list is no patch, and brings nothing.
+        Assert.Equal(["tnt"], Fits(Loose(temp, "d.wad", Pack("MAP01", "doom", wall: "LITEYEL1", extra: [("LITEYEL1", patch)]), "MAP01")));
     }
 
     [Fact]
