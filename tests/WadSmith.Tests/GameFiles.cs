@@ -77,9 +77,13 @@ internal sealed class TempFolder : IDisposable
 
     public string Path { get; }
 
+    /// <summary>
+    /// A file under the folder, its folders made: the path is written the way this system writes paths ("a/b.wad" gives
+    /// a\b.wad on Windows), so it compares equal to what a scan of the folder reports.
+    /// </summary>
     public string File(string relative)
     {
-        var full = System.IO.Path.Combine(Path, relative);
+        var full = System.IO.Path.Combine(Path, relative.Replace('/', System.IO.Path.DirectorySeparatorChar));
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
         return full;
     }
