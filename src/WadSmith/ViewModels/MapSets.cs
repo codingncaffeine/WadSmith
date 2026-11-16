@@ -11,7 +11,7 @@ internal sealed record SetMap(string Label, MapChoice? Own, PackMapChoice? Pack)
 /// A set of maps on a game's page, shown as a card: the game's own maps, an official add-on's, or a collection found near the
 /// games (a loose WAD, or an archive with every WAD in it). Picking its card shows its maps.
 /// </summary>
-internal sealed partial class MapSetViewModel(GameTileViewModel tile, string key, string title, string where, IReadOnlyList<SetMap> maps, IReadOnlyList<MapFile> packs) : ObservableObject
+internal sealed partial class MapSetViewModel(GameTileViewModel tile, string key, string title, string where, IReadOnlyList<SetMap> maps, IReadOnlyList<MapFile> packs, IReadOnlyList<MapFile>? needs = null) : ObservableObject
 {
     /// <summary>The game whose page it is on.</summary>
     public GameTileViewModel Tile { get; } = tile;
@@ -31,6 +31,16 @@ internal sealed partial class MapSetViewModel(GameTileViewModel tile, string key
 
     /// <summary>The packs its maps are in (none for the game's own): the card's picture is made from them.</summary>
     public IReadOnlyList<MapFile> Packs { get; } = packs;
+
+    /// <summary>The packs it is loaded over, found beside it (a fix made for another pack needs that pack); none for most.</summary>
+    public IReadOnlyList<MapFile> Needs { get; } = needs ?? [];
+
+    /// <summary>What the card says when pointed at: what picking it shows, and what it is loaded over when it was made for another pack.</summary>
+    public string Tip => Needs.Count == 0
+        ? $"Show the maps of {Title}."
+        : $"Show the maps of {Title}. It was made for {string.Join(" and ", Needs.Select(NameOf))}, found beside it: that is loaded under it when you edit or play, so its pictures are there.";
+
+    private static string NameOf(MapFile pack) => Path.GetFileNameWithoutExtension(pack.Inside ?? pack.Path);
 
     /// <summary>"32 maps", or "1,502 WADs · 1,611 maps" for a collection.</summary>
     public string Count
@@ -75,7 +85,11 @@ internal sealed partial class MapSetViewModel(GameTileViewModel tile, string key
             var several = packs.Count > 1;
             var folder = Path.GetFileName(Path.GetDirectoryName(g.Key)) ?? "";
             var maps = g.Select(m => new SetMap(several ? $"{Path.GetFileNameWithoutExtension(m.Pack.Inside ?? m.Pack.Path)} › {m.Slot}" : m.Slot, null, m)).ToList();
-            sets.Add(new MapSetViewModel(tile, g.Key, Path.GetFileNameWithoutExtension(g.Key), folder.Length > 0 ? $"In {folder}" : "", maps, packs));
+
+            // A loose WAD made for another pack says so instead of where it lies; a collection's WADs each load what they need when opened.
+            var needs = several ? [] : g.Select(m => m.Needs).OfType<MapFile>().Distinct().ToList();
+            var where = needs.Count > 0 ? $"Loaded over {string.Join(" and ", needs.Select(NameOf))}" : folder.Length > 0 ? $"In {folder}" : "";
+            sets.Add(new MapSetViewModel(tile, g.Key, Path.GetFileNameWithoutExtension(g.Key), where, maps, packs, needs));
         }
 
         return sets;

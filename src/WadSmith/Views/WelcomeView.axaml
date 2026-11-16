@@ -348,7 +348,7 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:MapSetViewModel">
                                 <Button Classes="set" Width="216" Command="{Binding Tile.ShowSetCommand}" CommandParameter="{Binding}"
-                                        AutomationProperties.Name="{Binding Title}" ToolTip.Tip="{Binding Title, StringFormat='Show the maps of {0}.'}">
+                                        AutomationProperties.Name="{Binding Title}" ToolTip.Tip="{Binding Tip}">
                                     <Button.ContextMenu>
                                         <ContextMenu Classes="rich">
                                             <MenuItem Classes="title" Header="{Binding Title}" IsHitTestVisible="False" Focusable="False" />

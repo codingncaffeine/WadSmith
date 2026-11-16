@@ -118,6 +118,129 @@ public sealed class MapPackTests
         Assert.Equal(5, loaded.Hits);
     }
 
+    /// <summary>A pack holding one map whose four walls show <paramref name="walls"/> in turn (top, middle, bottom of each), over Doom's own floor and ceiling.</summary>
+    private static byte[] Showing(string slot, IReadOnlyList<string> walls, params (string Name, byte[] Data)[] extra)
+    {
+        var model = StarterRoom.Create(slot, "doom");
+        var next = 0;
+        foreach (var side in model.Sides)
+        {
+            side.Top = walls[next++ % walls.Count];
+            side.Middle = walls[next++ % walls.Count];
+            side.Bottom = walls[next++ % walls.Count];
+        }
+
+        var text = System.Text.Encoding.UTF8.GetBytes(UdmfText.WriteString(MapConversion.ToUdmf(model)));
+        List<(string, ReadOnlyMemory<byte>)> lumps = [(slot, ReadOnlyMemory<byte>.Empty), ("TEXTMAP", text), ("ENDMAP", ReadOnlyMemory<byte>.Empty)];
+        lumps.AddRange(extra.Select(e => (e.Name, (ReadOnlyMemory<byte>)e.Data)));
+        return WadWriter.Write(WadKind.Pwad, lumps);
+    }
+
+    /// <summary>The lumps that bring <paramref name="names"/> as textures of a pack's own.</summary>
+    private static (string, byte[])[] Bringing(IEnumerable<string> names) => [("TX_START", []), .. names.Select(n => (n, new byte[8])), ("TX_END", [])];
+
+    private static MapFile In(string folder, string name, byte[] bytes, params string[] maps)
+    {
+        var path = Path.Combine(Directory.CreateDirectory(folder).FullName, name);
+        File.WriteAllBytes(path, bytes);
+        return new MapFile(path, null, maps, bytes.Length);
+    }
+
+    /// <summary>
+    /// A fix for one map of another pack shows that pack's textures and is nothing without it. Found beside that pack (in
+    /// its folder, or in its archive), it needs it: it is matched with that pack's textures counted as brought. A pack on
+    /// its own that leaves a stray name unexplained needs nothing, though a pack beside it happens to hold the name.
+    /// </summary>
+    [Fact]
+    public void APackMadeForAnotherPackBesideItNeedsIt()
+    {
+        using var temp = new TempFolder();
+        var tnt = new FoundGame(GameCatalog.Get("tnt")!, "/g/tnt.wad", 1);
+        FoundGame[] games = [Freedoom2, tnt];
+        string[] theirs = [.. Enumerable.Range(1, 12).Select(i => $"BIGWAL{i:00}")];
+        var cancel = TestContext.Current.CancellationToken;
+        string Of(IReadOnlyList<PackFit> fits, MapFile pack)
+        {
+            var fit = fits.Single(f => ReferenceEquals(f.File, pack));
+            return $"{string.Join(", ", fit.Games.Select(g => g.Game.Id))}; needs {fit.Needs?.Name ?? "nothing"}";
+        }
+
+        // On its own: every game that holds its floor and ceiling, and nothing needed.
+        var alone = In(Path.Combine(temp.Path, "alone"), "fix.wad", Showing("MAP20", theirs), "MAP20");
+        Assert.Equal("freedoom2, tnt; needs nothing", Of(MapPacks.Fit([alone], games, NamesOf, cancel: cancel), alone));
+
+        // Beside the pack that brings what its walls show: it needs that pack, which itself needs nothing.
+        var with = Path.Combine(temp.Path, "with");
+        var big = In(with, "big.wad", Pack("MAP01", "doom", extra: Bringing(theirs)), "MAP01");
+        var fix = In(with, "fix.wad", Showing("MAP20", theirs), "MAP20");
+        var fits = MapPacks.Fit([fix, big], games, NamesOf, cancel: cancel);
+        Assert.Equal("freedoom2, tnt; needs big.wad", Of(fits, fix));
+        Assert.Equal("freedoom2, tnt; needs nothing", Of(fits, big));
+
+        // A pack beside it that brings half of it is not the one it was made for.
+        var half = Path.Combine(temp.Path, "half");
+        var some = In(half, "some.wad", Pack("MAP01", "doom", extra: Bringing(theirs.Take(6))), "MAP01");
+        var lost = In(half, "fix.wad", Showing("MAP20", theirs), "MAP20");
+        Assert.Equal("freedoom2, tnt; needs nothing", Of(MapPacks.Fit([lost, some], games, NamesOf, cancel: cancel), lost));
+
+        // A stray name or two among Doom's own: a pack on its own, whatever lies beside it.
+        var stray = Path.Combine(temp.Path, "stray");
+        var holder = In(stray, "holder.wad", Pack("MAP01", "doom", extra: Bringing(["ODDONE1", "ODDONE2"])), "MAP01");
+        var own = In(stray, "own.wad", Showing("MAP02", ["STARTAN3", "DOOR3", "SW1EXIT", "ODDONE1", "ODDONE2"]), "MAP02");
+        Assert.Equal("freedoom2, tnt; needs nothing", Of(MapPacks.Fit([own, holder], games, NamesOf, cancel: cancel), own));
+
+        // Inside one archive, the same.
+        var zip = Path.Combine(temp.Path, "both.zip");
+        using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
+        {
+            archive.CreateEntryFromFile(big.Path, "av/big.wad");
+            archive.CreateEntryFromFile(fix.Path, "av/fix.wad");
+        }
+
+        MapFile[] inside = [new MapFile(zip, "av/fix.wad", ["MAP20"], fix.Size), new MapFile(zip, "av/big.wad", ["MAP01"], big.Size)];
+        Assert.Equal("freedoom2, tnt; needs both.zip › av/big.wad", Of(MapPacks.Fit(inside, games, NamesOf, cancel: cancel), inside[0]));
+    }
+
+    /// <summary>
+    /// What a pack needs is remembered with it, and looked at again when the packs beside it change: the one it was made
+    /// for taken away, or brought back. A pack that leans on nothing is not read again for what lies beside it.
+    /// </summary>
+    [Fact]
+    public void WhatAPackNeedsIsRememberedUntilThePacksBesideItChange()
+    {
+        using var temp = new TempFolder();
+        FoundGame[] games = [Freedoom2, new FoundGame(GameCatalog.Get("tnt")!, "/g/tnt.wad", 1)];
+        string[] theirs = [.. Enumerable.Range(1, 12).Select(i => $"BIGWAL{i:00}")];
+        var cancel = TestContext.Current.CancellationToken;
+        var big = In(temp.Path, "big.wad", Pack("MAP01", "doom", extra: Bringing(theirs)), "MAP01");
+        var fix = In(temp.Path, "fix.wad", Showing("MAP20", theirs), "MAP20");
+        var cache = PackCache.Empty();
+        string? Needs(params MapFile[] packs) => MapPacks.Fit(packs, games, NamesOf, cache, cancel).Single(f => ReferenceEquals(f.File, fix)).Needs?.Name;
+
+        Assert.Equal("big.wad", Needs(fix, big));
+        Assert.Equal(0, cache.Hits);
+
+        // Saved, loaded, asked again: both remembered, and what the fix needs with it.
+        var file = Path.Combine(temp.Path, "pack-scan.json");
+        cache.Save(file);
+        cache = PackCache.Load(file);
+        Assert.Equal("big.wad", Needs(fix, big));
+        Assert.Equal(2, cache.Hits);
+
+        // The pack it was made for is gone: the fix is read again and needs nothing; back again, it is read again and needs it.
+        Assert.Null(Needs(fix));
+        Assert.Equal(2, cache.Hits);
+        Assert.Null(Needs(fix));
+        Assert.Equal(3, cache.Hits);
+        Assert.Equal("big.wad", Needs(fix, big));
+        Assert.Equal(4, cache.Hits);
+
+        // Another pack beside them: the fix is looked at again (it leans on what is beside it), the big pack is not.
+        var other = In(temp.Path, "other.wad", Pack("MAP05", "doom"), "MAP05");
+        Assert.Equal("big.wad", Needs(fix, big, other));
+        Assert.Equal(5, cache.Hits);
+    }
+
     /// <summary>
     /// GZDoom makes a wall texture of every patch, so a map may show one of its pack's patches by name. Such a name is the
     /// pack's own: a game that happens to hold a texture of that name fits no better than one that does not.

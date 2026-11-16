@@ -158,4 +158,96 @@ public sealed class PackMapsInTheWindowTests
         });
         Assert.Equal(["Play (menu open True): -iwad games/freedoom2.wad", "Play (menu open True): -iwad games/freedoom2.wad -file games/shreds.wad", "Playing shreds in Your engine."], seen);
     }
+
+    /// <summary>
+    /// A fix made for another pack (its walls show that pack's textures) found beside it: its card says what it is loaded
+    /// over, Play starts the engine with that pack first, and a map picked from it opens with both loaded, in that order.
+    /// </summary>
+    [Fact]
+    public async Task APackMadeForAnotherIsPlayedAndOpenedOverIt()
+    {
+        // The engine is a stand-in that writes down what it was given: no game window opens.
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "The stand-in engine is a shell script.");
+        var wad = GameFiles.Require("freedoom2.wad");
+        using var temp = new TempFolder();
+        var games = Directory.CreateDirectory(Path.Combine(temp.Path, "games")).FullName;
+        File.Copy(wad, Path.Combine(games, "freedoom2.wad"));
+        File.Copy(GameFiles.Require("gzdoom.pk3"), Path.Combine(games, "gzdoom.pk3"));
+
+        // big.wad brings twelve wall pictures of its own; fix.wad is one map whose walls show them and brings none.
+        string[] theirs = [.. Enumerable.Range(1, 12).Select(i => $"BIGWAL{i:00}")];
+        var picture = new Core.Graphics.PalettedImage(8, 8);
+        Array.Fill(picture.Opaque, true);
+        ReadOnlyMemory<byte> patch = Core.Graphics.DoomPicture.Encode(picture);
+        byte[] Map(string slot, bool shows)
+        {
+            var model = StarterRoom.Create(slot, "doom");
+            var next = 0;
+            foreach (var side in model.Sides.Where(_ => shows))
+            {
+                side.Top = theirs[next++ % theirs.Length];
+                side.Middle = theirs[next++ % theirs.Length];
+                side.Bottom = theirs[next++ % theirs.Length];
+            }
+
+            return System.Text.Encoding.UTF8.GetBytes(UdmfText.WriteString(MapConversion.ToUdmf(model)));
+        }
+
+        File.WriteAllBytes(Path.Combine(games, "big.wad"), WadWriter.Write(WadKind.Pwad,
+            [("MAP01", ReadOnlyMemory<byte>.Empty), ("TEXTMAP", Map("MAP01", shows: false)), ("ENDMAP", ReadOnlyMemory<byte>.Empty), ("TX_START", ReadOnlyMemory<byte>.Empty), .. theirs.Select(n => (n, patch)), ("TX_END", ReadOnlyMemory<byte>.Empty)]));
+        File.WriteAllBytes(Path.Combine(games, "fix.wad"), WadWriter.Write(WadKind.Pwad, [("MAP20", ReadOnlyMemory<byte>.Empty), ("TEXTMAP", Map("MAP20", shows: true)), ("ENDMAP", ReadOnlyMemory<byte>.Empty)]));
+        var written = Path.Combine(temp.Path, "engine-was-given.txt");
+        var engine = Path.Combine(temp.Path, "engine.sh");
+        File.WriteAllText(engine, $"#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{written}'\n");
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(engine, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var seen = await Ui.Run(() =>
+        {
+            var (window, vm) = Ui.Start(Path.Combine(temp.Path, "profile"), games);
+            try
+            {
+                App.App.Services.Settings.Current.EnginePath = engine;
+                var said = new List<string>();
+                var tile = vm.Welcome.Games.Single(g => g.Found.Game.Id == "freedoom2");
+                Click(window, window.GetVisualDescendants().OfType<ListBoxItem>().Single(i => i.IsEffectivelyVisible && ReferenceEquals(i.DataContext, tile)));
+                Ui.Until(() => tile.Sets.Count == 3, 10);
+                Ui.Pump(0.3);
+
+                // The cards as they read: what each is, under its name.
+                Button Card(string title) => window.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible && b.Classes.Contains("set") && b.DataContext is App.ViewModels.MapSetViewModel s && s.Title == title);
+                string Under(string title) => string.Join(" | ", Card(title).GetVisualDescendants().OfType<TextBlock>().Where(t => t.IsEffectivelyVisible).Select(t => t.Text));
+                said.Add(Under("big"));
+                said.Add(Under("fix"));
+
+                // Right-click the fix's card, Play: the engine is given the pack it was made for first.
+                var card = Card("fix");
+                card.BringIntoView();
+                Ui.Pump(0.2);
+                var middle = card.TranslatePoint(new Point(card.Bounds.Width / 2, card.Bounds.Height / 2), window)!.Value;
+                window.MouseMove(middle, Avalonia.Input.RawInputModifiers.None);
+                window.MouseDown(middle, Avalonia.Input.MouseButton.Right, Avalonia.Input.RawInputModifiers.None);
+                window.MouseUp(middle, Avalonia.Input.MouseButton.Right, Avalonia.Input.RawInputModifiers.None);
+                Ui.Pump(0.3);
+                var menu = card.ContextMenu!;
+                menu.Items.OfType<MenuItem>().Single(m => m.IsVisible && m.Header is "Play").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+                menu.Close();
+                Ui.Pump(0.2);
+                Ui.Until(() => File.Exists(written) && File.ReadAllLines(written).Length > 0, 10);
+                said.Add(File.ReadAllLines(written).Last().Replace(temp.Path + Path.DirectorySeparatorChar, "", StringComparison.Ordinal));
+
+                // Its card, then its map: the project loads the pack it was made for, then the fix.
+                Click(window, Card("fix"));
+                Click(window, window.GetVisualDescendants().OfType<ListBoxItem>().Single(i => i.IsEffectivelyVisible && i.DataContext is App.ViewModels.SetMap));
+                for (var i = 0; i < 100 && vm.Page is not App.ViewModels.EditorViewModel; i++) Ui.Pump(0.05);
+                Ui.Pump(1.0);
+                var session = ((App.ViewModels.EditorViewModel)vm.Page!).Session;
+                said.Add($"opened {session.Project.Info.Name}: loads {string.Join(", ", session.Project.Info.AddOns.Select(Path.GetFileName))}; a wall of the fix draws {session.Resources?.Textures.GetWall("BIGWAL07") is not null}");
+                return said;
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+        Assert.Equal(["big | 1 map | In games", "fix | 1 map | Loaded over big", "-iwad games/freedoom2.wad -file games/big.wad -file games/fix.wad", "opened fix MAP20: loads big.wad, fix.wad; a wall of the fix draws True"], seen);
+    }
 }

@@ -7,7 +7,14 @@ using WadSmith.Core.Maps;
 namespace WadSmith.Core.Games;
 
 /// <summary>A map pack matched to the base games it is for: the file, and the games among those found that it fits.</summary>
-public sealed record PackFit(MapFile File, IReadOnlyList<FoundGame> Games);
+public sealed record PackFit(MapFile File, IReadOnlyList<FoundGame> Games)
+{
+    /// <summary>
+    /// The pack beside it that this one is loaded over: a fix for one of another pack's maps, or more maps for it, shows
+    /// that pack's textures and is nothing without it. Null for a pack that stands on its own.
+    /// </summary>
+    public MapFile? Needs { get; init; }
+}
 
 /// <summary>
 /// Map packs (D52): the map files found near the user's games, matched to the base game each is for — by its maps' names
@@ -17,13 +24,22 @@ public sealed record PackFit(MapFile File, IReadOnlyList<FoundGame> Games);
 public static partial class MapPacks
 {
     /// <summary>How a pack is judged, as a number raised with every change to it: what was remembered under another is judged again.</summary>
-    public const int Rules = 2;
+    public const int Rules = 3;
+
+    /// <summary>
+    /// How many names in no game and not its own a pack's maps must show (and a tenth of all they show) before it is
+    /// taken to lean on another pack. A pack on its own leaves a stray name or two unexplained, and a pack beside it
+    /// may happen to hold them.
+    /// </summary>
+    private const int Leaning = 8;
 
     /// <summary>
     /// The packs among <paramref name="packs"/> that fit a base game among <paramref name="games"/>, with the games each
     /// fits. <paramref name="namesOf"/> gives the texture and flat names a game file holds (see <see cref="TextureNames"/>);
     /// cache it, a game is asked for once per pack. With a <paramref name="cache"/>, a pack read before is not read again
-    /// while its file and the games judged among are the same. A pack that cannot be read is left out.
+    /// while its file and the games judged among are the same. A pack that cannot be read is left out. A pack made to be
+    /// loaded over another found beside it (in its folder, or in its archive) is matched with that one's textures counted
+    /// as brought, and says which it needs (<see cref="PackFit.Needs"/>).
     /// </summary>
     public static IReadOnlyList<PackFit> Fit(IEnumerable<MapFile> packs, IReadOnlyList<FoundGame> games, Func<string, IReadOnlySet<string>> namesOf, PackCache? cache = null, CancellationToken cancel = default)
     {
@@ -32,25 +48,51 @@ public static partial class MapPacks
         if (bases.Count == 0) return fits;
         var among = PackCache.AmongOf(bases);
         var byId = bases.ToDictionary(g => g.Game.Id, StringComparer.Ordinal);
-        foreach (var pack in packs)
+
+        // The packs beside each other, and what each brings: read only for a pack that leans on names it does not hold.
+        var all = packs as IReadOnlyList<MapFile> ?? [.. packs];
+        var places = all.GroupBy(Place, WindowsFolders.PathComparer).ToDictionary(g => g.Key, g => (IReadOnlyList<MapFile>)[.. g], WindowsFolders.PathComparer);
+        var byKey = new Dictionary<string, MapFile>(StringComparer.Ordinal);
+        foreach (var p in all) byKey.TryAdd(PackCache.KeyOf(p), p);
+        var brought = new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal);
+        IReadOnlySet<string> Brings(MapFile other)
+        {
+            var key = PackCache.KeyOf(other);
+            if (brought.TryGetValue(key, out var names)) return names;
+            try
+            {
+                names = TextureNames(Open(other));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException or InvalidDataException)
+            {
+                names = new HashSet<string>();
+            }
+
+            return brought[key] = names;
+        }
+
+        foreach (var pack in all)
         {
             cancel.ThrowIfCancellationRequested();
             try
             {
                 var file = new FileInfo(pack.Path);
                 var (length, written) = file.Exists ? (file.Length, file.LastWriteTimeUtc) : (-1L, DateTime.MinValue);
+                var beside = places[Place(pack)];
                 IReadOnlyList<FoundGame> found;
-                if (cache is not null && cache.TryGet(pack, length, written, among, out var ids))
+                MapFile? needs = null;
+                if (cache is not null && cache.TryGet(pack, length, written, among, () => PackCache.BesideOf(beside, pack), out var record))
                 {
-                    found = [.. ids.Select(id => byId.GetValueOrDefault(id)).OfType<FoundGame>()];
+                    found = [.. record.Games.Select(id => byId.GetValueOrDefault(id)).OfType<FoundGame>()];
+                    if (record.Needs is { } key) needs = byKey.GetValueOrDefault(key);
                 }
                 else
                 {
-                    found = GamesFor(pack, bases, namesOf);
-                    cache?.Put(pack, length, written, among, found.Select(g => g.Game.Id));
+                    (found, needs, var leans) = Judge(pack, bases, namesOf, [.. beside.Where(b => !ReferenceEquals(b, pack))], Brings);
+                    cache?.Put(pack, length, written, among, found.Select(g => g.Game.Id), needs is null ? null : PackCache.KeyOf(needs), leans ? PackCache.BesideOf(beside, pack) : null);
                 }
 
-                if (found.Count > 0) fits.Add(new PackFit(pack, found));
+                if (found.Count > 0) fits.Add(new PackFit(pack, found) { Needs = needs });
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CorruptDataException or InvalidDataException)
             {
@@ -61,17 +103,30 @@ public static partial class MapPacks
         return fits;
     }
 
-    /// <summary>The base games among <paramref name="bases"/> that <paramref name="pack"/> fits; empty when none.</summary>
-    public static IReadOnlyList<FoundGame> GamesFor(MapFile pack, IReadOnlyList<FoundGame> bases, Func<string, IReadOnlySet<string>> namesOf)
+    /// <summary>Where a pack lies, for telling which packs are beside it: its folder, or the archive it is inside.</summary>
+    private static string Place(MapFile pack) => pack.Inside is null ? Path.GetDirectoryName(pack.Path) ?? "" : pack.Path;
+
+    /// <summary>The base games among <paramref name="bases"/> that <paramref name="pack"/> fits, judged on its own; empty when none.</summary>
+    public static IReadOnlyList<FoundGame> GamesFor(MapFile pack, IReadOnlyList<FoundGame> bases, Func<string, IReadOnlySet<string>> namesOf) =>
+        Judge(pack, bases, namesOf, [], _ => new HashSet<string>()).Games;
+
+    /// <summary>
+    /// The base games among <paramref name="bases"/> that <paramref name="pack"/> fits, and the pack among those
+    /// <paramref name="beside"/> it that it is loaded over, when it is made for one: much of what its maps show is then
+    /// neither its own nor any game's, and that one pack brings nearly all of it (<paramref name="brings"/> gives the
+    /// names a pack holds). Leans says the maps show that much unexplained, whether or not a pack beside it explains it:
+    /// such a pack is judged again when the packs beside it change.
+    /// </summary>
+    public static (IReadOnlyList<FoundGame> Games, MapFile? Needs, bool Leans) Judge(MapFile pack, IReadOnlyList<FoundGame> bases, Func<string, IReadOnlySet<string>> namesOf, IReadOnlyList<MapFile> beside, Func<MapFile, IReadOnlySet<string>> brings)
     {
         var container = Open(pack);
         var maps = MapLocator.Find(container);
-        if (maps.Count == 0) return [];
+        if (maps.Count == 0) return ([], null, false);
 
         // By the maps' names: a MAPxx pack is for a MAPxx game, an ExMy pack for an ExMy game.
         var patterns = maps.Select(m => Pattern(m.Name)).OfType<string>().Distinct().ToList();
         var candidates = bases.Where(g => patterns.Contains(g.Game.MapNames!)).ToList();
-        if (candidates.Count == 0) return [];
+        if (candidates.Count == 0) return ([], null, false);
 
         // By the maps' namespace: a map in the doom, heretic, hexen or strife namespace names its family; one in GZDoom's own
         // (zdoom) can be for any of them, and says nothing.
@@ -97,14 +152,34 @@ public static partial class MapPacks
         }
 
         if (families.Count > 0) candidates = candidates.Where(g => families.Contains(g.Game.MapNamespace)).ToList();
-        if (candidates.Count <= 1) return candidates;
+        if (candidates.Count == 0) return ([], null, false);
 
-        // By the textures: the games that have the most of what the maps use; what the pack brings itself counts for every game.
+        // What the pack brings itself counts for every game.
         var everything = used.ToList();
         used.ExceptWith(TextureNames(container));
+
+        // A pack made to be loaded over another (a fix for one of its maps, more maps for it) shows that pack's textures.
+        // When much of what its maps show is neither its own nor any game's, and one pack beside it brings nearly all of
+        // that, it needs that pack, and what that pack brings counts as brought too.
+        MapFile? needs = null;
+        var unexplained = used.Where(n => !candidates.Any(g => namesOf(g.Path).Contains(n))).ToList();
+        var leans = unexplained.Count >= Math.Max(Leaning, (everything.Count + 9) / 10);
+        if (leans && beside.Count > 0)
+        {
+            var (other, held) = beside.Select(b => (File: b, Held: unexplained.Count(brings(b).Contains))).MaxBy(b => b.Held);
+            if (held * 10 >= unexplained.Count * 9)
+            {
+                needs = other;
+                used.ExceptWith(brings(other));
+            }
+        }
+
+        if (candidates.Count == 1) return (candidates, needs, leans);
+
+        // By the textures: the games that have the most of what the maps use.
         var scored = candidates.Select(g => (Game: g, Covered: used.Count(namesOf(g.Path).Contains))).ToList();
         var best = scored.Max(s => s.Covered);
-        return best == 0 ? Family(candidates, everything, namesOf) : [.. scored.Where(s => s.Covered == best).Select(s => s.Game)];
+        return (best == 0 ? Family(candidates, everything, namesOf) : [.. scored.Where(s => s.Covered == best).Select(s => s.Game)], needs, leans);
     }
 
     /// <summary>

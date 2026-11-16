@@ -51,7 +51,8 @@ public static class Remix
     /// <param name="notes">Gets anything the translation could not carry over.</param>
     /// <param name="projectName">The name the project is shown by; "PACK SLOT" when null.</param>
     /// <param name="target">What the project plays in (see <see cref="Targets"/>); a classic target keeps the map in the classic format.</param>
-    public static Project CreateFromPack(string projectFolder, string packPath, string mapName, GameDefinition game, string engineDataPath, List<string> notes, string? projectName = null, string target = Targets.GZDoom)
+    /// <param name="under">Files the pack is loaded over (the pack it was made for): loaded with the project before the pack itself.</param>
+    public static Project CreateFromPack(string projectFolder, string packPath, string mapName, GameDefinition game, string engineDataPath, List<string> notes, string? projectName = null, string target = Targets.GZDoom, IReadOnlyList<string>? under = null)
     {
         var pack = ResourceContainer.Open(packPath);
         var lumps = MapLocator.Find(pack).FirstOrDefault(m => LumpName.Comparer.Equals(m.Name, mapName))
@@ -64,6 +65,7 @@ public static class Remix
         if (CompatibilityRepairs.Load(engine)?.Apply(zdoom, checksum, notes) == true) notes.Add($"GZDoom's own repairs for {lumps.Name} were applied, as the engine applies them to the original.");
 
         var project = Project.Create(projectFolder, projectName ?? $"{Path.GetFileNameWithoutExtension(packPath)} {lumps.Name}", game.Id, target);
+        foreach (var first in under ?? []) project.AddAddOn(Path.GetFullPath(first));
         project.AddAddOn(Path.GetFullPath(packPath));
         project.SaveMap(ClassicTranslation.ForProject(project, zdoom, engineDataPath), origin: new MapOrigin { Kind = "import", Game = game.Id, Map = lumps.Name, Checksum = checksum, File = Path.GetFullPath(packPath) });
         return project;

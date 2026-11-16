@@ -13,6 +13,15 @@ public sealed record PackRecord
     public string Among { get; init; } = "";
 
     public List<string> Games { get; init; } = [];
+
+    /// <summary>The key of the pack beside it that it is loaded over (<see cref="PackFit.Needs"/>); null for a pack on its own.</summary>
+    public string? Needs { get; init; }
+
+    /// <summary>
+    /// For a pack that leans on names it does not hold: the packs that were beside it then, as one short string. Such a
+    /// pack is judged again when they change (the one it needs came, went or changed). Null for a pack that leans on nothing.
+    /// </summary>
+    public string? Beside { get; init; }
 }
 
 /// <summary>
@@ -89,20 +98,32 @@ public sealed class PackCache
         }
     }
 
-    /// <summary>The games <paramref name="pack"/> fitted when it was last read, when the file and the games judged among are the same.</summary>
-    public bool TryGet(MapFile pack, long length, DateTime written, string among, out IReadOnlyList<string> games)
+    /// <summary>The packs beside <paramref name="pack"/> (in its folder, or in its archive) as one short string: each one's key and length.</summary>
+    public static string BesideOf(IEnumerable<MapFile> beside, MapFile pack)
     {
-        if (_records.TryGetValue(KeyOf(pack), out var r) && r.Length == length && r.Written == written && r.Among == among)
+        var own = KeyOf(pack);
+        var text = string.Join("\n", beside.Select(b => (Key: KeyOf(b), b.Size)).Where(b => b.Key != own).OrderBy(b => b.Key, StringComparer.Ordinal).Select(b => $"{b.Key}|{b.Size}"));
+        return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)))[..16];
+    }
+
+    /// <summary>
+    /// What <paramref name="pack"/> fitted when it was last read, when the file and the games judged among are the same,
+    /// and, for a pack that leaned on names it does not hold, the packs beside it are (<paramref name="beside"/> is asked
+    /// only then).
+    /// </summary>
+    public bool TryGet(MapFile pack, long length, DateTime written, string among, Func<string> beside, out PackRecord record)
+    {
+        if (_records.TryGetValue(KeyOf(pack), out var r) && r.Length == length && r.Written == written && r.Among == among && (r.Beside is null || r.Beside == beside()))
         {
             Hits++;
-            games = r.Games;
+            record = r;
             return true;
         }
 
-        games = [];
+        record = null!;
         return false;
     }
 
-    public void Put(MapFile pack, long length, DateTime written, string among, IEnumerable<string> games) =>
-        _records[KeyOf(pack)] = new PackRecord { Length = length, Written = written, Among = among, Games = [.. games] };
+    public void Put(MapFile pack, long length, DateTime written, string among, IEnumerable<string> games, string? needs = null, string? beside = null) =>
+        _records[KeyOf(pack)] = new PackRecord { Length = length, Written = written, Among = among, Games = [.. games], Needs = needs, Beside = beside };
 }

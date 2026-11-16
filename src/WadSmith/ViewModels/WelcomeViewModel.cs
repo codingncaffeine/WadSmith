@@ -21,8 +21,11 @@ internal sealed record MapChoice(string Slot, string Title, GameTileViewModel Ti
     public string Label => Title.Length > 0 ? $"{Slot} · {Title}" : Slot;
 }
 
-/// <summary>A map in a map pack found near the games, offered for editing under the game it is for.</summary>
-internal sealed record PackMapChoice(MapFile Pack, string Slot, GameTileViewModel Tile)
+/// <summary>
+/// A map in a map pack found near the games, offered for editing under the game it is for. <paramref name="Needs"/> is the
+/// pack beside it that it is loaded over, when it was made for one (a fix for one of that pack's maps).
+/// </summary>
+internal sealed record PackMapChoice(MapFile Pack, string Slot, GameTileViewModel Tile, MapFile? Needs = null)
 {
     public string Label => $"{Pack.Name} › {Slot}";
 }
@@ -753,7 +756,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
             }
 
             var pickFrom = tile;
-            tile.PackMaps = [.. packs.Where(f => f.Games.Any(x => x.Game.Id == g.Game.Id)).OrderBy(f => f.File.Name, StringComparer.OrdinalIgnoreCase).SelectMany(f => f.File.Maps.Order(StringComparer.OrdinalIgnoreCase).Select(m => new PackMapChoice(f.File, m, pickFrom)))];
+            tile.PackMaps = [.. packs.Where(f => f.Games.Any(x => x.Game.Id == g.Game.Id)).OrderBy(f => f.File.Name, StringComparer.OrdinalIgnoreCase).SelectMany(f => f.File.Maps.Order(StringComparer.OrdinalIgnoreCase).Select(m => new PackMapChoice(f.File, m, pickFrom, f.Needs)))];
             tile.AddOns = [.. addOns.Where(a => a.Game.Game.AddOnFor == g.Game.Id).Select(a => (a.Game.Game.Title, (IReadOnlyList<PackMapChoice>)[.. a.File.Maps.Select(m => new PackMapChoice(a.File, m, pickFrom))]))];
             tiles.Add(tile);
         }
@@ -877,7 +880,8 @@ internal sealed partial class WelcomeViewModel : ObservableObject
             var (engine, files) = await Task.Run(() =>
             {
                 var engines = WadSmith.Core.Engines.EngineLocator.Find(chosen, Environment.GetEnvironmentVariable);
-                IReadOnlyList<string> files = set is null ? [] : [.. set.Packs.Select(p => MapPacks.Materialise(p, packs))];
+                // A pack made for another is loaded over it: that one first.
+                IReadOnlyList<string> files = set is null ? [] : [.. set.Needs.Concat(set.Packs).Select(p => MapPacks.Materialise(p, packs))];
                 return (engines.FirstOrDefault(), files);
             }, _services.ShuttingDown).ConfigureAwait(true);
             if (engine is null)
@@ -1066,10 +1070,12 @@ internal sealed partial class WelcomeViewModel : ObservableObject
     {
         CloseOffered();
         var name = Path.GetFileName(choice.Pack.Path);
-        if (!await Task.Run(() => File.Exists(choice.Pack.Path)).ConfigureAwait(true))
+        var gone = await Task.Run(() => new[] { choice.Pack, choice.Needs }.OfType<MapFile>().FirstOrDefault(p => !File.Exists(p.Path))).ConfigureAwait(true);
+        if (gone is not null)
         {
-            Notice = $"{name} is no longer in {Path.GetDirectoryName(choice.Pack.Path)}: it was moved or deleted. WadSmith is looking for your maps again and lists it where it is now, if that is in one of your game folders; or open it with Open a map file… at the top.";
-            Log.Warn($"{choice.Pack.Path} is gone; looking again.");
+            name = Path.GetFileName(gone.Path);
+            Log.Warn($"{gone.Path} is gone; looking again.");
+            Notice = $"{name} is no longer in {Path.GetDirectoryName(gone.Path)}: it was moved or deleted. WadSmith is looking for your maps again and lists it where it is now, if that is in one of your game folders; or open it with Open a map file… at the top.";
             _ = ScanAsync(quiet: true);
             return;
         }
@@ -1078,12 +1084,14 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         {
             var engine = _services.EngineData ?? throw new CorruptDataException("Editing a map from a pack needs UZDoom or GZDoom installed: WadSmith reads the engine's own rules for what each line does.");
             var pack = MapPacks.Materialise(choice.Pack, Path.Combine(_services.Paths.Cache, "packs"));
+            IReadOnlyList<string> under = choice.Needs is { } needed ? [MapPacks.Materialise(needed, Path.Combine(_services.Paths.Cache, "packs"))] : [];
             var folder = UniqueFolder($"{Path.GetFileNameWithoutExtension(pack)} {choice.Slot}");
             var notes = new List<string>();
-            var project = Remix.CreateFromPack(folder, pack, choice.Slot, choice.Tile.Found.Game, engine, notes, target: choice.Tile.Target);
+            var project = Remix.CreateFromPack(folder, pack, choice.Slot, choice.Tile.Found.Game, engine, notes, target: choice.Tile.Target, under: under);
             foreach (var n in notes) Log.Info($"Pack map note: {n}");
             return (project, choice.Slot);
-        }, said: (project, slot) => $"Editing {slot} of {choice.Pack.Name} in a project of your own, {project.Info.Name}. {name} itself is never changed; it is loaded with your map, so its own pictures and things are there.").ConfigureAwait(true);
+        }, said: (project, slot) => $"Editing {slot} of {choice.Pack.Name} in a project of your own, {project.Info.Name}. {name} itself is never changed; it is loaded with your map, so its own pictures and things are there."
+            + (choice.Needs is { } needed ? $" It was made for {Path.GetFileName(needed.Inside ?? needed.Path)}, found beside it, which is loaded under it." : "")).ConfigureAwait(true);
     }
 
     /// <summary>What the start screen has to say about the last thing tried (why a map or a project did not open, and what to do); empty when nothing.</summary>
