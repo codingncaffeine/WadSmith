@@ -456,7 +456,7 @@ public static class Problems
 
     private static void UnknownTextures(MapFrame f, GameResources r, List<Problem> found)
     {
-        bool Known(string t) => t is "-" or "" || r.Textures.FindWall(t) is not null || r.Textures.FindFlat(t) is not null;
+        bool Known(string t) => t is "-" or "" || r.Textures.Shows(t);
         var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         var where = new List<Element>();
         var seen = new HashSet<Element>();

@@ -27,8 +27,9 @@ public sealed record TextureInfo(string Name, TextureKind Kind, int Width, int H
 /// Every wall texture and flat a resource stack provides, with the engine's precedence: per file in
 /// load order, TEXTURE1/TEXTURE2 first, then single-picture textures, then TEXTURES definitions; a
 /// later definition of a name replaces an earlier one. Pictures are composed on first use and cached.
-/// A patch is a wall texture too, as in GZDoom, found by its own name when no texture or flat has
-/// it: a map may show one directly. Patches are found, never listed among the walls.
+/// A wall or floor may also show a patch by its own name, as in GZDoom, when no texture or flat
+/// has the name: the patch is drawn (<see cref="GetWall"/>, <see cref="GetFlat"/>) and known
+/// (<see cref="Shows"/>), but it is no texture: it is not listed among the walls or found as one.
 /// </summary>
 public sealed class TextureLibrary
 {
@@ -75,8 +76,14 @@ public sealed class TextureLibrary
     /// <summary>Whether a wall texture or a flat has this name.</summary>
     public bool Has(string name) => _walls.ContainsKey(name) || _flats.ContainsKey(name);
 
-    /// <summary>The wall texture of this name, or the patch a wall shows under it when no texture or flat has the name.</summary>
-    public TextureInfo? FindWall(string name) => _walls.GetValueOrDefault(name) ?? (_flats.ContainsKey(name) ? null : _patchWalls.GetValueOrDefault(name));
+    /// <summary>
+    /// Whether a wall, floor or ceiling given this name shows a picture in GZDoom: a texture, a flat, or a patch by its
+    /// own name. A patch is no texture: what is asked of textures (their sizes, what a classic port knows) does not see it.
+    /// </summary>
+    public bool Shows(string name) => _walls.ContainsKey(name) || _flats.ContainsKey(name) || _patchWalls.ContainsKey(name);
+
+    /// <summary>The wall texture of this name, as the texture lists and single pictures define it; null for a patch (see <see cref="Shows"/>).</summary>
+    public TextureInfo? FindWall(string name) => _walls.GetValueOrDefault(name);
 
     public TextureInfo? FindFlat(string name) => _flats.GetValueOrDefault(name);
 

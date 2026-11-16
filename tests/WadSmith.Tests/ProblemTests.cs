@@ -225,6 +225,17 @@ public sealed class ProblemTests(ITestOutputHelper output)
         Assert.Contains("BRICK99", Only(map, "unknown-texture").Sentence);
     }
 
+    /// <summary>GZDoom lets a wall show one of the game's patches by its own name: such a name is known, and nothing is reported.</summary>
+    [Fact]
+    public void APatchShownOnAWallByItsOwnNameIsKnown()
+    {
+        var textures = Freedoom.Value.Textures;
+        var patch = Core.Graphics.TextureLump.ReadPatchNames(Freedoom.Value.Find("PNAMES", Core.Containers.ResourceNamespace.Global)!.Read()).Select(n => n.Text).First(n => textures.FindWall(n) is null && textures.FindFlat(n) is null && textures.GetWall(n) is not null);
+        var (map, history) = Clean();
+        history.Record("Paint", e => e.Set(map.Lines[1].Front, s => s.Middle, (s, v) => s.Middle = v, patch));
+        Assert.Empty(Check(map));
+    }
+
     [Fact]
     public void AWallBetweenRoomsNotMarkedOpenIsFixed()
     {

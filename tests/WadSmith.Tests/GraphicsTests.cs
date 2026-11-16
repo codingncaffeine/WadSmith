@@ -85,7 +85,7 @@ public sealed class GraphicsTests
     /// <summary>
     /// GZDoom makes a wall texture of every patch, so a map may show a patch by its own name. The library finds one when
     /// no texture or flat has the name (between the patch markers, or outside them when PNAMES lists it), draws it at its
-    /// own size on a wall or a floor, and does not list it among the walls.
+    /// own size on a wall or a floor, and says the name shows; it is no texture, so it is not listed or found among the walls.
     /// </summary>
     [Fact]
     public void APatchIsAWallByItsOwnNameWhenNothingElseHasIt()
@@ -110,17 +110,17 @@ public sealed class GraphicsTests
 
         Assert.Equal((4, 6), Wall("MYPATCH"));
         Assert.Equal((3, 5), Wall("LOOSEP"));
-        Assert.NotNull(lib.FindWall("MYPATCH"));
-        Assert.NotNull(lib.FindWall("LOOSEP"));
+        Assert.True(lib.Shows("MYPATCH") && lib.Shows("LOOSEP"));
+        Assert.Null(lib.FindWall("MYPATCH"));
         Assert.Equal(["TEXWINS"], lib.Walls.Select(w => w.Name));
         Assert.Equal((4, 6), lib.GetFlat("MYPATCH") is { } floor ? (floor.Width, floor.Height) : default);
 
         // A lump PNAMES does not list is no patch; a flat of the name is what a wall shows; a texture of the name is the wall.
         Assert.Null(Wall("STRAY"));
-        Assert.Null(lib.FindWall("STRAY"));
+        Assert.False(lib.Shows("STRAY"));
         Assert.Equal((64, 64), Wall("BOTH"));
-        Assert.Null(lib.FindWall("BOTH"));
         Assert.Equal((5, 5), Wall("TEXWINS"));
+        Assert.NotNull(lib.FindWall("TEXWINS"));
         Assert.Empty(lib.Notes);
     }
 

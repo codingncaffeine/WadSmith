@@ -15,6 +15,7 @@ public sealed class BaseGame
     {
         Stack = stack;
         _library = new(() => new TextureLibrary(stack));
+        // Textures only: a classic port does not let a wall show a patch by its own name, as GZDoom does.
         Pictures = new PictureNames(n => _library.Value.FindWall(n) is not null, n => _library.Value.FindFlat(n) is not null);
     }
 

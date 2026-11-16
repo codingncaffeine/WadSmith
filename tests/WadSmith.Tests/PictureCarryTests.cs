@@ -85,6 +85,31 @@ public sealed class PictureCarryTests
         Assert.Equal(palette.Nearest(0, 255, 0), Lump("MYFLAT")[0]);
     }
 
+    /// <summary>
+    /// GZDoom lets a wall show one of the game's patches by its own name; a classic port knows only textures and stops
+    /// over such a name. The game is not said to have it: the export carries it as a texture of that one patch.
+    /// </summary>
+    [Fact]
+    public void AWallNamedAfterOneOfTheGamesPatchesIsCarriedAsATexture()
+    {
+        using var temp = new TempFolder();
+        var (project, engine, game) = Setup(temp);
+        var library = new TextureLibrary(game.Stack);
+        var patch = TextureLump.ReadPatchNames(game.Lump("PNAMES")).Select(n => n.Text).First(n => library.FindWall(n) is null && library.FindFlat(n) is null && library.GetWall(n) is not null);
+        Assert.False(game.Pictures.Wall(patch));
+        var model = project.LoadMap("MAP01");
+        model.Sides[model.Lines.First(l => l.Back < 0).Front].Middle = patch;
+        project.SaveMap(model);
+
+        var file = Path.Combine(temp.Path, "vanilla.wad");
+        var report = ProjectExport.Write(project, "vanilla", file, engine, game);
+        Assert.DoesNotContain(report.Losses, l => l.Key == "side:no-picture");
+        var wad = WadContainer.Open(file);
+        var texture = TextureLump.Read(wad.Find("TEXTURE1")!.Read(), TextureLump.ReadPatchNames(wad.Find("PNAMES")!.Read()), "export").Textures.Single(t => t.Name == patch);
+        var shown = library.GetWall(patch)!;
+        Assert.Equal((shown.Width, shown.Height), (texture.Width, texture.Height));
+    }
+
     [Fact]
     public void AMapsOwnMusicPlaysUnderTheSlotsSongWhereThePortCannotNameIt()
     {
