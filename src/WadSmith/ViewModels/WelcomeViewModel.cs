@@ -1166,7 +1166,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         if (slots.Count == 0)
         {
             Notice = baseGame is { } g
-                ? $"{what} is {g} itself: a game to make maps for, not a map. Add it with Add games → Pick a game file…."
+                ? $"{what} is {g} itself: a game to make maps for, not a map. Add it with Add WADs → Pick a game file…."
                 : $"{what} holds no maps.";
             return;
         }
@@ -1177,7 +1177,7 @@ internal sealed partial class WelcomeViewModel : ObservableObject
         if (choices.Count == 0)
         {
             var named = string.Join(", ", slots.Take(3)) + (slots.Count > 3 ? "…" : "");
-            Notice = $"{what} holds {(slots.Count == 1 ? "a map" : $"{slots.Count} maps")} ({named}), but not for a game WadSmith found: maps named like E1M1 are Doom's or Heretic's, like MAP01 Doom II's, Hexen's or Strife's. Add the game it is for with Add games, then open it again.";
+            Notice = $"{what} holds {(slots.Count == 1 ? "a map" : $"{slots.Count} maps")} ({named}), but not for a game WadSmith found: maps named like E1M1 are Doom's or Heretic's, like MAP01 Doom II's, Hexen's or Strife's. Add the game it is for with Add WADs, then open it again.";
             return;
         }
 

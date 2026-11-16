@@ -407,8 +407,8 @@
                     </StackPanel>
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Button Classes="metal" Content="Add games ▾"
-                            ToolTip.Tip="Tell WadSmith where your games are, if it did not find them by itself: a game file, or a folder. The folders beside and above it are looked in too, and inside ZIP files.">
+                    <Button Classes="metal" Content="Add WADs ▾"
+                            ToolTip.Tip="Tell WadSmith where your WADs are, games and maps alike, if it did not find them by itself: a game file, or a folder. The folders beside and above it are looked in too, and inside ZIP files.">
                         <Button.Flyout>
                             <MenuFlyout Placement="BottomEdgeAlignedRight">
                                 <MenuItem Header="Pick a game file…" Command="{Binding AddGameFileCommand}"
