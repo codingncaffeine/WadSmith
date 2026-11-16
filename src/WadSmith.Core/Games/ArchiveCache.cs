@@ -13,7 +13,7 @@ public sealed record ArchiveRecord
     /// <summary>The archive is itself a base game laid out as a PK3 (this id), or null.</summary>
     public string? Packed { get; init; }
 
-    /// <summary>How games were told apart when it was read (<see cref="GameCatalog.Stamp"/>); null in a record older than the mark.</summary>
+    /// <summary>How games were told apart and what was noted of each WAD when it was read (<see cref="ArchiveCache.Mark"/>); null in a record older than the mark.</summary>
     public string? Rules { get; init; }
 
     public List<CachedGame> Games { get; init; } = [];
@@ -37,6 +37,9 @@ public sealed class CachedMapFile
     public required string Inside { get; init; }
 
     public List<string> Maps { get; init; } = [];
+
+    /// <summary>The WAD's own length in bytes.</summary>
+    public long Size { get; init; }
 }
 
 /// <summary>
@@ -48,6 +51,15 @@ public sealed class CachedMapFile
 public sealed class ArchiveCache
 {
     private readonly Dictionary<string, ArchiveRecord> _records;
+
+    /// <summary>What a record holds, as a number raised when more is noted of an archive (2: each WAD's length).</summary>
+    private const int Format = 2;
+
+    /// <summary>
+    /// The mark a record is believed under: how games are told apart (<see cref="GameCatalog.Stamp"/>) and what a record
+    /// holds. A record under another mark is read again.
+    /// </summary>
+    public static string Mark => $"{GameCatalog.Stamp}.{Format}";
 
     private ArchiveCache(Dictionary<string, ArchiveRecord> records) => _records = records;
 
@@ -83,7 +95,7 @@ public sealed class ArchiveCache
 
     internal bool TryGet(string archive, long length, DateTime written, out ArchiveRecord record)
     {
-        if (_records.TryGetValue(archive, out var found) && found.Length == length && found.Written == written && found.Rules == GameCatalog.Stamp)
+        if (_records.TryGetValue(archive, out var found) && found.Length == length && found.Written == written && found.Rules == Mark)
         {
             Hits++;
             record = found;
@@ -94,7 +106,7 @@ public sealed class ArchiveCache
         return false;
     }
 
-    internal void Put(string archive, ArchiveRecord record) => _records[archive] = record with { Rules = GameCatalog.Stamp };
+    internal void Put(string archive, ArchiveRecord record) => _records[archive] = record with { Rules = Mark };
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 }

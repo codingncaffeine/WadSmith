@@ -16,8 +16,11 @@ public sealed record FoundGame(GameDefinition Game, string Path, long Size, bool
     public bool Usable => Inside is null;
 }
 
-/// <summary>A file with maps in it that is not a base game (a map pack): a WAD, or a WAD inside an archive (<paramref name="Inside"/> names it).</summary>
-public sealed record MapFile(string Path, string? Inside, IReadOnlyList<string> Maps)
+/// <summary>
+/// A file with maps in it that is not a base game (a map pack): a WAD, or a WAD inside an archive (<paramref name="Inside"/>
+/// names it). <paramref name="Size"/> is the WAD's own length in bytes, 0 when it was not measured.
+/// </summary>
+public sealed record MapFile(string Path, string? Inside, IReadOnlyList<string> Maps, long Size = 0)
 {
     public string Name => Inside is null ? System.IO.Path.GetFileName(Path) : $"{System.IO.Path.GetFileName(Path)} › {Inside}";
 }
@@ -357,11 +360,20 @@ public static partial class GameLocator
                 var names = WadDirectory.ReadNames(real);
                 if (names is null) continue;
                 if (GameCatalog.Identify(names) is { } game) here.Add(new FoundGame(game, real, new FileInfo(real).Length, WadDirectory.IsIwad(real)));
-                else if (MapsIn(names) is { Count: > 0 } found) maps.Add(new MapFile(real, null, found));
+                else if (MapsIn(names) is { Count: > 0 } found) maps.Add(new MapFile(real, null, found, new FileInfo(real).Length));
             }
 
             folders.Add(new FolderReport(target.Folder, wads, archives, here, maps));
             games.AddRange(here);
+        }
+
+        // A WAD found on its own and inside an archive (a download kept beside what was taken out of it) is one pack, listed
+        // once: as the loose file, which needs no taking out.
+        var loose = folders.SelectMany(f => f.MapFiles).Where(m => m.Inside is null && m.Size > 0).Select(Same).ToHashSet();
+        bool Twin(MapFile m) => m.Inside is not null && m.Size > 0 && loose.Contains(Same(m));
+        for (var i = 0; i < folders.Count; i++)
+        {
+            if (folders[i].MapFiles.Any(Twin)) folders[i] = folders[i] with { MapFiles = [.. folders[i].MapFiles.Where(m => !Twin(m))] };
         }
 
         // The first copy of a game is the one used: a usable file before one inside an archive, a copy whose header says IWAD before one saying PWAD, otherwise in the order found.
@@ -427,6 +439,10 @@ public static partial class GameLocator
         return files;
     }
 
+    /// <summary>What makes two map files the same WAD without reading them through: the WAD's own name, its length, and its maps.</summary>
+    private static (string Name, long Size, string Maps) Same(MapFile m) =>
+        (Path.GetFileName((m.Inside ?? m.Path).Replace('\\', '/')).ToUpperInvariant(), m.Size, string.Join(",", m.Maps)); // archive path
+
     /// <summary>The maps a WAD's lump names announce: a name followed by THINGS and LINEDEFS (classic) or by TEXTMAP (UDMF).</summary>
     public static IReadOnlyList<string> MapsIn(IReadOnlyList<string> names)
     {
@@ -461,7 +477,7 @@ public static partial class GameLocator
 
         if (WadDirectory.ReadNames(real) is not { } names) return [];
         game = GameCatalog.Identify(names);
-        return game is null && MapsIn(names) is { Count: > 0 } found ? [new MapFile(real, null, found)] : [];
+        return game is null && MapsIn(names) is { Count: > 0 } found ? [new MapFile(real, null, found, new FileInfo(real).Length)] : [];
     }
 
     /// <summary>Whether a file is one a scan reads for maps and games: a WAD, or a ZIP, PK3 or IPK3 archive.</summary>
@@ -508,8 +524,8 @@ public static partial class GameLocator
                 }
                 else if (MapsIn(names) is { Count: > 0 } found)
                 {
-                    maps.Add(new MapFile(archive, entry.FullName, found));
-                    record.MapFiles.Add(new CachedMapFile { Inside = entry.FullName, Maps = [.. found] });
+                    maps.Add(new MapFile(archive, entry.FullName, found, data.Length));
+                    record.MapFiles.Add(new CachedMapFile { Inside = entry.FullName, Maps = [.. found], Size = data.Length });
                 }
             }
 
@@ -539,7 +555,7 @@ public static partial class GameLocator
         }
 
         games.AddRange(found);
-        maps.AddRange(record.MapFiles.Select(m => new MapFile(archive, m.Inside, m.Maps)));
+        maps.AddRange(record.MapFiles.Select(m => new MapFile(archive, m.Inside, m.Maps, m.Size)));
         return true;
     }
 

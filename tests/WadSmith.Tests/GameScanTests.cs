@@ -149,7 +149,7 @@ public sealed class GameScanTests
 
         // The same record under today's mark is believed as it stands: it was the mark that had it read again.
         heard.Clear();
-        var current = Remembering(GameCatalog.Stamp);
+        var current = Remembering(ArchiveCache.Mark);
         var believed = GameLocator.Report([new ScanTarget(folder, 2)], current, progress, TestContext.Current.CancellationToken);
         Assert.Empty(heard);
         Assert.Equal("doom2", Assert.Single(believed.Games).Game.Id);
@@ -168,14 +168,51 @@ public sealed class GameScanTests
         var folder = Directory.CreateDirectory(Path.Combine(temp.Path, "maps")).FullName;
         var pack = Path.Combine(folder, "mypack.wad");
         File.WriteAllBytes(pack, MapPack());
-        Zip(Path.Combine(folder, "mypack.zip"), ("mypack/mypack.wad", pack), ("mypack/readme.txt", pack));
+        Zip(Path.Combine(folder, "other.zip"), ("other/other.wad", pack), ("other/readme.txt", pack));
 
         var report = GameLocator.Report([new ScanTarget(folder, 2)], cancel: TestContext.Current.CancellationToken);
         Assert.Empty(report.Games);
         var here = Assert.Single(report.Folders);
         Assert.Equal((1, 1), (here.Wads, here.Archives));
-        Assert.Equal(["mypack.wad", "mypack.zip › mypack/mypack.wad"], here.MapFiles.Select(m => m.Name).Order());
+        Assert.Equal(["mypack.wad", "other.zip › other/other.wad"], here.MapFiles.Select(m => m.Name).Order());
         Assert.All(here.MapFiles, m => Assert.Equal(["MAP03"], m.Maps));
+    }
+
+    /// <summary>
+    /// A download kept beside what was taken out of it: the same WAD on its own and inside a ZIP is one pack, listed once,
+    /// as the loose file, in whichever order the folders are looked in and when the ZIP is answered from memory. Another
+    /// WAD under the same name stays, and so does the same WAD when only ZIPs hold it.
+    /// </summary>
+    [Fact]
+    public void AWadKeptInItsZipAndTakenOutOfItIsListedOnce()
+    {
+        using var temp = new TempFolder();
+        var downloads = Directory.CreateDirectory(Path.Combine(temp.Path, "downloads")).FullName;
+        var maps = Directory.CreateDirectory(Path.Combine(temp.Path, "maps")).FullName;
+        var pack = Path.Combine(maps, "MyPack.wad");
+        File.WriteAllBytes(pack, MapPack());
+        Zip(Path.Combine(downloads, "mypack.zip"), ("mypack/mypack.wad", pack), ("mypack/readme.txt", pack));
+        ScanTarget[] zipFirst = [new ScanTarget(downloads, 1), new ScanTarget(maps, 1)];
+
+        var cache = ArchiveCache.Empty();
+        foreach (var targets in new[] { zipFirst, [.. zipFirst.Reverse()], zipFirst })
+        {
+            var report = GameLocator.Report(targets, cache, cancel: TestContext.Current.CancellationToken);
+            var one = Assert.Single(report.MapFiles);
+            Assert.Equal((pack, null), (one.Path, one.Inside));
+        }
+
+        Assert.Equal(2, cache.Hits);
+
+        // Another WAD under that name (it holds more): two packs.
+        var bigger = WadContainer.Open(pack).Entries.Select(e => (e.Name, (ReadOnlyMemory<byte>)e.Read())).Append(("EXTRA", new byte[16])).ToList();
+        File.WriteAllBytes(pack, WadWriter.Write(WadKind.Pwad, bigger));
+        Assert.Equal(["MyPack.wad", "mypack.zip › mypack/mypack.wad"], GameLocator.Report(zipFirst, cache, cancel: TestContext.Current.CancellationToken).MapFiles.Select(m => m.Name).Order());
+
+        // The same WAD in two ZIPs and nowhere on its own: each ZIP is a collection of its own.
+        File.Delete(pack);
+        File.Copy(Path.Combine(downloads, "mypack.zip"), Path.Combine(maps, "again.zip"));
+        Assert.Equal(["again.zip › mypack/mypack.wad", "mypack.zip › mypack/mypack.wad"], GameLocator.Report(zipFirst, cache, cancel: TestContext.Current.CancellationToken).MapFiles.Select(m => m.Name).Order());
     }
 
     [Fact]
